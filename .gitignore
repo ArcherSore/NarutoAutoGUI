@@ -1,0 +1,15 @@
+# .NET build output
+**/bin/
+**/obj/
+artifacts/
+
+# IDE and user-local files
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+
+# Local logs and packages
+*.log
+*.zip

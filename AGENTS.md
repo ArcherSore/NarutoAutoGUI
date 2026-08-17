@@ -1,0 +1,30 @@
+# Agent Development Guide
+
+## 修改前必读
+
+处理本仓库任务前，依次阅读：
+
+1. `README.md`
+2. `docs/ARCHITECTURE.md`
+3. `docs/STATUS.md`
+4. `docs/ROADMAP.md`
+5. 涉及 Child Session 时再阅读 `src/ChildSessionDemo/README.md` 和相关源码。
+
+## 开发原则
+
+- 保持实现简单，修改范围只覆盖当前任务。
+- 不为潜在需求提前增加抽象、框架或复杂配置。
+- 避免无关格式化、重命名和大规模重构。
+- 已验证的 Child Session、RDP ActiveX、Task Scheduler COM、分辨率/缩放、进程 Session 验证和清理流程不得随意改变。
+- 修改已验证流程前，说明必要性，并保留可重复的 baseline 验证方式。
+- 不复制 BetterGI 无关代码；只保留 Child Session 所需的最小实现。
+- 除非任务明确要求，否则不修改 MaaNOP、MFAAvalonia 或 MaaFramework，也不引入 Worker/IPC。
+- 不提交 `bin/`、`obj/`、`artifacts/`、发布包、日志或本机凭据。
+- 不在代码、文档、脚本或命令历史中提交密码。
+
+## 完成任务
+
+- 运行与改动风险相称的构建和测试。
+- 如果当前能力、限制或验证结果发生变化，同步更新 `docs/STATUS.md`。
+- 如果后续方向或优先级发生变化，同步更新 `docs/ROADMAP.md`。
+- 报告实际执行过的验证，不能把未运行的交互式测试描述为已验证。

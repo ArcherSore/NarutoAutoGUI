@@ -25,7 +25,9 @@
                 </Grid.ColumnDefinitions>
                 <StackPanel>
                     <TextBlock Text="桌面分身" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock x:Name="SessionStatusText" Text="正在检测..." Margin="0,5,0,0" />
+                    <TextBlock x:Name="SessionStatusText" Text="正在检测..." Margin="0,5,0,0"
+                               AutomationProperties.Name="桌面分身状态"
+                               AutomationProperties.LiveSetting="Polite" />
                     <TextBlock x:Name="SessionIdText" Text="childSessionId: —" Foreground="#FF58616B" Margin="0,3,0,0" />
                 </StackPanel>
                 <TextBlock Grid.Column="1" Text="固定 1920 × 1080  ·  100%" VerticalAlignment="Center"
@@ -35,10 +37,14 @@
 
         <GroupBox Grid.Row="1" Header="Child Session">
             <WrapPanel>
-                <Button x:Name="CreateSessionButton" Content="创建 / 恢复" Click="CreateSessionButton_Click" />
-                <Button x:Name="ShowSessionButton" Content="显示子桌面" Click="ShowSessionButton_Click" />
-                <Button x:Name="HideSessionButton" Content="隐藏子桌面" Click="HideSessionButton_Click" />
-                <Button x:Name="TerminateSessionButton" Content="结束桌面分身" Click="TerminateSessionButton_Click" />
+                <Button x:Name="CreateSessionButton" Content="创建 / 恢复(_C)" Click="CreateSessionButton_Click"
+                        AutomationProperties.HelpText="创建新的桌面分身，或恢复已有桌面分身的连接" />
+                <Button x:Name="ShowSessionButton" Content="显示子桌面(_S)" Click="ShowSessionButton_Click"
+                        AutomationProperties.HelpText="显示已连接但当前隐藏的子桌面" />
+                <Button x:Name="HideSessionButton" Content="隐藏子桌面(_H)" Click="HideSessionButton_Click"
+                        AutomationProperties.HelpText="隐藏子桌面窗口，同时保持连接和其中的程序运行" />
+                <Button x:Name="TerminateSessionButton" Content="结束桌面分身(_E)" Click="TerminateSessionButton_Click"
+                        AutomationProperties.HelpText="注销桌面分身并结束其中运行的程序" />
             </WrapPanel>
         </GroupBox>
 
@@ -58,15 +64,15 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <Label Grid.Row="0" Content="游戏程序" Target="{Binding ElementName=GamePathTextBox}"
+                <Label Grid.Row="0" Content="游戏程序(_P)" Target="{Binding ElementName=GamePathTextBox}"
                        VerticalAlignment="Center" Padding="0" Margin="0,0,8,8" />
                 <TextBox x:Name="GamePathTextBox" Grid.Row="0" Grid.Column="1" Margin="0,0,8,8"
                          ToolTip="游戏 exe 路径" LostKeyboardFocus="PathsTextBox_LostKeyboardFocus" />
-                <Button Grid.Row="0" Grid.Column="2" Content="浏览..." Click="BrowseGameButton_Click" />
-                <Button x:Name="LaunchGameButton" Grid.Row="0" Grid.Column="3" Content="启动游戏"
+                <Button Grid.Row="0" Grid.Column="2" Content="浏览…(_B)" Click="BrowseGameButton_Click" />
+                <Button x:Name="LaunchGameButton" Grid.Row="0" Grid.Column="3" Content="启动游戏(_G)"
                         Click="LaunchGameButton_Click" />
 
-                <Label Grid.Row="1" Content="启动参数" Target="{Binding ElementName=GameArgumentsTextBox}"
+                <Label Grid.Row="1" Content="启动参数(_A)" Target="{Binding ElementName=GameArgumentsTextBox}"
                        VerticalAlignment="Center" Padding="0" Margin="0,0,8,8" />
                 <TextBox x:Name="GameArgumentsTextBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3"
                          Margin="0,0,0,8" ToolTip="传递给游戏启动程序的命令行参数"
@@ -77,16 +83,16 @@
                            Foreground="#FF58616B" TextWrapping="Wrap"
                            Text="火影忍者 Online 默认通过 QQMicroGameBox\Launch.exe 和 appid 参数启动；工作目录自动使用 exe 所在目录。" />
 
-                <Label Grid.Row="3" Content="MaaNOP" Target="{Binding ElementName=MaaNopPathTextBox}"
+                <Label Grid.Row="3" Content="MaaNOP(_M)" Target="{Binding ElementName=MaaNopPathTextBox}"
                        VerticalAlignment="Center" Padding="0" Margin="0,0,8,8" />
                 <TextBox x:Name="MaaNopPathTextBox" Grid.Row="3" Grid.Column="1" Margin="0,0,8,8"
                          ToolTip="MaaNOP exe 路径" LostKeyboardFocus="PathsTextBox_LostKeyboardFocus" />
-                <Button Grid.Row="3" Grid.Column="2" Content="浏览..." Click="BrowseMaaNopButton_Click" />
-                <Button x:Name="LaunchMaaNopButton" Grid.Row="3" Grid.Column="3" Content="启动 MaaNOP"
+                <Button Grid.Row="3" Grid.Column="2" Content="浏览…(_R)" Click="BrowseMaaNopButton_Click" />
+                <Button x:Name="LaunchMaaNopButton" Grid.Row="3" Grid.Column="3" Content="启动 MaaNOP(_N)"
                         Click="LaunchMaaNopButton_Click" />
 
                 <StackPanel Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Orientation="Horizontal">
-                    <Button x:Name="LaunchAllButton" Content="一键启动挂机环境" FontWeight="SemiBold"
+                    <Button x:Name="LaunchAllButton" Content="一键启动挂机环境(_O)" FontWeight="SemiBold"
                             Padding="24,9" Click="LaunchAllButton_Click" />
                     <TextBlock Text="恢复/创建 → 显示 → 游戏 → MaaNOP → 保持显示"
                                VerticalAlignment="Center" Foreground="#FF58616B" Margin="6,0,0,8" />
@@ -96,8 +102,19 @@
 
         <GroupBox Grid.Row="3" Header="日志（INFO+）" Margin="0,0,0,8">
             <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <ListBox x:Name="LogListBox" ItemsSource="{Binding LogLines}" FontFamily="Consolas"
-                         FontSize="12" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+                         FontSize="12" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         AutomationProperties.Name="运行日志"
+                         AutomationProperties.HelpText="显示最近一千条 INFO 及以上级别日志" />
+                <Button x:Name="ResumeLogFollowButton" Grid.Row="1" HorizontalAlignment="Right"
+                        Content="有新日志，继续跟随(_F)" Padding="10,4" MinHeight="28"
+                        Margin="0,6,0,0" Visibility="Collapsed"
+                        AutomationProperties.LiveSetting="Polite"
+                        Click="ResumeLogFollowButton_Click" />
             </Grid>
         </GroupBox>
 
@@ -107,8 +124,15 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock x:Name="OperationStatusText" Text="就绪" Foreground="#FF58616B" VerticalAlignment="Center" />
-            <Button Grid.Column="1" Content="打开日志目录" Padding="10,4" MinHeight="28"
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock x:Name="OperationStatusText" Text="就绪" Foreground="#FF58616B"
+                           VerticalAlignment="Center" AutomationProperties.Name="操作状态"
+                           AutomationProperties.LiveSetting="Polite" />
+                <ProgressBar x:Name="OperationProgressBar" Width="120" Height="4" Margin="10,0,0,0"
+                             IsIndeterminate="True" Visibility="Collapsed" IsTabStop="False"
+                             AutomationProperties.Name="操作正在进行" />
+            </StackPanel>
+            <Button Grid.Column="1" Content="打开日志目录(_L)" Padding="10,4" MinHeight="28"
                     Click="OpenLogsButton_Click" />
             <TextBlock Grid.Column="2" Text="关闭主窗口将隐藏到托盘" Foreground="#FF7A828A"
                        VerticalAlignment="Center" Margin="8,0,0,8" />

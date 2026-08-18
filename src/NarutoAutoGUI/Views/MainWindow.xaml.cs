@@ -1,6 +1,10 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Infrastructure;
@@ -19,8 +23,12 @@ public partial class MainWindow : Window
     private readonly ChildSessionManager _sessionManager;
     private readonly ChildSessionProgramService _programService;
     private readonly Func<Task> _requestExitAsync;
+    private ChildSessionSnapshot _sessionSnapshot = ChildSessionSnapshot.Empty;
+    private ScrollViewer? _logScrollViewer;
     private bool _allowClose;
     private bool _busy;
+    private bool _followLogs = true;
+    private int _newLogCount;
 
     internal MainWindow(
         AppLogger logger,
@@ -38,22 +46,30 @@ public partial class MainWindow : Window
         _sessionManager = sessionManager;
         _programService = programService;
         _requestExitAsync = requestExitAsync;
+        _sessionSnapshot = sessionManager.Snapshot;
         GamePathTextBox.Text = settings.GameExecutablePath;
         GameArgumentsTextBox.Text = settings.GameArguments;
         MaaNopPathTextBox.Text = settings.MaaNopExecutablePath;
+        LogListBox.AddHandler(
+            ScrollViewer.ScrollChangedEvent,
+            new ScrollChangedEventHandler(LogListBox_ScrollChanged));
         _logger.EntryWritten += OnLogEntryWritten;
         _sessionManager.StateChanged += OnSessionStateChanged;
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
+        UpdateCommandAvailability();
     }
 
     internal ObservableCollection<string> LogLines { get; } = [];
+
+    internal event EventHandler? HiddenToTray;
 
     internal void AllowClose() => _allowClose = true;
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         Loaded -= MainWindow_Loaded;
+        _logScrollViewer = FindVisualChild<ScrollViewer>(LogListBox);
         var existingId = _sessionManager.DetectExistingSession();
         if (existingId is null)
         {
@@ -82,6 +98,7 @@ public partial class MainWindow : Window
         TrySaveSettings(showError: false);
         Hide();
         _logger.Info("主窗口已隐藏到托盘。");
+        HiddenToTray?.Invoke(this, EventArgs.Empty);
     }
 
     private async void CreateSessionButton_Click(object sender, RoutedEventArgs e) =>
@@ -153,6 +170,9 @@ public partial class MainWindow : Window
         await LaunchSingleAsync("MaaNOP", MaaNopPathTextBox.Text);
 
     private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
+        => TryOpenLogsDirectory(showError: true);
+
+    private bool TryOpenLogsDirectory(bool showError)
     {
         try
         {
@@ -163,10 +183,22 @@ public partial class MainWindow : Window
                 Arguments = $"\"{_logger.LogDirectory}\"",
                 UseShellExecute = true
             });
+            return true;
         }
         catch (Exception exception)
         {
-            HandleOperationError("打开日志目录失败", exception);
+            _logger.Error("打开日志目录失败。", exception);
+            OperationStatusText.Text = "失败：无法打开日志目录";
+            if (showError)
+            {
+                ShowActionableError(
+                    "打开日志目录失败",
+                    exception,
+                    "请确认 Windows 资源管理器可用，并检查日志目录访问权限后重试。",
+                    offerLogDirectory: false);
+            }
+
+            return false;
         }
     }
 
@@ -263,7 +295,13 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
-            HandleOperationError(status.TrimEnd('.', '…'), exception);
+            var operationName = status.TrimEnd('.', '…');
+            if (operationName.StartsWith("正在", StringComparison.Ordinal))
+            {
+                operationName = operationName[2..];
+            }
+
+            HandleOperationError($"{operationName}失败", exception);
         }
         finally
         {
@@ -274,12 +312,12 @@ public partial class MainWindow : Window
     private void HandleOperationError(string operation, Exception exception)
     {
         _logger.Error($"{operation}。", exception);
-        OperationStatusText.Text = $"失败：{exception.GetBaseException().Message}";
-        WpfMessageBox.Show(
-            exception.GetBaseException().Message,
+        OperationStatusText.Text = $"失败：{operation}";
+        ShowActionableError(
             operation,
-            MessageBoxButton.OK,
-            MessageBoxImage.Error);
+            exception,
+            GetRecoveryGuidance(operation),
+            offerLogDirectory: true);
     }
 
     private void SaveSettings()
@@ -303,14 +341,14 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             _logger.Error("保存程序路径配置失败。", exception);
-            OperationStatusText.Text = $"保存配置失败：{exception.GetBaseException().Message}";
+            OperationStatusText.Text = "失败：保存配置";
             if (showError)
             {
-                WpfMessageBox.Show(
-                    exception.GetBaseException().Message,
+                ShowActionableError(
                     "保存配置失败",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                    exception,
+                    "请确认程序目录可写，或将程序移动到有写入权限的目录后重试。",
+                    offerLogDirectory: true);
             }
 
             return false;
@@ -356,13 +394,86 @@ public partial class MainWindow : Window
             return;
         }
 
+        var shouldFollow = _followLogs && IsLogNearBottom();
         LogLines.Add(entry.ToString());
         while (LogLines.Count > MaximumGuiLogEntries)
         {
             LogLines.RemoveAt(0);
         }
 
-        LogListBox.ScrollIntoView(LogLines.LastOrDefault());
+        if (shouldFollow)
+        {
+            _newLogCount = 0;
+            UpdateResumeLogFollowButton();
+            _ = Dispatcher.BeginInvoke(
+                ScrollLogsToEnd,
+                DispatcherPriority.Background);
+            return;
+        }
+
+        _followLogs = false;
+        _newLogCount++;
+        UpdateResumeLogFollowButton();
+    }
+
+    private void LogListBox_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (e.OriginalSource is ScrollViewer scrollViewer)
+        {
+            _logScrollViewer = scrollViewer;
+        }
+
+        if (e.VerticalChange < 0)
+        {
+            _followLogs = false;
+            UpdateResumeLogFollowButton();
+            return;
+        }
+
+        if (e.VerticalChange > 0 && IsLogNearBottom())
+        {
+            ResumeLogFollow(scrollToEnd: false);
+        }
+    }
+
+    private void ResumeLogFollowButton_Click(object sender, RoutedEventArgs e) =>
+        ResumeLogFollow(scrollToEnd: true);
+
+    private void ResumeLogFollow(bool scrollToEnd)
+    {
+        _followLogs = true;
+        _newLogCount = 0;
+        UpdateResumeLogFollowButton();
+        if (scrollToEnd)
+        {
+            ScrollLogsToEnd();
+        }
+    }
+
+    private bool IsLogNearBottom()
+    {
+        _logScrollViewer ??= FindVisualChild<ScrollViewer>(LogListBox);
+        return _logScrollViewer is null
+               || _logScrollViewer.ScrollableHeight - _logScrollViewer.VerticalOffset <= 2.0;
+    }
+
+    private void ScrollLogsToEnd()
+    {
+        if (LogLines.LastOrDefault() is string lastLine)
+        {
+            LogListBox.ScrollIntoView(lastLine);
+        }
+    }
+
+    private void UpdateResumeLogFollowButton()
+    {
+        ResumeLogFollowButton.Visibility = _followLogs || _newLogCount == 0
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        ResumeLogFollowButton.Content = $"{_newLogCount} 条新日志，继续跟随(_F)";
+        System.Windows.Automation.AutomationProperties.SetName(
+            ResumeLogFollowButton,
+            $"{_newLogCount} 条新日志，继续跟随");
     }
 
     private void OnSessionStateChanged(object? sender, ChildSessionSnapshot snapshot)
@@ -373,23 +484,46 @@ public partial class MainWindow : Window
             return;
         }
 
-        SessionStatusText.Text = $"{GetStateText(snapshot.State)} · {snapshot.Detail} · RDP={snapshot.RdpConnectedState}";
+        _sessionSnapshot = snapshot;
+        SessionStatusText.Text = FormatSessionStatus(snapshot);
         SessionIdText.Text = snapshot.ChildSessionId is uint id
             ? $"childSessionId: {id}"
             : "childSessionId: —";
+        UpdateCommandAvailability();
     }
 
     private void SetBusy(bool busy, string status)
     {
         _busy = busy;
         OperationStatusText.Text = status;
-        CreateSessionButton.IsEnabled = !busy;
-        ShowSessionButton.IsEnabled = !busy;
-        HideSessionButton.IsEnabled = !busy;
-        TerminateSessionButton.IsEnabled = !busy;
-        LaunchGameButton.IsEnabled = !busy;
-        LaunchMaaNopButton.IsEnabled = !busy;
-        LaunchAllButton.IsEnabled = !busy;
+        OperationProgressBar.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        Mouse.OverrideCursor = busy ? System.Windows.Input.Cursors.Wait : null;
+        UpdateCommandAvailability();
+    }
+
+    private void UpdateCommandAvailability()
+    {
+        var state = _sessionSnapshot.State;
+        var canStartCommand = !_busy
+                              && state is not ChildSessionState.Connecting
+                              && state is not ChildSessionState.Disconnecting;
+
+        CreateSessionButton.IsEnabled = canStartCommand
+                                        && state is ChildSessionState.NotRunning
+                                            or ChildSessionState.Existing
+                                            or ChildSessionState.Faulted;
+        ShowSessionButton.IsEnabled = canStartCommand
+                                      && state == ChildSessionState.ConnectedHidden;
+        HideSessionButton.IsEnabled = canStartCommand
+                                      && state == ChildSessionState.ConnectedVisible;
+        TerminateSessionButton.IsEnabled = canStartCommand
+                                           && _sessionSnapshot.ChildSessionId is not null;
+
+        // Launch commands intentionally remain available without a Session because they create
+        // or restore it through the existing EnsureConnectedAsync workflow.
+        LaunchGameButton.IsEnabled = canStartCommand;
+        LaunchMaaNopButton.IsEnabled = canStartCommand;
+        LaunchAllButton.IsEnabled = canStartCommand;
     }
 
     private static string GetStateText(ChildSessionState state) => state switch
@@ -397,10 +531,86 @@ public partial class MainWindow : Window
         ChildSessionState.NotRunning => "未运行",
         ChildSessionState.Existing => "已检测",
         ChildSessionState.Connecting => "连接中",
-        ChildSessionState.ConnectedVisible => "已连接",
-        ChildSessionState.ConnectedHidden => "已连接",
+        ChildSessionState.ConnectedVisible => "已连接，子桌面可见",
+        ChildSessionState.ConnectedHidden => "已连接，子桌面已隐藏",
         ChildSessionState.Disconnecting => "正在结束",
         ChildSessionState.Faulted => "异常",
         _ => state.ToString()
     };
+
+    private static string FormatSessionStatus(ChildSessionSnapshot snapshot)
+    {
+        var stateText = GetStateText(snapshot.State);
+        var detail = snapshot.State is ChildSessionState.ConnectedVisible
+            or ChildSessionState.ConnectedHidden
+            ? string.Empty
+            : $" · {snapshot.Detail}";
+        return $"{stateText}{detail} · RDP={snapshot.RdpConnectedState}";
+    }
+
+    private static string GetRecoveryGuidance(string operation)
+    {
+        if (operation.Contains("启动", StringComparison.Ordinal))
+        {
+            return "请确认程序路径和启动参数正确，并检查桌面分身连接状态后重试。";
+        }
+
+        if (operation.Contains("桌面分身", StringComparison.Ordinal)
+            || operation.Contains("子桌面", StringComparison.Ordinal))
+        {
+            return "请确认程序以管理员权限运行，并检查桌面分身状态后重试。";
+        }
+
+        return "请检查当前配置和系统状态后重试。";
+    }
+
+    private void ShowActionableError(
+        string title,
+        Exception exception,
+        string recovery,
+        bool offerLogDirectory)
+    {
+        var message = $"{exception.GetBaseException().Message}\n\n{recovery}";
+        if (!offerLogDirectory)
+        {
+            WpfMessageBox.Show(
+                message,
+                title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return;
+        }
+
+        var answer = WpfMessageBox.Show(
+            $"{message}\n\n是否打开日志目录查看详细信息？",
+            title,
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Error,
+            MessageBoxResult.No);
+        if (answer == MessageBoxResult.Yes)
+        {
+            TryOpenLogsDirectory(showError: true);
+        }
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent)
+        where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T result)
+            {
+                return result;
+            }
+
+            var descendant = FindVisualChild<T>(child);
+            if (descendant is not null)
+            {
+                return descendant;
+            }
+        }
+
+        return null;
+    }
 }

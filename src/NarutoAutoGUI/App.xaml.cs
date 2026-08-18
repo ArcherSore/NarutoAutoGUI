@@ -15,6 +15,7 @@ public partial class App : System.Windows.Application
     private MainWindow? _mainWindow;
     private Forms.NotifyIcon? _trayIcon;
     private bool _isExiting;
+    private bool _hasShownTrayNotification;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -46,6 +47,7 @@ public partial class App : System.Windows.Application
             _sessionManager,
             programService,
             RequestExitAsync);
+        _mainWindow.HiddenToTray += MainWindow_HiddenToTray;
         MainWindow = _mainWindow;
         CreateTrayIcon();
         _mainWindow.Show();
@@ -108,6 +110,7 @@ public partial class App : System.Windows.Application
         _trayIcon?.Dispose();
         _trayIcon = null;
         _sessionManager.Dispose();
+        _mainWindow.HiddenToTray -= MainWindow_HiddenToTray;
         _mainWindow.AllowClose();
         _mainWindow.Close();
         _logger.Dispose();
@@ -139,6 +142,21 @@ public partial class App : System.Windows.Application
             ContextMenuStrip = menu
         };
         _trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(ShowMainWindow);
+    }
+
+    private void MainWindow_HiddenToTray(object? sender, EventArgs e)
+    {
+        if (_hasShownTrayNotification || _trayIcon is null)
+        {
+            return;
+        }
+
+        _hasShownTrayNotification = true;
+        _trayIcon.BalloonTipTitle = "NarutoAutoGUI 仍在运行";
+        _trayIcon.BalloonTipText = "主窗口已隐藏到托盘。双击托盘图标可恢复窗口，右键可退出程序。";
+        _trayIcon.BalloonTipIcon = Forms.ToolTipIcon.Info;
+        _trayIcon.ShowBalloonTip(5000);
+        _logger?.Info("已显示首次关闭到托盘提示。");
     }
 
     private void ShowMainWindow()
@@ -173,7 +191,7 @@ public partial class App : System.Windows.Application
             _logger.Error("从托盘显示子桌面失败。", exception);
             ShowMainWindow();
             WpfMessageBox.Show(
-                exception.GetBaseException().Message,
+                $"{exception.GetBaseException().Message}\n\n请在主窗口检查桌面分身状态后重试；详细信息已写入日志。",
                 "显示子桌面失败",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -207,7 +225,7 @@ public partial class App : System.Windows.Application
             _logger.Error("从托盘结束桌面分身失败。", exception);
             ShowMainWindow();
             WpfMessageBox.Show(
-                exception.GetBaseException().Message,
+                $"{exception.GetBaseException().Message}\n\n请在主窗口检查桌面分身状态后重试；详细信息已写入日志。",
                 "结束桌面分身失败",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);

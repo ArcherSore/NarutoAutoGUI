@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>NarutoAutoGUI</AssemblyName>
+    <RootNamespace>NarutoAutoGUI</RootNamespace>
+    <Version>0.1.0</Version>
+    <Company>NarutoAutoGUI</Company>
+    <Product>NarutoAutoGUI</Product>
+    <Description>NarutoAutoGUI Windows frontend for MaaNOP.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- Compile the frozen, already-verified Child Session baseline into the product.
+       Program.cs and demo scripts are intentionally not referenced. -->
+  <ItemGroup>
+    <Compile Include="..\ChildSessionDemo\ChildSessionNativeMethods.cs" Link="ChildSession\Baseline\ChildSessionNativeMethods.cs" />
+    <Compile Include="..\ChildSessionDemo\ChildSessionProcessLauncher.cs" Link="ChildSession\Baseline\ChildSessionProcessLauncher.cs" />
+    <Compile Include="..\ChildSessionDemo\ChildSessionService.cs" Link="ChildSession\Baseline\ChildSessionService.cs" />
+    <Compile Include="..\ChildSessionDemo\RdpActiveXHost.cs" Link="ChildSession\Baseline\RdpActiveXHost.cs" />
+  </ItemGroup>
+
+</Project>

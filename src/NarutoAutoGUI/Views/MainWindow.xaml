@@ -75,8 +75,19 @@
             </Grid>
         </Border>
 
-        <GroupBox Grid.Row="1" Header="桌面分身控制">
-            <Grid HorizontalAlignment="Left">
+        <Grid Grid.Row="1" Margin="0,0,0,16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="12" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0"
+                       Text="桌面分身控制"
+                       Style="{StaticResource SectionTitleTextStyle}" />
+
+            <Grid Grid.Row="2" HorizontalAlignment="Left">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="8" />
@@ -96,13 +107,13 @@
                 <Button x:Name="ShowSessionButton"
                         Grid.Column="2"
                         Content="显示子桌面(_S)"
-                        Style="{StaticResource SubtleButtonStyle}"
+                        Style="{StaticResource SecondaryButtonStyle}"
                         Click="ShowSessionButton_Click"
                         AutomationProperties.HelpText="显示已连接但当前隐藏的子桌面" />
                 <Button x:Name="HideSessionButton"
                         Grid.Column="4"
                         Content="隐藏子桌面(_H)"
-                        Style="{StaticResource SubtleButtonStyle}"
+                        Style="{StaticResource SecondaryButtonStyle}"
                         Click="HideSessionButton_Click"
                         AutomationProperties.HelpText="隐藏子桌面窗口，同时保持连接和其中的程序运行" />
                 <Button x:Name="TerminateSessionButton"
@@ -112,10 +123,27 @@
                         Click="TerminateSessionButton_Click"
                         AutomationProperties.HelpText="注销桌面分身并结束其中运行的程序" />
             </Grid>
-        </GroupBox>
 
-        <GroupBox Grid.Row="2" Header="程序启动">
-            <Grid>
+            <Border Grid.Row="3"
+                    Height="1"
+                    Margin="0,16,0,0"
+                    Background="{StaticResource Brush.Border}"
+                    SnapsToDevicePixels="True" />
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="0,0,0,16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="12" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0"
+                       Text="程序启动"
+                       Style="{StaticResource SectionTitleTextStyle}" />
+
+            <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="96" />
                     <ColumnDefinition Width="*" />
@@ -174,7 +202,7 @@
                            Grid.Column="1"
                            Grid.ColumnSpan="5"
                            Style="{StaticResource SecondaryTextStyle}"
-                           Text="火影忍者 Online 默认通过 QQMicroGameBox\Launch.exe 和 appid 参数启动；工作目录自动使用 exe 所在目录。" />
+                           Text="火影忍者 Online 默认通过 QQMicroGameBox\Launch.exe 和 appid 参数启动。" />
 
                 <Label Grid.Row="6"
                        Grid.Column="0"
@@ -209,23 +237,31 @@
                             Content="一键启动挂机环境(_O)"
                             Style="{StaticResource PrimaryButtonStyle}"
                             Click="LaunchAllButton_Click" />
-                    <TextBlock Grid.Column="2"
-                               Text="恢复/创建 → 显示 → 游戏 → MaaNOP → 保持显示"
-                               VerticalAlignment="Center"
-                               Style="{StaticResource SecondaryTextStyle}" />
                 </Grid>
             </Grid>
-        </GroupBox>
 
-        <GroupBox Grid.Row="3" Header="运行日志（INFO+）">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+            <Border Grid.Row="3"
+                    Height="1"
+                    Margin="0,16,0,0"
+                    Background="{StaticResource Brush.Border}"
+                    SnapsToDevicePixels="True" />
+        </Grid>
+
+        <Grid Grid.Row="3">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="12" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0"
+                       Text="运行日志（INFO+）"
+                       Style="{StaticResource SectionTitleTextStyle}" />
+
+            <Grid Grid.Row="2">
 
                 <ListBox x:Name="LogListBox"
-                         Grid.Row="0"
                          ItemsSource="{Binding LogLines}"
                          Style="{StaticResource LogListBoxStyle}"
                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
@@ -235,8 +271,6 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Border MinHeight="22"
-                                    BorderBrush="{StaticResource Brush.Border}"
-                                    BorderThickness="0,0,0,1"
                                     Padding="4,2">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -306,20 +340,20 @@
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
-
-                <Button x:Name="ResumeLogFollowButton"
-                        Grid.Row="1"
-                        HorizontalAlignment="Right"
-                        Content="有新日志，继续跟随(_F)"
-                        Style="{StaticResource NewLogsButtonStyle}"
-                        Margin="0,8,0,0"
-                        Visibility="Collapsed"
-                        AutomationProperties.LiveSetting="Polite"
-                        Click="ResumeLogFollowButton_Click" />
             </Grid>
-        </GroupBox>
 
-        <Grid Grid.Row="4" Margin="0,0,0,0">
+            <Button x:Name="ResumeLogFollowButton"
+                    Grid.Row="3"
+                    HorizontalAlignment="Right"
+                    Content="有新日志，继续跟随(_F)"
+                    Style="{StaticResource NewLogsButtonStyle}"
+                    Margin="0,8,0,0"
+                    Visibility="Collapsed"
+                    AutomationProperties.LiveSetting="Polite"
+                    Click="ResumeLogFollowButton_Click" />
+        </Grid>
+
+        <Grid Grid.Row="4" Margin="0,12,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />

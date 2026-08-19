@@ -9,9 +9,13 @@ using Microsoft.Win32;
 using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Infrastructure;
 using NarutoAutoGUI.Models;
+using NarutoAutoGUI.ProjectModel;
+using NarutoAutoGUI.Protocol;
+using NarutoAutoGUI.Worker;
 using WpfBrush = System.Windows.Media.Brush;
 using WpfMessageBox = System.Windows.MessageBox;
 using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
+using WpfOpenFolderDialog = Microsoft.Win32.OpenFolderDialog;
 
 namespace NarutoAutoGUI.Views;
 
@@ -23,14 +27,19 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings;
     private readonly ChildSessionManager _sessionManager;
     private readonly ChildSessionProgramService _programService;
+    private readonly WorkerCoordinator _workerCoordinator;
     private readonly Func<Func<Task>, Task> _runApplicationOperationAsync;
     private readonly Func<Task> _requestExitAsync;
     private ChildSessionSnapshot _sessionSnapshot = ChildSessionSnapshot.Empty;
+    private WorkerCoordinatorSnapshot _workerSnapshot = WorkerCoordinatorSnapshot.Empty;
+    private ProjectPlanModule? _projectPlan;
+    private RunStartAttempt? _pendingStartAttempt;
     private ScrollViewer? _logScrollViewer;
     private bool _allowClose;
     private bool _busy;
     private bool _exitInProgress;
     private bool _followLogs = true;
+    private bool _updatingTaskSelection;
     private int _newLogCount;
 
     internal MainWindow(
@@ -39,6 +48,7 @@ public partial class MainWindow : Window
         AppSettings settings,
         ChildSessionManager sessionManager,
         ChildSessionProgramService programService,
+        WorkerCoordinator workerCoordinator,
         Func<Func<Task>, Task> runApplicationOperationAsync,
         Func<Task> requestExitAsync)
     {
@@ -49,17 +59,21 @@ public partial class MainWindow : Window
         _settings = settings;
         _sessionManager = sessionManager;
         _programService = programService;
+        _workerCoordinator = workerCoordinator;
         _runApplicationOperationAsync = runApplicationOperationAsync;
         _requestExitAsync = requestExitAsync;
         _sessionSnapshot = sessionManager.Snapshot;
         GamePathTextBox.Text = settings.GameExecutablePath;
         GameArgumentsTextBox.Text = settings.GameArguments;
-        MaaNopPathTextBox.Text = settings.MaaNopExecutablePath;
+        MaaNopProjectDirectoryTextBox.Text = settings.MaaNopProjectDirectory;
         LogListBox.AddHandler(
             ScrollViewer.ScrollChangedEvent,
             new ScrollChangedEventHandler(LogListBox_ScrollChanged));
         _logger.EntryWritten += OnLogEntryWritten;
         _sessionManager.StateChanged += OnSessionStateChanged;
+        _workerCoordinator.StateChanged += OnWorkerStateChanged;
+        _workerCoordinator.LogReceived += OnWorkerLogReceived;
+        _workerSnapshot = workerCoordinator.Snapshot;
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
         UpdateCommandAvailability();
@@ -81,6 +95,8 @@ public partial class MainWindow : Window
     {
         Loaded -= MainWindow_Loaded;
         _logScrollViewer = FindVisualChild<ScrollViewer>(LogListBox);
+        TryLoadProject(showError: !string.IsNullOrWhiteSpace(MaaNopProjectDirectoryTextBox.Text));
+        UpdateWorkerPresentation(_workerSnapshot);
         var existingId = _sessionManager.DetectExistingSession();
         if (existingId is null)
         {
@@ -102,6 +118,8 @@ public partial class MainWindow : Window
         {
             _logger.EntryWritten -= OnLogEntryWritten;
             _sessionManager.StateChanged -= OnSessionStateChanged;
+            _workerCoordinator.StateChanged -= OnWorkerStateChanged;
+            _workerCoordinator.LogReceived -= OnWorkerLogReceived;
             return;
         }
 
@@ -153,7 +171,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        await RunOperationAsync("正在结束桌面分身...", () => _sessionManager.TerminateAsync());
+        await RunOperationAsync(
+            "正在结束桌面分身...",
+            async () =>
+            {
+                await _sessionManager.TerminateAsync();
+                _workerCoordinator.ChildSessionEnded();
+            });
     }
 
     private void BrowseGameButton_Click(object sender, RoutedEventArgs e)
@@ -166,13 +190,18 @@ public partial class MainWindow : Window
         }
     }
 
-    private void BrowseMaaNopButton_Click(object sender, RoutedEventArgs e)
+    private void BrowseMaaNopProjectButton_Click(object sender, RoutedEventArgs e)
     {
-        var path = BrowseExecutable(MaaNopPathTextBox.Text, "选择 MaaNOP 程序");
+        var path = BrowseProjectDirectory(
+            MaaNopProjectDirectoryTextBox.Text,
+            "选择直接包含 interface.json 的 MaaNOP Project Directory");
         if (path is not null)
         {
-            MaaNopPathTextBox.Text = path;
-            TrySaveSettings(showError: true);
+            MaaNopProjectDirectoryTextBox.Text = path;
+            if (TrySaveSettings(showError: true))
+            {
+                TryLoadProject(showError: true);
+            }
         }
     }
 
@@ -181,9 +210,6 @@ public partial class MainWindow : Window
             "游戏",
             GamePathTextBox.Text,
             GameArgumentsTextBox.Text);
-
-    private async void LaunchMaaNopButton_Click(object sender, RoutedEventArgs e) =>
-        await LaunchSingleAsync("MaaNOP", MaaNopPathTextBox.Text);
 
     private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
         => TryOpenLogsDirectory(showError: true);
@@ -218,37 +244,110 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void LaunchAllButton_Click(object sender, RoutedEventArgs e)
+    private async void PrepareEnvironmentButton_Click(object sender, RoutedEventArgs e)
     {
         await RunOperationAsync(
-            "正在启动挂机环境...",
+            "正在准备真实 E2E 环境...",
             async () =>
             {
                 SaveSettings();
+                LoadProject();
                 var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
-                var failures = new List<string>();
-
-                await TryLaunchTargetAsync(
-                    "游戏",
+                await _workerCoordinator.PrepareWorkerAsync(
+                    sessionId,
+                    _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"));
+                await _programService.LaunchIfNeededAsync(
+                    sessionId,
                     GamePathTextBox.Text,
-                    GameArgumentsTextBox.Text,
-                    sessionId,
-                    failures);
-                await TryLaunchTargetAsync(
-                    "MaaNOP",
-                    MaaNopPathTextBox.Text,
-                    arguments: string.Empty,
-                    sessionId,
-                    failures);
+                    GameArgumentsTextBox.Text);
                 _sessionManager.ShowPreview();
-
-                if (failures.Count > 0)
-                {
-                    throw new InvalidOperationException(string.Join(Environment.NewLine, failures));
-                }
-
-                _logger.Info("挂机环境启动完成，子桌面保持显示。");
+                _logger.Info("真实 E2E 环境已准备；请在子桌面完成人工登录后隐藏子桌面。 ");
             });
+    }
+
+    private async void PrepareWorkerButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RunOperationAsync(
+            "正在准备 Child Session Worker...",
+            async () =>
+            {
+                SaveSettings();
+                LoadProject();
+                var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
+                await _workerCoordinator.PrepareWorkerAsync(
+                    sessionId,
+                    _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"));
+            });
+    }
+
+    private async void StartRunButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RunOperationAsync(
+            "正在提交真实 MaaNOP Run...",
+            async () =>
+            {
+                if (_sessionSnapshot.State != ChildSessionState.ConnectedHidden)
+                {
+                    throw new InvalidOperationException("首片要求先隐藏 Child Session，再从主桌面启动 Run。 ");
+                }
+                var project = _projectPlan
+                              ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 ");
+                _pendingStartAttempt ??= project.CreateRunStartAttempt();
+                var response = await _workerCoordinator.StartRunAsync(_pendingStartAttempt);
+                if (response.Disposition is not ("accepted" or "already_accepted"))
+                {
+                    throw new InvalidDataException($"未知 run.start disposition：{response.Disposition}。 ");
+                }
+                _logger.Info(
+                    $"run.start {response.Disposition}：runId={_pendingStartAttempt.RunId:D}；"
+                    + $"planDigest={_pendingStartAttempt.PlanDigest}。 ");
+                _pendingStartAttempt = null;
+            });
+    }
+
+    private async void StopRunButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RunOperationAsync(
+            "正在请求停止真实 MaaNOP Run...",
+            async () =>
+            {
+                var activeRun = _workerSnapshot.WorkerSnapshot?.ActiveRun
+                                ?? throw new InvalidOperationException("Worker 当前没有 active Run。 ");
+                if (activeRun.State != RunState.Running
+                    || activeRun.Items.Single().State != PlanItemState.Running)
+                {
+                    throw new InvalidOperationException(
+                        "首片取消验收必须先确认 Run 与唯一 Plan Item 都已进入 Running。 ");
+                }
+                var response = await _workerCoordinator.StopRunAsync(activeRun.RunId);
+                if (response.Disposition != "stop_requested")
+                {
+                    throw new InvalidDataException(
+                        $"首次 run.stop 未返回 stop_requested：{response.Disposition}。 ");
+                }
+                _logger.Info($"run.stop 已确认 stop_requested：runId={activeRun.RunId:D}。 ");
+                OperationStatusText.Text = "停止请求已接受，正在等待 MaaFramework Stop 与清理确认";
+            });
+    }
+
+    private void MaaNopTaskComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingTaskSelection || MaaNopTaskComboBox.SelectedItem is not ProjectTaskChoice task)
+        {
+            return;
+        }
+        try
+        {
+            (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
+                .SelectTask(task.Name);
+            _pendingStartAttempt = null;
+            _logger.Info($"已保存 MaaNOP Config：SelectedTasks=[{task.Name}]，ExplicitOptions={{}}。 ");
+            UpdateCommandAvailability();
+        }
+        catch (Exception exception)
+        {
+            HandleOperationError("保存 MaaNOP task 选择失败", exception);
+        }
     }
 
     private async Task LaunchSingleAsync(
@@ -267,28 +366,6 @@ public partial class MainWindow : Window
                     path,
                     arguments);
             });
-    }
-
-    private async Task TryLaunchTargetAsync(
-        string displayName,
-        string path,
-        string arguments,
-        uint sessionId,
-        ICollection<string> failures)
-    {
-        try
-        {
-            await _programService.LaunchIfNeededAsync(
-                sessionId,
-                path,
-                arguments);
-        }
-        catch (Exception exception)
-        {
-            var message = $"{displayName}启动失败：{exception.GetBaseException().Message}";
-            failures.Add(message);
-            _logger.Error(message, exception);
-        }
     }
 
     private async Task RunOperationAsync(string status, Func<Task> operation)
@@ -340,12 +417,23 @@ public partial class MainWindow : Window
     {
         _settings.GameExecutablePath = GamePathTextBox.Text.Trim();
         _settings.GameArguments = GameArgumentsTextBox.Text.Trim();
-        _settings.MaaNopExecutablePath = MaaNopPathTextBox.Text.Trim();
+        _settings.MaaNopProjectDirectory = MaaNopProjectDirectoryTextBox.Text.Trim();
         _settingsStore.Save(_settings);
+        MaaNopProjectDirectoryTextBox.Text = _settings.MaaNopProjectDirectory;
     }
 
     private void PathsTextBox_LostKeyboardFocus(object sender, System.Windows.Input.KeyboardFocusChangedEventArgs e) =>
         TrySaveSettings(showError: true);
+
+    private void MaaNopProjectDirectoryTextBox_LostKeyboardFocus(
+        object sender,
+        System.Windows.Input.KeyboardFocusChangedEventArgs e)
+    {
+        if (TrySaveSettings(showError: true))
+        {
+            TryLoadProject(showError: true);
+        }
+    }
 
     private bool TrySaveSettings(bool showError)
     {
@@ -367,6 +455,78 @@ public partial class MainWindow : Window
                     offerLogDirectory: true);
             }
 
+            return false;
+        }
+    }
+
+    private void LoadProject()
+    {
+        var projectDirectory = MaaNopProjectDirectoryTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(projectDirectory))
+        {
+            throw new InvalidOperationException("请选择 MaaNOP Project Directory。 ");
+        }
+
+        var project = ProjectPlanModule.Open(projectDirectory, _settingsStore.MaaNopConfigPath);
+        _projectPlan = project;
+        _pendingStartAttempt = null;
+        _updatingTaskSelection = true;
+        try
+        {
+            MaaNopTaskComboBox.ItemsSource = project.Tasks;
+            MaaNopTaskComboBox.SelectedItem = project.SelectedTaskName is null
+                ? null
+                : project.Tasks.Single(task => task.Name == project.SelectedTaskName);
+        }
+        finally
+        {
+            _updatingTaskSelection = false;
+        }
+
+        ProjectStatusText.Text =
+            $"{project.ProjectName} {project.ProjectVersion} · {project.Tasks.Count} 个 top-level task";
+        var invalidTasks = project.Tasks.Where(task => !task.DefaultOnlyValid).ToArray();
+        if (invalidTasks.Length == 0)
+        {
+            ProjectValidationText.Text = "所有 task 均可经正式 PI Resolver 使用纯默认配置构造 Run Plan。";
+        }
+        else
+        {
+            ProjectValidationText.Text = string.Join(
+                "；",
+                invalidTasks.Select(task => $"{task.Name}: {task.ValidationError}"));
+        }
+        _logger.Info(
+            $"已加载 MaaNOP Project Interface：{project.ProjectName} {project.ProjectVersion}；"
+            + $"interfaceDigest={project.SourceInterfaceDigest}；"
+            + $"runtimeProfileDigest={project.RuntimeProfileDigest}。 ");
+        UpdateCommandAvailability();
+    }
+
+    private bool TryLoadProject(bool showError)
+    {
+        try
+        {
+            LoadProject();
+            return true;
+        }
+        catch (Exception exception)
+        {
+            _projectPlan = null;
+            _pendingStartAttempt = null;
+            MaaNopTaskComboBox.ItemsSource = null;
+            ProjectStatusText.Text = "MaaNOP 项目未就绪";
+            ProjectValidationText.Text = exception.GetBaseException().Message;
+            _logger.Warn("加载 MaaNOP Project Interface 失败。", exception);
+            UpdateCommandAvailability();
+            if (showError)
+            {
+                ShowActionableError(
+                    "加载 MaaNOP 项目失败",
+                    exception,
+                    "请选择直接包含真实 interface.json、agent 和 resource 的 MaaNOP Project Directory。",
+                    offerLogDirectory: true);
+            }
             return false;
         }
     }
@@ -395,6 +555,20 @@ public partial class MainWindow : Window
         }
 
         return dialog.ShowDialog() == true ? dialog.FileName : null;
+    }
+
+    private static string? BrowseProjectDirectory(string currentPath, string title)
+    {
+        var dialog = new WpfOpenFolderDialog
+        {
+            Title = title,
+            Multiselect = false
+        };
+        if (!string.IsNullOrWhiteSpace(currentPath) && Directory.Exists(currentPath))
+        {
+            dialog.InitialDirectory = Path.GetFullPath(currentPath);
+        }
+        return dialog.ShowDialog() == true ? dialog.FolderName : null;
     }
 
     private void OnLogEntryWritten(object? sender, LogEntry entry)
@@ -430,6 +604,78 @@ public partial class MainWindow : Window
         _followLogs = false;
         _newLogCount++;
         UpdateResumeLogFollowButton();
+    }
+
+    private void OnWorkerStateChanged(object? sender, WorkerCoordinatorSnapshot snapshot)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.BeginInvoke(() => OnWorkerStateChanged(sender, snapshot));
+            return;
+        }
+
+        _workerSnapshot = snapshot;
+        UpdateWorkerPresentation(snapshot);
+        UpdateCommandAvailability();
+    }
+
+    private void OnWorkerLogReceived(object? sender, WorkerLogEntry entry)
+    {
+        var message = $"Worker #{entry.Sequence} [{entry.Source}] {entry.Message}";
+        switch (entry.Level.ToLowerInvariant())
+        {
+            case "critical":
+                _logger.Critical(message);
+                break;
+            case "error":
+                _logger.Error(message);
+                break;
+            case "warning":
+            case "warn":
+                _logger.Warn(message);
+                break;
+            case "debug":
+                _logger.Debug(message);
+                break;
+            default:
+                _logger.Info(message);
+                break;
+        }
+    }
+
+    private void UpdateWorkerPresentation(WorkerCoordinatorSnapshot snapshot)
+    {
+        WorkerObservationText.Text = snapshot.Observation.ToString();
+        WorkerDetailText.Text = snapshot.Detail;
+        var worker = snapshot.WorkerSnapshot;
+        if (worker is null)
+        {
+            WorkerStateText.Text = "Worker — · Snapshot stale";
+            DependencyStatusText.Text = "依赖尚未探测";
+            RunStatusText.Text = "Run — · Plan Item —";
+            return;
+        }
+
+        WorkerStateText.Text =
+            $"Worker {worker.WorkerState} · PID {worker.WorkerPid} · Snapshot r{worker.StateRevision} "
+            + (snapshot.SnapshotFresh ? "fresh" : "stale");
+        var dependencies = worker.DependencyStatus;
+        DependencyStatusText.Text =
+            $"Maa.Binding {dependencies.MaaFrameworkBindingVersion} · Maa.Runtime {dependencies.MaaFrameworkRuntimeVersion} · "
+            + $"Python {(dependencies.Python.Success ? "Ready" : "Failed")}: "
+            + $"{dependencies.Python.Value ?? dependencies.Python.Error}";
+
+        var run = worker.ActiveRun ?? worker.LastRun;
+        if (run is null)
+        {
+            RunStatusText.Text = "Run Idle · activeRun=null · lastRun=null";
+            return;
+        }
+        var item = run.Items.SingleOrDefault();
+        var slot = worker.ActiveRun is null ? "lastRun" : "activeRun";
+        RunStatusText.Text =
+            $"{slot} {run.State} · {item?.TaskLabel ?? "—"} = {item?.State.ToString() ?? "—"} · "
+            + $"runId={run.RunId:D}";
     }
 
     private void LogListBox_ScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -577,11 +823,46 @@ public partial class MainWindow : Window
         TerminateSessionButton.IsEnabled = canStartCommand
                                            && _sessionSnapshot.ChildSessionId is not null;
 
-        // Launch commands intentionally remain available without a Session because they create
-        // or restore it through the existing EnsureConnectedAsync workflow.
+        var projectReady = _projectPlan is not null;
+        var worker = _workerSnapshot.WorkerSnapshot;
+        var workerIdleFresh = _workerSnapshot.Observation == WorkerObservation.Connected
+                              && _workerSnapshot.SnapshotFresh
+                              && worker is not null
+                              && worker.ActiveRun is null
+                              && worker.RunState == RunState.Idle;
+        var canEditProject = canStartCommand
+                             && (_workerSnapshot.Observation is WorkerObservation.WorkerNotStarted
+                                     or WorkerObservation.ChildSessionEnded
+                                 || workerIdleFresh);
+
+        // Game launch remains available without a Session because it uses the frozen
+        // EnsureConnectedAsync + Task Scheduler flow.
         LaunchGameButton.IsEnabled = canStartCommand;
-        LaunchMaaNopButton.IsEnabled = canStartCommand;
-        LaunchAllButton.IsEnabled = canStartCommand;
+        MaaNopProjectDirectoryTextBox.IsEnabled = canEditProject;
+        BrowseMaaNopProjectButton.IsEnabled = canEditProject;
+        MaaNopTaskComboBox.IsEnabled = canEditProject && projectReady;
+        PrepareWorkerButton.IsEnabled = canStartCommand
+                                        && projectReady
+                                        && _workerSnapshot.Observation is WorkerObservation.WorkerNotStarted
+                                            or WorkerObservation.ChildSessionEnded;
+        PrepareEnvironmentButton.IsEnabled = canStartCommand && projectReady;
+
+        var selectedTaskValid = _projectPlan?.Tasks.SingleOrDefault(
+            task => task.Name == _projectPlan.SelectedTaskName)?.DefaultOnlyValid == true;
+        StartRunButton.IsEnabled = canStartCommand
+                                   && _sessionSnapshot.State == ChildSessionState.ConnectedHidden
+                                   && workerIdleFresh
+                                   && worker!.WorkerState == WorkerState.Ready
+                                   && projectReady
+                                   && selectedTaskValid
+                                   && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
+        var active = worker?.ActiveRun;
+        StopRunButton.IsEnabled = canStartCommand
+                                  && _workerSnapshot.Observation == WorkerObservation.Connected
+                                  && _workerSnapshot.SnapshotFresh
+                                  && active?.State == RunState.Running
+                                  && active.Items.Count == 1
+                                  && active.Items[0].State == PlanItemState.Running;
     }
 
     private static string GetStateText(ChildSessionState state) => state switch

@@ -23,6 +23,7 @@ internal static class ChildSessionProcessLauncher
     private const int TaskCreate = 2;
     private const int TaskLogonInteractiveToken = 3;
     private const int TaskRunLevelLeastPrivilege = 0;
+    private const int TaskRunLevelHighest = 1;
     private const int TaskRunUseSessionId = 0x4;
 
     internal static Task LaunchAsync(
@@ -31,19 +32,49 @@ internal static class ChildSessionProcessLauncher
         string arguments = "",
         string? workingDirectory = null)
     {
+        return LaunchAtRunLevelAsync(
+            childSessionId,
+            executablePath,
+            arguments,
+            workingDirectory,
+            TaskRunLevelLeastPrivilege);
+    }
+
+    internal static Task LaunchElevatedAsync(
+        uint childSessionId,
+        string executablePath,
+        string arguments = "",
+        string? workingDirectory = null)
+    {
+        return LaunchAtRunLevelAsync(
+            childSessionId,
+            executablePath,
+            arguments,
+            workingDirectory,
+            TaskRunLevelHighest);
+    }
+
+    private static Task LaunchAtRunLevelAsync(
+        uint childSessionId,
+        string executablePath,
+        string arguments,
+        string? workingDirectory,
+        int runLevel)
+    {
         var fullPath = ValidateExecutablePath(executablePath);
         var workDir = string.IsNullOrWhiteSpace(workingDirectory)
             ? (Path.GetDirectoryName(fullPath) ?? AppContext.BaseDirectory)
             : workingDirectory;
         return Task.Run(() =>
-            LaunchWithTemporaryTask(childSessionId, fullPath, arguments, workDir));
+            LaunchWithTemporaryTask(childSessionId, fullPath, arguments, workDir, runLevel));
     }
 
     private static void LaunchWithTemporaryTask(
         uint childSessionId,
         string executablePath,
         string arguments,
-        string workingDirectory)
+        string workingDirectory,
+        int runLevel)
     {
         // Guard: the target Child Session must still be the one the caller expects.
         var actual = ChildSessionNativeMethods.TryGetChildSessionId();
@@ -98,7 +129,7 @@ internal static class ChildSessionProcessLauncher
             var principal = GetProperty(taskDefObj, "Principal");
             SetProperty(principal, "UserId", accountName);
             SetProperty(principal, "LogonType", TaskLogonInteractiveToken);
-            SetProperty(principal, "RunLevel", TaskRunLevelLeastPrivilege);
+            SetProperty(principal, "RunLevel", runLevel);
 
             var actions = GetProperty(taskDefObj, "Actions");
             actionObj = InvokeMember(actions, "Create", TaskActionExecute);

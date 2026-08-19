@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>NarutoAutoGUI.ProjectModel</AssemblyName>
+    <RootNamespace>NarutoAutoGUI.ProjectModel</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NarutoAutoGUI.Protocol\NarutoAutoGUI.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>

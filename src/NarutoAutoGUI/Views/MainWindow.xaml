@@ -140,12 +140,12 @@
             </Grid.RowDefinitions>
 
             <TextBlock Grid.Row="0"
-                       Text="程序启动"
+                       Text="真实 MaaNOP 执行垂直切片"
                        Style="{StaticResource SectionTitleTextStyle}" />
 
             <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="96" />
+                    <ColumnDefinition Width="128" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="8" />
                     <ColumnDefinition Width="Auto" />
@@ -156,11 +156,19 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="12" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="4" />
+                    <RowDefinition Height="6" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="16" />
+                    <RowDefinition Height="12" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="16" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="12" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="12" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
@@ -206,38 +214,105 @@
 
                 <Label Grid.Row="6"
                        Grid.Column="0"
-                       Content="MaaNOP(_M)"
-                       Target="{Binding ElementName=MaaNopPathTextBox}" />
-                <TextBox x:Name="MaaNopPathTextBox"
+                       Content="项目目录(_M)"
+                       Target="{Binding ElementName=MaaNopProjectDirectoryTextBox}" />
+                <TextBox x:Name="MaaNopProjectDirectoryTextBox"
                          Grid.Row="6"
                          Grid.Column="1"
                          ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
-                         AutomationProperties.HelpText="MaaNOP exe 路径"
-                         LostKeyboardFocus="PathsTextBox_LostKeyboardFocus" />
-                <Button Grid.Row="6"
+                         AutomationProperties.HelpText="直接包含 interface.json 的 MaaNOP Project Directory"
+                         LostKeyboardFocus="MaaNopProjectDirectoryTextBox_LostKeyboardFocus" />
+                <Button x:Name="BrowseMaaNopProjectButton"
+                        Grid.Row="6"
                         Grid.Column="3"
                         Content="浏览…(_R)"
                         Style="{StaticResource SubtleButtonStyle}"
-                        Click="BrowseMaaNopButton_Click" />
-                <Button x:Name="LaunchMaaNopButton"
-                        Grid.Row="6"
-                        Grid.Column="5"
-                        Content="启动 MaaNOP(_N)"
-                        Style="{StaticResource SecondaryButtonStyle}"
-                        Click="LaunchMaaNopButton_Click" />
+                        Click="BrowseMaaNopProjectButton_Click" />
 
-                <Grid Grid.Row="8" Grid.Column="1" Grid.ColumnSpan="5">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Button x:Name="LaunchAllButton"
-                            Grid.Column="0"
-                            Content="一键启动挂机环境(_O)"
+                <TextBlock x:Name="ProjectStatusText"
+                           Grid.Row="8"
+                           Grid.Column="1"
+                           Grid.ColumnSpan="5"
+                           Text="MaaNOP 项目未就绪"
+                           Style="{StaticResource SecondaryTextStyle}" />
+
+                <Label Grid.Row="10"
+                       Grid.Column="0"
+                       Content="真实任务(_T)"
+                       Target="{Binding ElementName=MaaNopTaskComboBox}" />
+                <ComboBox x:Name="MaaNopTaskComboBox"
+                          Grid.Row="10"
+                          Grid.Column="1"
+                          Grid.ColumnSpan="5"
+                          DisplayMemberPath="Label"
+                          SelectionChanged="MaaNopTaskComboBox_SelectionChanged"
+                          AutomationProperties.HelpText="按 Project Interface 声明顺序单选真实 top-level task" />
+
+                <TextBlock x:Name="ProjectValidationText"
+                           Grid.Row="12"
+                           Grid.Column="1"
+                           Grid.ColumnSpan="5"
+                           Text="选择项目后将通过正式 PI Resolver 验证 default-only Run Plan。"
+                           TextWrapping="Wrap"
+                           Style="{StaticResource SecondaryTextStyle}" />
+
+                <Border Grid.Row="14"
+                        Grid.Column="0"
+                        Grid.ColumnSpan="6"
+                        Padding="12"
+                        Background="{StaticResource Brush.Surface.Subdued}"
+                        BorderBrush="{StaticResource Brush.Border}"
+                        BorderThickness="1"
+                        CornerRadius="4">
+                    <StackPanel>
+                        <TextBlock x:Name="WorkerObservationText"
+                                   Text="WorkerNotStarted"
+                                   Style="{StaticResource StatusPrimaryTextStyle}" />
+                        <TextBlock x:Name="WorkerStateText"
+                                   Margin="0,4,0,0"
+                                   Text="Worker — · Snapshot stale"
+                                   Style="{StaticResource MonospaceMetaTextStyle}" />
+                        <TextBlock x:Name="DependencyStatusText"
+                                   Margin="0,4,0,0"
+                                   Text="依赖尚未探测"
+                                   TextWrapping="Wrap"
+                                   Style="{StaticResource SecondaryTextStyle}" />
+                        <TextBlock x:Name="RunStatusText"
+                                   Margin="0,4,0,0"
+                                   Text="Run — · Plan Item —"
+                                   TextWrapping="Wrap"
+                                   Style="{StaticResource MonospaceMetaTextStyle}" />
+                        <TextBlock x:Name="WorkerDetailText"
+                                   Margin="0,4,0,0"
+                                   Text="Worker 尚未启动"
+                                   Style="{StaticResource MutedTextStyle}" />
+                    </StackPanel>
+                </Border>
+
+                <WrapPanel Grid.Row="16"
+                           Grid.Column="0"
+                           Grid.ColumnSpan="6"
+                           Orientation="Horizontal">
+                    <Button x:Name="PrepareWorkerButton"
+                            Margin="0,0,8,0"
+                            Content="准备 Worker(_W)"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Click="PrepareWorkerButton_Click" />
+                    <Button x:Name="PrepareEnvironmentButton"
+                            Margin="0,0,16,0"
+                            Content="准备验证环境(_O)"
                             Style="{StaticResource PrimaryButtonStyle}"
-                            Click="LaunchAllButton_Click" />
-                </Grid>
+                            Click="PrepareEnvironmentButton_Click" />
+                    <Button x:Name="StartRunButton"
+                            Margin="0,0,8,0"
+                            Content="启动真实 Run(_U)"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Click="StartRunButton_Click" />
+                    <Button x:Name="StopRunButton"
+                            Content="停止运行中 Run(_X)"
+                            Style="{StaticResource DestructiveButtonStyle}"
+                            Click="StopRunButton_Click" />
+                </WrapPanel>
             </Grid>
 
             <Border Grid.Row="3"

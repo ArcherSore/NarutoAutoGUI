@@ -1,0 +1,3 @@
+# 只支持 MaaNOP 当前使用的 Project Interface 子集
+
+NarutoAutoGUI 首版只接受 `interface_version = 2`，并完整支持当前 MaaNOP 实际使用的单 Win32 controller、单 resource、单对象 Agent、global/task option、input、switch、递归 option、默认值、校验、字符串占位符和结构化 pipeline override，不实现通用 Project Interface V2 客户端。Agent 只接受 `child_exec` 和 `child_args`；Agent 数组、多 Agent、显式 `identifier`、通用 `PI_*` 环境变量和其他未知执行字段均 fail closed，纯展示型未知元数据才可 WARN 后忽略。主 GUI 每次加载配置和创建 Run 时重新解析并按 PI 语义合并，循环引用、无效引用、多个 controller/resource 或任何影响执行的未知语义都 fail closed。Worker 不读取 `interface.json` 或解释 UI option，只接受 GUI 解析出的 Worker Launch Context 和不可变 Run Plan；新 PI 能力仅在 MaaNOP 实际采用时按需增加，增加的 Agent 环境语义必须纳入 Runtime Profile Digest。

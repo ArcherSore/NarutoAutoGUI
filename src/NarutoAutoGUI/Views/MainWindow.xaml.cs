@@ -9,6 +9,7 @@ using Microsoft.Win32;
 using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Infrastructure;
 using NarutoAutoGUI.Models;
+using WpfBrush = System.Windows.Media.Brush;
 using WpfMessageBox = System.Windows.MessageBox;
 using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 
@@ -60,7 +61,7 @@ public partial class MainWindow : Window
         UpdateCommandAvailability();
     }
 
-    internal ObservableCollection<string> LogLines { get; } = [];
+    internal ObservableCollection<LogEntry> LogLines { get; } = [];
 
     internal event EventHandler? HiddenToTray;
 
@@ -395,7 +396,7 @@ public partial class MainWindow : Window
         }
 
         var shouldFollow = _followLogs && IsLogNearBottom();
-        LogLines.Add(entry.ToString());
+        LogLines.Add(entry);
         while (LogLines.Count > MaximumGuiLogEntries)
         {
             LogLines.RemoveAt(0);
@@ -459,7 +460,7 @@ public partial class MainWindow : Window
 
     private void ScrollLogsToEnd()
     {
-        if (LogLines.LastOrDefault() is string lastLine)
+        if (LogLines.LastOrDefault() is LogEntry lastLine)
         {
             LogListBox.ScrollIntoView(lastLine);
         }
@@ -485,11 +486,52 @@ public partial class MainWindow : Window
         }
 
         _sessionSnapshot = snapshot;
-        SessionStatusText.Text = FormatSessionStatus(snapshot);
-        SessionIdText.Text = snapshot.ChildSessionId is uint id
-            ? $"childSessionId: {id}"
-            : "childSessionId: —";
+        UpdateSessionPresentation(snapshot);
         UpdateCommandAvailability();
+    }
+
+    private void UpdateSessionPresentation(ChildSessionSnapshot snapshot)
+    {
+        SessionStatusText.Text = GetStateText(snapshot.State);
+        SessionDetailText.Text = GetStateDetail(snapshot.State);
+        SessionIdText.Text = snapshot.ChildSessionId is uint id
+            ? $"Session {id}  ·  RDP {snapshot.RdpConnectedState}"
+            : $"Session —  ·  RDP {snapshot.RdpConnectedState}";
+        SessionStatusBadgeText.Text = GetStateBadgeText(snapshot.State);
+
+        var (surfaceKey, borderKey, foregroundKey, indicatorKey) = snapshot.State switch
+        {
+            ChildSessionState.ConnectedVisible => (
+                "Brush.Success.Surface",
+                "Brush.Success.Border",
+                "Brush.Success.Foreground",
+                "Brush.Success"),
+            ChildSessionState.Disconnecting => (
+                "Brush.Warning.Surface",
+                "Brush.Warning.Border",
+                "Brush.Warning.Foreground",
+                "Brush.Warning"),
+            ChildSessionState.Faulted => (
+                "Brush.Error.Surface",
+                "Brush.Error.Border",
+                "Brush.Error.Foreground",
+                "Brush.Error"),
+            ChildSessionState.NotRunning => (
+                "Brush.Surface.Disabled",
+                "Brush.Border",
+                "Brush.Text.Secondary",
+                "Brush.Text.Muted"),
+            _ => (
+                "Brush.Info.Surface",
+                "Brush.Primary.Border",
+                "Brush.Info.Foreground",
+                "Brush.Primary")
+        };
+
+        SessionStatusBadge.Background = (WpfBrush)FindResource(surfaceKey);
+        SessionStatusBadge.BorderBrush = (WpfBrush)FindResource(borderKey);
+        SessionStatusBadgeText.Foreground = (WpfBrush)FindResource(foregroundKey);
+        SessionStatusIndicator.Fill = (WpfBrush)FindResource(indicatorKey);
     }
 
     private void SetBusy(bool busy, string status)
@@ -528,25 +570,39 @@ public partial class MainWindow : Window
 
     private static string GetStateText(ChildSessionState state) => state switch
     {
-        ChildSessionState.NotRunning => "未运行",
-        ChildSessionState.Existing => "已检测",
-        ChildSessionState.Connecting => "连接中",
-        ChildSessionState.ConnectedVisible => "已连接，子桌面可见",
-        ChildSessionState.ConnectedHidden => "已连接，子桌面已隐藏",
-        ChildSessionState.Disconnecting => "正在结束",
-        ChildSessionState.Faulted => "异常",
+        ChildSessionState.NotRunning => "桌面分身未运行",
+        ChildSessionState.Existing => "检测到已有桌面分身",
+        ChildSessionState.Connecting => "正在连接桌面分身…",
+        ChildSessionState.ConnectedVisible => "已连接 · 子桌面可见",
+        ChildSessionState.ConnectedHidden => "已连接 · 子桌面已隐藏",
+        ChildSessionState.Disconnecting => "正在结束桌面分身…",
+        ChildSessionState.Faulted => "桌面分身连接失败",
         _ => state.ToString()
     };
 
-    private static string FormatSessionStatus(ChildSessionSnapshot snapshot)
+    private static string GetStateDetail(ChildSessionState state) => state switch
     {
-        var stateText = GetStateText(snapshot.State);
-        var detail = snapshot.State is ChildSessionState.ConnectedVisible
-            or ChildSessionState.ConnectedHidden
-            ? string.Empty
-            : $" · {snapshot.Detail}";
-        return $"{stateText}{detail} · RDP={snapshot.RdpConnectedState}";
-    }
+        ChildSessionState.NotRunning => "创建或一键启动时将自动建立桌面分身。",
+        ChildSessionState.Existing => "可以恢复已有桌面分身的连接。",
+        ChildSessionState.Connecting => "正在建立 RDP 连接，请稍候。",
+        ChildSessionState.ConnectedVisible => "子桌面窗口可见，连接保持活动。",
+        ChildSessionState.ConnectedHidden => "窗口已隐藏，子桌面中的程序仍在运行。",
+        ChildSessionState.Disconnecting => "正在注销 Session 并清理连接。",
+        ChildSessionState.Faulted => "请检查管理员权限和系统状态后重试；详细信息已写入日志。",
+        _ => string.Empty
+    };
+
+    private static string GetStateBadgeText(ChildSessionState state) => state switch
+    {
+        ChildSessionState.NotRunning => "未运行",
+        ChildSessionState.Existing => "已检测",
+        ChildSessionState.Connecting => "连接中",
+        ChildSessionState.ConnectedVisible => "可见",
+        ChildSessionState.ConnectedHidden => "已隐藏",
+        ChildSessionState.Disconnecting => "正在结束",
+        ChildSessionState.Faulted => "连接失败",
+        _ => "未知状态"
+    };
 
     private static string GetRecoveryGuidance(string operation)
     {

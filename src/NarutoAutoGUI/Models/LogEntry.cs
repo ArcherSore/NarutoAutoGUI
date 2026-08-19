@@ -11,6 +11,8 @@ internal enum LogLevel
 
 internal sealed record LogEntry(DateTimeOffset Timestamp, LogLevel Level, string Message)
 {
+    public string DisplayLevel => Level.ToString().ToUpperInvariant();
+
     public override string ToString() =>
-        $"[{Timestamp:HH:mm:ss.fff}] [{Level.ToString().ToUpperInvariant()}] {Message}";
+        $"[{Timestamp:HH:mm:ss.fff}] [{DisplayLevel}] {Message}";
 }

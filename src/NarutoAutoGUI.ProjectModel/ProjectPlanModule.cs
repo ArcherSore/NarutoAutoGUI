@@ -31,7 +31,7 @@ public sealed class ProjectPlanModule
         {
             try
             {
-                _ = DefaultOptionResolver.Resolve(project, task);
+                _ = ProjectOptionResolver.Resolve(project, task, new MaaNopConfig());
                 return new ProjectTaskChoice(task.Name, task.Label, true, null);
             }
             catch (Exception exception) when (exception is InvalidDataException
@@ -81,12 +81,92 @@ public sealed class ProjectPlanModule
                 $"task {taskName} 无法使用纯默认 option：{task.ValidationError}");
         }
 
-        _configStore.Save(new MaaNopConfig
+        var current = LoadConfig();
+        var updated = current with
         {
-            SelectedTasks = [taskName],
-            ExplicitOptions = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
-        });
+            SelectedTasks = [taskName]
+        };
+        _ = ProjectOptionResolver.Resolve(_project, FindTask(taskName), updated);
+        _configStore.Save(updated);
         SelectedTaskName = taskName;
+    }
+
+    public ProjectConfigurationView GetConfiguration()
+    {
+        var config = LoadConfig();
+        ValidateActiveConfiguration(config);
+        return BuildConfiguration(config);
+    }
+
+    public ProjectConfigurationView SetInputValue(
+        string optionName,
+        string inputName,
+        string value)
+    {
+        var option = FindOption(optionName);
+        if (option.Type != "input")
+        {
+            throw new ArgumentException($"option {optionName} 不是 input。", nameof(optionName));
+        }
+        if (!option.Inputs.Any(input => input.Name == inputName))
+        {
+            throw new ArgumentException(
+                $"option {optionName} 不包含 input {inputName}。",
+                nameof(inputName));
+        }
+
+        var config = LoadConfig();
+        var values = ExplicitOptionIntent.ReadInputs(option, config)
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        values[inputName] = value;
+        var updated = ReplaceExplicit(
+            config,
+            optionName,
+            ExplicitOptionIntent.CreateInputs(values));
+        ValidateActiveConfiguration(updated);
+        _configStore.Save(updated);
+        return BuildConfiguration(updated);
+    }
+
+    public ProjectConfigurationView SetSelectedCase(string optionName, string selectedCase)
+    {
+        var option = FindOption(optionName);
+        if (option.Type is not ("select" or "switch"))
+        {
+            throw new ArgumentException(
+                $"option {optionName} 不是 select/switch。",
+                nameof(optionName));
+        }
+        if (!option.Cases.Any(item => item.Name == selectedCase))
+        {
+            throw new ArgumentException(
+                $"option {optionName} 不包含 case {selectedCase}。",
+                nameof(selectedCase));
+        }
+
+        var config = LoadConfig();
+        var updated = ReplaceExplicit(
+            config,
+            optionName,
+            ExplicitOptionIntent.CreateSelectedCase(selectedCase));
+        ValidateActiveConfiguration(updated);
+        _configStore.Save(updated);
+        return BuildConfiguration(updated);
+    }
+
+    public ProjectConfigurationView FollowProjectDefault(string optionName)
+    {
+        _ = FindOption(optionName);
+        var config = LoadConfig();
+        var values = config.ExplicitOptions.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value,
+            StringComparer.Ordinal);
+        values.Remove(optionName);
+        var updated = config with { ExplicitOptions = values };
+        ValidateActiveConfiguration(updated);
+        _configStore.Save(updated);
+        return BuildConfiguration(updated);
     }
 
     public LaunchManifest CreateLaunchManifest(Guid workerInstanceId) => new(
@@ -101,13 +181,12 @@ public sealed class ProjectPlanModule
 
     public RunStartAttempt CreateRunStartAttempt()
     {
-        var config = _configStore.Load();
-        ValidateConfigShape(config);
+        var config = LoadConfig();
         var taskName = config.SelectedTasks.SingleOrDefault()
                        ?? throw new InvalidOperationException("请先选择一个 MaaNOP task。 ");
         var task = _project.Tasks.SingleOrDefault(candidate => candidate.Name == taskName)
                    ?? throw new InvalidDataException($"MaaNOP Config 选择的 task 不再存在：{taskName}。 ");
-        var resolved = DefaultOptionResolver.Resolve(_project, task);
+        var resolved = ProjectOptionResolver.Resolve(_project, task, config);
         var createdAtUtc = DateTime.UtcNow;
         var item = new RunPlanItem(
             Guid.NewGuid(),
@@ -147,10 +226,148 @@ public sealed class ProjectPlanModule
         {
             throw new InvalidDataException("首片临时 UI 只允许选择一个 top-level task。 ");
         }
-        if (config.ExplicitOptions.Count != 0)
+        foreach (var (optionName, value) in config.ExplicitOptions)
         {
-            throw new InvalidDataException("首片要求 ExplicitOptions 为空并完全使用 PI 默认语义。 ");
+            if (string.IsNullOrWhiteSpace(optionName) || value.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidDataException(
+                    "ExplicitOptions key 必须为非空 option name，value 必须为 object。 ");
+            }
         }
+    }
+
+    private MaaNopConfig LoadConfig()
+    {
+        var config = _configStore.Load();
+        ValidateConfigShape(config);
+        var selected = config.SelectedTasks.SingleOrDefault();
+        if (selected is not null && !_project.Tasks.Any(task => task.Name == selected))
+        {
+            throw new InvalidDataException($"MaaNOP Config 选择的 task 不再存在：{selected}。 ");
+        }
+        return config;
+    }
+
+    private void ValidateActiveConfiguration(MaaNopConfig config)
+    {
+        var taskName = config.SelectedTasks.SingleOrDefault();
+        if (taskName is not null)
+        {
+            _ = ProjectOptionResolver.Resolve(_project, FindTask(taskName), config);
+            return;
+        }
+
+        ProjectOptionResolver.ValidateScope(
+            _project,
+            _project.GlobalOptions,
+            config,
+            "global_option");
+    }
+
+    private ProjectConfigurationView BuildConfiguration(MaaNopConfig config)
+    {
+        var global = BuildEditors(_project.GlobalOptions, config, new HashSet<string>(StringComparer.Ordinal));
+        var taskName = config.SelectedTasks.SingleOrDefault();
+        var task = taskName is null
+            ? []
+            : BuildEditors(
+                FindTask(taskName).Options,
+                config,
+                new HashSet<string>(StringComparer.Ordinal));
+        return new ProjectConfigurationView(global, task);
+    }
+
+    private IReadOnlyList<ProjectOptionEditor> BuildEditors(
+        IReadOnlyList<string> names,
+        MaaNopConfig config,
+        HashSet<string> stack) =>
+        names.Select(name => BuildEditor(name, config, stack)).ToArray();
+
+    private ProjectOptionEditor BuildEditor(
+        string optionName,
+        MaaNopConfig config,
+        HashSet<string> stack)
+    {
+        if (!stack.Add(optionName))
+        {
+            throw new InvalidDataException(
+                $"option 递归引用形成循环：{string.Join(" -> ", stack)} -> {optionName}。 ");
+        }
+        try
+        {
+            var option = FindOption(optionName);
+            if (option.Type == "input")
+            {
+                var explicitInputs = ExplicitOptionIntent.ReadInputs(option, config);
+                var inputs = option.Inputs.Select(input => new ProjectInputEditor(
+                    input.Name,
+                    input.Label,
+                    input.Description,
+                    input.Default,
+                    explicitInputs.TryGetValue(input.Name, out var value) ? value : input.Default,
+                    explicitInputs.ContainsKey(input.Name),
+                    input.Verify,
+                    input.PatternMessage)).ToArray();
+                return new ProjectOptionEditor(
+                    option.Name,
+                    option.Label,
+                    option.Description,
+                    ProjectOptionKind.Input,
+                    explicitInputs.Count != 0,
+                    null,
+                    null,
+                    [],
+                    inputs,
+                    []);
+            }
+
+            var explicitCase = ExplicitOptionIntent.ReadSelectedCase(option, config);
+            var selectedCase = explicitCase ?? option.DefaultCase
+                ?? throw new InvalidDataException($"option {optionName} 缺少 default_case。 ");
+            var selected = option.Cases.SingleOrDefault(item => item.Name == selectedCase)
+                ?? throw new InvalidDataException(
+                    $"option {optionName} 的 case {selectedCase} 不存在。 ");
+            var children = BuildEditors(selected.Options, config, stack);
+            return new ProjectOptionEditor(
+                option.Name,
+                option.Label,
+                option.Description,
+                option.Type == "switch" ? ProjectOptionKind.Switch : ProjectOptionKind.Select,
+                explicitCase is not null,
+                selectedCase,
+                option.DefaultCase,
+                option.Cases.Select(item => new ProjectCaseEditor(
+                    item.Name,
+                    item.Label,
+                    item.Description)).ToArray(),
+                [],
+                children);
+        }
+        finally
+        {
+            stack.Remove(optionName);
+        }
+    }
+
+    private TaskDefinition FindTask(string taskName) =>
+        _project.Tasks.SingleOrDefault(task => task.Name == taskName)
+        ?? throw new ArgumentException($"PI 中不存在 task：{taskName}。", nameof(taskName));
+
+    private OptionDefinition FindOption(string optionName) =>
+        _project.Options.GetValueOrDefault(optionName)
+        ?? throw new ArgumentException($"PI 中不存在 option：{optionName}。", nameof(optionName));
+
+    private static MaaNopConfig ReplaceExplicit(
+        MaaNopConfig config,
+        string optionName,
+        JsonElement value)
+    {
+        var values = config.ExplicitOptions.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value,
+            StringComparer.Ordinal);
+        values[optionName] = value;
+        return config with { ExplicitOptions = values };
     }
 }
 
@@ -176,6 +393,8 @@ internal sealed record TaskDefinition(
 
 internal sealed record OptionDefinition(
     string Name,
+    string Label,
+    string Description,
     string Type,
     string? DefaultCase,
     IReadOnlyList<InputDefinition> Inputs,
@@ -184,12 +403,17 @@ internal sealed record OptionDefinition(
 
 internal sealed record InputDefinition(
     string Name,
+    string Label,
+    string Description,
     string Default,
     string PipelineType,
-    string? Verify);
+    string? Verify,
+    string? PatternMessage);
 
 internal sealed record CaseDefinition(
     string Name,
+    string Label,
+    string Description,
     IReadOnlyList<string> Options,
     JsonElement PipelineOverride);
 
@@ -390,6 +614,8 @@ internal static class ProjectInterfaceLoader
             var cases = ParseCases(option, path);
             result.Add(property.Name, new OptionDefinition(
                 property.Name,
+                ReadDisplayString(option, "label") ?? property.Name,
+                ReadDisplayString(option, "description") ?? string.Empty,
                 type,
                 OptionalString(option, "default_case"),
                 inputs,
@@ -434,9 +660,12 @@ internal static class ProjectInterfaceLoader
             }
             result.Add(new InputDefinition(
                 name,
+                ReadDisplayString(input, "label") ?? name,
+                ReadDisplayString(input, "description") ?? string.Empty,
                 defaultValue.GetString()!,
                 pipelineType,
-                OptionalString(input, "verify")));
+                OptionalString(input, "verify"),
+                ReadDisplayString(input, "pattern_msg")));
         }
         return result;
     }
@@ -466,6 +695,8 @@ internal static class ProjectInterfaceLoader
             }
             result.Add(new CaseDefinition(
                 name,
+                ReadDisplayString(item, "label") ?? name,
+                ReadDisplayString(item, "description") ?? string.Empty,
                 ReadStringArray(item, "option", required: false, casePath),
                 ReadObjectOrEmpty(item, "pipeline_override", casePath)));
         }
@@ -540,6 +771,19 @@ internal static class ProjectInterfaceLoader
         return value.GetString();
     }
 
+    private static string? ReadDisplayString(JsonElement obj, string name)
+    {
+        if (!obj.TryGetProperty(name, out var value))
+        {
+            return null;
+        }
+        if (value.ValueKind != JsonValueKind.String)
+        {
+            throw new InvalidDataException($"{name} 必须是 string。 ");
+        }
+        return value.GetString();
+    }
+
     private static int RequireInt(JsonElement obj, string name, string path)
     {
         var value = RequireProperty(obj, name, path);
@@ -604,28 +848,47 @@ internal static class ProjectInterfaceLoader
     }
 }
 
-internal static class DefaultOptionResolver
+internal static class ProjectOptionResolver
 {
-    internal static ResolvedProjectOptions Resolve(ProjectDefinition project, TaskDefinition task)
+    internal static ResolvedProjectOptions Resolve(
+        ProjectDefinition project,
+        TaskDefinition task,
+        MaaNopConfig config)
     {
         var merged = new JsonObject();
         MergeObject(merged, JsonNode.Parse(task.PipelineOverride.GetRawText())!.AsObject());
 
         var globalValues = new JsonObject();
         var taskValues = new JsonObject();
-        ResolveScope(project, project.GlobalOptions, globalValues, merged, "global_option");
-        ResolveScope(project, project.ResourceOptions, new JsonObject(), merged, "resource.option");
-        ResolveScope(project, project.ControllerOptions, new JsonObject(), merged, "controller.option");
-        ResolveScope(project, task.Options, taskValues, merged, $"task.{task.Name}.option");
+        ResolveScope(project, project.GlobalOptions, config, globalValues, merged, "global_option");
+        ResolveScope(project, project.ResourceOptions, config, new JsonObject(), merged, "resource.option");
+        ResolveScope(project, project.ControllerOptions, config, new JsonObject(), merged, "controller.option");
+        ResolveScope(project, task.Options, config, taskValues, merged, $"task.{task.Name}.option");
         return new ResolvedProjectOptions(
             ToElement(globalValues),
             ToElement(taskValues),
             ToElement(merged));
     }
 
+    internal static void ValidateScope(
+        ProjectDefinition project,
+        IReadOnlyList<string> optionNames,
+        MaaNopConfig config,
+        string scope)
+    {
+        ResolveScope(
+            project,
+            optionNames,
+            config,
+            new JsonObject(),
+            new JsonObject(),
+            scope);
+    }
+
     private static void ResolveScope(
         ProjectDefinition project,
         IReadOnlyList<string> optionNames,
+        MaaNopConfig config,
         JsonObject resolvedValues,
         JsonObject mergedPipeline,
         string scope)
@@ -635,6 +898,7 @@ internal static class DefaultOptionResolver
             ResolveOption(
                 project,
                 optionName,
+                config,
                 resolvedValues,
                 mergedPipeline,
                 new HashSet<string>(StringComparer.Ordinal),
@@ -645,6 +909,7 @@ internal static class DefaultOptionResolver
     private static void ResolveOption(
         ProjectDefinition project,
         string optionName,
+        MaaNopConfig config,
         JsonObject resolvedValues,
         JsonObject mergedPipeline,
         HashSet<string> stack,
@@ -667,8 +932,12 @@ internal static class DefaultOptionResolver
                     }
                     var values = new JsonObject();
                     var substitutions = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
+                    var explicitInputs = ExplicitOptionIntent.ReadInputs(option, config);
                     foreach (var input in option.Inputs)
                     {
+                        var resolvedValue = explicitInputs.TryGetValue(input.Name, out var explicitValue)
+                            ? explicitValue
+                            : input.Default;
                         if (input.Verify is not null)
                         {
                             Regex regex;
@@ -685,14 +954,19 @@ internal static class DefaultOptionResolver
                                     $"option {optionName} input {input.Name} 的 verify 非法。",
                                     exception);
                             }
-                            if (!regex.IsMatch(input.Default))
+                            if (!regex.IsMatch(resolvedValue))
                             {
                                 throw new InvalidDataException(
-                                    $"option {optionName} input {input.Name} 的默认值未通过 verify。 ");
+                                    input.PatternMessage is null
+                                        ? $"option {optionName} input {input.Name} 的值未通过 verify。 "
+                                        : $"option {optionName} input {input.Name}: {input.PatternMessage}");
                             }
                         }
-                        values[input.Name] = input.Default;
-                        substitutions[input.Name] = ConvertPipelineValue(optionName, input);
+                        values[input.Name] = resolvedValue;
+                        substitutions[input.Name] = ConvertPipelineValue(
+                            optionName,
+                            input,
+                            resolvedValue);
                     }
                     resolvedValues[optionName] = values;
                     MergeTemplated(mergedPipeline, option.PipelineOverride, substitutions);
@@ -705,9 +979,11 @@ internal static class DefaultOptionResolver
                     {
                         throw new InvalidDataException($"option {optionName} 缺少 default_case。 ");
                     }
-                    var selected = option.Cases.SingleOrDefault(item => item.Name == option.DefaultCase)
+                    var selectedName = ExplicitOptionIntent.ReadSelectedCase(option, config)
+                                       ?? option.DefaultCase;
+                    var selected = option.Cases.SingleOrDefault(item => item.Name == selectedName)
                                    ?? throw new InvalidDataException(
-                                       $"option {optionName} 的 default_case {option.DefaultCase} 不存在。 ");
+                                       $"option {optionName} 的 case {selectedName} 不存在。 ");
                     if (option.Type == "switch" && option.Cases.Count != 2)
                     {
                         throw new InvalidDataException($"switch option {optionName} 必须恰好有两个 case。 ");
@@ -721,7 +997,14 @@ internal static class DefaultOptionResolver
                         JsonNode.Parse(selected.PipelineOverride.GetRawText())!.AsObject());
                     foreach (var nested in selected.Options)
                     {
-                        ResolveOption(project, nested, resolvedValues, mergedPipeline, stack, scope);
+                        ResolveOption(
+                            project,
+                            nested,
+                            config,
+                            resolvedValues,
+                            mergedPipeline,
+                            stack,
+                            scope);
                     }
                     break;
                 }
@@ -731,7 +1014,7 @@ internal static class DefaultOptionResolver
         }
         catch (Exception exception) when (exception is InvalidDataException or JsonException)
         {
-            throw new InvalidDataException($"{scope} 默认解析 {optionName} 失败：{exception.Message}", exception);
+            throw new InvalidDataException($"{scope} 解析 {optionName} 失败：{exception.Message}", exception);
         }
         finally
         {
@@ -739,17 +1022,20 @@ internal static class DefaultOptionResolver
         }
     }
 
-    private static JsonNode? ConvertPipelineValue(string optionName, InputDefinition input)
+    private static JsonNode? ConvertPipelineValue(
+        string optionName,
+        InputDefinition input,
+        string value)
     {
         return input.PipelineType switch
         {
-            "string" => JsonValue.Create(input.Default),
-            "int" when int.TryParse(input.Default, out var intValue) => JsonValue.Create(intValue),
-            "bool" when bool.TryParse(input.Default, out var boolValue) => JsonValue.Create(boolValue),
+            "string" => JsonValue.Create(value),
+            "int" when int.TryParse(value, out var intValue) => JsonValue.Create(intValue),
+            "bool" when bool.TryParse(value, out var boolValue) => JsonValue.Create(boolValue),
             "int" => throw new InvalidDataException(
-                $"option {optionName} input {input.Name} 默认值不是合法 int。 "),
+                $"option {optionName} input {input.Name} 的值不是合法 int。 "),
             "bool" => throw new InvalidDataException(
-                $"option {optionName} input {input.Name} 默认值不是合法 bool。 "),
+                $"option {optionName} input {input.Name} 的值不是合法 bool。 "),
             _ => throw new InvalidDataException($"不支持 pipeline_type：{input.PipelineType}。 ")
         };
     }

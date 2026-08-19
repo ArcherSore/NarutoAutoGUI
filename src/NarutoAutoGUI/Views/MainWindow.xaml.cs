@@ -13,9 +13,13 @@ using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
 using NarutoAutoGUI.Worker;
 using WpfBrush = System.Windows.Media.Brush;
+using WpfButton = System.Windows.Controls.Button;
+using WpfComboBox = System.Windows.Controls.ComboBox;
 using WpfMessageBox = System.Windows.MessageBox;
 using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using WpfOpenFolderDialog = Microsoft.Win32.OpenFolderDialog;
+using WpfSystemColors = System.Windows.SystemColors;
+using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace NarutoAutoGUI.Views;
 
@@ -39,8 +43,16 @@ public partial class MainWindow : Window
     private bool _busy;
     private bool _exitInProgress;
     private bool _followLogs = true;
+    private bool _projectConfigurationValid;
     private bool _updatingTaskSelection;
+    private bool _updatingOptionEditors;
     private int _newLogCount;
+
+    private sealed record OptionInputTag(string OptionName, string InputName);
+
+    private sealed record OptionCaseTag(string OptionName);
+
+    private sealed record OptionDefaultTag(string OptionName);
 
     internal MainWindow(
         AppLogger logger,
@@ -292,6 +304,11 @@ public partial class MainWindow : Window
                 }
                 var project = _projectPlan
                               ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 ");
+                if (!_projectConfigurationValid)
+                {
+                    throw new InvalidOperationException(
+                        "当前 MaaNOP Config 尚未通过正式 PI Resolver 校验。 ");
+                }
                 _pendingStartAttempt ??= project.CreateRunStartAttempt();
                 var response = await _workerCoordinator.StartRunAsync(_pendingStartAttempt);
                 if (response.Disposition is not ("accepted" or "already_accepted"))
@@ -341,12 +358,283 @@ public partial class MainWindow : Window
             (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
                 .SelectTask(task.Name);
             _pendingStartAttempt = null;
-            _logger.Info($"已保存 MaaNOP Config：SelectedTasks=[{task.Name}]，ExplicitOptions={{}}。 ");
+            RenderOptionEditors();
+            _logger.Info($"已保存 MaaNOP Config：SelectedTasks=[{task.Name}]。 ");
             UpdateCommandAvailability();
         }
         catch (Exception exception)
         {
             HandleOperationError("保存 MaaNOP task 选择失败", exception);
+        }
+    }
+
+    private void OptionInputTextBox_LostKeyboardFocus(
+        object sender,
+        KeyboardFocusChangedEventArgs e)
+    {
+        if (_updatingOptionEditors
+            || sender is not WpfTextBox { Tag: OptionInputTag tag } textBox)
+        {
+            return;
+        }
+
+        try
+        {
+            var configuration = (_projectPlan
+                ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
+                .SetInputValue(tag.OptionName, tag.InputName, textBox.Text);
+            _pendingStartAttempt = null;
+            RenderOptionEditors(configuration);
+            _logger.Info(
+                $"已保存 MaaNOP explicit input：option={tag.OptionName}，input={tag.InputName}。 ");
+            UpdateCommandAvailability();
+        }
+        catch (Exception exception)
+        {
+            HandleOperationError("保存 MaaNOP input option 失败", exception);
+            TryRenderOptionEditors();
+        }
+    }
+
+    private void OptionCaseComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingOptionEditors
+            || sender is not WpfComboBox
+            {
+                Tag: OptionCaseTag tag,
+                SelectedItem: ProjectCaseEditor selected
+            })
+        {
+            return;
+        }
+
+        try
+        {
+            var configuration = (_projectPlan
+                ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
+                .SetSelectedCase(tag.OptionName, selected.Name);
+            _pendingStartAttempt = null;
+            RenderOptionEditors(configuration);
+            _logger.Info($"已保存 MaaNOP explicit case：option={tag.OptionName}。 ");
+            UpdateCommandAvailability();
+        }
+        catch (Exception exception)
+        {
+            HandleOperationError("保存 MaaNOP select/switch option 失败", exception);
+            TryRenderOptionEditors();
+        }
+    }
+
+    private void FollowProjectDefaultButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updatingOptionEditors || sender is not WpfButton { Tag: OptionDefaultTag tag })
+        {
+            return;
+        }
+
+        try
+        {
+            var configuration = (_projectPlan
+                ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
+                .FollowProjectDefault(tag.OptionName);
+            _pendingStartAttempt = null;
+            RenderOptionEditors(configuration);
+            _logger.Info($"MaaNOP option 已恢复为跟随项目默认：{tag.OptionName}。 ");
+            UpdateCommandAvailability();
+        }
+        catch (Exception exception)
+        {
+            HandleOperationError("恢复 MaaNOP option 默认值失败", exception);
+            TryRenderOptionEditors();
+        }
+    }
+
+    private void TryRenderOptionEditors()
+    {
+        try
+        {
+            RenderOptionEditors();
+        }
+        catch (Exception exception)
+        {
+            _projectConfigurationValid = false;
+            ProjectValidationText.Text = exception.GetBaseException().Message;
+            _logger.Warn("刷新 MaaNOP option 编辑器失败。", exception);
+            UpdateCommandAvailability();
+        }
+    }
+
+    private void RenderOptionEditors(ProjectConfigurationView? configuration = null)
+    {
+        var project = _projectPlan
+                      ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 ");
+        configuration ??= project.GetConfiguration();
+        _updatingOptionEditors = true;
+        try
+        {
+            OptionEditorPanel.Children.Clear();
+            AddOptionSection("全局参数", configuration.GlobalOptions);
+            AddOptionSection("任务参数", configuration.TaskOptions);
+            if (OptionEditorPanel.Children.Count == 0)
+            {
+                OptionEditorPanel.Children.Add(new TextBlock
+                {
+                    Text = project.SelectedTaskName is null
+                        ? "请先选择真实 top-level task。"
+                        : "当前任务没有可编辑 option。",
+                    Foreground = WpfSystemColors.GrayTextBrush
+                });
+            }
+
+            var allOptions = EnumerateOptions(configuration).ToArray();
+            var explicitCount = allOptions.Count(option => option.IsExplicit);
+            OptionSummaryText.Text =
+                $"{allOptions.Length} 个 active option · {explicitCount} 个显式设置";
+            ProjectValidationText.Text =
+                "当前 MaaNOP Config 已通过正式 PI Resolver 校验；Run 将使用当前显式值与其余项目默认值。";
+            _projectConfigurationValid = true;
+        }
+        finally
+        {
+            _updatingOptionEditors = false;
+        }
+    }
+
+    private void AddOptionSection(
+        string title,
+        IReadOnlyList<ProjectOptionEditor> options)
+    {
+        if (options.Count == 0)
+        {
+            return;
+        }
+        OptionEditorPanel.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, OptionEditorPanel.Children.Count == 0 ? 0 : 10, 0, 4)
+        });
+        foreach (var option in options)
+        {
+            AddOptionEditor(option, depth: 0);
+        }
+    }
+
+    private void AddOptionEditor(ProjectOptionEditor option, int depth)
+    {
+        var panel = new StackPanel
+        {
+            Margin = new Thickness(depth * 18, 4, 0, 4)
+        };
+        var header = new Grid();
+        header.ColumnDefinitions.Add(new ColumnDefinition());
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var title = new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(option.Label) ? option.Name : option.Label,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            ToolTip = option.Description
+        };
+        header.Children.Add(title);
+        var followDefault = new WpfButton
+        {
+            Content = option.IsExplicit ? "恢复默认" : "跟随默认",
+            IsEnabled = option.IsExplicit,
+            Tag = new OptionDefaultTag(option.Name),
+            Margin = new Thickness(8, 0, 0, 0),
+            Padding = new Thickness(8, 2, 8, 2),
+            ToolTip = "删除该 option 的显式值并重新跟随 Project Interface 默认值"
+        };
+        followDefault.Click += FollowProjectDefaultButton_Click;
+        Grid.SetColumn(followDefault, 1);
+        header.Children.Add(followDefault);
+        panel.Children.Add(header);
+
+        if (!string.IsNullOrWhiteSpace(option.Description))
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = option.Description,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = WpfSystemColors.GrayTextBrush,
+                Margin = new Thickness(0, 2, 0, 4)
+            });
+        }
+
+        if (option.Kind == ProjectOptionKind.Input)
+        {
+            foreach (var input in option.Inputs)
+            {
+                var row = new Grid { Margin = new Thickness(0, 2, 0, 2) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
+                row.ColumnDefinitions.Add(new ColumnDefinition());
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var label = new TextBlock
+                {
+                    Text = string.IsNullOrWhiteSpace(input.Label) ? input.Name : input.Label,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = input.Description
+                };
+                row.Children.Add(label);
+                var editor = new WpfTextBox
+                {
+                    Text = input.Value,
+                    Tag = new OptionInputTag(option.Name, input.Name),
+                    MinWidth = 180,
+                    ToolTip = input.PatternMessage ?? input.Description
+                };
+                editor.LostKeyboardFocus += OptionInputTextBox_LostKeyboardFocus;
+                Grid.SetColumn(editor, 1);
+                row.Children.Add(editor);
+                var defaultText = new TextBlock
+                {
+                    Text = input.IsExplicit ? "显式" : $"默认 {input.DefaultValue}",
+                    Foreground = WpfSystemColors.GrayTextBrush,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(8, 0, 0, 0)
+                };
+                Grid.SetColumn(defaultText, 2);
+                row.Children.Add(defaultText);
+                panel.Children.Add(row);
+            }
+        }
+        else
+        {
+            var selector = new WpfComboBox
+            {
+                ItemsSource = option.Cases,
+                DisplayMemberPath = nameof(ProjectCaseEditor.Label),
+                SelectedItem = option.Cases.Single(item => item.Name == option.SelectedCase),
+                Tag = new OptionCaseTag(option.Name),
+                MinWidth = 180,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+                ToolTip = option.IsExplicit
+                    ? "当前值由用户显式设置"
+                    : $"当前跟随项目默认：{option.DefaultCase}"
+            };
+            selector.SelectionChanged += OptionCaseComboBox_SelectionChanged;
+            panel.Children.Add(selector);
+        }
+
+        OptionEditorPanel.Children.Add(panel);
+        foreach (var child in option.ActiveChildren)
+        {
+            AddOptionEditor(child, depth + 1);
+        }
+    }
+
+    private static IEnumerable<ProjectOptionEditor> EnumerateOptions(
+        ProjectConfigurationView configuration) =>
+        configuration.GlobalOptions.SelectMany(Flatten)
+            .Concat(configuration.TaskOptions.SelectMany(Flatten));
+
+    private static IEnumerable<ProjectOptionEditor> Flatten(ProjectOptionEditor option)
+    {
+        yield return option;
+        foreach (var child in option.ActiveChildren.SelectMany(Flatten))
+        {
+            yield return child;
         }
     }
 
@@ -485,17 +773,7 @@ public partial class MainWindow : Window
 
         ProjectStatusText.Text =
             $"{project.ProjectName} {project.ProjectVersion} · {project.Tasks.Count} 个 top-level task";
-        var invalidTasks = project.Tasks.Where(task => !task.DefaultOnlyValid).ToArray();
-        if (invalidTasks.Length == 0)
-        {
-            ProjectValidationText.Text = "所有 task 均可经正式 PI Resolver 使用纯默认配置构造 Run Plan。";
-        }
-        else
-        {
-            ProjectValidationText.Text = string.Join(
-                "；",
-                invalidTasks.Select(task => $"{task.Name}: {task.ValidationError}"));
-        }
+        RenderOptionEditors(project.GetConfiguration());
         _logger.Info(
             $"已加载 MaaNOP Project Interface：{project.ProjectName} {project.ProjectVersion}；"
             + $"interfaceDigest={project.SourceInterfaceDigest}；"
@@ -514,7 +792,10 @@ public partial class MainWindow : Window
         {
             _projectPlan = null;
             _pendingStartAttempt = null;
+            _projectConfigurationValid = false;
             MaaNopTaskComboBox.ItemsSource = null;
+            OptionEditorPanel.Children.Clear();
+            OptionSummaryText.Text = "选择任务后显示 PI option";
             ProjectStatusText.Text = "MaaNOP 项目未就绪";
             ProjectValidationText.Text = exception.GetBaseException().Message;
             _logger.Warn("加载 MaaNOP Project Interface 失败。", exception);
@@ -841,14 +1122,15 @@ public partial class MainWindow : Window
         MaaNopProjectDirectoryTextBox.IsEnabled = canEditProject;
         BrowseMaaNopProjectButton.IsEnabled = canEditProject;
         MaaNopTaskComboBox.IsEnabled = canEditProject && projectReady;
+        OptionEditorPanel.IsEnabled = canEditProject && projectReady;
         PrepareWorkerButton.IsEnabled = canStartCommand
                                         && projectReady
                                         && _workerSnapshot.Observation is WorkerObservation.WorkerNotStarted
                                             or WorkerObservation.ChildSessionEnded;
         PrepareEnvironmentButton.IsEnabled = canStartCommand && projectReady;
 
-        var selectedTaskValid = _projectPlan?.Tasks.SingleOrDefault(
-            task => task.Name == _projectPlan.SelectedTaskName)?.DefaultOnlyValid == true;
+        var selectedTaskValid = _projectPlan?.SelectedTaskName is not null
+                                && _projectConfigurationValid;
         StartRunButton.IsEnabled = canStartCommand
                                    && _sessionSnapshot.State == ChildSessionState.ConnectedHidden
                                    && workerIdleFresh

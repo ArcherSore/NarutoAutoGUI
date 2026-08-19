@@ -25,3 +25,17 @@ Success/Cancellation 候选 task 必须仅靠当前 PI 默认语义就能得到�
 当前开发机器的首次 Success 验证选择 MaaNOP `AccountTraining`（“练小号”）作为真实 task fixture。该选择只固定本轮交互式 E2E 的验收输入，不冻结 MaaNOP snapshot、tag、commit、Python `maa` 或 Maa.Framework 组合，也不构成 Supported Baseline；若该真实 Run 进入 Failed，只按本 ADR 保存为调试证据并继续视为 partial，不得改用隐藏参数或测试旁路使其通过。
 
 首片明确不要求完整多任务 UI、全部递归 option 编辑体验、多任务串行执行、GUI 崩溃后的 active Run 恢复、完整日志断档/分页压力测试、WorkerRecoveryConflict 人工恢复 UI、Runtime Profile 热替换完整 UI、配置迁移完整 UI、所有异常路径或 Supported Baseline 最终定版。未纳入首片的能力仍必须遵守 ADR 0001–0019；延后验收不授权实现与这些决定冲突的临时架构。
+
+## Partial 检查点后的首片扩展
+
+首次实机检查点已证明 admission、fresh Snapshot、Dependency Readiness、真实 Running 后 `run.stop`、MaaFramework Stop 确认、Cancelled、取消后游戏/Worker/Child Session 存活和同 Worker 再次执行；真实 default-only `AccountTraining` 因 MaaNOP 下游 pipeline Failed，整体仍为 partial。该检查点之后允许在同一首片内补齐 PI 驱动的显式 option 编辑，再统一完成 Success 验收；这不是把下游脚本问题归入 GUI，而是让用户通过 NarutoAutoGUI 表达 MaaNOP 本来就声明的运行意图。
+
+扩展后仍只允许选择一个 top-level task、生成一个 Plan Item，不提前引入多任务串行执行。GUI 必须从 PI 展示 global option 和当前 task 的 active option graph，支持当前 MaaNOP PI Subset 中的 input、switch、select 和嵌套 option；用户可将值明确设为 explicit，也可选择“跟随项目默认”删除对应 intent。父 case 暂时停用的合法嵌套 explicit value 按 ADR 0017 作为 Dormant Intent 保留，而不参与本次 resolve。
+
+`ServerRange=978` 必须由用户通过上述正式 UI 写入最终 SchemaVersion 1 MaaNOP Config，并由同一个正式 Resolver 完成 regex/PI validation、default/explicit resolution、nested activation、PI merge order、pipeline override、不可变 Run Plan 和 Canonical Digest v1；它是合法的显式用户配置，不是隐藏 fixture override。不得仅为 `ServerRange` 或 `AccountTraining` 硬编码控件/解析分支，不得手改 PI default、让 GUI 直接拼最终 pipeline override，或绕过 MaaNOP Config/Resolver。
+
+扩展完成后的统一实机验收使用单服务器配置缩短反馈环：先取得一个不经 Stop、自然终结为 Succeeded 的真实 Run，再回归已经通过的 Running → Stopping → Cancelled、取消后存活和同 Worker 复用。只有全部最终条件同时成立，首片才从 partial 更新为 PASS。
+
+## 验收结果
+
+2026-08-19，`win-x64-options-v2-scroll` 在 Child Session 18、同一 Worker PID 29960 和真实 MaaNOP `AccountTraining` 上完成统一验收。SchemaVersion 1 MaaNOP Config 通过正式 ExplicitOptions 设置 `ServerRange=978` 及任务开关；Run `16c48275-2f8b-4c04-885f-e38ff3cf3fe6` 经真实 GUI/IPC/Worker/MaaFramework/Python Agent/MaaNOP Resource/游戏窗口自然终结为 Succeeded。随后同一 Worker 接受 Run `f86ba849-d556-443c-bfd2-0686562be705`，在 Run 与唯一 Plan Item 均为 Running 后收到 `run.stop`，先返回 `stop_requested`，再确认 MaaFramework Stop并终结为 Cancelled。两次 Run 均释放各自 Agent/execution context，游戏、Worker 与 Child Session 保持运行；首片全部 PASS 条件已满足。该结果不冻结 Supported Baseline，MaaNOP snapshot、Python `maa` 与 Maa.Framework 精确组合仍须单独决策。

@@ -24,7 +24,7 @@ internal sealed class ChildSessionService
 
     public uint? ChildSessionId { get; private set; }
 
-    public int ConnectedState { get; private set; }
+    public int ConnectedState => _host.ConnectedState;
 
     public ChildSessionConnectionFailedEventArgs? LastFailure => _lastFailure;
 
@@ -94,7 +94,6 @@ internal sealed class ChildSessionService
             }
 
             ChildSessionId = ChildSessionNativeMethods.TryGetChildSessionId();
-            ConnectedState = _host.ConnectedState;
         }
         finally
         {

@@ -47,11 +47,24 @@ internal static class ChildSessionNativeMethods
         uint sessionId,
         [MarshalAs(UnmanagedType.Bool)] bool wait);
 
-    // Returns true and sets outChildSessionId when a Child Session exists.
+    // Returns false when WTS reports no Child Session, either as a successful ULONG(-1)
+    // result or as ERROR_NOT_FOUND on Windows builds that use that native result shape.
+    // All other native call failures retain their Win32 error code and are thrown.
     internal static bool TryGetChildSessionId(out uint childSessionId)
     {
-        var ok = WTSGetChildSessionId(out childSessionId);
-        return ok && childSessionId != NoChildSessionId;
+        if (!WTSGetChildSessionId(out childSessionId))
+        {
+            var error = Marshal.GetLastPInvokeError();
+            if (error == ErrorNotFound)
+            {
+                childSessionId = NoChildSessionId;
+                return false;
+            }
+
+            throw CreateLastWin32Exception("无法取得 RDP Child Session ID");
+        }
+
+        return childSessionId != NoChildSessionId;
     }
 
     internal static uint? TryGetChildSessionId()
@@ -91,9 +104,7 @@ internal static class ChildSessionNativeMethods
                 return null;
             }
 
-            throw new Win32Exception(
-                error,
-                $"无法取得 RDP Child Session ID（Win32 错误 {error}）");
+            throw CreateLastWin32Exception("无法取得 RDP Child Session ID");
         }
 
         if (childSessionId == NoChildSessionId)

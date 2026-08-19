@@ -192,9 +192,7 @@ internal sealed class RdpActiveXHost : AxHost
         }
 
         var extendedDisconnectReason = TryGetExtendedDisconnectReason();
-        if (_connectionFailureReported
-            || (!failedWhileConnecting
-                && IsNormalDisconnect(disconnectReason, extendedDisconnectReason)))
+        if (_connectionFailureReported)
         {
             return;
         }
@@ -290,14 +288,6 @@ internal sealed class RdpActiveXHost : AxHost
         ConnectionFailed?.Invoke(
             this,
             new ChildSessionConnectionFailedEventArgs(message, errorCode, extendedErrorCode));
-    }
-
-    private static bool IsNormalDisconnect(int disconnectReason, int extendedDisconnectReason)
-    {
-        // 1~3: local/remote/server initiated disconnect (not an error).
-        // extended 0/1/2: API-initiated disconnect / logoff.
-        return disconnectReason is 1 or 2 or 3
-               && extendedDisconnectReason is 0 or 1 or 2;
     }
 
     private static string FormatErrorCode(int errorCode)

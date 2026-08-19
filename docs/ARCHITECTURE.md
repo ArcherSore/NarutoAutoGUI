@@ -11,7 +11,7 @@ NarutoAutoGUI/
 └─ src/
    ├─ ChildSessionDemo/              # 已验证、冻结的独立 PoC baseline
    └─ NarutoAutoGUI/                 # 正式 .NET 8 WPF GUI
-      ├─ App.xaml(.cs)               # 应用生命周期、托盘、全局异常
+      ├─ App.xaml(.cs)               # 单实例、应用操作门、退出、托盘、全局异常
       ├─ Views/MainWindow.xaml(.cs)  # 状态、路径、启动按钮、INFO+ 日志
       ├─ Models/                     # 配置和日志模型
       ├─ Infrastructure/             # 配置、滚动日志、自动自检
@@ -21,24 +21,24 @@ NarutoAutoGUI/
 
 ## 复用冻结 baseline
 
-正式项目通过 MSBuild `Compile Include` 链接以下源文件，不复制也不修改其实现：
+正式项目通过 MSBuild `Compile Include` 链接以下源文件，不复制实现：
 
 - `ChildSessionNativeMethods.cs`
 - `ChildSessionProcessLauncher.cs`
 - `ChildSessionService.cs`
 - `RdpActiveXHost.cs`
 
-`ChildSessionDemo/Program.cs`、脚本和 PoC 默认路径不进入正式程序。这样可直接复用已经实机验证的 WTS API、RDP ActiveX、Task Scheduler COM、WMI 降级和清理流程，同时让 Demo 继续作为可重复验证的独立 baseline。
+`ChildSessionDemo/Program.cs`、脚本和 PoC 默认路径不进入正式程序。这样可直接复用已经实机验证的 WTS API、RDP ActiveX、Task Scheduler COM、WMI 降级和清理流程，同时让 Demo 继续作为可重复验证的独立 baseline。2026-08-19 对共享 baseline 完成两项最小生命周期修复后重新冻结：`WTSGetChildSessionId` 仅将成功返回 `ULONG(-1)` 或本机实测的 `ERROR_NOT_FOUND (1168)` 识别为“无 Session”，其他原生失败保留错误码并抛出；RDP `ConnectedState` 改为读取 ActiveX 实时值，所有非主动断开都会上报给正式 GUI。
 
 ## 正式 GUI 调用流程
 
-1. `App` 初始化统一日志、便携式配置、WPF 主窗口和 WinForms 托盘图标。
-2. `ChildSessionManager` 在启动时通过 WTS 探测已有 `childSessionId`；如存在，自动创建预览宿主并恢复 RDP 连接。
+1. `App` 先取得按当前 Windows Session 区分的命名 Mutex；同一 Session 中的第二个正式 GUI 实例提示后退出。随后初始化统一日志、便携式配置、WPF 主窗口和 WinForms 托盘图标。
+2. `ChildSessionManager` 在启动时通过 WTS 探测已有 `childSessionId`；API 成功并返回 `ULONG(-1)`，或原生返回本机实测的 `ERROR_NOT_FOUND (1168)`，均表示没有 Child Session；其他原生调用失败会保留错误码并进入故障状态。如存在 Session，则自动创建预览宿主并恢复 RDP 连接。
 3. 创建/恢复时，冻结 baseline 将 `MsRdpClient10` 连接到 `localhost`，启用 `ConnectToChildSession`，强制 `1920×1080`、桌面/设备缩放 `100%`；`SmartSizing` 只缩放预览。
-4. 子桌面窗口 X 和“隐藏”只调用 `Hide()`，不销毁 ActiveX，因而保持 RDP 和 Child Session 内程序存活。
+4. 子桌面窗口 X 和“隐藏”只调用 `Hide()`，不销毁 ActiveX，因而保持 RDP 和 Child Session 内程序存活。Manager 只在 ActiveX 实时 `ConnectedState == 1` 且状态为已连接时复用宿主；任何非主动断开都会进入 `Faulted`，下一次创建/显示/启动会销毁旧宿主并重新连接。
 5. `ChildSessionProgramService` 先按 exe 文件名与 Session ID 检测目标进程；已运行则记录 PID 并跳过，否则从 exe 自动推导工作目录，并将 exe、参数和工作目录传给冻结的 Task Scheduler COM `RunEx(TASK_RUN_USE_SESSION_ID)`。
 6. 启动后使用冻结的 WMI/托管枚举流程在 10 秒内验证 PID 与 Session ID。单个启动失败被记录和呈现，不会终止 GUI 或自动清理仍可用的 Session。
-7. “结束桌面分身”或确认退出时，先断开 ActiveX，再同步调用 `WTSLogoffSession`；主窗口 X 只隐藏到托盘。
+7. 主窗口和托盘的 Session/程序操作共用一个应用级操作门。退出在入口立即禁止新操作并等待在途操作完成，然后在门内重新查询 Session、按原行为确认、调用 Manager 注销，并在释放资源前再次确认 Session 已不存在。Manager 内部仍先断开 ActiveX，再同步调用 `WTSLogoffSession`；主窗口 X 只隐藏到托盘。
 
 ## 配置与日志
 

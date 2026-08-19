@@ -23,11 +23,13 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings;
     private readonly ChildSessionManager _sessionManager;
     private readonly ChildSessionProgramService _programService;
+    private readonly Func<Func<Task>, Task> _runApplicationOperationAsync;
     private readonly Func<Task> _requestExitAsync;
     private ChildSessionSnapshot _sessionSnapshot = ChildSessionSnapshot.Empty;
     private ScrollViewer? _logScrollViewer;
     private bool _allowClose;
     private bool _busy;
+    private bool _exitInProgress;
     private bool _followLogs = true;
     private int _newLogCount;
 
@@ -37,6 +39,7 @@ public partial class MainWindow : Window
         AppSettings settings,
         ChildSessionManager sessionManager,
         ChildSessionProgramService programService,
+        Func<Func<Task>, Task> runApplicationOperationAsync,
         Func<Task> requestExitAsync)
     {
         InitializeComponent();
@@ -46,6 +49,7 @@ public partial class MainWindow : Window
         _settings = settings;
         _sessionManager = sessionManager;
         _programService = programService;
+        _runApplicationOperationAsync = runApplicationOperationAsync;
         _requestExitAsync = requestExitAsync;
         _sessionSnapshot = sessionManager.Snapshot;
         GamePathTextBox.Text = settings.GameExecutablePath;
@@ -66,6 +70,12 @@ public partial class MainWindow : Window
     internal event EventHandler? HiddenToTray;
 
     internal void AllowClose() => _allowClose = true;
+
+    internal void SetExitInProgress(bool exitInProgress)
+    {
+        _exitInProgress = exitInProgress;
+        UpdateCommandAvailability();
+    }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
@@ -114,6 +124,11 @@ public partial class MainWindow : Window
 
     private void HideSessionButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_exitInProgress)
+        {
+            return;
+        }
+
         try
         {
             _sessionManager.HidePreview();
@@ -278,7 +293,7 @@ public partial class MainWindow : Window
 
     private async Task RunOperationAsync(string status, Func<Task> operation)
     {
-        if (_busy)
+        if (_busy || _exitInProgress)
         {
             return;
         }
@@ -286,7 +301,7 @@ public partial class MainWindow : Window
         SetBusy(true, status);
         try
         {
-            await operation();
+            await _runApplicationOperationAsync(operation);
             OperationStatusText.Text = "操作完成";
         }
         catch (OperationCanceledException)
@@ -547,6 +562,7 @@ public partial class MainWindow : Window
     {
         var state = _sessionSnapshot.State;
         var canStartCommand = !_busy
+                              && !_exitInProgress
                               && state is not ChildSessionState.Connecting
                               && state is not ChildSessionState.Disconnecting;
 

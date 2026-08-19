@@ -52,62 +52,66 @@ internal sealed class ChildSessionManager : IDisposable
         try
         {
             ThrowIfDisposed();
-            var currentSessionId = ChildSessionService.TryGetChildSessionId();
-            if (_service?.ChildSessionId is uint connectedId
-                && currentSessionId == connectedId
-                && _service.ConnectedState != 0)
-            {
-                SetPreviewVisibility(showPreview);
-                _logger.Debug($"复用已连接的 Child Session {connectedId}，show={showPreview}。");
-                return connectedId;
-            }
-
-            DisposePreview(disconnect: true);
-            UpdateState(
-                ChildSessionState.Connecting,
-                currentSessionId,
-                0,
-                currentSessionId is null ? "正在创建桌面分身" : "正在恢复桌面分身连接");
-
-            _logger.Info("检测并启用 Child Session 支持（需要管理员权限）。");
-            _logger.Debug($"ChildSessionsEnabled(before)={ChildSessionService.IsChildSessionsEnabled()}，"
-                          + $"RdpPort={ChildSessionService.GetRdpPort()}，"
-                          + $"RdpWrapper={ChildSessionService.IsRdpWrapPresent()}（仅信息）。");
-            ChildSessionService.EnsureChildSessionsEnabled();
-
-            var preview = new RdpPreviewForm();
-            var service = new ChildSessionService(preview);
-            preview.Host.ConnectionFailed += OnConnectionFailed;
-            preview.FormClosing += OnPreviewFormClosing;
-            _previewForm = preview;
-            _service = service;
-
-            // AxHost creation and interactive credential prompts require a visible native window.
-            preview.Show();
-            preview.Activate();
-            _logger.Info("正在连接 RDP Child Session（固定 1920×1080 @ 100%，SmartSizing 仅用于预览）。");
-
+            uint? currentSessionId = null;
             try
             {
+                currentSessionId = ChildSessionService.TryGetChildSessionId();
+                var connectedState = SafeConnectedState();
+                if (_service?.ChildSessionId is uint connectedId
+                    && currentSessionId == connectedId
+                    && Snapshot.State is (ChildSessionState.ConnectedVisible
+                        or ChildSessionState.ConnectedHidden)
+                    && connectedState == 1)
+                {
+                    SetPreviewVisibility(showPreview);
+                    _logger.Debug($"复用已连接的 Child Session {connectedId}，show={showPreview}。");
+                    return connectedId;
+                }
+
+                DisposePreview(disconnect: true);
+                UpdateState(
+                    ChildSessionState.Connecting,
+                    currentSessionId,
+                    0,
+                    currentSessionId is null ? "正在创建桌面分身" : "正在恢复桌面分身连接");
+
+                _logger.Info("检测并启用 Child Session 支持（需要管理员权限）。");
+                _logger.Debug($"ChildSessionsEnabled(before)={ChildSessionService.IsChildSessionsEnabled()}，"
+                              + $"RdpPort={ChildSessionService.GetRdpPort()}，"
+                              + $"RdpWrapper={ChildSessionService.IsRdpWrapPresent()}（仅信息）。");
+                ChildSessionService.EnsureChildSessionsEnabled();
+
+                var preview = new RdpPreviewForm();
+                var service = new ChildSessionService(preview);
+                preview.Host.ConnectionFailed += OnConnectionFailed;
+                preview.FormClosing += OnPreviewFormClosing;
+                _previewForm = preview;
+                _service = service;
+
+                // AxHost creation and interactive credential prompts require a visible native window.
+                preview.Show();
+                preview.Activate();
+                _logger.Info("正在连接 RDP Child Session（固定 1920×1080 @ 100%，SmartSizing 仅用于预览）。");
+
                 await service.ConnectAsync(cancellationToken);
+
+                var sessionId = service.ChildSessionId
+                    ?? throw new InvalidOperationException("RDP 登录完成后未取得 childSessionId。");
+                preview.Text = $"NarutoAutoGUI Child Session #{sessionId} (1920x1080 @ 100%)";
+                _logger.Info($"Child Session 已连接：childSessionId={sessionId}，ConnectedState={service.ConnectedState}。");
+                SetPreviewVisibility(showPreview);
+                return sessionId;
             }
             catch (Exception exception)
             {
-                _logger.Error("RDP Child Session 连接失败。", exception);
+                _logger.Error("RDP Child Session 创建或恢复失败。", exception);
                 UpdateState(
                     ChildSessionState.Faulted,
-                    ChildSessionService.TryGetChildSessionId(),
+                    SafeChildSessionId(currentSessionId),
                     SafeConnectedState(),
                     exception.GetBaseException().Message);
                 throw;
             }
-
-            var sessionId = service.ChildSessionId
-                ?? throw new InvalidOperationException("RDP 登录完成后未取得 childSessionId。");
-            preview.Text = $"NarutoAutoGUI Child Session #{sessionId} (1920x1080 @ 100%)";
-            _logger.Info($"Child Session 已连接：childSessionId={sessionId}，ConnectedState={service.ConnectedState}。");
-            SetPreviewVisibility(showPreview);
-            return sessionId;
         }
         finally
         {
@@ -117,7 +121,7 @@ internal sealed class ChildSessionManager : IDisposable
 
     internal void ShowPreview()
     {
-        if (_previewForm is null || _service?.ConnectedState == 0)
+        if (_previewForm is null || SafeConnectedState() != 1)
         {
             throw new InvalidOperationException("桌面分身尚未建立 RDP 连接，请先创建或恢复连接。");
         }
@@ -127,7 +131,7 @@ internal sealed class ChildSessionManager : IDisposable
 
     internal void HidePreview()
     {
-        if (_previewForm is null || _service?.ConnectedState == 0)
+        if (_previewForm is null || SafeConnectedState() != 1)
         {
             return;
         }
@@ -138,10 +142,11 @@ internal sealed class ChildSessionManager : IDisposable
     internal async Task TerminateAsync(CancellationToken cancellationToken = default)
     {
         await _operationLock.WaitAsync(cancellationToken);
+        uint? sessionId = null;
         try
         {
             ThrowIfDisposed();
-            var sessionId = ChildSessionService.TryGetChildSessionId();
+            sessionId = ChildSessionService.TryGetChildSessionId();
             UpdateState(ChildSessionState.Disconnecting, sessionId, SafeConnectedState(), "正在结束桌面分身");
             _logger.Info(sessionId is null
                 ? "结束请求：当前没有 Child Session。"
@@ -159,7 +164,7 @@ internal sealed class ChildSessionManager : IDisposable
             _logger.Error("结束 Child Session 失败。", exception);
             UpdateState(
                 ChildSessionState.Faulted,
-                ChildSessionService.TryGetChildSessionId(),
+                SafeChildSessionId(sessionId),
                 SafeConnectedState(),
                 exception.GetBaseException().Message);
             throw;
@@ -189,6 +194,13 @@ internal sealed class ChildSessionManager : IDisposable
             return;
         }
 
+        var connectedState = SafeConnectedState();
+        if (connectedState != 1)
+        {
+            throw new InvalidOperationException(
+                $"RDP 当前未处于已连接状态（ConnectedState={connectedState}），需要重新建立连接。");
+        }
+
         if (show)
         {
             _previewForm.Show();
@@ -200,11 +212,11 @@ internal sealed class ChildSessionManager : IDisposable
             _previewForm.Hide();
         }
 
-        var sessionId = _service.ChildSessionId ?? ChildSessionService.TryGetChildSessionId();
+        var sessionId = _service.ChildSessionId ?? SafeChildSessionId(Snapshot.ChildSessionId);
         UpdateState(
             show ? ChildSessionState.ConnectedVisible : ChildSessionState.ConnectedHidden,
             sessionId,
-            SafeConnectedState(),
+            connectedState,
             show ? "已连接，子桌面可见" : "已连接，子桌面已隐藏");
         _logger.Info(show ? "已显示子桌面。" : "已隐藏子桌面（RDP 连接保持存活）。");
     }
@@ -218,10 +230,17 @@ internal sealed class ChildSessionManager : IDisposable
 
         e.Cancel = true;
         _previewForm?.Hide();
+        var connectedState = SafeConnectedState();
+        if (connectedState != 1)
+        {
+            _logger.Info($"关闭子桌面窗口已转换为隐藏；RDP 当前状态为 {connectedState}，保留现有故障/连接中状态。");
+            return;
+        }
+
         UpdateState(
             ChildSessionState.ConnectedHidden,
-            _service?.ChildSessionId ?? ChildSessionService.TryGetChildSessionId(),
-            SafeConnectedState(),
+            _service?.ChildSessionId ?? SafeChildSessionId(Snapshot.ChildSessionId),
+            connectedState,
             "已连接，子桌面已隐藏");
         _logger.Info("关闭子桌面窗口已转换为隐藏；RDP 连接保持存活。");
     }
@@ -233,7 +252,7 @@ internal sealed class ChildSessionManager : IDisposable
             + (e.ExtendedErrorCode is int extended ? $"；ExtendedErrorCode={extended}" : string.Empty));
         UpdateState(
             ChildSessionState.Faulted,
-            ChildSessionService.TryGetChildSessionId(),
+            SafeChildSessionId(Snapshot.ChildSessionId),
             SafeConnectedState(),
             e.Message.Replace(Environment.NewLine, " "));
     }
@@ -279,6 +298,19 @@ internal sealed class ChildSessionManager : IDisposable
         {
             _logger.Debug($"读取 RDP ConnectedState 失败：{exception.GetBaseException().Message}");
             return 0;
+        }
+    }
+
+    private uint? SafeChildSessionId(uint? fallback)
+    {
+        try
+        {
+            return ChildSessionService.TryGetChildSessionId();
+        }
+        catch (Exception exception)
+        {
+            _logger.Warn("读取 Child Session ID 失败，状态展示保留最近一次已知值。", exception);
+            return fallback;
         }
     }
 

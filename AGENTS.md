@@ -28,3 +28,13 @@
 - 如果当前能力、限制或验证结果发生变化，同步更新 `docs/STATUS.md`。
 - 如果后续方向或优先级发生变化，同步更新 `docs/ROADMAP.md`。
 - 报告实际执行过的验证，不能把未运行的交互式测试描述为已验证。
+
+## 代理技能
+
+### 问题跟踪器
+
+问题和规格说明统一记录在 `ArcherSore/NarutoAutoGUI` 的 GitHub Issues 中。详见 `docs/agents/issue-tracker.md`。
+
+### 领域文档
+
+本仓库采用单上下文布局，使用根目录的 `CONTEXT.md` 和 `docs/adr/`。详见 `docs/agents/domain.md`。

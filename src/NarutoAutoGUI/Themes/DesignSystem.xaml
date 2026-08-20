@@ -90,7 +90,7 @@
     <Thickness x:Key="Thickness.ControlPrimary">16,6</Thickness>
     <CornerRadius x:Key="Radius.Control">6</CornerRadius>
     <CornerRadius x:Key="Radius.Section">8</CornerRadius>
-    <CornerRadius x:Key="Radius.Pill">12</CornerRadius>
+    <CornerRadius x:Key="Radius.Pill">8</CornerRadius>
 
     <Style x:Key="ControlFocusVisualStyle">
         <Setter Property="Control.Template">
@@ -395,7 +395,7 @@
                             Background="{TemplateBinding Background}"
                             BorderBrush="{StaticResource Brush.Transparent}"
                             BorderThickness="1"
-                            CornerRadius="4">
+                            CornerRadius="{StaticResource Radius.Control}">
                         <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                           VerticalAlignment="Center" />
                     </Border>

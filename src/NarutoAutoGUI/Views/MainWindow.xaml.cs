@@ -20,12 +20,23 @@ using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using WpfOpenFolderDialog = Microsoft.Win32.OpenFolderDialog;
 using WpfSystemColors = System.Windows.SystemColors;
 using WpfTextBox = System.Windows.Controls.TextBox;
+using FluentWindow = Wpf.Ui.Controls.FluentWindow;
+using WpfNavigationViewItem = Wpf.Ui.Controls.NavigationViewItem;
 
 namespace NarutoAutoGUI.Views;
 
-public partial class MainWindow : Window
+public partial class MainWindow : FluentWindow
 {
     private const int MaximumGuiLogEntries = 1000;
+
+    private enum MainSection
+    {
+        Home,
+        Tasks,
+        DesktopSession,
+        Logs,
+        Settings
+    }
     private readonly AppLogger _logger;
     private readonly AppSettingsStore _settingsStore;
     private readonly AppSettings _settings;
@@ -88,6 +99,9 @@ public partial class MainWindow : Window
         _workerSnapshot = workerCoordinator.Snapshot;
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
+        SwitchSection(MainSection.Home);
+        UpdateSessionPresentation(_sessionSnapshot);
+        UpdateWorkerPresentation(_workerSnapshot);
         UpdateCommandAvailability();
     }
 
@@ -108,7 +122,6 @@ public partial class MainWindow : Window
         Loaded -= MainWindow_Loaded;
         _logScrollViewer = FindVisualChild<ScrollViewer>(LogListBox);
         TryLoadProject(showError: !string.IsNullOrWhiteSpace(MaaNopProjectDirectoryTextBox.Text));
-        UpdateWorkerPresentation(_workerSnapshot);
         var existingId = _sessionManager.DetectExistingSession();
         if (existingId is null)
         {
@@ -140,6 +153,46 @@ public partial class MainWindow : Window
         Hide();
         _logger.Info("主窗口已隐藏到托盘。");
         HiddenToTray?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void NavigationItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is WpfNavigationViewItem { Tag: string sectionName }
+            && Enum.TryParse(sectionName, ignoreCase: false, out MainSection section))
+        {
+            SwitchSection(section);
+        }
+    }
+
+    private void ViewLogsButton_Click(object sender, RoutedEventArgs e) =>
+        SwitchSection(MainSection.Logs);
+
+    private void OpenSettingsButton_Click(object sender, RoutedEventArgs e) =>
+        SwitchSection(MainSection.Settings);
+
+    private void SwitchSection(MainSection section)
+    {
+        HomeView.Visibility = section == MainSection.Home
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        TasksView.Visibility = section == MainSection.Tasks
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        DesktopSessionView.Visibility = section == MainSection.DesktopSession
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        LogsView.Visibility = section == MainSection.Logs
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        SettingsView.Visibility = section == MainSection.Settings
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        HomeNavigationItem.IsActive = section == MainSection.Home;
+        TasksNavigationItem.IsActive = section == MainSection.Tasks;
+        DesktopSessionNavigationItem.IsActive = section == MainSection.DesktopSession;
+        LogsNavigationItem.IsActive = section == MainSection.Logs;
+        SettingsNavigationItem.IsActive = section == MainSection.Settings;
     }
 
     private async void CreateSessionButton_Click(object sender, RoutedEventArgs e) =>
@@ -259,7 +312,7 @@ public partial class MainWindow : Window
     private async void PrepareEnvironmentButton_Click(object sender, RoutedEventArgs e)
     {
         await RunOperationAsync(
-            "正在准备真实 E2E 环境...",
+            "正在准备运行环境...",
             async () =>
             {
                 SaveSettings();
@@ -295,7 +348,7 @@ public partial class MainWindow : Window
     private async void StartRunButton_Click(object sender, RoutedEventArgs e)
     {
         await RunOperationAsync(
-            "正在提交真实 MaaNOP Run...",
+            "正在开始任务...",
             async () =>
             {
                 if (_sessionSnapshot.State != ChildSessionState.ConnectedHidden)
@@ -325,7 +378,7 @@ public partial class MainWindow : Window
     private async void StopRunButton_Click(object sender, RoutedEventArgs e)
     {
         await RunOperationAsync(
-            "正在请求停止真实 MaaNOP Run...",
+            "正在停止任务...",
             async () =>
             {
                 var activeRun = _workerSnapshot.WorkerSnapshot?.ActiveRun
@@ -480,8 +533,8 @@ public partial class MainWindow : Window
                 OptionEditorPanel.Children.Add(new TextBlock
                 {
                     Text = project.SelectedTaskName is null
-                        ? "请先选择真实 top-level task。"
-                        : "当前任务没有可编辑 option。",
+                        ? "请先选择任务。"
+                        : "当前任务没有可编辑参数。",
                     Foreground = WpfSystemColors.GrayTextBrush
                 });
             }
@@ -489,9 +542,9 @@ public partial class MainWindow : Window
             var allOptions = EnumerateOptions(configuration).ToArray();
             var explicitCount = allOptions.Count(option => option.IsExplicit);
             OptionSummaryText.Text =
-                $"{allOptions.Length} 个 active option · {explicitCount} 个显式设置";
+                $"{allOptions.Length} 个启用参数 · {explicitCount} 个显式设置";
             ProjectValidationText.Text =
-                "当前 MaaNOP Config 已通过正式 PI Resolver 校验；Run 将使用当前显式值与其余项目默认值。";
+                "当前配置已通过校验；任务将使用当前显式值与其余项目默认值。";
             _projectConfigurationValid = true;
         }
         finally
@@ -772,7 +825,7 @@ public partial class MainWindow : Window
         }
 
         ProjectStatusText.Text =
-            $"{project.ProjectName} {project.ProjectVersion} · {project.Tasks.Count} 个 top-level task";
+            $"{project.ProjectName} {project.ProjectVersion} · {project.Tasks.Count} 个任务";
         RenderOptionEditors(project.GetConfiguration());
         _logger.Info(
             $"已加载 MaaNOP Project Interface：{project.ProjectName} {project.ProjectVersion}；"
@@ -795,7 +848,7 @@ public partial class MainWindow : Window
             _projectConfigurationValid = false;
             MaaNopTaskComboBox.ItemsSource = null;
             OptionEditorPanel.Children.Clear();
-            OptionSummaryText.Text = "选择任务后显示 PI option";
+            OptionSummaryText.Text = "选择任务后显示参数摘要";
             ProjectStatusText.Text = "MaaNOP 项目未就绪";
             ProjectValidationText.Text = exception.GetBaseException().Message;
             _logger.Warn("加载 MaaNOP Project Interface 失败。", exception);
@@ -926,7 +979,8 @@ public partial class MainWindow : Window
 
     private void UpdateWorkerPresentation(WorkerCoordinatorSnapshot snapshot)
     {
-        WorkerObservationText.Text = snapshot.Observation.ToString();
+        WorkerObservationText.Text = GetWorkerObservationText(snapshot.Observation);
+        HomeWorkerSummaryText.Text = GetHomeWorkerSummary(snapshot);
         WorkerDetailText.Text = snapshot.Detail;
         var worker = snapshot.WorkerSnapshot;
         if (worker is null)
@@ -934,6 +988,7 @@ public partial class MainWindow : Window
             WorkerStateText.Text = "Worker — · Snapshot stale";
             DependencyStatusText.Text = "依赖尚未探测";
             RunStatusText.Text = "Run — · Plan Item —";
+            HomeRunSummaryText.Text = "尚未运行";
             return;
         }
 
@@ -950,6 +1005,7 @@ public partial class MainWindow : Window
         if (run is null)
         {
             RunStatusText.Text = "Run Idle · activeRun=null · lastRun=null";
+            HomeRunSummaryText.Text = "尚未运行";
             return;
         }
         var item = run.Items.SingleOrDefault();
@@ -957,6 +1013,70 @@ public partial class MainWindow : Window
         RunStatusText.Text =
             $"{slot} {run.State} · {item?.TaskLabel ?? "—"} = {item?.State.ToString() ?? "—"} · "
             + $"runId={run.RunId:D}";
+        HomeRunSummaryText.Text = GetHomeRunSummary(run);
+    }
+
+    private static string GetWorkerObservationText(WorkerObservation observation) => observation switch
+    {
+        WorkerObservation.WorkerNotStarted => "Worker 尚未启动",
+        WorkerObservation.WorkerStarting => "Worker 正在启动",
+        WorkerObservation.Connected => "Worker 已连接",
+        WorkerObservation.IpcDisconnected => "Worker 连接已断开",
+        WorkerObservation.WorkerExited => "Worker 已退出",
+        WorkerObservation.WorkerRecoveryConflict => "Worker 恢复冲突",
+        WorkerObservation.ChildSessionEnded => "桌面分身已结束",
+        _ => "Worker 状态未知"
+    };
+
+    private static string GetHomeWorkerSummary(WorkerCoordinatorSnapshot snapshot)
+    {
+        if (snapshot.Observation != WorkerObservation.Connected)
+        {
+            return snapshot.Observation switch
+            {
+                WorkerObservation.WorkerNotStarted => "尚未启动",
+                WorkerObservation.WorkerStarting => "正在启动",
+                WorkerObservation.IpcDisconnected => "连接已断开",
+                WorkerObservation.WorkerExited => "已退出",
+                WorkerObservation.WorkerRecoveryConflict => "需要恢复",
+                WorkerObservation.ChildSessionEnded => "桌面分身已结束",
+                _ => "状态未知"
+            };
+        }
+
+        if (!snapshot.SnapshotFresh)
+        {
+            return "正在同步状态";
+        }
+
+        return snapshot.WorkerSnapshot?.WorkerState switch
+        {
+            WorkerState.Starting => "正在启动",
+            WorkerState.Ready => "已就绪",
+            WorkerState.NotReady => "尚未就绪",
+            WorkerState.Faulted => "运行异常",
+            WorkerState.Stopping => "正在停止",
+            _ => "已连接"
+        };
+    }
+
+    private static string GetHomeRunSummary(RunSnapshot run)
+    {
+        var taskLabel = run.Items.SingleOrDefault()?.TaskLabel;
+        var stateText = run.State switch
+        {
+            RunState.Idle => "尚未运行",
+            RunState.Starting => "正在启动",
+            RunState.Running => "正在运行",
+            RunState.Stopping => "正在停止",
+            RunState.Succeeded => "已完成",
+            RunState.Failed => "运行失败",
+            RunState.Cancelled => "已停止",
+            _ => "状态未知"
+        };
+        return string.IsNullOrWhiteSpace(taskLabel)
+            ? stateText
+            : $"{taskLabel} · {stateText}";
     }
 
     private void LogListBox_ScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -1103,6 +1223,20 @@ public partial class MainWindow : Window
                                       && state == ChildSessionState.ConnectedVisible;
         TerminateSessionButton.IsEnabled = canStartCommand
                                            && _sessionSnapshot.ChildSessionId is not null;
+        CreateSessionButton.Visibility = state is ChildSessionState.NotRunning
+            or ChildSessionState.Existing
+            or ChildSessionState.Faulted
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        ShowSessionButton.Visibility = state == ChildSessionState.ConnectedHidden
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        HideSessionButton.Visibility = state == ChildSessionState.ConnectedVisible
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        TerminateSessionButton.Visibility = _sessionSnapshot.ChildSessionId is not null
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
         var projectReady = _projectPlan is not null;
         var worker = _workerSnapshot.WorkerSnapshot;
@@ -1145,6 +1279,39 @@ public partial class MainWindow : Window
                                   && active?.State == RunState.Running
                                   && active.Items.Count == 1
                                   && active.Items[0].State == PlanItemState.Running;
+
+        var environmentReady = workerIdleFresh
+                               && worker!.WorkerState == WorkerState.Ready
+                               && projectReady
+                               && selectedTaskValid
+                               && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
+        var hasActiveRun = active is not null;
+        var runningRun = active?.State == RunState.Running;
+        var waitingForLogin = environmentReady
+                              && state == ChildSessionState.ConnectedVisible;
+        var showStart = !hasActiveRun
+                        && environmentReady
+                        && state == ChildSessionState.ConnectedHidden;
+
+        PrepareEnvironmentButton.Visibility = !hasActiveRun && !showStart && !waitingForLogin
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        StartRunButton.Visibility = showStart ? Visibility.Visible : Visibility.Collapsed;
+        StopRunButton.Visibility = runningRun ? Visibility.Visible : Visibility.Collapsed;
+
+        HomeNextStepText.Text = _busy
+            ? "当前操作正在进行，请稍候。"
+            : runningRun
+                ? "任务正在运行，可随时停止。"
+                : hasActiveRun
+                    ? "任务状态正在切换，请稍候。"
+                    : !projectReady
+                        ? "请先在“设置”中选择 MaaNOP 项目目录。"
+                        : waitingForLogin
+                            ? "请在子桌面完成登录，然后隐藏子桌面。"
+                            : showStart
+                                ? "运行环境已就绪，可以开始任务。"
+                                : "准备桌面分身、Worker 和游戏后即可开始任务。";
     }
 
     private static string GetStateText(ChildSessionState state) => state switch

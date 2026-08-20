@@ -23,6 +23,8 @@
 - GUI 日志仅在用户接近底部时自动跟随；向上滚动后暂停，并显示新日志计数与恢复跟随操作。
 - 主窗口提供访问键和动态状态辅助信息；操作失败给出恢复建议并可打开日志目录；每次程序运行首次关闭到托盘时显示一次通知。
 - 主窗口已应用集中式 WPF 视觉设计系统：统一浅色语义令牌、字体与 4/8 DIP 间距、四级按钮、输入框、状态 Badge、日志层级和交互状态；顶部保留状态卡，其余主功能使用扁平分区、留白与细分隔线，仅日志视口保留容器边框；不改变事件处理器和功能行为。
+- 正式主窗口已使用 WPF-UI 4.3.0 重构为 Windows 11 Fluent Shell：`FluentWindow`、`TitleBar`、左侧 `NavigationView` 和内置 Fluent 图标承载首页、任务、桌面分身、日志、设置五个顶层页面，操作状态与进度条固定在全局底栏。五个页面仍位于同一个 `MainWindow` XAML namescope，通过根容器 `Visibility` 切换；未引入 `Frame`、独立 Page/UserControl、MVVM、NavigationService 或 PageService。页面内输入、按钮、下拉框和日志列表仍为标准 WPF 控件并沿用 `DesignSystem.xaml`。
+- 首页集中呈现当前任务、参数、Session、Worker 和 Run 的用户化摘要，并按状态只显示当前主操作；任务页直接承载动态 option editor，将 Worker/PID/Snapshot/runId 等信息收进默认折叠的运行环境诊断；桌面分身与 Run 操作按钮改为状态驱动的互斥显示。设置表单改为标签在上、输入框在下，日志页取消固定高度并填满剩余页面空间；各配置页独立滚动，日志页没有外层滚动器。
 - 全局 GUI、后台任务和进程异常记录；预期的启动/RDP/Win32/COM 失败不会直接使 GUI 崩溃。
 - `WTSGetChildSessionId` 将成功返回 `ULONG(-1)` 或本机实测的 `ERROR_NOT_FOUND (1168)` 识别为“无 Child Session”，其他原生调用失败保留错误码并抛出；退出检查无法确认状态时继续取消退出。
 - RDP 状态读取 ActiveX 实时 `ConnectedState`；所有非主动断开都会转入故障状态，后续操作重建预览宿主而不是复用失效连接。
@@ -49,12 +51,18 @@
 - 2026-08-19：首个 Worker/IPC 切片完成 Debug/Release build、self-contained GUI + Worker publish 和发布后 `--self-test`；编译 0 错误，仅有环境中既有的 `NU1900` 漏洞元数据警告。
 - 2026-08-19：首片显式 option 扩展完成 Debug/Release build、自包含 `win-x64-options-v1` GUI + Worker publish 与发布后 `--self-test`；覆盖真实形状的 `ServerRange=978` input、task switch/select、递归 active graph、Dormant Intent 保留/恢复、非法 input 不落盘、恢复项目默认、resolved pipeline override 和 planDigest 变化。另以本机 MaaNOP v1.3.0 真实 `interface.json` 和隔离临时 Config 验证 `AccountTraining + ServerRange=978 + ClaimLevelExp=No`，正式 Resolver 生成 `ParseServer` 参数 `978` 与 `ClaimLevelEntry.enabled=false`，未修改 MaaNOP/MFAAvalonia 配置。构建为 0 错误，仅有既有 `NU1900` 漏洞元数据网络警告；交互式 Success/Cancellation 统一验收仍待完成。
 - 2026-08-19：首片验收期间发现新增 option 区使默认窗口无法访问下方内容；先增加临时整页滚动并固定日志区高度，不在验收前重做布局。`win-x64-options-v2-scroll` 完成 Release GUI + Worker publish 和发布后 `--self-test`，旧版非凭据 settings/MaaNOP Config 已复制到新包；正式 UI 重设计延后到首片统一验收之后。
+- 2026-08-20：完成 WPF-UI 4.3.0 Fluent Shell 与五页面重构后，`App.xaml`、`MainWindow.xaml`、`DesignSystem.xaml` XML 解析通过，最终 NarutoAutoGUI Release `win-x64` build 通过（0 警告、0 错误）。以独立目录 `artifacts\NarutoAutoGUI\win-x64-fluent-shell` 完成 GUI self-contained publish，并对该产物运行 `src/NarutoAutoGUI/scripts/test-automated.ps1`，覆盖 settings v2/旧版迁移、PI default/explicit resolver、nested dormant intent、MaaNOP Config v1、RunPlan digest、IPC framing 和 DEBUG+ 文件日志，结果通过。另以 HEAD 旧 XAML 为基线自动比对，35 个原有 `x:Name`（含模板内命名元素）和 17 个 Click/SelectionChanged/LostKeyboardFocus 事件绑定均保留；日志 ScrollChanged 的既有 `AddHandler` 代码保持不变。
+- 2026-08-20：仓库总 `scripts/build.ps1` 在恢复 `NarutoAutoWorker` 时未完成，因为当前机器仅安装 .NET 8 SDK，而既有 Worker 项目面向 .NET 9；未安装 SDK、未修改 Worker，也未将该工具链失败描述为本次 GUI 编译失败。NarutoAutoGUI 本身的 Release build、GUI publish 和发布后自动自检均已实际通过。
 - build 期间 NuGet 无法访问漏洞元数据源，产生 `NU1900` 警告；包还原和编译本身成功。该警告不是代码编译错误。
 
 以下项目需要管理员权限、可见桌面或真实外部程序，本轮自动验证不能替代手动回归，当前不声明正式 GUI 已完成实机复验：RDP ActiveX 创建/恢复、托盘交互、游戏/MaaNOP 跨 Session 启动、异常断开后重建连接、创建/启动过程中从托盘退出、退出确认取消/注销失败恢复、第二实例拦截和最终注销。
 
+2026-08-20 五页面 Fluent UI 仍待真实 Windows 桌面人工回归：默认与最小窗口尺寸下的五页导航、键盘 Tab/访问键、页面独立滚动、日志暂停/恢复跟随、状态驱动按钮切换、托盘隐藏/恢复，以及结合真实 Child Session 的 RDP 显示/隐藏/结束流程。100%、150%、200% 缩放下的布局与文字可读性已由用户实机检查，未观察到明显裁切、重叠或可读性问题；尚未执行的其他交互项目不据此声明通过。
+
 ## 本轮交互式回归
 
+- 2026-08-20：用户在真实 Windows 桌面检查五页面 Fluent UI 的 100%、150%、200% 缩放，三档均未观察到明显布局或文字可读性问题。
+- 2026-08-20：在 GUI-only 的 `win-x64-fluent-shell` 产物点击“准备运行环境”时，MaaNOP v1.3.0 已成功加载且 Child Session 21 已连接，随后因产物中缺少 `worker\NarutoAutoWorker.exe` 明确失败。该结果属于不完整测试产物的发布问题，不是 Worker 启动、Named Pipe、RDP 或 MaaNOP 运行时失败；完整 GUI + Worker 发布仍待具备 .NET 9 SDK 后通过正式脚本重新生成。
 - 2026-08-19：`win-x64-lifecycle-fixes-v2` 已实机验证创建 Child Session、从托盘结束桌面分身、随后从托盘退出主程序，流程正常。
 - 2026-08-19：`win-x64-lifecycle-fixes-v2` 已实机验证同一 Windows Session 启动第二个正式 GUI 时会明确拦截，第二实例不进入主窗口，第一实例及其 Child Session 不受影响。
 - 2026-08-19：ADR 0020 首片实机验证 GUI 以 Task Scheduler Worker-specific Highest 路径在 Child Session 17 启动 Worker instance `99a9261d-ec54-48f9-a88d-f9218ae65ef5`；Named Pipe admission、真实 PID 37064/Session 17 验证、fresh Snapshot 和 Dependency Readiness=Ready 均通过。实测 MaaFramework Binding=5.8.0.0、Runtime=v5.8.1，Python Agent probe 使用 `D:\miniconda3\python.exe` 并成功 import 必需模块。GUI 收到 Worker lifecycle、admission 和 readiness `log.entry`。

@@ -4,6 +4,8 @@ Windows x64 / .NET 8 WPF 程序。需要管理员权限和交互式桌面。
 
 ## 构建与自动自检
 
+完整发布脚本同时构建面向 .NET 9 的 `NarutoAutoWorker`，因此需要 .NET 9 SDK；GUI 项目本身仍面向 .NET 8。
+
 在仓库根目录运行：
 
 ```powershell
@@ -11,7 +13,7 @@ Windows x64 / .NET 8 WPF 程序。需要管理员权限和交互式桌面。
 .\src\NarutoAutoGUI\scripts\test-automated.ps1
 ```
 
-发布目录为 `artifacts\NarutoAutoGUI\win-x64`。自检通过 `dotnet NarutoAutoGUI.dll --self-test` 运行，不触发 apphost 的 UAC manifest，也不初始化 RDP；它只验证配置与文件日志。
+发布目录为 `artifacts\NarutoAutoGUI\win-x64`，并包含 `worker\NarutoAutoWorker.exe` 及固定 runtime。自检通过 `dotnet NarutoAutoGUI.dll --self-test` 运行，不触发 apphost 的 UAC manifest，也不初始化 RDP；它只验证配置与文件日志。
 
 ## 运行时文件
 
@@ -34,6 +36,7 @@ Windows x64 / .NET 8 WPF 程序。需要管理员权限和交互式桌面。
 
 - “创建 / 恢复”和“显示子桌面”会确保 RDP ActiveX 已连接。
 - 隐藏子桌面或点击其 X 不会断开 RDP。
+- Worker 与任务配置就绪后，无论子桌面当前显示或隐藏，均可从主窗口开始任务。
 - 游戏启动会把界面配置的参数和由 exe 自动推导的工作目录传给 Task Scheduler COM；一键启动会依次确保 Session、显示子桌面、启动游戏、启动 MaaNOP，并保持显示；单个程序失败时仍尝试另一个。
 - 启动前按 exe 文件名与 `childSessionId` 检查，已运行则跳过。
 - 主窗口 X 只隐藏到托盘。

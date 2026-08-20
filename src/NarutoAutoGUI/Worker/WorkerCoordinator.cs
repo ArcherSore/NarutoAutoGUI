@@ -151,25 +151,47 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
 
         try
         {
-            await _launcher.LaunchAsync(
+            var launch = await _launcher.LaunchAsync(
                 childSessionId,
                 _workerExecutablePath,
                 instanceId,
                 launchToken,
-                manifestPath);
+                manifestPath,
+                cancellationToken);
+            RecordVerifiedWorkerProcess(instanceId, launch);
         }
-        catch
+        catch (Exception exception)
         {
+            var observedThroughPipe = false;
             lock (_gate)
             {
-                _admission = null;
-                _awaitedFreshSnapshot = null;
-                UpdateSnapshotLocked(WorkerCoordinatorSnapshot.Empty);
+                observedThroughPipe = _admission is
+                {
+                    WorkerInstanceId: var currentInstance,
+                    WorkerPid: not null
+                } current
+                                      && currentInstance == instanceId
+                                      && IsExpectedWorkerAlive(current);
+                if (!observedThroughPipe)
+                {
+                    _admission = null;
+                    _awaitedFreshSnapshot = null;
+                    UpdateSnapshotLocked(WorkerCoordinatorSnapshot.Empty);
+                }
             }
-            _store.DeleteRecord();
-            _store.DeleteManifest(instanceId);
-            RaiseStateChanged();
-            throw;
+            if (observedThroughPipe)
+            {
+                _logger.Warn(
+                    "Task Scheduler 进程枚举验证失败，但同一 Worker 已通过 Pipe PID/Session/映像校验；继续等待 fresh Snapshot。",
+                    exception);
+            }
+            else
+            {
+                _store.DeleteRecord();
+                _store.DeleteManifest(instanceId);
+                RaiseStateChanged();
+                throw;
+            }
         }
 
         try
@@ -178,10 +200,142 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             _store.DeleteManifest(instanceId);
             return snapshot;
         }
-        catch (TimeoutException)
+        catch (TimeoutException exception)
         {
+            WorkerAdmissionRecord? timedOutAdmission = null;
+            WorkerSnapshot? lateSnapshot = null;
+            var rolledBack = false;
+            lock (_gate)
+            {
+                if (Snapshot is
+                    {
+                        Observation: WorkerObservation.Connected,
+                        SnapshotFresh: true,
+                        WorkerSnapshot: { WorkerInstanceId: var snapshotInstance } workerSnapshot
+                    }
+                    && snapshotInstance == instanceId)
+                {
+                    lateSnapshot = workerSnapshot;
+                }
+                else if (_admission?.WorkerInstanceId == instanceId)
+                {
+                    timedOutAdmission = _admission;
+                    rolledBack = timedOutAdmission.WorkerPid is null
+                                 || !IsExpectedWorkerAlive(timedOutAdmission);
+                    _awaitedFreshSnapshot = null;
+                    if (rolledBack)
+                    {
+                        _admission = null;
+                        UpdateSnapshotLocked(WorkerCoordinatorSnapshot.Empty with
+                        {
+                            Detail = "Worker admission 超时且没有存活的已验证进程；Pending Admission 已回滚"
+                        });
+                    }
+                    else
+                    {
+                        UpdateSnapshotLocked(new WorkerCoordinatorSnapshot(
+                            WorkerObservation.IpcDisconnected,
+                            false,
+                            Snapshot.WorkerSnapshot,
+                            $"Worker PID {timedOutAdmission.WorkerPid} 仍存活，但未按时完成 admission + fresh Snapshot"));
+                    }
+                }
+            }
+
+            if (lateSnapshot is not null)
+            {
+                _store.DeleteManifest(instanceId);
+                _logger.Info("Worker fresh Snapshot 在 admission 超时边界完成；按成功处理。 ");
+                return lateSnapshot;
+            }
+
+            if (rolledBack)
+            {
+                _store.DeleteRecord();
+                _store.DeleteManifest(instanceId);
+                _logger.Warn(
+                    $"Worker admission 在 {AdmissionTimeout.TotalSeconds:0} 秒后超时；"
+                    + "未发现存活的已验证 Worker，已回滚 worker.json 与 launch manifest。 ");
+            }
+            else if (timedOutAdmission is not null)
+            {
+                _logger.Warn(
+                    $"Worker admission 在 {AdmissionTimeout.TotalSeconds:0} 秒后超时；"
+                    + $"PID={timedOutAdmission.WorkerPid}、SessionId={timedOutAdmission.ChildSessionId} 仍存活，"
+                    + "保留 Admission 供 Worker 重连。 ");
+            }
+            RaiseStateChanged();
+            var disposition = rolledBack
+                ? "未发现存活的已验证 Worker，Pending Admission 已自动回滚。 "
+                : timedOutAdmission is not null
+                    ? "已验证 Worker 仍存活，Admission 已保留供重连。 "
+                    : "Admission 已由 Child Session 生命周期清理。 ";
             throw new TimeoutException(
-                $"Worker 未在 {AdmissionTimeout.TotalSeconds:0} 秒内完成 admission + fresh Snapshot。 ");
+                $"Worker 未在 {AdmissionTimeout.TotalSeconds:0} 秒内完成 admission + fresh Snapshot；"
+                + disposition,
+                exception);
+        }
+    }
+
+    private void RecordVerifiedWorkerProcess(
+        Guid workerInstanceId,
+        WorkerProcessLaunchResult launch)
+    {
+        var workerPid = checked((int)launch.ProcessId);
+        WorkerAdmissionRecord? recordToPersist = null;
+        var changed = false;
+        lock (_gate)
+        {
+            var current = _admission
+                          ?? throw new InvalidOperationException("Worker 进程启动后 Admission Record 已不存在。 ");
+            if (current.WorkerInstanceId != workerInstanceId)
+            {
+                throw new InvalidOperationException("Worker 进程启动后 Admission instance 已发生变化。 ");
+            }
+            if (current.ChildSessionId != launch.SessionId)
+            {
+                throw new InvalidOperationException("Worker 启动验证返回了错误的 Child Session。 ");
+            }
+            if (current.WorkerPid is int admittedPid && admittedPid != workerPid)
+            {
+                throw new InvalidOperationException(
+                    $"Task Scheduler 验证 PID={workerPid}，但 Pipe Admission PID={admittedPid}。 ");
+            }
+            if (current.WorkerPid is null)
+            {
+                current = current with { WorkerPid = workerPid };
+                _admission = current;
+                recordToPersist = current;
+                changed = true;
+            }
+            if (Snapshot.Observation != WorkerObservation.Connected)
+            {
+                UpdateSnapshotLocked(new WorkerCoordinatorSnapshot(
+                    WorkerObservation.WorkerStarting,
+                    false,
+                    Snapshot.WorkerSnapshot,
+                    $"Worker 进程已验证：PID={workerPid}，SessionId={launch.SessionId}；等待 admission + fresh Snapshot"));
+                changed = true;
+            }
+        }
+
+        if (recordToPersist is not null)
+        {
+            try
+            {
+                _store.SaveRecord(recordToPersist);
+            }
+            catch (Exception exception)
+            {
+                _logger.Warn(
+                    $"Worker PID={workerPid} 已在内存中验证，但写回 Admission Record 失败；"
+                    + "Pipe admission 仍将继续。 ",
+                    exception);
+            }
+        }
+        if (changed)
+        {
+            RaiseStateChanged();
         }
     }
 

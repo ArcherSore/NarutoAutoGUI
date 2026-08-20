@@ -6,6 +6,12 @@ using System.Security.Principal;
 
 namespace MaaNOP.ChildSessionLauncher;
 
+internal sealed record VerifiedChildSessionProcessLaunch(
+    uint ProcessId,
+    uint SessionId,
+    int? TaskState,
+    int? LastTaskResult);
+
 // Adapted from BetterGI 0.63.0 ChildSessionProcessLauncher.cs.
 // Reuses the verified approach: Windows Task Scheduler COM (Schedule.Service) with a temporary
 // task, RunEx(flags = TASK_RUN_USE_SESSION_ID, sessionId = childSessionId) to start the process
@@ -54,6 +60,42 @@ internal static class ChildSessionProcessLauncher
             TaskRunLevelHighest);
     }
 
+    // Worker-only strengthening path. Existing Demo/program launch callers continue using the
+    // methods above and retain their verified submit-and-cleanup behavior. This overload keeps the
+    // temporary task registered until a new target process is observed in the requested Session.
+    internal static Task<VerifiedChildSessionProcessLaunch> LaunchElevatedVerifiedAsync(
+        uint childSessionId,
+        string executablePath,
+        string arguments = "",
+        string? workingDirectory = null,
+        TimeSpan? verificationTimeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        var fullPath = ValidateExecutablePath(executablePath);
+        var workDir = string.IsNullOrWhiteSpace(workingDirectory)
+            ? (Path.GetDirectoryName(fullPath) ?? AppContext.BaseDirectory)
+            : workingDirectory;
+        var timeout = verificationTimeout ?? TimeSpan.FromSeconds(10);
+        if (timeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(verificationTimeout),
+                "进程启动验证超时必须大于零。");
+        }
+
+        return Task.Run(
+            () => LaunchWithTemporaryTask(
+                    childSessionId,
+                    fullPath,
+                    arguments,
+                    workDir,
+                    TaskRunLevelHighest,
+                    timeout,
+                    cancellationToken)
+                ?? throw new InvalidOperationException("Worker 启动验证没有返回进程结果。"),
+            cancellationToken);
+    }
+
     private static Task LaunchAtRunLevelAsync(
         uint childSessionId,
         string executablePath,
@@ -69,12 +111,14 @@ internal static class ChildSessionProcessLauncher
             LaunchWithTemporaryTask(childSessionId, fullPath, arguments, workDir, runLevel));
     }
 
-    private static void LaunchWithTemporaryTask(
+    private static VerifiedChildSessionProcessLaunch? LaunchWithTemporaryTask(
         uint childSessionId,
         string executablePath,
         string arguments,
         string workingDirectory,
-        int runLevel)
+        int runLevel,
+        TimeSpan? verificationTimeout = null,
+        CancellationToken cancellationToken = default)
     {
         // Guard: the target Child Session must still be the one the caller expects.
         var actual = ChildSessionNativeMethods.TryGetChildSessionId();
@@ -101,6 +145,17 @@ internal static class ChildSessionProcessLauncher
         object? registeredTaskObj = null;
         object? runningTaskObj = null;
         var taskRegistered = false;
+        var processName = Path.GetFileName(executablePath);
+        var existingProcessIds = verificationTimeout is null
+            ? null
+            : ChildSessionNativeMethods.EnumerateProcesses()
+                .Where(process => process.SessionId == childSessionId
+                                  && string.Equals(
+                                      process.Name,
+                                      processName,
+                                      StringComparison.OrdinalIgnoreCase))
+                .Select(process => process.ProcessId)
+                .ToHashSet();
 
         try
         {
@@ -161,6 +216,53 @@ internal static class ChildSessionProcessLauncher
             {
                 throw new InvalidOperationException("任务计划程序没有返回运行实例。");
             }
+
+            if (verificationTimeout is not null)
+            {
+                var deadline = DateTime.UtcNow + verificationTimeout.Value;
+                while (DateTime.UtcNow < deadline)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var launched = ChildSessionNativeMethods.EnumerateProcesses()
+                        .FirstOrDefault(process => process.SessionId == childSessionId
+                                                   && string.Equals(
+                                                       process.Name,
+                                                       processName,
+                                                       StringComparison.OrdinalIgnoreCase)
+                                                   && existingProcessIds!.Contains(process.ProcessId) == false);
+                    if (launched.ProcessId != 0)
+                    {
+                        return new VerifiedChildSessionProcessLaunch(
+                            launched.ProcessId,
+                            launched.SessionId,
+                            TryGetIntProperty(runningTaskObj, "State"),
+                            TryGetIntProperty(registeredTaskObj, "LastTaskResult"));
+                    }
+
+                    Thread.Sleep(200);
+                }
+
+                var taskState = TryGetIntProperty(runningTaskObj, "State");
+                var lastTaskResult = TryGetIntProperty(registeredTaskObj, "LastTaskResult");
+                throw new InvalidOperationException(
+                    $"Task Scheduler 已接受 {processName} 的 RunEx，但在 "
+                    + $"{verificationTimeout.Value.TotalSeconds:0} 秒内未发现新的目标进程；"
+                    + $"Child Session={childSessionId}，TaskState={FormatDiagnostic(taskState)}，"
+                    + $"LastTaskResult={FormatDiagnostic(lastTaskResult)}。");
+            }
+
+            return null;
+        }
+        catch (Exception exception) when (verificationTimeout is not null
+                                          && exception is not OperationCanceledException)
+        {
+            var taskState = TryGetIntProperty(runningTaskObj, "State");
+            var lastTaskResult = TryGetIntProperty(registeredTaskObj, "LastTaskResult");
+            throw new InvalidOperationException(
+                $"Task Scheduler Worker 启动或验证失败；Child Session={childSessionId}，"
+                + $"TaskState={FormatDiagnostic(taskState)}，"
+                + $"LastTaskResult={FormatDiagnostic(lastTaskResult)}。",
+                exception);
         }
         finally
         {
@@ -215,6 +317,29 @@ internal static class ChildSessionProcessLauncher
             args: null,
             CultureInfo.InvariantCulture);
     }
+
+    private static int? TryGetIntProperty(object? target, string propertyName)
+    {
+        if (target is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return Convert.ToInt32(GetProperty(target, propertyName), CultureInfo.InvariantCulture);
+        }
+        catch (Exception exception) when (exception is COMException
+                                              or InvalidCastException
+                                              or TargetInvocationException)
+        {
+            return null;
+        }
+    }
+
+    private static string FormatDiagnostic(int? value) => value is int actual
+        ? $"{actual} (0x{unchecked((uint)actual):X8})"
+        : "unavailable";
 
     private static void SetProperty(object? target, string propertyName, object? value)
     {

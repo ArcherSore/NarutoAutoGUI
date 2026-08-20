@@ -119,18 +119,22 @@
                                                     Margin="0,0,8,8"
                                                     Content="准备运行环境(_O)"
                                                     Style="{StaticResource PrimaryButtonStyle}"
+                                                    ToolTip="{Binding Text, ElementName=HomeNextStepText}"
+                                                    AutomationProperties.HelpText="{Binding Text, ElementName=HomeNextStepText}"
                                                     Click="PrepareEnvironmentButton_Click" />
                                             <Button x:Name="StartRunButton"
                                                     Margin="0,0,8,8"
                                                     Content="开始任务(_U)"
                                                     Style="{StaticResource PrimaryButtonStyle}"
-                                                    Visibility="Collapsed"
+                                                    ToolTip="{Binding Text, ElementName=HomeNextStepText}"
+                                                    AutomationProperties.HelpText="{Binding Text, ElementName=HomeNextStepText}"
                                                     Click="StartRunButton_Click" />
                                             <Button x:Name="StopRunButton"
                                                     Margin="0,0,8,8"
                                                     Content="停止任务(_X)"
                                                     Style="{StaticResource DestructiveButtonStyle}"
-                                                    Visibility="Collapsed"
+                                                    ToolTip="{Binding Text, ElementName=HomeNextStepText}"
+                                                    AutomationProperties.HelpText="{Binding Text, ElementName=HomeNextStepText}"
                                                     Click="StopRunButton_Click" />
                                             <Button x:Name="LaunchGameButton"
                                                     Margin="0,0,8,8"
@@ -207,13 +211,14 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <StackPanel Grid.Row="0">
                                 <TextBlock Text="任务"
                                            Style="{StaticResource WindowTitleTextStyle}" />
                                 <TextBlock Margin="0,4,0,0"
-                                           Text="选择本次运行的任务并调整 MaaNOP 参数"
+                                           Text="选择任务并调整 MaaNOP 参数；修改会自动保存"
                                            Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
 
@@ -263,7 +268,48 @@
                                            AutomationProperties.LiveSetting="Polite" />
                             </Border>
 
-                            <StackPanel Grid.Row="4" Margin="0,24,0,0">
+                            <Border Grid.Row="4"
+                                    Margin="0,16,0,0"
+                                    Style="{StaticResource StatusPanelStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="任务控制"
+                                               Style="{StaticResource SectionTitleTextStyle}" />
+                                    <TextBlock Margin="0,6,0,0"
+                                               Text="先准备运行环境并完成游戏登录，然后开始任务。运行中可以停止本次任务。"
+                                               TextWrapping="Wrap"
+                                               Style="{StaticResource SecondaryTextStyle}" />
+                                    <WrapPanel Margin="0,16,0,0">
+                                        <Button x:Name="TaskPrepareEnvironmentButton"
+                                                Margin="0,0,8,8"
+                                                Content="准备运行环境(_O)"
+                                                Style="{StaticResource PrimaryButtonStyle}"
+                                                ToolTip="{Binding Text, ElementName=HomeNextStepText}"
+                                                AutomationProperties.HelpText="{Binding Text, ElementName=HomeNextStepText}"
+                                                Click="PrepareEnvironmentButton_Click" />
+                                        <Button x:Name="TaskStartRunButton"
+                                                Margin="0,0,8,8"
+                                                Content="开始任务(_U)"
+                                                Style="{StaticResource PrimaryButtonStyle}"
+                                                ToolTip="{Binding Text, ElementName=HomeNextStepText}"
+                                                AutomationProperties.HelpText="{Binding Text, ElementName=HomeNextStepText}"
+                                                Click="StartRunButton_Click" />
+                                        <Button x:Name="TaskStopRunButton"
+                                                Margin="0,0,8,8"
+                                                Content="停止任务(_X)"
+                                                Style="{StaticResource DestructiveButtonStyle}"
+                                                ToolTip="{Binding Text, ElementName=HomeNextStepText}"
+                                                AutomationProperties.HelpText="{Binding Text, ElementName=HomeNextStepText}"
+                                                Click="StopRunButton_Click" />
+                                    </WrapPanel>
+                                    <TextBlock Margin="0,4,0,0"
+                                               Text="{Binding Text, ElementName=HomeNextStepText}"
+                                               TextWrapping="Wrap"
+                                               Style="{StaticResource SecondaryTextStyle}"
+                                               AutomationProperties.LiveSetting="Polite" />
+                                </StackPanel>
+                            </Border>
+
+                            <StackPanel Grid.Row="5" Margin="0,24,0,0">
                                 <DockPanel LastChildFill="True">
                                     <TextBlock DockPanel.Dock="Left"
                                                Text="任务参数"
@@ -282,7 +328,7 @@
                                 <StackPanel x:Name="OptionEditorPanel" />
                             </StackPanel>
 
-                            <Expander Grid.Row="5"
+                            <Expander Grid.Row="6"
                                       Margin="0,24,0,24"
                                       Header="运行环境诊断"
                                       IsExpanded="False"

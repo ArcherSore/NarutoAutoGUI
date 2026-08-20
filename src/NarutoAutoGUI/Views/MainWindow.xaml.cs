@@ -326,7 +326,7 @@ public partial class MainWindow : FluentWindow
                     GamePathTextBox.Text,
                     GameArgumentsTextBox.Text);
                 _sessionManager.ShowPreview();
-                _logger.Info("真实 E2E 环境已准备；请在子桌面完成人工登录后隐藏子桌面。 ");
+                _logger.Info("真实 E2E 环境已准备；完成游戏登录后即可开始任务。 ");
             });
     }
 
@@ -351,9 +351,10 @@ public partial class MainWindow : FluentWindow
             "正在开始任务...",
             async () =>
             {
-                if (_sessionSnapshot.State != ChildSessionState.ConnectedHidden)
+                if (_sessionSnapshot.State is not (ChildSessionState.ConnectedVisible
+                    or ChildSessionState.ConnectedHidden))
                 {
-                    throw new InvalidOperationException("首片要求先隐藏 Child Session，再从主桌面启动 Run。 ");
+                    throw new InvalidOperationException("Child Session 尚未连接，当前不能开始任务。 ");
                 }
                 var project = _projectPlan
                               ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 ");
@@ -1261,17 +1262,18 @@ public partial class MainWindow : FluentWindow
                                         && projectReady
                                         && _workerSnapshot.Observation is WorkerObservation.WorkerNotStarted
                                             or WorkerObservation.ChildSessionEnded;
-        PrepareEnvironmentButton.IsEnabled = canStartCommand && projectReady;
 
         var selectedTaskValid = _projectPlan?.SelectedTaskName is not null
                                 && _projectConfigurationValid;
         StartRunButton.IsEnabled = canStartCommand
-                                   && _sessionSnapshot.State == ChildSessionState.ConnectedHidden
+                                   && state is (ChildSessionState.ConnectedVisible
+                                       or ChildSessionState.ConnectedHidden)
                                    && workerIdleFresh
                                    && worker!.WorkerState == WorkerState.Ready
                                    && projectReady
                                    && selectedTaskValid
                                    && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
+        TaskStartRunButton.IsEnabled = StartRunButton.IsEnabled;
         var active = worker?.ActiveRun;
         StopRunButton.IsEnabled = canStartCommand
                                   && _workerSnapshot.Observation == WorkerObservation.Connected
@@ -1279,6 +1281,7 @@ public partial class MainWindow : FluentWindow
                                   && active?.State == RunState.Running
                                   && active.Items.Count == 1
                                   && active.Items[0].State == PlanItemState.Running;
+        TaskStopRunButton.IsEnabled = StopRunButton.IsEnabled;
 
         var environmentReady = workerIdleFresh
                                && worker!.WorkerState == WorkerState.Ready
@@ -1287,17 +1290,15 @@ public partial class MainWindow : FluentWindow
                                && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
         var hasActiveRun = active is not null;
         var runningRun = active?.State == RunState.Running;
-        var waitingForLogin = environmentReady
-                              && state == ChildSessionState.ConnectedVisible;
-        var showStart = !hasActiveRun
-                        && environmentReady
-                        && state == ChildSessionState.ConnectedHidden;
-
-        PrepareEnvironmentButton.Visibility = !hasActiveRun && !showStart && !waitingForLogin
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        StartRunButton.Visibility = showStart ? Visibility.Visible : Visibility.Collapsed;
-        StopRunButton.Visibility = runningRun ? Visibility.Visible : Visibility.Collapsed;
+        var readyToStart = !hasActiveRun
+                           && environmentReady
+                           && state is (ChildSessionState.ConnectedVisible
+                               or ChildSessionState.ConnectedHidden);
+        PrepareEnvironmentButton.IsEnabled = canStartCommand
+                                             && projectReady
+                                             && !hasActiveRun
+                                             && !environmentReady;
+        TaskPrepareEnvironmentButton.IsEnabled = PrepareEnvironmentButton.IsEnabled;
 
         HomeNextStepText.Text = _busy
             ? "当前操作正在进行，请稍候。"
@@ -1307,11 +1308,9 @@ public partial class MainWindow : FluentWindow
                     ? "任务状态正在切换，请稍候。"
                     : !projectReady
                         ? "请先在“设置”中选择 MaaNOP 项目目录。"
-                        : waitingForLogin
-                            ? "请在子桌面完成登录，然后隐藏子桌面。"
-                            : showStart
-                                ? "运行环境已就绪，可以开始任务。"
-                                : "准备桌面分身、Worker 和游戏后即可开始任务。";
+                        : readyToStart
+                            ? "运行环境已就绪，可以开始任务。"
+                            : "准备桌面分身、Worker 和游戏后即可开始任务。";
     }
 
     private static string GetStateText(ChildSessionState state) => state switch

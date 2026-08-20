@@ -11,18 +11,20 @@ NarutoAutoGUI 是 MaaNOP 的 Windows GUI / Frontend，并计划逐步替代 MFAA
 - 展示 RDP 状态和 `childSessionId`；隐藏预览时保持连接存活。
 - 持久化游戏 exe、启动参数与 MaaNOP exe 路径，分别启动或一键启动挂机环境。
 - 启动前按进程名和 Session ID 检测，避免在当前 Child Session 重复启动。
+- 从 MaaNOP Project Interface 生成任务与参数配置，并通过 Child Session Worker、Named Pipe 和 MaaFramework 执行或停止单项任务。
+- Worker 启动验证 PID/Session，并在失败时记录 Task Scheduler 状态和清理无效 Admission。
 - 主窗口关闭时隐藏到托盘；真正退出前确认并注销仍在运行的 Child Session。
 - GUI 显示 INFO+；文件保存 DEBUG+，按天/10 MB 滚动并保留 14 天。
 
 ## 构建
 
-正式 GUI 需要 Windows x64 和 .NET 8 SDK。在仓库根目录运行：
+完整正式发布需要 Windows x64 和 .NET 9 SDK；GUI 本身仍面向 .NET 8，Worker 面向 .NET 9。在仓库根目录运行：
 
 ```powershell
 .\src\NarutoAutoGUI\scripts\build.ps1
 ```
 
-自包含发布结果位于 `artifacts\NarutoAutoGUI\win-x64`。冻结 baseline 仍可使用 `src\ChildSessionDemo\scripts\build.ps1` 单独构建。
+自包含 GUI 与固定 Worker runtime 发布结果位于 `artifacts\NarutoAutoGUI\win-x64`。冻结 baseline 仍可使用 `src\ChildSessionDemo\scripts\build.ps1` 单独构建。
 
 ## 运行
 

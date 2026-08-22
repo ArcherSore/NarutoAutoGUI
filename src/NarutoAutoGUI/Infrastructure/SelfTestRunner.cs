@@ -41,7 +41,7 @@ internal static class SelfTestRunner
             Console.WriteLine(
                 "SELF-TEST PASS: settings v2 + legacy migration; PI default/explicit resolver; "
                 + "ordered pipeline override; nested dormant intent; "
-                + "Win32 PI validation; unsupported PI constraint fail-closed; "
+                + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
                 + "PI structure/default/graph validation; typed input validation; "
                 + "MaaNOP Config v1; RunPlan digest; IPC framing; "
                 + "DEBUG+ file logging");
@@ -162,19 +162,17 @@ internal static class SelfTestRunner
             || defaultAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Mode").GetString() != "Default"
             || defaultAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Nested").GetString() != "On"
             || defaultPipeline.ValueKind != JsonValueKind.Array
-            || defaultPipeline.GetArrayLength() != 6
+            || defaultPipeline.GetArrayLength() != 4
             || !defaultPipeline[0].GetProperty("ScopeOrder").GetProperty("task").GetBoolean()
             || !defaultPipeline[1].GetProperty("ScopeOrder").GetProperty("global").GetBoolean()
-            || !defaultPipeline[2].GetProperty("ScopeOrder").GetProperty("resource").GetBoolean()
-            || !defaultPipeline[3].GetProperty("ScopeOrder").GetProperty("controller").GetBoolean()
-            || !defaultPipeline[4].GetProperty("ScopeOrder").GetProperty("task_option").GetBoolean()
-            || !defaultPipeline[5].GetProperty("ScopeOrder").GetProperty("nested").GetBoolean()
+            || !defaultPipeline[2].GetProperty("ScopeOrder").GetProperty("task_option").GetBoolean()
+            || !defaultPipeline[3].GetProperty("ScopeOrder").GetProperty("nested").GetBoolean()
             || defaultPipeline[1].GetProperty("TypedValues").GetProperty("retry_count").GetInt32() != 3
             || !defaultPipeline[1].GetProperty("TypedValues").GetProperty("enabled").GetBoolean()
             || defaultPipeline[1].GetProperty("TypedValues").GetProperty("summary").GetString()
                 != "978-1012:3:true"
             || defaultPipeline[0].GetProperty("SelfTestEntry").TryGetProperty("mode", out _)
-            || defaultPipeline[4].GetProperty("SelfTestEntry").TryGetProperty("enabled", out _)
+            || defaultPipeline[2].GetProperty("SelfTestEntry").TryGetProperty("enabled", out _)
             || defaultAttempt.PlanDigest != CanonicalDigest.ComputePlanDigestV1(defaultAttempt.Plan))
         {
             throw new InvalidOperationException("正式 PI Resolver / RunPlan / planDigest 验证失败。");
@@ -203,8 +201,8 @@ internal static class SelfTestRunner
                 .GetProperty("server_range").GetString() != "978"
             || explicitAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Nested").GetString() != "Off"
             || explicitServerRange != "978"
-            || explicitPipeline.GetArrayLength() != 6
-            || explicitPipeline[5].GetProperty("SelfTestEntry").GetProperty("nested").GetBoolean()
+            || explicitPipeline.GetArrayLength() != 4
+            || explicitPipeline[3].GetProperty("SelfTestEntry").GetProperty("nested").GetBoolean()
             || explicitPipeline[1].GetProperty("TypedValues").GetProperty("summary").GetString()
                 != "978:3:true"
             || explicitAttempt.PlanDigest == defaultAttempt.PlanDigest)
@@ -228,7 +226,7 @@ internal static class SelfTestRunner
         }
         var dormantAttempt = project.CreateRunStartAttempt();
         if (dormantAttempt.Plan.Items[0].ResolvedOptions.TryGetProperty("Nested", out _)
-            || dormantAttempt.Plan.Items[0].PipelineOverride.GetArrayLength() != 5)
+            || dormantAttempt.Plan.Items[0].PipelineOverride.GetArrayLength() != 3)
         {
             throw new InvalidOperationException("Dormant option 不应进入 Run Plan。");
         }
@@ -236,7 +234,7 @@ internal static class SelfTestRunner
         project.SetSelectedCase("Mode", "Default");
         var restoredAttempt = project.CreateRunStartAttempt();
         if (restoredAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Nested").GetString() != "Off"
-            || restoredAttempt.Plan.Items[0].PipelineOverride[5]
+            || restoredAttempt.Plan.Items[0].PipelineOverride[3]
                 .GetProperty("SelfTestEntry").GetProperty("nested").GetBoolean())
         {
             throw new InvalidOperationException("PI nested dormant intent 恢复验证失败。");
@@ -317,6 +315,20 @@ internal static class SelfTestRunner
     {
         var sourceInterface = File.ReadAllText(
             Path.Combine(sourceProjectDirectory, "interface.json"));
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "unsupported-controller-option",
+            "当前 MaaNOP GUI 不支持 $.controller[0].option",
+            root => root["controller"]!.AsArray()[0]!.AsObject()["option"] =
+                new JsonArray("ServerRange"));
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "unsupported-resource-option",
+            "当前 MaaNOP GUI 不支持 $.resource[0].option",
+            root => root["resource"]!.AsArray()[0]!.AsObject()["option"] =
+                new JsonArray("ServerRange"));
         VerifyRejectedProjectInterface(
             testDirectory,
             sourceInterface,
@@ -476,7 +488,7 @@ internal static class SelfTestRunner
               "controller": [{
                 "name": "Win32",
                 "type": "Win32",
-                "option": ["ControllerDefaults"],
+                "option": [],
                 "win32": {
                   "class_regex": ".*",
                   "window_regex": "SelfTestWindow",
@@ -488,7 +500,7 @@ internal static class SelfTestRunner
               "resource": [{
                 "name": "Default",
                 "path": ["./resource"],
-                "option": ["ResourceDefaults"]
+                "option": []
               }],
               "agent": {"child_exec": "python", "child_args": ["./agent/main.py"]},
               "global_option": ["ServerRange"],
@@ -542,22 +554,6 @@ internal static class SelfTestRunner
                     },
                     "ScopeOrder": {"global": true}
                   }
-                },
-                "ResourceDefaults": {
-                  "type": "select",
-                  "default_case": "Default",
-                  "cases": [{
-                    "name": "Default",
-                    "pipeline_override": {"ScopeOrder": {"resource": true}}
-                  }]
-                },
-                "ControllerDefaults": {
-                  "type": "select",
-                  "default_case": "Default",
-                  "cases": [{
-                    "name": "Default",
-                    "pipeline_override": {"ScopeOrder": {"controller": true}}
-                  }]
                 },
                 "Mode": {
                   "type": "select",

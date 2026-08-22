@@ -19,8 +19,6 @@ internal static class ProjectOptionResolver
         var globalValues = new JsonObject();
         var taskValues = new JsonObject();
         ResolveScope(project, project.GlobalOptions, config, globalValues, pipelineOverrides, "global_option");
-        ResolveScope(project, project.ResourceOptions, config, new JsonObject(), pipelineOverrides, "resource.option");
-        ResolveScope(project, project.ControllerOptions, config, new JsonObject(), pipelineOverrides, "controller.option");
         ResolveScope(project, task.Options, config, taskValues, pipelineOverrides, $"task.{task.Name}.option");
         return new ResolvedProjectOptions(
             ToElement(globalValues),

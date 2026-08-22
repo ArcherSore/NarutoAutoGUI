@@ -25,8 +25,6 @@ internal sealed record ProjectDefinition(
     AgentDefinition Agent,
     string RuntimeProfileDigest,
     IReadOnlyList<string> GlobalOptions,
-    IReadOnlyList<string> ResourceOptions,
-    IReadOnlyList<string> ControllerOptions,
     IReadOnlyList<TaskDefinition> Tasks,
     IReadOnlyDictionary<string, OptionDefinition> Options);
 

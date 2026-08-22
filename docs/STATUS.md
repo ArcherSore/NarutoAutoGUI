@@ -34,9 +34,9 @@
 - 主窗口和托盘的 Session/程序操作使用同一个应用级操作门；退出从入口禁止新操作，等待在途操作完成，并在注销前后重新确认 Session 状态。
 - 正式 GUI 使用最终 MaaNOP Config schema、真实 Project Interface 默认解析、不可变单项 Run Plan 和 Canonical Digest v1；通过用户级 Named Pipe 管理 Child Session Worker 的 admission、Snapshot、Run/Stop 和有界日志。
 - 正式 GUI 从真实 PI 通用生成 global 与当前 task 的 input、switch、select、递归 active option 编辑器；显式值写入 SchemaVersion 1 `maanop-config.json`，可恢复为跟随项目默认，未激活子分支的合法显式值作为 Dormant Intent 保留。首片仍只允许一个 top-level task 和一个 Plan Item，不包含硬编码 `ServerRange`、task entry 或 pipeline override。
-- 当前固定单 Win32 controller、单 resource 的 PI 子集明确拒绝尚未实现的 `resource.controller`、`task.controller/resource` 和 `option.controller/resource` 约束字段，不再接受后静默忽略；本机 MaaNOP v1.3.0 真实 `interface.json` 未使用这些字段。
+- 当前固定单 Win32 controller、单 resource 的 PI 子集明确拒绝尚未实现的非空 `controller.option`、`resource.option`，以及 `resource.controller`、`task.controller/resource` 和 `option.controller/resource` 约束字段，不再接受后静默忽略；本机 MaaNOP v1.3.0 真实 `interface.json` 未使用这些字段。
 - ProjectModel 保持 `ProjectPlanModule` 外部 interface 不变，将内部 definitions、Project Interface Loader 和 option Resolver 拆分到独立文件；Loader 在返回 `ProjectDefinition` 前统一校验 option 类型结构、所有 input 默认值/正则/`pipeline_type`、全部 option 引用和包含未激活 case 的完整递归图，Resolver 与配置编辑器只消费已验证的 PI 模型。
-- ProjectOptionResolver 按 MaaFramework PI 语义输出有序 `pipeline_override` 数组：task 自身 override 先进入数组，再依次追加 global、resource、controller、task option，active nested option 紧随父 case；不再在 GUI 侧递归深合并多个 fragment。Loader 同时拒绝 select/switch 顶层 `pipeline_override`，要求其 override 位于具体 case。
+- ProjectOptionResolver 按当前受支持 PI 子集输出有序 `pipeline_override` 数组：task 自身 override 先进入数组，再依次追加 global 与 task option，active nested option 紧随父 case；不再在 GUI 侧递归深合并多个 fragment。Loader 同时拒绝 select/switch 顶层 `pipeline_override`，要求其 override 位于具体 case。
 - PI Loader 在生成 Win32 controller definition 前校验 `class_regex`、`window_regex` 的正则语法，以及 Maa.Framework 5.8.0 支持的 `screencap`、`mouse`、`keyboard` 方法名；Worker 仍对 Launch Manifest 做防御性正则创建/匹配超时和 MaaFramework enum 映射检查。
 - `ProjectTaskChoice` 只承载 task 名称与显示标签；PI 默认 option 的合法性已成为 Loader 成功返回后的不变量，不再保留 `DefaultOnlyValid/ValidationError` 双重状态。切换 task 时仍在保存 Config 前 Resolve 新激活的 option 图，以拦截非法 dormant intent。
 - ProjectModel 内部使用 `OptionDefinitionKind` 与 `PipelineValueKind` 表达已验证的 option/input 类型，不再让 Resolver、配置编辑器重复解释协议字符串；`ProjectInputValue` 统一执行默认值与显式值的 verify、正则超时、InvariantCulture int/bool 解析和类型化 `JsonNode` 转换。
@@ -71,6 +71,7 @@
 - 2026-08-22：PI Loader 补齐两个 Win32 窗口正则和三个 MaaFramework 控制方式字段的语义校验，自动自检增加五类带准确 JSON path 的负向 fixture；Worker 为不可信 Launch Manifest 保留正则创建错误和实际窗口文本匹配超时诊断。NarutoAutoGUI 与 NarutoAutoWorker Release `win-x64` build、GUI 直接 `--self-test` 均通过，0 警告、0 错误；未修改已冻结 Child Session baseline。
 - 2026-08-22：删除 task catalog 的 `DefaultOnlyValid/ValidationError` 冗余状态和构造期二次默认 Resolve；非法 PI 统一在 `ProjectPlanModule.Open` 的 Loader seam 失败，task 切换仍验证可能重新激活的 dormant intent。NarutoAutoGUI Release `win-x64` build 与直接 `--self-test` 通过，0 警告、0 错误。
 - 2026-08-22：ProjectModel 以内部 enum 替代 option type 与 pipeline type 字符串，并新增 `ProjectInputValue` 统一 Loader 默认值和 Resolver 显式值的校验/类型转换。自动自检新增非法显式 int/bool 不落盘覆盖；NarutoAutoGUI Release `win-x64` build 与直接 `--self-test` 通过，0 警告、0 错误。
+- 2026-08-22：固定单 controller/resource 的当前 UI 对非空 `controller.option` 与 `resource.option` 改为 fail closed；Loader 接受字段缺失或空数组，合法 `ProjectDefinition` 和 Resolver 不再携带不可编辑的 scope。自动自检相应收口为 task/global/task/nested 有序 fragment，并新增两个 option scope 负向 fixture；NarutoAutoGUI Release `win-x64` build 与直接 `--self-test` 通过，0 警告、0 错误。
 - build 期间 NuGet 无法访问漏洞元数据源，产生 `NU1900` 警告；包还原和编译本身成功。该警告不是代码编译错误。
 
 以下项目需要管理员权限、可见桌面或真实外部程序，本轮自动验证不能替代手动回归，当前不声明正式 GUI 已完成实机复验：RDP ActiveX 创建/恢复、托盘交互、游戏/MaaNOP 跨 Session 启动、异常断开后重建连接、创建/启动过程中从托盘退出、退出确认取消/注销失败恢复、第二实例拦截和最终注销。

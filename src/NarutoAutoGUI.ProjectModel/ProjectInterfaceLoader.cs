@@ -103,13 +103,13 @@ internal static class ProjectInterfaceLoader
         {
             throw new InvalidDataException("首版要求恰好一个 resource。 ");
         }
-        var (resources, resourceOptions) = ParseResources(resourceElements, projectRoot);
+        var resources = ParseResources(resourceElements, projectRoot);
         var (agentExec, agentArgs) = ParseAgent(RequireProperty(root, "agent", "$"));
         var agent = new AgentDefinition(agentExec, agentArgs, projectRoot);
         var tasks = ParseTasks(RequireArray(root, "task", "$"));
         var options = ParseOptions(RequireProperty(root, "option", "$"));
         var globalOptions = ReadStringArray(root, "global_option", required: false, "$");
-        ValidateReferences(globalOptions, resourceOptions, controller.Options, tasks, options);
+        ValidateReferences(globalOptions, tasks, options);
         ValidateOptionDefinitions(options);
         ValidateOptionGraph(options);
 
@@ -120,24 +120,22 @@ internal static class ProjectInterfaceLoader
             CanonicalDigest.ComputeSourceInterfaceDigest(bytes));
         var runtimeProfileDigest = CanonicalDigest.ComputeRuntimeProfileDigestV1(
             projectRoot,
-            controller.Definition,
+            controller,
             resources,
             agent);
         return new ProjectDefinition(
             projectRoot,
             provenance,
-            controller.Definition,
+            controller,
             resources,
             agent,
             runtimeProfileDigest,
             globalOptions,
-            resourceOptions,
-            controller.Options,
             tasks,
             options);
     }
 
-    private static (Win32ControllerDefinition Definition, IReadOnlyList<string> Options) ParseController(
+    private static Win32ControllerDefinition ParseController(
         JsonElement element)
     {
         var obj = RequireObject(element, "$.controller[0]");
@@ -152,35 +150,33 @@ internal static class ProjectInterfaceLoader
         var windowRegex = RequireString(win32, "window_regex", "$.controller[0].win32");
         ValidateRegex(classRegex, "$.controller[0].win32.class_regex");
         ValidateRegex(windowRegex, "$.controller[0].win32.window_regex");
-        return (
-            new Win32ControllerDefinition(
-                RequireString(obj, "name", "$.controller[0]"),
-                classRegex,
-                windowRegex,
-                RequireSupportedString(
-                    win32,
-                    "screencap",
-                    "$.controller[0].win32",
-                    AllowedWin32ScreencapMethods),
-                RequireSupportedString(
-                    win32,
-                    "mouse",
-                    "$.controller[0].win32",
-                    AllowedWin32InputMethods),
-                RequireSupportedString(
-                    win32,
-                    "keyboard",
-                    "$.controller[0].win32",
-                    AllowedWin32InputMethods)),
-            ReadStringArray(obj, "option", required: false, "$.controller[0]"));
+        RejectNonEmptyOptionScope(obj, "$.controller[0]");
+        return new Win32ControllerDefinition(
+            RequireString(obj, "name", "$.controller[0]"),
+            classRegex,
+            windowRegex,
+            RequireSupportedString(
+                win32,
+                "screencap",
+                "$.controller[0].win32",
+                AllowedWin32ScreencapMethods),
+            RequireSupportedString(
+                win32,
+                "mouse",
+                "$.controller[0].win32",
+                AllowedWin32InputMethods),
+            RequireSupportedString(
+                win32,
+                "keyboard",
+                "$.controller[0].win32",
+                AllowedWin32InputMethods));
     }
 
-    private static (IReadOnlyList<ResourceDefinition> Resources, IReadOnlyList<string> Options) ParseResources(
+    private static IReadOnlyList<ResourceDefinition> ParseResources(
         IReadOnlyList<JsonElement> elements,
         string projectRoot)
     {
         var resources = new List<ResourceDefinition>();
-        var allOptions = new List<string>();
         for (var index = 0; index < elements.Count; index++)
         {
             var path = $"$.resource[{index}]";
@@ -190,10 +186,10 @@ internal static class ProjectInterfaceLoader
                 .Select(value => PathCanonicalizerV1.Canonicalize(
                     Path.IsPathFullyQualified(value) ? value : Path.Combine(projectRoot, value)))
                 .ToArray();
+            RejectNonEmptyOptionScope(obj, path);
             resources.Add(new ResourceDefinition(RequireString(obj, "name", path), resourcePaths));
-            allOptions.AddRange(ReadStringArray(obj, "option", required: false, path));
         }
-        return (resources, allOptions);
+        return resources;
     }
 
     private static (string ChildExec, IReadOnlyList<string> ChildArgs) ParseAgent(JsonElement element)
@@ -335,14 +331,10 @@ internal static class ProjectInterfaceLoader
 
     private static void ValidateReferences(
         IReadOnlyList<string> global,
-        IReadOnlyList<string> resource,
-        IReadOnlyList<string> controller,
         IReadOnlyList<TaskDefinition> tasks,
         IReadOnlyDictionary<string, OptionDefinition> options)
     {
         ValidateReferences(global, "$.global_option", options);
-        ValidateReferences(resource, "$.resource[0].option", options);
-        ValidateReferences(controller, "$.controller[0].option", options);
         for (var taskIndex = 0; taskIndex < tasks.Count; taskIndex++)
         {
             ValidateReferences(tasks[taskIndex].Options, $"$.task[{taskIndex}].option", options);
@@ -529,6 +521,16 @@ internal static class ProjectInterfaceLoader
     private static string RequireString(JsonElement obj, string name, string path) =>
         OptionalString(obj, name)
         ?? throw new InvalidDataException($"{path}.{name} 必须是非空 string。 ");
+
+    private static void RejectNonEmptyOptionScope(JsonElement obj, string path)
+    {
+        var options = ReadStringArray(obj, "option", required: false, path);
+        if (options.Count != 0)
+        {
+            throw new InvalidDataException(
+                $"当前 MaaNOP GUI 不支持 {path}.option；该数组必须省略或为空。 ");
+        }
+    }
 
     private static string RequireSupportedString(
         JsonElement obj,

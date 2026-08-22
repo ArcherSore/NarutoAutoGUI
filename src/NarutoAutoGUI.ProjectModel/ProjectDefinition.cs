@@ -3,6 +3,20 @@ using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoGUI.ProjectModel;
 
+internal enum OptionDefinitionKind
+{
+    Select,
+    Switch,
+    Input
+}
+
+internal enum PipelineValueKind
+{
+    String,
+    Int,
+    Bool
+}
+
 internal sealed record ProjectDefinition(
     string ProjectRoot,
     ProjectProvenance Provenance,
@@ -27,7 +41,7 @@ internal sealed record OptionDefinition(
     string Name,
     string Label,
     string Description,
-    string Type,
+    OptionDefinitionKind Kind,
     string? DefaultCase,
     IReadOnlyList<InputDefinition> Inputs,
     IReadOnlyList<CaseDefinition> Cases,
@@ -38,7 +52,7 @@ internal sealed record InputDefinition(
     string Label,
     string Description,
     string Default,
-    string PipelineType,
+    PipelineValueKind PipelineKind,
     string? Verify,
     string? PatternMessage);
 

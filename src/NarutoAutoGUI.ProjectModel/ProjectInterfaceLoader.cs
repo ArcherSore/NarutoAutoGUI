@@ -243,22 +243,18 @@ internal static class ProjectInterfaceLoader
             var path = $"$.option.{property.Name}";
             var option = RequireObject(property.Value, path);
             RejectUnknownProperties(option, AllowedOptionProperties, path);
-            var type = OptionalString(option, "type") ?? "select";
-            if (type is not ("select" or "switch" or "input"))
-            {
-                throw new InvalidDataException($"首版不支持 option type：{type}（{path}）。 ");
-            }
-            if (type is "select" or "switch"
+            var kind = ParseOptionKind(OptionalString(option, "type") ?? "select", path);
+            if (kind is OptionDefinitionKind.Select or OptionDefinitionKind.Switch
                 && option.TryGetProperty("pipeline_override", out _))
             {
                 throw new InvalidDataException(
-                    $"{type} option {path} 不能声明 pipeline_override；请放到对应 case 中。 ");
+                    $"{FormatOptionKind(kind)} option {path} 不能声明 pipeline_override；请放到对应 case 中。 ");
             }
             result.Add(property.Name, new OptionDefinition(
                 property.Name,
                 ReadDisplayString(option, "label") ?? property.Name,
                 ReadDisplayString(option, "description") ?? string.Empty,
-                type,
+                kind,
                 OptionalString(option, "default_case"),
                 ParseInputs(option, path),
                 ParseCases(option, path),
@@ -292,17 +288,15 @@ internal static class ProjectInterfaceLoader
             {
                 throw new InvalidDataException($"default-only slice 要求 {inputPath}.default 为 string。 ");
             }
-            var pipelineType = OptionalString(input, "pipeline_type") ?? "string";
-            if (pipelineType is not ("string" or "int" or "bool"))
-            {
-                throw new InvalidDataException($"不支持 pipeline_type={pipelineType}（{inputPath}）。 ");
-            }
+            var pipelineKind = ParsePipelineKind(
+                OptionalString(input, "pipeline_type") ?? "string",
+                inputPath);
             result.Add(new InputDefinition(
                 name,
                 ReadDisplayString(input, "label") ?? name,
                 ReadDisplayString(input, "description") ?? string.Empty,
                 defaultValue.GetString()!,
-                pipelineType,
+                pipelineKind,
                 OptionalString(input, "verify"),
                 ReadDisplayString(input, "pattern_msg")));
         }
@@ -386,7 +380,7 @@ internal static class ProjectInterfaceLoader
         foreach (var option in options.Values)
         {
             var path = $"$.option.{option.Name}";
-            if (option.Type == "input")
+            if (option.Kind == OptionDefinitionKind.Input)
             {
                 if (option.Inputs.Count == 0)
                 {
@@ -402,20 +396,25 @@ internal static class ProjectInterfaceLoader
                 }
                 for (var inputIndex = 0; inputIndex < option.Inputs.Count; inputIndex++)
                 {
-                    ValidateInputDefault(option.Inputs[inputIndex], $"{path}.inputs[{inputIndex}]");
+                    var input = option.Inputs[inputIndex];
+                    _ = ProjectInputValue.Parse(
+                        input,
+                        input.Default,
+                        $"{path}.inputs[{inputIndex}].default");
                 }
                 continue;
             }
 
             if (option.Inputs.Count != 0)
             {
-                throw new InvalidDataException($"{option.Type} option {path} 不能声明 inputs。 ");
+                throw new InvalidDataException(
+                    $"{FormatOptionKind(option.Kind)} option {path} 不能声明 inputs。 ");
             }
             if (option.Cases.Count == 0)
             {
                 throw new InvalidDataException($"{path}.cases 必须至少包含一个 case。 ");
             }
-            if (option.Type == "switch" && option.Cases.Count != 2)
+            if (option.Kind == OptionDefinitionKind.Switch && option.Cases.Count != 2)
             {
                 throw new InvalidDataException($"switch option {path} 必须恰好有两个 case。 ");
             }
@@ -431,45 +430,28 @@ internal static class ProjectInterfaceLoader
         }
     }
 
-    private static void ValidateInputDefault(InputDefinition input, string path)
-    {
-        if (input.Verify is not null)
+    private static OptionDefinitionKind ParseOptionKind(string value, string path) =>
+        value switch
         {
-            Regex regex;
-            try
-            {
-                regex = new Regex(
-                    input.Verify,
-                    RegexOptions.CultureInvariant,
-                    TimeSpan.FromSeconds(1));
-            }
-            catch (ArgumentException exception)
-            {
-                throw new InvalidDataException($"{path}.verify 不是合法正则表达式。", exception);
-            }
+            "select" => OptionDefinitionKind.Select,
+            "switch" => OptionDefinitionKind.Switch,
+            "input" => OptionDefinitionKind.Input,
+            _ => throw new InvalidDataException(
+                $"首版不支持 option type：{value}（{path}）。 ")
+        };
 
-            try
-            {
-                if (!regex.IsMatch(input.Default))
-                {
-                    throw new InvalidDataException($"{path}.default 未通过 verify。 ");
-                }
-            }
-            catch (RegexMatchTimeoutException exception)
-            {
-                throw new InvalidDataException($"{path}.default 的 verify 执行超时。", exception);
-            }
-        }
+    private static PipelineValueKind ParsePipelineKind(string value, string path) =>
+        value switch
+        {
+            "string" => PipelineValueKind.String,
+            "int" => PipelineValueKind.Int,
+            "bool" => PipelineValueKind.Bool,
+            _ => throw new InvalidDataException(
+                $"不支持 pipeline_type={value}（{path}）。 ")
+        };
 
-        if (input.PipelineType == "int" && !int.TryParse(input.Default, out _))
-        {
-            throw new InvalidDataException($"{path}.default 不是合法 int。 ");
-        }
-        if (input.PipelineType == "bool" && !bool.TryParse(input.Default, out _))
-        {
-            throw new InvalidDataException($"{path}.default 不是合法 bool。 ");
-        }
-    }
+    private static string FormatOptionKind(OptionDefinitionKind kind) =>
+        kind.ToString().ToLowerInvariant();
 
     private static void ValidateOptionGraph(
         IReadOnlyDictionary<string, OptionDefinition> options)

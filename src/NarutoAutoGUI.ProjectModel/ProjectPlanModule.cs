@@ -79,7 +79,7 @@ public sealed class ProjectPlanModule
         string value)
     {
         var option = FindOption(optionName);
-        if (option.Type != "input")
+        if (option.Kind != OptionDefinitionKind.Input)
         {
             throw new ArgumentException($"option {optionName} 不是 input。", nameof(optionName));
         }
@@ -106,7 +106,7 @@ public sealed class ProjectPlanModule
     public ProjectConfigurationView SetSelectedCase(string optionName, string selectedCase)
     {
         var option = FindOption(optionName);
-        if (option.Type is not ("select" or "switch"))
+        if (option.Kind is not (OptionDefinitionKind.Select or OptionDefinitionKind.Switch))
         {
             throw new ArgumentException(
                 $"option {optionName} 不是 select/switch。",
@@ -258,7 +258,7 @@ public sealed class ProjectPlanModule
     private ProjectOptionEditor BuildEditor(string optionName, MaaNopConfig config)
     {
         var option = FindOption(optionName);
-        if (option.Type == "input")
+        if (option.Kind == OptionDefinitionKind.Input)
         {
             var explicitInputs = ExplicitOptionIntent.ReadInputs(option, config);
             var inputs = option.Inputs.Select(input => new ProjectInputEditor(
@@ -293,7 +293,9 @@ public sealed class ProjectPlanModule
             option.Name,
             option.Label,
             option.Description,
-            option.Type == "switch" ? ProjectOptionKind.Switch : ProjectOptionKind.Select,
+            option.Kind == OptionDefinitionKind.Switch
+                ? ProjectOptionKind.Switch
+                : ProjectOptionKind.Select,
             explicitCase is not null,
             selectedCase,
             option.DefaultCase,

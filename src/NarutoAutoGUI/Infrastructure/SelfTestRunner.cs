@@ -42,7 +42,7 @@ internal static class SelfTestRunner
                 "SELF-TEST PASS: settings v2 + legacy migration; PI default/explicit resolver; "
                 + "ordered pipeline override; nested dormant intent; "
                 + "Win32 PI validation; unsupported PI constraint fail-closed; "
-                + "PI structure/default/graph validation; "
+                + "PI structure/default/graph validation; typed input validation; "
                 + "MaaNOP Config v1; RunPlan digest; IPC framing; "
                 + "DEBUG+ file logging");
             return 0;
@@ -251,8 +251,13 @@ internal static class SelfTestRunner
         {
             // Expected: invalid edits are not persisted.
         }
-        if (project.GetConfiguration().GlobalOptions.Single().Inputs
-                .Single(input => input.Name == "server_range").Value != "978")
+        VerifyRejectedInputEdit(project, "retry_count", "3.5");
+        VerifyRejectedInputEdit(project, "enabled", "not-a-bool");
+        var retainedInputs = project.GetConfiguration().GlobalOptions.Single().Inputs
+            .ToDictionary(input => input.Name, input => input.Value, StringComparer.Ordinal);
+        if (retainedInputs["server_range"] != "978"
+            || retainedInputs["retry_count"] != "3"
+            || retainedInputs["enabled"] != "true")
         {
             throw new InvalidOperationException("非法显式值不应覆盖最后一次合法配置。");
         }
@@ -267,6 +272,22 @@ internal static class SelfTestRunner
             || resetAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Nested").GetString() != "On")
         {
             throw new InvalidOperationException("PI option 跟随项目默认验证失败。");
+        }
+    }
+
+    private static void VerifyRejectedInputEdit(
+        ProjectPlanModule project,
+        string inputName,
+        string invalidValue)
+    {
+        try
+        {
+            project.SetInputValue("ServerRange", inputName, invalidValue);
+            throw new InvalidOperationException($"PI input {inputName} 未拒绝非法显式值。");
+        }
+        catch (InvalidDataException)
+        {
+            // Expected: invalid edits are not persisted.
         }
     }
 

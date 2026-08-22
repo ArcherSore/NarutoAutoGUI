@@ -39,6 +39,7 @@
 - ProjectOptionResolver 按 MaaFramework PI 语义输出有序 `pipeline_override` 数组：task 自身 override 先进入数组，再依次追加 global、resource、controller、task option，active nested option 紧随父 case；不再在 GUI 侧递归深合并多个 fragment。Loader 同时拒绝 select/switch 顶层 `pipeline_override`，要求其 override 位于具体 case。
 - PI Loader 在生成 Win32 controller definition 前校验 `class_regex`、`window_regex` 的正则语法，以及 Maa.Framework 5.8.0 支持的 `screencap`、`mouse`、`keyboard` 方法名；Worker 仍对 Launch Manifest 做防御性正则创建/匹配超时和 MaaFramework enum 映射检查。
 - `ProjectTaskChoice` 只承载 task 名称与显示标签；PI 默认 option 的合法性已成为 Loader 成功返回后的不变量，不再保留 `DefaultOnlyValid/ValidationError` 双重状态。切换 task 时仍在保存 Config 前 Resolve 新激活的 option 图，以拦截非法 dormant intent。
+- ProjectModel 内部使用 `OptionDefinitionKind` 与 `PipelineValueKind` 表达已验证的 option/input 类型，不再让 Resolver、配置编辑器重复解释协议字符串；`ProjectInputValue` 统一执行默认值与显式值的 verify、正则超时、InvariantCulture int/bool 解析和类型化 `JsonNode` 转换。
 - Worker 自带固定 MaaFramework runtime，在 Child Session 中负责 Win32 Controller、MaaNOP Resource、MaaTasker 和每 Run Python Agent 生命周期；MFAAvalonia 不进入正常执行链。
 - Worker 使用专用的 Task Scheduler 强化启动路径：`RunEx` 后等待新的 Worker PID 并验证 Child Session，记录 Task State 与 `LastTaskResult`，再清理临时任务；进程验证成功后 PID 写回 Admission。若进程未生成则 10 秒内失败并清理 Pending Admission；若 admission + fresh Snapshot 在 60 秒内未完成且 Worker PID 缺失或进程已退出，则自动回滚 `worker.json` 与 launch manifest，避免下一次准备环境被陈旧记录阻塞。
 
@@ -69,6 +70,7 @@
 - 2026-08-22：ProjectOptionResolver 将运行期 `pipeline_override` 从 GUI 递归深合并对象改为 MaaFramework 接受的有序 fragment 数组，并新增 task/global/resource/controller/task/nested 六段顺序、同节点 fragment 隔离、int/bool 精确占位符、嵌入字符串、dormant nested option 和 select 顶层 override fail-closed 自检。NarutoAutoGUI Release `win-x64` build 与直接 `--self-test` 通过，0 警告、0 错误；真实 MaaNOP Run 尚待用户验收，不据此声明交互式 E2E 已复验。
 - 2026-08-22：PI Loader 补齐两个 Win32 窗口正则和三个 MaaFramework 控制方式字段的语义校验，自动自检增加五类带准确 JSON path 的负向 fixture；Worker 为不可信 Launch Manifest 保留正则创建错误和实际窗口文本匹配超时诊断。NarutoAutoGUI 与 NarutoAutoWorker Release `win-x64` build、GUI 直接 `--self-test` 均通过，0 警告、0 错误；未修改已冻结 Child Session baseline。
 - 2026-08-22：删除 task catalog 的 `DefaultOnlyValid/ValidationError` 冗余状态和构造期二次默认 Resolve；非法 PI 统一在 `ProjectPlanModule.Open` 的 Loader seam 失败，task 切换仍验证可能重新激活的 dormant intent。NarutoAutoGUI Release `win-x64` build 与直接 `--self-test` 通过，0 警告、0 错误。
+- 2026-08-22：ProjectModel 以内部 enum 替代 option type 与 pipeline type 字符串，并新增 `ProjectInputValue` 统一 Loader 默认值和 Resolver 显式值的校验/类型转换。自动自检新增非法显式 int/bool 不落盘覆盖；NarutoAutoGUI Release `win-x64` build 与直接 `--self-test` 通过，0 警告、0 错误。
 - build 期间 NuGet 无法访问漏洞元数据源，产生 `NU1900` 警告；包还原和编译本身成功。该警告不是代码编译错误。
 
 以下项目需要管理员权限、可见桌面或真实外部程序，本轮自动验证不能替代手动回归，当前不声明正式 GUI 已完成实机复验：RDP ActiveX 创建/恢复、托盘交互、游戏/MaaNOP 跨 Session 启动、异常断开后重建连接、创建/启动过程中从托盘退出、退出确认取消/注销失败恢复、第二实例拦截和最终注销。

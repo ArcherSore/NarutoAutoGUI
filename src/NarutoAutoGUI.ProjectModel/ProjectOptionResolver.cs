@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoGUI.ProjectModel;
@@ -75,9 +74,9 @@ internal static class ProjectOptionResolver
         var option = project.Options[optionName];
         try
         {
-            switch (option.Type)
+            switch (option.Kind)
             {
-                case "input":
+                case OptionDefinitionKind.Input:
                 {
                     var values = new JsonObject();
                     var substitutions = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
@@ -87,25 +86,11 @@ internal static class ProjectOptionResolver
                         var resolvedValue = explicitInputs.TryGetValue(input.Name, out var explicitValue)
                             ? explicitValue
                             : input.Default;
-                        if (input.Verify is not null)
-                        {
-                            var regex = new Regex(
-                                input.Verify,
-                                RegexOptions.CultureInvariant,
-                                TimeSpan.FromSeconds(1));
-                            if (!regex.IsMatch(resolvedValue))
-                            {
-                                throw new InvalidDataException(
-                                    input.PatternMessage is null
-                                        ? $"option {optionName} input {input.Name} 的值未通过 verify。 "
-                                        : $"option {optionName} input {input.Name}: {input.PatternMessage}");
-                            }
-                        }
                         values[input.Name] = resolvedValue;
-                        substitutions[input.Name] = ConvertPipelineValue(
-                            optionName,
+                        substitutions[input.Name] = ProjectInputValue.Parse(
                             input,
-                            resolvedValue);
+                            resolvedValue,
+                            $"option {optionName} input {input.Name} 的值");
                     }
                     resolvedValues[optionName] = values;
                     pipelineOverrides.Add(CreateTemplatedOverride(
@@ -113,8 +98,8 @@ internal static class ProjectOptionResolver
                         substitutions));
                     break;
                 }
-                case "select":
-                case "switch":
+                case OptionDefinitionKind.Select:
+                case OptionDefinitionKind.Switch:
                 {
                     var selectedName = ExplicitOptionIntent.ReadSelectedCase(option, config)
                                        ?? option.DefaultCase!;
@@ -137,32 +122,13 @@ internal static class ProjectOptionResolver
                 }
                 default:
                     throw new InvalidOperationException(
-                        $"Loader 产生了不支持的 option type：{option.Type}。 ");
+                        $"Loader 产生了不支持的 option kind：{option.Kind}。 ");
             }
         }
         catch (Exception exception) when (exception is InvalidDataException or JsonException)
         {
             throw new InvalidDataException($"{scope} 解析 {optionName} 失败：{exception.Message}", exception);
         }
-    }
-
-    private static JsonNode? ConvertPipelineValue(
-        string optionName,
-        InputDefinition input,
-        string value)
-    {
-        return input.PipelineType switch
-        {
-            "string" => JsonValue.Create(value),
-            "int" when int.TryParse(value, out var intValue) => JsonValue.Create(intValue),
-            "bool" when bool.TryParse(value, out var boolValue) => JsonValue.Create(boolValue),
-            "int" => throw new InvalidDataException(
-                $"option {optionName} input {input.Name} 的值不是合法 int。 "),
-            "bool" => throw new InvalidDataException(
-                $"option {optionName} input {input.Name} 的值不是合法 bool。 "),
-            _ => throw new InvalidOperationException(
-                $"Loader 产生了不支持的 pipeline_type：{input.PipelineType}。 ")
-        };
     }
 
     private static JsonObject CreateTemplatedOverride(

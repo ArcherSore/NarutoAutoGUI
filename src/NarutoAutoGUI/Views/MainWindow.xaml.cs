@@ -89,9 +89,7 @@ public partial class MainWindow : FluentWindow
         GamePathTextBox.Text = settings.GameExecutablePath;
         GameArgumentsTextBox.Text = settings.GameArguments;
         MaaNopProjectDirectoryTextBox.Text = settings.MaaNopProjectDirectory;
-        LogListBox.AddHandler(
-            ScrollViewer.ScrollChangedEvent,
-            new ScrollChangedEventHandler(LogListBox_ScrollChanged));
+        LogListBox.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler(LogListBox_ScrollChanged));
         _logger.EntryWritten += OnLogEntryWritten;
         _sessionManager.StateChanged += OnSessionStateChanged;
         _workerCoordinator.StateChanged += OnWorkerStateChanged;
@@ -271,10 +269,7 @@ public partial class MainWindow : FluentWindow
     }
 
     private async void LaunchGameButton_Click(object sender, RoutedEventArgs e) =>
-        await LaunchSingleAsync(
-            "游戏",
-            GamePathTextBox.Text,
-            GameArgumentsTextBox.Text);
+        await LaunchSingleAsync("游戏", GamePathTextBox.Text, GameArgumentsTextBox.Text);
 
     private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
         => TryOpenLogsDirectory(showError: true);
@@ -422,9 +417,7 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void OptionInputTextBox_LostKeyboardFocus(
-        object sender,
-        KeyboardFocusChangedEventArgs e)
+    private void OptionInputTextBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         if (_updatingOptionEditors
             || sender is not WpfTextBox { Tag: OptionInputTag tag } textBox)
@@ -434,8 +427,7 @@ public partial class MainWindow : FluentWindow
 
         try
         {
-            var configuration = (_projectPlan
-                ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
+            var configuration = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
                 .SetInputValue(tag.OptionName, tag.InputName, textBox.Text);
             _pendingStartAttempt = null;
             RenderOptionEditors(configuration);
@@ -464,8 +456,7 @@ public partial class MainWindow : FluentWindow
 
         try
         {
-            var configuration = (_projectPlan
-                ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
+            var configuration = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
                 .SetSelectedCase(tag.OptionName, selected.Name);
             _pendingStartAttempt = null;
             RenderOptionEditors(configuration);
@@ -488,8 +479,7 @@ public partial class MainWindow : FluentWindow
 
         try
         {
-            var configuration = (_projectPlan
-                ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
+            var configuration = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
                 .FollowProjectDefault(tag.OptionName);
             _pendingStartAttempt = null;
             RenderOptionEditors(configuration);
@@ -554,9 +544,7 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void AddOptionSection(
-        string title,
-        IReadOnlyList<ProjectOptionEditor> options)
+    private void AddOptionSection(string title, IReadOnlyList<ProjectOptionEditor> options)
     {
         if (options.Count == 0)
         {
@@ -576,10 +564,7 @@ public partial class MainWindow : FluentWindow
 
     private void AddOptionEditor(ProjectOptionEditor option, int depth)
     {
-        var panel = new StackPanel
-        {
-            Margin = new Thickness(depth * 18, 4, 0, 4)
-        };
+        var panel = new StackPanel { Margin = new Thickness(depth * 18, 4, 0, 4) };
         var header = new Grid();
         header.ColumnDefinitions.Add(new ColumnDefinition());
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -678,8 +663,7 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private static IEnumerable<ProjectOptionEditor> EnumerateOptions(
-        ProjectConfigurationView configuration) =>
+    private static IEnumerable<ProjectOptionEditor> EnumerateOptions(ProjectConfigurationView configuration) =>
         configuration.GlobalOptions.SelectMany(Flatten)
             .Concat(configuration.TaskOptions.SelectMany(Flatten));
 
@@ -692,10 +676,7 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private async Task LaunchSingleAsync(
-        string displayName,
-        string path,
-        string arguments = "")
+    private async Task LaunchSingleAsync(string displayName, string path, string arguments = "")
     {
         await RunOperationAsync(
             $"正在启动{displayName}...",
@@ -748,11 +729,7 @@ public partial class MainWindow : FluentWindow
     {
         _logger.Error($"{operation}。", exception);
         OperationStatusText.Text = $"失败：{operation}";
-        ShowActionableError(
-            operation,
-            exception,
-            GetRecoveryGuidance(operation),
-            offerLogDirectory: true);
+        ShowActionableError(operation, exception, GetRecoveryGuidance(operation), offerLogDirectory: true);
     }
 
     private void SaveSettings()
@@ -790,11 +767,7 @@ public partial class MainWindow : FluentWindow
             OperationStatusText.Text = "失败：保存配置";
             if (showError)
             {
-                ShowActionableError(
-                    "保存配置失败",
-                    exception,
-                    "请确认程序目录可写，或将程序移动到有写入权限的目录后重试。",
-                    offerLogDirectory: true);
+                ShowActionableError("保存配置失败", exception, "请确认程序目录可写，或将程序移动到有写入权限的目录后重试。", offerLogDirectory: true);
             }
 
             return false;
@@ -894,11 +867,7 @@ public partial class MainWindow : FluentWindow
 
     private static string? BrowseProjectDirectory(string currentPath, string title)
     {
-        var dialog = new WpfOpenFolderDialog
-        {
-            Title = title,
-            Multiselect = false
-        };
+        var dialog = new WpfOpenFolderDialog { Title = title, Multiselect = false };
         if (!string.IsNullOrWhiteSpace(currentPath) && Directory.Exists(currentPath))
         {
             dialog.InitialDirectory = Path.GetFullPath(currentPath);
@@ -930,9 +899,7 @@ public partial class MainWindow : FluentWindow
         {
             _newLogCount = 0;
             UpdateResumeLogFollowButton();
-            _ = Dispatcher.BeginInvoke(
-                ScrollLogsToEnd,
-                DispatcherPriority.Background);
+            _ = Dispatcher.BeginInvoke(ScrollLogsToEnd, DispatcherPriority.Background);
             return;
         }
 
@@ -998,7 +965,8 @@ public partial class MainWindow : FluentWindow
             + (snapshot.SnapshotFresh ? "fresh" : "stale");
         var dependencies = worker.DependencyStatus;
         DependencyStatusText.Text =
-            $"Maa.Binding {dependencies.MaaFrameworkBindingVersion} · Maa.Runtime {dependencies.MaaFrameworkRuntimeVersion} · "
+            $"Maa.Binding {dependencies.MaaFrameworkBindingVersion} · "
+            + $"Maa.Runtime {dependencies.MaaFrameworkRuntimeVersion} · "
             + $"Python {(dependencies.Python.Success ? "Ready" : "Failed")}: "
             + $"{dependencies.Python.Value ?? dependencies.Python.Error}";
 
@@ -1184,11 +1152,7 @@ public partial class MainWindow : FluentWindow
                 "Brush.Border",
                 "Brush.Text.Secondary",
                 "Brush.Text.Muted"),
-            _ => (
-                "Brush.Info.Surface",
-                "Brush.Primary.Border",
-                "Brush.Info.Foreground",
-                "Brush.Primary")
+            _ => ("Brush.Info.Surface", "Brush.Primary.Border", "Brush.Info.Foreground", "Brush.Primary")
         };
 
         SessionStatusBadge.Background = (WpfBrush)FindResource(surfaceKey);
@@ -1266,8 +1230,7 @@ public partial class MainWindow : FluentWindow
         var selectedTaskValid = _projectPlan?.SelectedTaskName is not null
                                 && _projectConfigurationValid;
         StartRunButton.IsEnabled = canStartCommand
-                                   && state is (ChildSessionState.ConnectedVisible
-                                       or ChildSessionState.ConnectedHidden)
+                                   && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden)
                                    && workerIdleFresh
                                    && worker!.WorkerState == WorkerState.Ready
                                    && projectReady
@@ -1292,8 +1255,7 @@ public partial class MainWindow : FluentWindow
         var runningRun = active?.State == RunState.Running;
         var readyToStart = !hasActiveRun
                            && environmentReady
-                           && state is (ChildSessionState.ConnectedVisible
-                               or ChildSessionState.ConnectedHidden);
+                           && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
         PrepareEnvironmentButton.IsEnabled = canStartCommand
                                              && projectReady
                                              && !hasActiveRun
@@ -1356,8 +1318,7 @@ public partial class MainWindow : FluentWindow
             return "请确认程序路径和启动参数正确，并检查桌面分身连接状态后重试。";
         }
 
-        if (operation.Contains("桌面分身", StringComparison.Ordinal)
-            || operation.Contains("子桌面", StringComparison.Ordinal))
+        if (operation.Contains("桌面分身", StringComparison.Ordinal) || operation.Contains("子桌面", StringComparison.Ordinal))
         {
             return "请确认程序以管理员权限运行，并检查桌面分身状态后重试。";
         }
@@ -1365,20 +1326,12 @@ public partial class MainWindow : FluentWindow
         return "请检查当前配置和系统状态后重试。";
     }
 
-    private void ShowActionableError(
-        string title,
-        Exception exception,
-        string recovery,
-        bool offerLogDirectory)
+    private void ShowActionableError(string title, Exception exception, string recovery, bool offerLogDirectory)
     {
         var message = $"{exception.GetBaseException().Message}\n\n{recovery}";
         if (!offerLogDirectory)
         {
-            WpfMessageBox.Show(
-                message,
-                title,
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            WpfMessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
 

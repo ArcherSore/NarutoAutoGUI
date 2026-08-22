@@ -295,8 +295,7 @@ public partial class App : System.Windows.Application
 
         try
         {
-            await RunApplicationOperationAsync(
-                () => _sessionManager.EnsureConnectedAsync(showPreview: true));
+            await RunApplicationOperationAsync(() => _sessionManager.EnsureConnectedAsync(showPreview: true));
         }
         catch (OperationCanceledException) when (_isExiting)
         {

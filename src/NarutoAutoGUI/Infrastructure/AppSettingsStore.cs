@@ -5,10 +5,7 @@ namespace NarutoAutoGUI.Infrastructure;
 
 internal sealed class AppSettingsStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true
-    };
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     private readonly string _settingsPath;
     private readonly AppLogger _logger;
@@ -16,10 +13,7 @@ internal sealed class AppSettingsStore
     internal AppSettingsStore(AppLogger logger, string? settingsPath = null)
     {
         _logger = logger;
-        _settingsPath = settingsPath ?? Path.Combine(
-            AppContext.BaseDirectory,
-            "config",
-            "settings.json");
+        _settingsPath = settingsPath ?? Path.Combine(AppContext.BaseDirectory, "config", "settings.json");
     }
 
     internal string SettingsPath => _settingsPath;
@@ -45,14 +39,10 @@ internal sealed class AppSettingsStore
             _logger.Info($"已加载配置：{_settingsPath}");
             return settings;
         }
-        catch (Exception exception) when (exception is IOException
-                                               or UnauthorizedAccessException
-                                               or JsonException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
         {
             _logger.Error("读取配置失败；原文件保持不变。", exception);
-            throw new InvalidDataException(
-                "Application Settings 无法解析，必须由用户明确重置后才能继续。",
-                exception);
+            throw new InvalidDataException("Application Settings 无法解析，必须由用户明确重置后才能继续。", exception);
         }
     }
 
@@ -90,8 +80,7 @@ internal sealed class AppSettingsStore
             File.Move(temporaryPath, _settingsPath, overwrite: true);
             _logger.Debug($"已保存配置：{_settingsPath}");
         }
-        catch (Exception exception) when (exception is IOException
-                                               or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             _logger.Error("保存配置失败。", exception);
             throw;
@@ -121,8 +110,7 @@ internal sealed class AppSettingsStore
 
         if (root.TryGetProperty(nameof(AppSettings.SchemaVersion), out var schemaElement))
         {
-            if (!schemaElement.TryGetInt32(out var schemaVersion)
-                || schemaVersion != AppSettings.CurrentSchemaVersion)
+            if (!schemaElement.TryGetInt32(out var schemaVersion) || schemaVersion != AppSettings.CurrentSchemaVersion)
             {
                 throw new JsonException(
                     $"不支持 Application Settings SchemaVersion {schemaElement.GetRawText()}。");
@@ -181,7 +169,9 @@ internal sealed class AppSettingsStore
         {
             executableDirectory = Path.GetDirectoryName(Path.GetFullPath(legacyExecutable)) ?? string.Empty;
         }
-        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        catch (Exception exception) when (exception is ArgumentException
+                                              or NotSupportedException
+                                              or PathTooLongException)
         {
             _logger.Warn($"旧 MaaNOP exe 路径无法迁移：{exception.Message}");
             return string.Empty;

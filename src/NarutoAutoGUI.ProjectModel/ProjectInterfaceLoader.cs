@@ -71,9 +71,7 @@ internal static class ProjectInterfaceLoader
         var interfacePath = Path.Combine(projectRoot, "interface.json");
         if (!File.Exists(interfacePath))
         {
-            throw new FileNotFoundException(
-                "MaaNOP Project Directory 必须直接包含 interface.json。",
-                interfacePath);
+            throw new FileNotFoundException("MaaNOP Project Directory 必须直接包含 interface.json。", interfacePath);
         }
 
         var bytes = File.ReadAllBytes(interfacePath);
@@ -135,8 +133,7 @@ internal static class ProjectInterfaceLoader
             options);
     }
 
-    private static Win32ControllerDefinition ParseController(
-        JsonElement element)
+    private static Win32ControllerDefinition ParseController(JsonElement element)
     {
         var obj = RequireObject(element, "$.controller[0]");
         RejectUnknownProperties(obj, AllowedControllerProperties, "$.controller[0]");
@@ -284,9 +281,7 @@ internal static class ProjectInterfaceLoader
             {
                 throw new InvalidDataException($"default-only slice 要求 {inputPath}.default 为 string。 ");
             }
-            var pipelineKind = ParsePipelineKind(
-                OptionalString(input, "pipeline_type") ?? "string",
-                inputPath);
+            var pipelineKind = ParsePipelineKind(OptionalString(input, "pipeline_type") ?? "string", inputPath);
             result.Add(new InputDefinition(
                 name,
                 ReadDisplayString(input, "label") ?? name,
@@ -366,8 +361,7 @@ internal static class ProjectInterfaceLoader
         }
     }
 
-    private static void ValidateOptionDefinitions(
-        IReadOnlyDictionary<string, OptionDefinition> options)
+    private static void ValidateOptionDefinitions(IReadOnlyDictionary<string, OptionDefinition> options)
     {
         foreach (var option in options.Values)
         {
@@ -445,8 +439,7 @@ internal static class ProjectInterfaceLoader
     private static string FormatOptionKind(OptionDefinitionKind kind) =>
         kind.ToString().ToLowerInvariant();
 
-    private static void ValidateOptionGraph(
-        IReadOnlyDictionary<string, OptionDefinition> options)
+    private static void ValidateOptionGraph(IReadOnlyDictionary<string, OptionDefinition> options)
     {
         var validated = new HashSet<string>(StringComparer.Ordinal);
         var visiting = new HashSet<string>(StringComparer.Ordinal);
@@ -551,10 +544,7 @@ internal static class ProjectInterfaceLoader
     {
         try
         {
-            _ = new Regex(
-                pattern,
-                RegexOptions.CultureInvariant,
-                TimeSpan.FromSeconds(1));
+            _ = new Regex(pattern, RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
         }
         catch (ArgumentException exception)
         {
@@ -598,11 +588,7 @@ internal static class ProjectInterfaceLoader
         return result;
     }
 
-    private static IReadOnlyList<string> ReadStringArray(
-        JsonElement obj,
-        string name,
-        bool required,
-        string path)
+    private static IReadOnlyList<string> ReadStringArray(JsonElement obj, string name, bool required, string path)
     {
         if (!obj.TryGetProperty(name, out var value))
         {
@@ -636,10 +622,7 @@ internal static class ProjectInterfaceLoader
         return value.Clone();
     }
 
-    private static void RejectUnknownProperties(
-        JsonElement obj,
-        IReadOnlySet<string> allowed,
-        string path)
+    private static void RejectUnknownProperties(JsonElement obj, IReadOnlySet<string> allowed, string path)
     {
         foreach (var property in obj.EnumerateObject())
         {

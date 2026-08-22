@@ -9,10 +9,7 @@ namespace NarutoAutoWorker;
 
 internal sealed class WorkerHost
 {
-    private sealed record DeferredStop(
-        Guid RunId,
-        WorkerRuntimeExecution Execution,
-        WorkerSnapshot StoppingSnapshot);
+    private sealed record DeferredStop(Guid RunId, WorkerRuntimeExecution Execution, WorkerSnapshot StoppingSnapshot);
 
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(1);
     private readonly object _stateGate = new();
@@ -49,9 +46,7 @@ internal sealed class WorkerHost
 
     internal async Task RunAsync(CancellationToken cancellationToken)
     {
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            _shutdown.Token);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
         var initialization = InitializeAsync(linked.Token);
         Log("INFO", "worker.lifecycle", $"NarutoAutoWorker 启动，instance={_manifest.WorkerInstanceId}。 ");
 
@@ -101,7 +96,8 @@ internal sealed class WorkerHost
             Log(
                 "INFO",
                 "worker.readiness",
-                $"Dependency Readiness=Ready；Binding={status.MaaFrameworkBindingVersion}；Runtime={status.MaaFrameworkRuntimeVersion}；Python={status.Python.Value}。 ");
+                $"Dependency Readiness=Ready；Binding={status.MaaFrameworkBindingVersion}；" +
+                $"Runtime={status.MaaFrameworkRuntimeVersion}；Python={status.Python.Value}。 ");
         }
         else
         {
@@ -233,9 +229,7 @@ internal sealed class WorkerHost
                 exception.Message,
                 exception.Retriable);
         }
-        catch (Exception exception) when (exception is JsonException
-                                              or InvalidDataException
-                                              or ArgumentException)
+        catch (Exception exception) when (exception is JsonException or InvalidDataException or ArgumentException)
         {
             return WireEnvelope.Failure(
                 request.Operation,
@@ -266,9 +260,7 @@ internal sealed class WorkerHost
             {
                 if (existing.Digest != request.PlanDigest)
                 {
-                    throw new WorkerRequestException(
-                        "run_id_conflict",
-                        "相同 runId 使用了不同 planDigest。 ");
+                    throw new WorkerRequestException("run_id_conflict", "相同 runId 使用了不同 planDigest。 ");
                 }
                 var existingRun = _activeRun?.RunId == request.RunId
                     ? _activeRun
@@ -282,9 +274,7 @@ internal sealed class WorkerHost
             }
             if (_workerState == WorkerState.NotReady)
             {
-                throw new WorkerRequestException(
-                    "worker_not_ready",
-                    _workerReason?.Message ?? "Worker NotReady。 ");
+                throw new WorkerRequestException("worker_not_ready", _workerReason?.Message ?? "Worker NotReady。 ");
             }
             if (_workerState == WorkerState.Faulted)
             {
@@ -556,9 +546,7 @@ internal sealed class WorkerHost
         {
             if (_activeRun is not null)
             {
-                throw new WorkerRequestException(
-                    "operation_not_allowed",
-                    "activeRun 非空时不能 shutdown Worker。 ");
+                throw new WorkerRequestException("operation_not_allowed", "activeRun 非空时不能 shutdown Worker。 ");
             }
             _workerState = WorkerState.Stopping;
             snapshot = CommitLocked();
@@ -601,9 +589,7 @@ internal sealed class WorkerHost
         }
         if (request.Plan.RuntimeProfileDigest != _manifest.RuntimeProfileDigest)
         {
-            throw new WorkerRequestException(
-                "worker_not_ready",
-                "Run Plan Runtime Profile Digest 与 Worker 不一致。 ");
+            throw new WorkerRequestException("worker_not_ready", "Run Plan Runtime Profile Digest 与 Worker 不一致。 ");
         }
         var actualDigest = CanonicalDigest.ComputePlanDigestV1(request.Plan);
         if (actualDigest != request.PlanDigest)
@@ -613,7 +599,9 @@ internal sealed class WorkerHost
         var planBytes = JsonSerializer.SerializeToUtf8Bytes(request.Plan, ProtocolJson.Options).Length;
         if (planBytes > ProtocolConstants.MaximumRunPlanBytes)
         {
-            throw new WorkerRequestException("invalid_run_plan", $"Run Plan 超过 {ProtocolConstants.MaximumRunPlanBytes} bytes。 ");
+            throw new WorkerRequestException(
+                "invalid_run_plan",
+                $"Run Plan 超过 {ProtocolConstants.MaximumRunPlanBytes} bytes。 ");
         }
 
         var candidate = GetSnapshotLocked() with

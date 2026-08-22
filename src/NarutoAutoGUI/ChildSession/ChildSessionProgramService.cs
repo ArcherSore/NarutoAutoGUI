@@ -1,4 +1,3 @@
-using MaaNOP.ChildSessionLauncher;
 using NarutoAutoGUI.Infrastructure;
 
 namespace NarutoAutoGUI.ChildSession;
@@ -35,11 +34,7 @@ internal sealed class ChildSessionProgramService
         _logger.Debug($"启动参数：{arguments}；工作目录：{workDir}。");
         try
         {
-            await ChildSessionProcessLauncher.LaunchAsync(
-                childSessionId,
-                fullPath,
-                arguments,
-                workDir);
+            await ChildSessionProcessLauncher.LaunchAsync(childSessionId, fullPath, arguments, workDir);
             _logger.Debug($"Task Scheduler COM RunEx 已提交：{processName}，SessionId={childSessionId}。");
         }
         catch (Exception exception)

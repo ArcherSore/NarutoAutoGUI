@@ -1,0 +1,5 @@
+root = true
+
+[*.{cs,xaml,csproj,props,targets,ps1,json,xml,yml,yaml}]
+max_line_length = 120
+

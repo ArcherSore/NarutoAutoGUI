@@ -64,11 +64,15 @@
     <SolidColorBrush x:Key="Brush.Success" Color="{StaticResource Color.Success.Strong}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Success.Surface" Color="{StaticResource Color.Success.Surface}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Success.Border" Color="{StaticResource Color.Success.Border}" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.Success.Foreground" Color="{StaticResource Color.Success.Foreground}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Success.Foreground"
+                     Color="{StaticResource Color.Success.Foreground}"
+                     po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Warning" Color="{StaticResource Color.Warning.Strong}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Warning.Surface" Color="{StaticResource Color.Warning.Surface}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Warning.Border" Color="{StaticResource Color.Warning.Border}" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.Warning.Foreground" Color="{StaticResource Color.Warning.Foreground}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Warning.Foreground"
+                     Color="{StaticResource Color.Warning.Foreground}"
+                     po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Error" Color="{StaticResource Color.Error.Strong}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Error.Surface" Color="{StaticResource Color.Error.Surface}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Error.Border" Color="{StaticResource Color.Error.Border}" po:Freeze="True" />
@@ -194,8 +198,12 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource Brush.Surface.Disabled}" />
-                            <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+                            <Setter TargetName="ButtonBorder"
+                                    Property="Background"
+                                    Value="{StaticResource Brush.Surface.Disabled}" />
+                            <Setter TargetName="ButtonBorder"
+                                    Property="BorderBrush"
+                                    Value="{StaticResource Brush.Border}" />
                             <Setter Property="Foreground" Value="{StaticResource Brush.Text.Disabled}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -332,9 +340,7 @@
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="{StaticResource Radius.Control}"
                             SnapsToDevicePixels="True">
-                        <ScrollViewer x:Name="PART_ContentHost"
-                                      Margin="{TemplateBinding Padding}"
-                                      Focusable="False" />
+                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" Focusable="False" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <MultiTrigger>
@@ -343,17 +349,27 @@
                                 <Condition Property="IsEnabled" Value="True" />
                                 <Condition Property="IsKeyboardFocused" Value="False" />
                             </MultiTrigger.Conditions>
-                            <Setter TargetName="TextBoxBorder" Property="BorderBrush" Value="{StaticResource Brush.Text.Secondary}" />
+                            <Setter TargetName="TextBoxBorder"
+                                    Property="BorderBrush"
+                                    Value="{StaticResource Brush.Text.Secondary}" />
                         </MultiTrigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="TextBoxBorder" Property="BorderBrush" Value="{StaticResource Brush.Primary}" />
+                            <Setter TargetName="TextBoxBorder"
+                                    Property="BorderBrush"
+                                    Value="{StaticResource Brush.Primary}" />
                         </Trigger>
                         <Trigger Property="IsReadOnly" Value="True">
-                            <Setter TargetName="TextBoxBorder" Property="Background" Value="{StaticResource Brush.Surface.Subdued}" />
+                            <Setter TargetName="TextBoxBorder"
+                                    Property="Background"
+                                    Value="{StaticResource Brush.Surface.Subdued}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter TargetName="TextBoxBorder" Property="Background" Value="{StaticResource Brush.Surface.Disabled}" />
-                            <Setter TargetName="TextBoxBorder" Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+                            <Setter TargetName="TextBoxBorder"
+                                    Property="Background"
+                                    Value="{StaticResource Brush.Surface.Disabled}" />
+                            <Setter TargetName="TextBoxBorder"
+                                    Property="BorderBrush"
+                                    Value="{StaticResource Brush.Border}" />
                             <Setter Property="Foreground" Value="{StaticResource Brush.Text.Disabled}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -401,8 +417,12 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource Brush.Primary.Surface}" />
-                            <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource Brush.Primary.Border}" />
+                            <Setter TargetName="ItemBorder"
+                                    Property="Background"
+                                    Value="{StaticResource Brush.Primary.Surface}" />
+                            <Setter TargetName="ItemBorder"
+                                    Property="BorderBrush"
+                                    Value="{StaticResource Brush.Primary.Border}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{StaticResource Brush.Text.Disabled}" />
@@ -433,10 +453,10 @@
                             CornerRadius="{StaticResource Radius.Control}"
                             SnapsToDevicePixels="True">
                         <ScrollViewer Padding="{TemplateBinding Padding}"
-                                      Focusable="False"
-                                      CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
-                                      HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
-                                      VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}">
+                            Focusable="False"
+                            CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
+                            HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                            VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}">
                             <ItemsPresenter />
                         </ScrollViewer>
                     </Border>

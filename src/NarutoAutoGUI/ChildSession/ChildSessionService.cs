@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using DrawingSize = System.Drawing.Size;
 
-namespace MaaNOP.ChildSessionLauncher;
+namespace NarutoAutoGUI.ChildSession;
 
 // Adapted (heavily trimmed) from BetterGI 0.63.0 ChildSessionService.cs.
 // Dropped: DI/logging/DispatcherTimer/retry-reconnect/InstanceService/Config/WPF window.
@@ -57,11 +57,13 @@ internal sealed class ChildSessionService
     public static uint? TerminateChildSession(bool wait) =>
         ChildSessionNativeMethods.TerminateChildSession(wait);
 
-    public async Task ConnectAsync(CancellationToken cancellationToken, string? userName = null, string? password = null)
+    public async Task ConnectAsync(
+        CancellationToken cancellationToken,
+        string? userName = null,
+        string? password = null)
     {
         _lastFailure = null;
-        _connectionTcs = new TaskCompletionSource<bool>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        _connectionTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _host.LoginCompleted += OnLoginCompleted;
         _host.ConnectionFailed += OnConnectionFailed;
 
@@ -89,8 +91,7 @@ internal sealed class ChildSessionService
             if (!ok)
             {
                 TryDisconnect();
-                throw new InvalidOperationException(
-                    _lastFailure?.Message ?? "RDP 连接失败。");
+                throw new InvalidOperationException(_lastFailure?.Message ?? "RDP 连接失败。");
             }
 
             ChildSessionId = ChildSessionNativeMethods.TryGetChildSessionId();

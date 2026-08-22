@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using System.Security;
 using Microsoft.Win32;
 
-namespace MaaNOP.ChildSessionLauncher;
+namespace NarutoAutoGUI.ChildSession;
 
 // Native helpers adapted (trimmed) from BetterGI 0.63.0 ChildSessionNativeMethods.cs.
 // Edition-agnostic surface only: enable / query / logoff Child Session + cross-session
@@ -28,13 +28,11 @@ internal static class ChildSessionNativeMethods
 
     [DllImport("wtsapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool WTSEnableChildSessions(
-        [MarshalAs(UnmanagedType.Bool)] bool enable);
+    private static extern bool WTSEnableChildSessions([MarshalAs(UnmanagedType.Bool)] bool enable);
 
     [DllImport("wtsapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool WTSIsChildSessionsEnabled(
-        [MarshalAs(UnmanagedType.Bool)] out bool enabled);
+    private static extern bool WTSIsChildSessionsEnabled([MarshalAs(UnmanagedType.Bool)] out bool enabled);
 
     [DllImport("wtsapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -125,18 +123,14 @@ internal static class ChildSessionNativeMethods
     {
         try
         {
-            using var localMachine = RegistryKey.OpenBaseKey(
-                RegistryHive.LocalMachine,
-                RegistryView.Registry64);
+            using var localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
             using var rdpTcpKey = localMachine.OpenSubKey(RdpTcpRegistryPath);
             var configuredPort = rdpTcpKey?.GetValue("PortNumber");
             return configuredPort is int port and > 0 and <= ushort.MaxValue
                 ? port
                 : DefaultRdpPort;
         }
-        catch (Exception exception) when (exception is SecurityException
-                                              or UnauthorizedAccessException
-                                              or IOException)
+        catch (Exception exception) when (exception is SecurityException or UnauthorizedAccessException or IOException)
         {
             return DefaultRdpPort;
         }
@@ -147,20 +141,14 @@ internal static class ChildSessionNativeMethods
     {
         try
         {
-            using var localMachine = RegistryKey.OpenBaseKey(
-                RegistryHive.LocalMachine,
-                RegistryView.Registry64);
+            using var localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
             using var termServiceParametersKey =
                 localMachine.OpenSubKey(TermServiceParametersRegistryPath);
             var serviceLibraryPath =
                 termServiceParametersKey?.GetValue("ServiceDll") as string;
-            return serviceLibraryPath?.Contains(
-                RdpWrapperLibraryName,
-                StringComparison.OrdinalIgnoreCase) == true;
+            return serviceLibraryPath?.Contains(RdpWrapperLibraryName, StringComparison.OrdinalIgnoreCase) == true;
         }
-        catch (Exception exception) when (exception is SecurityException
-                                              or UnauthorizedAccessException
-                                              or IOException)
+        catch (Exception exception) when (exception is SecurityException or UnauthorizedAccessException or IOException)
         {
             return false;
         }
@@ -175,8 +163,7 @@ internal static class ChildSessionNativeMethods
     {
         try
         {
-            using var searcher = new ManagementObjectSearcher(
-                "SELECT ProcessId, SessionId, Name FROM Win32_Process");
+            using var searcher = new ManagementObjectSearcher("SELECT ProcessId, SessionId, Name FROM Win32_Process");
             using var results = searcher.Get();
             var list = new List<(uint, uint, string)>(results.Count);
 
@@ -184,8 +171,7 @@ internal static class ChildSessionNativeMethods
             {
                 using (process)
                 {
-                    if (process["ProcessId"] is not uint processId
-                        || process["SessionId"] is not uint sessionId)
+                    if (process["ProcessId"] is not uint processId || process["SessionId"] is not uint sessionId)
                     {
                         continue;
                     }
@@ -226,16 +212,12 @@ internal static class ChildSessionNativeMethods
 
     // Find the first process matching processName running inside sessionId.
     // processName is matched case-insensitively and should include the extension (e.g. "Launch.exe").
-    internal static bool TryFindProcessInSession(
-        string processName,
-        uint sessionId,
-        out uint processId)
+    internal static bool TryFindProcessInSession(string processName, uint sessionId, out uint processId)
     {
         processId = 0;
         foreach (var (pid, sid, name) in EnumerateProcesses())
         {
-            if (sid == sessionId
-                && string.Equals(name, processName, StringComparison.OrdinalIgnoreCase))
+            if (sid == sessionId && string.Equals(name, processName, StringComparison.OrdinalIgnoreCase))
             {
                 processId = pid;
                 return true;

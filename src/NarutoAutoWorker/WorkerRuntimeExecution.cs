@@ -235,12 +235,8 @@ internal sealed class WorkerRuntimeExecution
 
     private DesktopWindowInfo FindTargetWindow()
     {
-        var classRegex = CreateWindowRegex(
-            _manifest.Controller.ClassRegex,
-            "class_regex");
-        var windowRegex = CreateWindowRegex(
-            _manifest.Controller.WindowRegex,
-            "window_regex");
+        var classRegex = CreateWindowRegex(_manifest.Controller.ClassRegex, "class_regex");
+        var windowRegex = CreateWindowRegex(_manifest.Controller.WindowRegex, "window_regex");
         using var windows = MaaToolkit.Shared.Desktop.Window.Find();
         foreach (var window in windows)
         {
@@ -266,17 +262,15 @@ internal sealed class WorkerRuntimeExecution
             return window;
         }
         throw new InvalidOperationException(
-            $"未在 Child Session {_childSessionId} 找到窗口：class={_manifest.Controller.ClassRegex}，name={_manifest.Controller.WindowRegex}。 ");
+            $"未在 Child Session {_childSessionId} 找到窗口：class={_manifest.Controller.ClassRegex}，" +
+            $"name={_manifest.Controller.WindowRegex}。 ");
     }
 
     private static Regex CreateWindowRegex(string pattern, string field)
     {
         try
         {
-            return new Regex(
-                pattern,
-                RegexOptions.CultureInvariant,
-                TimeSpan.FromSeconds(1));
+            return new Regex(pattern, RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
         }
         catch (ArgumentException exception)
         {
@@ -316,11 +310,7 @@ internal sealed class WorkerRuntimeExecution
             startInfo.ArgumentList.Add(argument);
         }
         startInfo.ArgumentList.Add(identifier);
-        var process = new Process
-        {
-            StartInfo = startInfo,
-            EnableRaisingEvents = true
-        };
+        var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, args) =>
         {
             if (args.Data is not null)
@@ -434,8 +424,7 @@ internal sealed class WorkerRuntimeExecution
 
     private static T ParseEnum<T>(string value) where T : struct, Enum
     {
-        if (Enum.TryParse<T>(value, ignoreCase: true, out var result)
-            && Enum.IsDefined(result))
+        if (Enum.TryParse<T>(value, ignoreCase: true, out var result) && Enum.IsDefined(result))
         {
             return result;
         }

@@ -51,9 +51,7 @@ internal sealed class WorkerLogBuffer
     {
         lock (_gate)
         {
-            return (
-                _entries.First?.Value.Entry.Sequence ?? _nextSequence,
-                _entries.Last?.Value.Entry.Sequence ?? 0);
+            return (_entries.First?.Value.Entry.Sequence ?? _nextSequence, _entries.Last?.Value.Entry.Sequence ?? 0);
         }
     }
 

@@ -32,13 +32,4 @@
     <ProjectReference Include="..\NarutoAutoGUI.ProjectModel\NarutoAutoGUI.ProjectModel.csproj" />
   </ItemGroup>
 
-  <!-- Compile the frozen, already-verified Child Session baseline into the product.
-       Program.cs and demo scripts are intentionally not referenced. -->
-  <ItemGroup>
-    <Compile Include="..\ChildSessionDemo\ChildSessionNativeMethods.cs" Link="ChildSession\Baseline\ChildSessionNativeMethods.cs" />
-    <Compile Include="..\ChildSessionDemo\ChildSessionProcessLauncher.cs" Link="ChildSession\Baseline\ChildSessionProcessLauncher.cs" />
-    <Compile Include="..\ChildSessionDemo\ChildSessionService.cs" Link="ChildSession\Baseline\ChildSessionService.cs" />
-    <Compile Include="..\ChildSessionDemo\RdpActiveXHost.cs" Link="ChildSession\Baseline\RdpActiveXHost.cs" />
-  </ItemGroup>
-
 </Project>

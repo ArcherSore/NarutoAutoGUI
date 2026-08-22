@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using DrawingSize = System.Drawing.Size;
 
-namespace MaaNOP.ChildSessionLauncher;
+namespace NarutoAutoGUI.ChildSession;
 
 // Adapted (trimmed) from BetterGI 0.63.0 RdpActiveXHost.cs.
 // Trimmed: dropped IMsRdpClientNonScriptable / SendKeys / Win+D / Win+Tab / SmartSizing toggle UI /
@@ -46,9 +46,7 @@ internal sealed class RdpActiveXHost : AxHost
                 return 0;
             }
 
-            return Convert.ToInt32(
-                GetComProperty(GetRequiredOcx(), "Connected"),
-                CultureInfo.InvariantCulture);
+            return Convert.ToInt32(GetComProperty(GetRequiredOcx(), "Connected"), CultureInfo.InvariantCulture);
         }
     }
 
@@ -72,19 +70,15 @@ internal sealed class RdpActiveXHost : AxHost
 
         var securedSettings = GetComProperty(client, "SecuredSettings2")
             ?? throw new COMException("RDP ActiveX 未返回 SecuredSettings2。");
-        RunComStep("设置系统组合键发送位置", () =>
-            SetComProperty(securedSettings, "KeyboardHookMode", 1));
+        RunComStep("设置系统组合键发送位置", () => SetComProperty(securedSettings, "KeyboardHookMode", 1));
 
         var advancedSettings = GetComProperty(client, "AdvancedSettings7")
             ?? throw new COMException("RDP ActiveX 未返回 AdvancedSettings7。");
         RunComStep("设置 RDP 连接端口", () =>
             SetComProperty(advancedSettings, "RDPPort", ChildSessionNativeMethods.GetConfiguredRdpPort()));
-        RunComStep("启用 CredSSP", () =>
-            SetComProperty(advancedSettings, "EnableCredSspSupport", true));
-        RunComStep("启用远程 Windows 键", () =>
-            SetComProperty(advancedSettings, "EnableWindowsKey", 1));
-        RunComStep("设置显示缩放 (SmartSizing)", () =>
-            SetComProperty(advancedSettings, "SmartSizing", _smartSizingEnabled));
+        RunComStep("启用 CredSSP", () => SetComProperty(advancedSettings, "EnableCredSspSupport", true));
+        RunComStep("启用远程 Windows 键", () => SetComProperty(advancedSettings, "EnableWindowsKey", 1));
+        RunComStep("设置显示缩放 (SmartSizing)", () => SetComProperty(advancedSettings, "SmartSizing", _smartSizingEnabled));
 
         // Optional programmatic credential: when the parent session is logged on with a PIN
         // (Windows Hello), child-session auto-logon cannot reuse the password and prompts for it.
@@ -200,8 +194,10 @@ internal sealed class RdpActiveXHost : AxHost
         var errorDescription = TryGetErrorDescription(disconnectReason, extendedDisconnectReason);
         var failureTitle = failedWhileConnecting ? "RDP 连接失败" : "RDP 连接意外断开";
         var message = string.IsNullOrWhiteSpace(errorDescription)
-            ? $"{failureTitle}。\n\n断开原因：{FormatErrorCode(disconnectReason)}\n扩展原因：{FormatErrorCode(extendedDisconnectReason)}"
-            : $"{failureTitle}：{errorDescription}\n\n断开原因：{FormatErrorCode(disconnectReason)}\n扩展原因：{FormatErrorCode(extendedDisconnectReason)}";
+            ? $"{failureTitle}。\n\n断开原因：{FormatErrorCode(disconnectReason)}\n"
+              + $"扩展原因：{FormatErrorCode(extendedDisconnectReason)}"
+            : $"{failureTitle}：{errorDescription}\n\n断开原因：{FormatErrorCode(disconnectReason)}\n"
+              + $"扩展原因：{FormatErrorCode(extendedDisconnectReason)}";
 
         ReportConnectionFailure(message, disconnectReason, extendedDisconnectReason);
     }
@@ -236,9 +232,7 @@ internal sealed class RdpActiveXHost : AxHost
         }
 
         _connectionAttemptInProgress = false;
-        ReportConnectionFailure(
-            message.Replace("RDP 登录阶段：", "RDP 登录失败：", StringComparison.Ordinal),
-            errorCode);
+        ReportConnectionFailure(message.Replace("RDP 登录阶段：", "RDP 登录失败：", StringComparison.Ordinal), errorCode);
     }
 
     private int TryGetExtendedDisconnectReason()
@@ -338,8 +332,7 @@ internal sealed class RdpActiveXHost : AxHost
         }
 
         return GetOcx()
-               ?? throw new InvalidOperationException(
-                   "RDP ActiveX 控件尚未完成初始化，无法访问 COM 实例。");
+               ?? throw new InvalidOperationException("RDP ActiveX 控件尚未完成初始化，无法访问 COM 实例。");
     }
 
     private static object? GetComProperty(object target, string propertyName)
@@ -387,9 +380,7 @@ internal sealed class RdpActiveXHost : AxHost
         object value = expectedValue;
         extendedSettings.set_Property(propertyName, ref value);
 
-        var actualValue = Convert.ToUInt32(
-            extendedSettings.get_Property(propertyName),
-            CultureInfo.InvariantCulture);
+        var actualValue = Convert.ToUInt32(extendedSettings.get_Property(propertyName), CultureInfo.InvariantCulture);
         if (actualValue != expectedValue)
         {
             throw new COMException(

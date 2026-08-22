@@ -68,10 +68,7 @@ internal static class SelfTestRunner
         }
     }
 
-    private static void VerifySettings(
-        AppLogger logger,
-        string testDirectory,
-        string projectDirectory)
+    private static void VerifySettings(AppLogger logger, string testDirectory, string projectDirectory)
     {
         var settingsPath = Path.Combine(testDirectory, "settings.json");
         var store = new AppSettingsStore(logger, settingsPath);
@@ -122,9 +119,7 @@ internal static class SelfTestRunner
     {
         var configPath = Path.Combine(testDirectory, "maanop-config.json");
         var project = ProjectPlanModule.Open(projectDirectory, configPath);
-        if (project.Tasks.Count != 1
-            || project.Tasks[0].Name != "RealTask"
-            || project.Tasks[0].Label != "Real task")
+        if (project.Tasks.Count != 1 || project.Tasks[0].Name != "RealTask" || project.Tasks[0].Label != "Real task")
         {
             throw new InvalidOperationException("PI task catalog 验证失败。");
         }
@@ -273,10 +268,7 @@ internal static class SelfTestRunner
         }
     }
 
-    private static void VerifyRejectedInputEdit(
-        ProjectPlanModule project,
-        string inputName,
-        string invalidValue)
+    private static void VerifyRejectedInputEdit(ProjectPlanModule project, string inputName, string invalidValue)
     {
         try
         {
@@ -302,19 +294,15 @@ internal static class SelfTestRunner
         stream.Position = 0;
         var reader = new ProtocolConnection(stream);
         var decoded = reader.ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
-        if (decoded?.RequestId != requestId
-            || decoded.Operation != ProtocolOperations.WorkerGetSnapshot)
+        if (decoded?.RequestId != requestId || decoded.Operation != ProtocolOperations.WorkerGetSnapshot)
         {
             throw new InvalidOperationException("Named Pipe frame round-trip 验证失败。");
         }
     }
 
-    private static void VerifyUnsupportedProjectConstraints(
-        string testDirectory,
-        string sourceProjectDirectory)
+    private static void VerifyUnsupportedProjectConstraints(string testDirectory, string sourceProjectDirectory)
     {
-        var sourceInterface = File.ReadAllText(
-            Path.Combine(sourceProjectDirectory, "interface.json"));
+        var sourceInterface = File.ReadAllText(Path.Combine(sourceProjectDirectory, "interface.json"));
         VerifyRejectedProjectInterface(
             testDirectory,
             sourceInterface,
@@ -352,12 +340,9 @@ internal static class SelfTestRunner
                 new JsonArray("Default"));
     }
 
-    private static void VerifyInvalidProjectInterfaces(
-        string testDirectory,
-        string sourceProjectDirectory)
+    private static void VerifyInvalidProjectInterfaces(string testDirectory, string sourceProjectDirectory)
     {
-        var sourceInterface = File.ReadAllText(
-            Path.Combine(sourceProjectDirectory, "interface.json"));
+        var sourceInterface = File.ReadAllText(Path.Combine(sourceProjectDirectory, "interface.json"));
         VerifyRejectedProjectInterface(
             testDirectory,
             sourceInterface,
@@ -455,15 +440,11 @@ internal static class SelfTestRunner
         var root = JsonNode.Parse(sourceInterface)?.AsObject()
                    ?? throw new InvalidOperationException("PI fail-closed fixture 解析失败。");
         mutate(root);
-        File.WriteAllText(
-            Path.Combine(projectDirectory, "interface.json"),
-            root.ToJsonString());
+        File.WriteAllText(Path.Combine(projectDirectory, "interface.json"), root.ToJsonString());
 
         try
         {
-            _ = ProjectPlanModule.Open(
-                projectDirectory,
-                Path.Combine(projectDirectory, "maanop-config.json"));
+            _ = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "maanop-config.json"));
             throw new InvalidOperationException($"PI 未拒绝非法定义：{fixtureName}。");
         }
         catch (InvalidDataException exception)

@@ -15,10 +15,7 @@ public sealed record ProjectInputEditor(
     string? Verify,
     string? PatternMessage);
 
-public sealed record ProjectCaseEditor(
-    string Name,
-    string Label,
-    string Description);
+public sealed record ProjectCaseEditor(string Name, string Label, string Description);
 
 public sealed record ProjectOptionEditor(
     string Name,
@@ -38,9 +35,7 @@ public sealed record ProjectConfigurationView(
 
 internal static class ExplicitOptionIntent
 {
-    internal static IReadOnlyDictionary<string, string> ReadInputs(
-        OptionDefinition option,
-        MaaNopConfig config)
+    internal static IReadOnlyDictionary<string, string> ReadInputs(OptionDefinition option, MaaNopConfig config)
     {
         if (!config.ExplicitOptions.TryGetValue(option.Name, out var element))
         {
@@ -48,8 +43,7 @@ internal static class ExplicitOptionIntent
         }
         var root = RequireObject(element, option.Name);
         RejectUnknown(root, "Inputs", option.Name);
-        if (!root.TryGetProperty("Inputs", out var inputs)
-            || inputs.ValueKind != JsonValueKind.Object)
+        if (!root.TryGetProperty("Inputs", out var inputs) || inputs.ValueKind != JsonValueKind.Object)
         {
             throw new InvalidDataException(
                 $"ExplicitOptions.{option.Name}.Inputs 必须是 object。 ");

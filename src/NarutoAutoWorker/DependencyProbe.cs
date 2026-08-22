@@ -95,9 +95,11 @@ internal static class DependencyProbe
         string entryPath,
         CancellationToken cancellationToken)
     {
-        const string script = "import json,sys; result={'executable':sys.executable,'version':sys.version,'maa':False,'agentServer':False,'toolkit':False}; "
-                              + "import maa; result['maa']=True; from maa.agent.agent_server import AgentServer; result['agentServer']=True; "
-                              + "from maa.toolkit import Toolkit; result['toolkit']=True; print(json.dumps(result,ensure_ascii=False))";
+        const string script = "import json,sys; result={'executable':sys.executable,'version':sys.version," +
+                              "'maa':False,'agentServer':False,'toolkit':False}; import maa; result['maa']=True; " +
+                              "from maa.agent.agent_server import AgentServer; result['agentServer']=True; " +
+                              "from maa.toolkit import Toolkit; result['toolkit']=True; " +
+                              "print(json.dumps(result,ensure_ascii=False))";
         var startInfo = new ProcessStartInfo
         {
             FileName = agent.ChildExec,
@@ -155,10 +157,7 @@ internal static class DependencyProbe
             ? new DependencyCheck(true, "import ok", null)
             : new DependencyCheck(false, null, error ?? "import failed");
 
-    private static DependencyStatus CreateUnavailableStatus(
-        string bindingVersion,
-        string runtimeVersion,
-        string error)
+    private static DependencyStatus CreateUnavailableStatus(string bindingVersion, string runtimeVersion, string error)
     {
         var failed = new DependencyCheck(false, null, error);
         return new DependencyStatus(
@@ -172,10 +171,5 @@ internal static class DependencyProbe
             failed);
     }
 
-    private sealed record ProbePayload(
-        string Executable,
-        string Version,
-        bool Maa,
-        bool AgentServer,
-        bool Toolkit);
+    private sealed record ProbePayload(string Executable, string Version, bool Maa, bool AgentServer, bool Toolkit);
 }

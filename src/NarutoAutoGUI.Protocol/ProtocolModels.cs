@@ -102,15 +102,15 @@ public sealed record WireEnvelope
         string message,
         bool retriable = false,
         JsonElement? details = null) => new()
-    {
-        ProtocolVersion = ProtocolConstants.ProtocolVersion,
-        MessageType = ProtocolMessageTypes.Response,
-        Operation = operation,
-        RequestId = requestId,
-        Success = false,
-        Error = new ProtocolError(code, message, retriable, details),
-        Data = ProtocolJson.ToElement(new { })
-    };
+        {
+            ProtocolVersion = ProtocolConstants.ProtocolVersion,
+            MessageType = ProtocolMessageTypes.Response,
+            Operation = operation,
+            RequestId = requestId,
+            Success = false,
+            Error = new ProtocolError(code, message, retriable, details),
+            Data = ProtocolJson.ToElement(new { })
+        };
 
     public static WireEnvelope Event<T>(string operation, T data) => new()
     {
@@ -121,17 +121,9 @@ public sealed record WireEnvelope
     };
 }
 
-public sealed record ProtocolError(
-    string Code,
-    string Message,
-    bool Retriable,
-    JsonElement? Details = null);
+public sealed record ProtocolError(string Code, string Message, bool Retriable, JsonElement? Details = null);
 
-public sealed record ProjectProvenance(
-    string Name,
-    string Version,
-    int InterfaceVersion,
-    string SourceInterfaceDigest);
+public sealed record ProjectProvenance(string Name, string Version, int InterfaceVersion, string SourceInterfaceDigest);
 
 public sealed record Win32ControllerDefinition(
     string Name,
@@ -141,14 +133,9 @@ public sealed record Win32ControllerDefinition(
     string MouseMethod,
     string KeyboardMethod);
 
-public sealed record ResourceDefinition(
-    string Name,
-    IReadOnlyList<string> Paths);
+public sealed record ResourceDefinition(string Name, IReadOnlyList<string> Paths);
 
-public sealed record AgentDefinition(
-    string ChildExec,
-    IReadOnlyList<string> ChildArgs,
-    string WorkingDirectory);
+public sealed record AgentDefinition(string ChildExec, IReadOnlyList<string> ChildArgs, string WorkingDirectory);
 
 public sealed record LaunchManifest(
     int LaunchContextVersion,
@@ -182,15 +169,9 @@ public enum RunState { Idle, Starting, Running, Stopping, Succeeded, Failed, Can
 
 public enum PlanItemState { Pending, Starting, Running, Succeeded, Failed, Cancelled }
 
-public sealed record StructuredReason(
-    string Code,
-    string Message,
-    JsonElement? Details = null);
+public sealed record StructuredReason(string Code, string Message, JsonElement? Details = null);
 
-public sealed record DependencyCheck(
-    bool Success,
-    string? Value,
-    string? Error);
+public sealed record DependencyCheck(bool Success, string? Value, string? Error);
 
 public sealed record DependencyStatus(
     DateTime CheckedAtUtc,
@@ -269,34 +250,21 @@ public sealed record ConnectionOpenRequest(
     string WorkerVersion,
     string RuntimeProfileDigest);
 
-public sealed record ConnectionOpenResponse(
-    bool Accepted,
-    Guid WorkerInstanceId,
-    int WorkerPid,
-    uint ChildSessionId);
+public sealed record ConnectionOpenResponse(bool Accepted, Guid WorkerInstanceId, int WorkerPid, uint ChildSessionId);
 
 public sealed record PingMessage(DateTime TimestampUtc);
 
 public sealed record GetSnapshotResponse(WorkerSnapshot Snapshot);
 
-public sealed record RunStartRequest(
-    Guid RunId,
-    string PlanDigest,
-    RunPlan Plan);
+public sealed record RunStartRequest(Guid RunId, string PlanDigest, RunPlan Plan);
 
-public sealed record RunStartResponse(
-    string Disposition,
-    RunSnapshot Run);
+public sealed record RunStartResponse(string Disposition, RunSnapshot Run);
 
 public sealed record RunStopRequest(Guid RunId);
 
-public sealed record RunStopResponse(
-    string Disposition,
-    RunState State);
+public sealed record RunStopResponse(string Disposition, RunState State);
 
-public sealed record LogGetSinceRequest(
-    long AfterSequence,
-    int Limit);
+public sealed record LogGetSinceRequest(long AfterSequence, int Limit);
 
 public sealed record LogGetSinceResponse(
     IReadOnlyList<WorkerLogEntry> Entries,
@@ -308,11 +276,6 @@ public sealed record LogGetSinceResponse(
     long? MissingFromSequence,
     long? MissingToSequence);
 
-public sealed record StateChangedEvent(
-    Guid WorkerInstanceId,
-    long StateRevision,
-    WorkerSnapshot Snapshot);
+public sealed record StateChangedEvent(Guid WorkerInstanceId, long StateRevision, WorkerSnapshot Snapshot);
 
-public sealed record LogEntryEvent(
-    Guid WorkerInstanceId,
-    WorkerLogEntry Entry);
+public sealed record LogEntryEvent(Guid WorkerInstanceId, WorkerLogEntry Entry);

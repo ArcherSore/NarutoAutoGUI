@@ -4,7 +4,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 
-namespace MaaNOP.ChildSessionLauncher;
+namespace NarutoAutoGUI.ChildSession;
 
 internal sealed record VerifiedChildSessionProcessLaunch(
     uint ProcessId,
@@ -52,12 +52,7 @@ internal static class ChildSessionProcessLauncher
         string arguments = "",
         string? workingDirectory = null)
     {
-        return LaunchAtRunLevelAsync(
-            childSessionId,
-            executablePath,
-            arguments,
-            workingDirectory,
-            TaskRunLevelHighest);
+        return LaunchAtRunLevelAsync(childSessionId, executablePath, arguments, workingDirectory, TaskRunLevelHighest);
     }
 
     // Worker-only strengthening path. Existing Demo/program launch callers continue using the
@@ -78,9 +73,7 @@ internal static class ChildSessionProcessLauncher
         var timeout = verificationTimeout ?? TimeSpan.FromSeconds(10);
         if (timeout <= TimeSpan.Zero)
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(verificationTimeout),
-                "进程启动验证超时必须大于零。");
+            throw new ArgumentOutOfRangeException(nameof(verificationTimeout), "进程启动验证超时必须大于零。");
         }
 
         return Task.Run(
@@ -107,8 +100,7 @@ internal static class ChildSessionProcessLauncher
         var workDir = string.IsNullOrWhiteSpace(workingDirectory)
             ? (Path.GetDirectoryName(fullPath) ?? AppContext.BaseDirectory)
             : workingDirectory;
-        return Task.Run(() =>
-            LaunchWithTemporaryTask(childSessionId, fullPath, arguments, workDir, runLevel));
+        return Task.Run(() => LaunchWithTemporaryTask(childSessionId, fullPath, arguments, workDir, runLevel));
     }
 
     private static VerifiedChildSessionProcessLaunch? LaunchWithTemporaryTask(
@@ -295,10 +287,7 @@ internal static class ChildSessionProcessLauncher
             throw new FileNotFoundException("要启动的程序不存在。", fullPath);
         }
 
-        if (!string.Equals(
-                Path.GetExtension(fullPath),
-                ".exe",
-                StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(Path.GetExtension(fullPath), ".exe", StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException("当前只允许选择 .exe 程序。", nameof(executablePath));
         }

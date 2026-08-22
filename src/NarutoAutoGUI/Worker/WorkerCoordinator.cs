@@ -47,8 +47,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     private readonly string _workerExecutablePath;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ConcurrentDictionary<Guid, TaskCompletionSource<WireEnvelope>> _pending = new();
-    private readonly TaskCompletionSource<bool> _serverReady = new(
-        TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<bool> _serverReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Task _serverTask;
     private ProtocolConnection? _connection;
     private WorkerAdmissionRecord? _admission;
@@ -138,8 +137,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         lock (_gate)
         {
             _admission = admission;
-            fresh = new TaskCompletionSource<WorkerSnapshot>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
+            fresh = new TaskCompletionSource<WorkerSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
             _awaitedFreshSnapshot = fresh;
             UpdateSnapshotLocked(new WorkerCoordinatorSnapshot(
                 WorkerObservation.WorkerStarting,
@@ -277,9 +275,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         }
     }
 
-    private void RecordVerifiedWorkerProcess(
-        Guid workerInstanceId,
-        WorkerProcessLaunchResult launch)
+    private void RecordVerifiedWorkerProcess(Guid workerInstanceId, WorkerProcessLaunchResult launch)
     {
         var workerPid = checked((int)launch.ProcessId);
         WorkerAdmissionRecord? recordToPersist = null;
@@ -350,9 +346,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             cancellationToken);
     }
 
-    internal async Task<RunStopResponse> StopRunAsync(
-        Guid runId,
-        CancellationToken cancellationToken = default)
+    internal async Task<RunStopResponse> StopRunAsync(Guid runId, CancellationToken cancellationToken = default)
     {
         return await SendRequestAsync<RunStopRequest, RunStopResponse>(
             ProtocolOperations.RunStop,
@@ -432,20 +426,13 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     private static NamedPipeServerStream CreatePipeServer()
     {
         using var identity = WindowsIdentity.GetCurrent();
-        var userSid = identity.User
-                      ?? throw new InvalidOperationException("\u65e0\u6cd5\u53d6\u5f97\u5f53\u524d Windows \u7528\u6237 SID\u3002 ");
+        var userSid = identity.User ?? throw new InvalidOperationException("无法取得当前 Windows 用户 SID。 ");
         var networkSid = new SecurityIdentifier(WellKnownSidType.NetworkSid, null);
         var security = new PipeSecurity();
         security.SetOwner(userSid);
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        security.AddAccessRule(new PipeAccessRule(
-            networkSid,
-            PipeAccessRights.FullControl,
-            AccessControlType.Deny));
-        security.AddAccessRule(new PipeAccessRule(
-            userSid,
-            PipeAccessRights.FullControl,
-            AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(networkSid, PipeAccessRights.FullControl, AccessControlType.Deny));
+        security.AddAccessRule(new PipeAccessRule(userSid, PipeAccessRights.FullControl, AccessControlType.Allow));
         return NamedPipeServerStreamAcl.Create(
             PipeIdentity.ForCurrentUser(),
             PipeDirection.InOut,
@@ -457,9 +444,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             security);
     }
 
-    private async Task ServeConnectionAsync(
-        NamedPipeServerStream server,
-        CancellationToken cancellationToken)
+    private async Task ServeConnectionAsync(NamedPipeServerStream server, CancellationToken cancellationToken)
     {
         await using var connection = new ProtocolConnection(server);
         var open = await connection.ReadAsync(cancellationToken)
@@ -561,25 +546,25 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             {
                 case ProtocolOperations.WorkerStateChanged:
                 case ProtocolOperations.RunStateChanged:
-                {
-                    var state = ProtocolJson.Deserialize<StateChangedEvent>(envelope.Data);
-                    if (state.WorkerInstanceId != workerInstanceId)
                     {
-                        throw new ProtocolException("stateChanged workerInstanceId 不匹配。 ");
+                        var state = ProtocolJson.Deserialize<StateChangedEvent>(envelope.Data);
+                        if (state.WorkerInstanceId != workerInstanceId)
+                        {
+                            throw new ProtocolException("stateChanged workerInstanceId 不匹配。 ");
+                        }
+                        ApplyStateEvent(state);
+                        break;
                     }
-                    ApplyStateEvent(state);
-                    break;
-                }
                 case ProtocolOperations.LogEntry:
-                {
-                    var log = ProtocolJson.Deserialize<LogEntryEvent>(envelope.Data);
-                    if (log.WorkerInstanceId != workerInstanceId)
                     {
-                        throw new ProtocolException("log.entry workerInstanceId 不匹配。 ");
+                        var log = ProtocolJson.Deserialize<LogEntryEvent>(envelope.Data);
+                        if (log.WorkerInstanceId != workerInstanceId)
+                        {
+                            throw new ProtocolException("log.entry workerInstanceId 不匹配。 ");
+                        }
+                        ApplyLog(log.Entry);
+                        break;
                     }
-                    ApplyLog(log.Entry);
-                    break;
-                }
             }
         }
     }
@@ -619,10 +604,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         }
         var imagePath = process.MainModule?.FileName
                         ?? throw new UnauthorizedAccessException("无法取得 Worker 映像路径。 ");
-        if (!string.Equals(
-                Path.GetFullPath(imagePath),
-                _workerExecutablePath,
-                StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(Path.GetFullPath(imagePath), _workerExecutablePath, StringComparison.OrdinalIgnoreCase))
         {
             throw new UnauthorizedAccessException("Worker 映像不来自当前 NarutoAutoGUI 发布包。 ");
         }
@@ -760,17 +742,14 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
                          ?? throw new InvalidOperationException("Worker IPC 尚未连接。 ");
         }
         var requestId = Guid.NewGuid();
-        var completion = new TaskCompletionSource<WireEnvelope>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = new TaskCompletionSource<WireEnvelope>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_pending.TryAdd(requestId, completion))
         {
             throw new InvalidOperationException("无法登记 IPC requestId。 ");
         }
         try
         {
-            await connection.WriteAsync(
-                WireEnvelope.Request(operation, requestId, data),
-                cancellationToken);
+            await connection.WriteAsync(WireEnvelope.Request(operation, requestId, data), cancellationToken);
             var response = await completion.Task.WaitAsync(RequestTimeout, cancellationToken);
             if (response.Success != true)
             {

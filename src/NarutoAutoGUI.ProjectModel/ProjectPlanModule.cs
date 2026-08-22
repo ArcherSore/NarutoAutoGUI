@@ -3,15 +3,9 @@ using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoGUI.ProjectModel;
 
-public sealed record ProjectTaskChoice(
-    string Name,
-    string Label);
+public sealed record ProjectTaskChoice(string Name, string Label);
 
-public sealed record RunStartAttempt(
-    Guid RunId,
-    DateTime CreatedAtUtc,
-    RunPlan Plan,
-    string PlanDigest);
+public sealed record RunStartAttempt(Guid RunId, DateTime CreatedAtUtc, RunPlan Plan, string PlanDigest);
 
 public sealed class ProjectPlanModule
 {
@@ -29,8 +23,7 @@ public sealed class ProjectPlanModule
         var config = configStore.Load();
         ValidateConfigShape(config);
         SelectedTaskName = config.SelectedTasks.SingleOrDefault();
-        if (SelectedTaskName is not null
-            && !project.Tasks.Any(task => task.Name == SelectedTaskName))
+        if (SelectedTaskName is not null && !project.Tasks.Any(task => task.Name == SelectedTaskName))
         {
             throw new InvalidDataException(
                 $"MaaNOP Config 选择的 task 不再存在：{SelectedTaskName}。 ");
@@ -73,10 +66,7 @@ public sealed class ProjectPlanModule
         return BuildConfiguration(config);
     }
 
-    public ProjectConfigurationView SetInputValue(
-        string optionName,
-        string inputName,
-        string value)
+    public ProjectConfigurationView SetInputValue(string optionName, string inputName, string value)
     {
         var option = FindOption(optionName);
         if (option.Kind != OptionDefinitionKind.Input)
@@ -94,10 +84,7 @@ public sealed class ProjectPlanModule
         var values = ExplicitOptionIntent.ReadInputs(option, config)
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         values[inputName] = value;
-        var updated = ReplaceExplicit(
-            config,
-            optionName,
-            ExplicitOptionIntent.CreateInputs(values));
+        var updated = ReplaceExplicit(config, optionName, ExplicitOptionIntent.CreateInputs(values));
         ValidateActiveConfiguration(updated);
         _configStore.Save(updated);
         return BuildConfiguration(updated);
@@ -120,10 +107,7 @@ public sealed class ProjectPlanModule
         }
 
         var config = LoadConfig();
-        var updated = ReplaceExplicit(
-            config,
-            optionName,
-            ExplicitOptionIntent.CreateSelectedCase(selectedCase));
+        var updated = ReplaceExplicit(config, optionName, ExplicitOptionIntent.CreateSelectedCase(selectedCase));
         ValidateActiveConfiguration(updated);
         _configStore.Save(updated);
         return BuildConfiguration(updated);
@@ -133,10 +117,7 @@ public sealed class ProjectPlanModule
     {
         _ = FindOption(optionName);
         var config = LoadConfig();
-        var values = config.ExplicitOptions.ToDictionary(
-            pair => pair.Key,
-            pair => pair.Value,
-            StringComparer.Ordinal);
+        var values = config.ExplicitOptions.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         values.Remove(optionName);
         var updated = config with { ExplicitOptions = values };
         ValidateActiveConfiguration(updated);
@@ -184,11 +165,7 @@ public sealed class ProjectPlanModule
                 $"Run Plan 超过 {ProtocolConstants.MaximumRunPlanBytes} bytes：{serializedBytes.Length}。 ");
         }
 
-        return new RunStartAttempt(
-            Guid.NewGuid(),
-            createdAtUtc,
-            plan,
-            CanonicalDigest.ComputePlanDigestV1(plan));
+        return new RunStartAttempt(Guid.NewGuid(), createdAtUtc, plan, CanonicalDigest.ComputePlanDigestV1(plan));
     }
 
     private static void ValidateConfigShape(MaaNopConfig config)
@@ -206,8 +183,7 @@ public sealed class ProjectPlanModule
         {
             if (string.IsNullOrWhiteSpace(optionName) || value.ValueKind != JsonValueKind.Object)
             {
-                throw new InvalidDataException(
-                    "ExplicitOptions key 必须为非空 option name，value 必须为 object。 ");
+                throw new InvalidDataException("ExplicitOptions key 必须为非空 option name，value 必须为 object。 ");
             }
         }
     }
@@ -233,11 +209,7 @@ public sealed class ProjectPlanModule
             return;
         }
 
-        ProjectOptionResolver.ValidateScope(
-            _project,
-            _project.GlobalOptions,
-            config,
-            "global_option");
+        ProjectOptionResolver.ValidateScope(_project, _project.GlobalOptions, config, "global_option");
     }
 
     private ProjectConfigurationView BuildConfiguration(MaaNopConfig config)
@@ -250,9 +222,7 @@ public sealed class ProjectPlanModule
         return new ProjectConfigurationView(global, task);
     }
 
-    private IReadOnlyList<ProjectOptionEditor> BuildEditors(
-        IReadOnlyList<string> names,
-        MaaNopConfig config) =>
+    private IReadOnlyList<ProjectOptionEditor> BuildEditors(IReadOnlyList<string> names, MaaNopConfig config) =>
         names.Select(name => BuildEditor(name, config)).ToArray();
 
     private ProjectOptionEditor BuildEditor(string optionName, MaaNopConfig config)
@@ -315,15 +285,9 @@ public sealed class ProjectPlanModule
         _project.Options.GetValueOrDefault(optionName)
         ?? throw new ArgumentException($"PI 中不存在 option：{optionName}。", nameof(optionName));
 
-    private static MaaNopConfig ReplaceExplicit(
-        MaaNopConfig config,
-        string optionName,
-        JsonElement value)
+    private static MaaNopConfig ReplaceExplicit(MaaNopConfig config, string optionName, JsonElement value)
     {
-        var values = config.ExplicitOptions.ToDictionary(
-            pair => pair.Key,
-            pair => pair.Value,
-            StringComparer.Ordinal);
+        var values = config.ExplicitOptions.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         values[optionName] = value;
         return config with { ExplicitOptions = values };
     }

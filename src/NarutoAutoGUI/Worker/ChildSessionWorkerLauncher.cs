@@ -1,13 +1,9 @@
-using MaaNOP.ChildSessionLauncher;
+using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Infrastructure;
 
 namespace NarutoAutoGUI.Worker;
 
-internal sealed record WorkerProcessLaunchResult(
-    uint ProcessId,
-    uint SessionId,
-    int? TaskState,
-    int? LastTaskResult);
+internal sealed record WorkerProcessLaunchResult(uint ProcessId, uint SessionId, int? TaskState, int? LastTaskResult);
 
 internal sealed class ChildSessionWorkerLauncher
 {
@@ -30,9 +26,7 @@ internal sealed class ChildSessionWorkerLauncher
         var fullPath = Path.GetFullPath(workerExecutablePath);
         if (!File.Exists(fullPath))
         {
-            throw new FileNotFoundException(
-                "NarutoAutoWorker 尚未随 GUI 发布。请重新运行正式发布脚本。",
-                fullPath);
+            throw new FileNotFoundException("NarutoAutoWorker 尚未随 GUI 发布。请重新运行正式发布脚本。", fullPath);
         }
         _logger.Info(
             $"正在 Child Session {childSessionId} 启动 NarutoAutoWorker，instance={workerInstanceId}；启动凭据已隐藏。 ");

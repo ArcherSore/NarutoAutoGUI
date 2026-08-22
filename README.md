@@ -2,7 +2,8 @@
 
 NarutoAutoGUI 是 MaaNOP 的 Windows GUI / Frontend，并计划逐步替代 MFAAvalonia。主桌面 GUI 负责启动、路径配置、Child Session 生命周期以及状态和日志展示；游戏和 MaaNOP 运行在独立的 Windows Child Session 中。
 
-仓库已经进入第一轮正式 GUI 开发。`src/ChildSessionDemo` 作为已验证且冻结的 baseline 保留；`src/NarutoAutoGUI` 是 .NET 8 WPF 正式程序。本轮没有引入 MaaFramework、Worker/IPC，也没有修改 MaaNOP、MFAAvalonia 或系统文件。
+仓库已经进入正式 GUI + Child Session Worker 开发阶段。`src/NarutoAutoGUI` 是 .NET 8 WPF 正式程序，
+`src/NarutoAutoWorker` 是 .NET 9 Worker；已验证的 Child Session 实现直接归属于正式 GUI，不再保留独立 PoC。
 
 ## 当前能力
 
@@ -24,7 +25,7 @@ NarutoAutoGUI 是 MaaNOP 的 Windows GUI / Frontend，并计划逐步替代 MFAA
 .\src\NarutoAutoGUI\scripts\build.ps1
 ```
 
-自包含 GUI 与固定 Worker runtime 发布结果位于 `artifacts\NarutoAutoGUI\win-x64`。冻结 baseline 仍可使用 `src\ChildSessionDemo\scripts\build.ps1` 单独构建。
+自包含 GUI 与固定 Worker runtime 发布结果位于 `artifacts\NarutoAutoGUI\win-x64`。
 
 ## 运行
 
@@ -38,4 +39,5 @@ NarutoAutoGUI 是 MaaNOP 的 Windows GUI / Frontend，并计划逐步替代 MFAA
 
 火影忍者 Online 的默认启动配置为 `QQMicroGameBox\Launch.exe -/appid:1103286479`。工作目录无需配置，正式 GUI 会自动使用所选 exe 的所在目录。
 
-进一步说明见 [正式 GUI](src/NarutoAutoGUI/README.md)、[架构](docs/ARCHITECTURE.md)、[当前状态](docs/STATUS.md)和[路线图](docs/ROADMAP.md)。PoC 的具体参数与 baseline 验证见 [Child Session Demo](src/ChildSessionDemo/README.md)。
+进一步说明见 [正式 GUI](src/NarutoAutoGUI/README.md)、[架构](docs/ARCHITECTURE.md)、
+[当前状态](docs/STATUS.md)和[路线图](docs/ROADMAP.md)。

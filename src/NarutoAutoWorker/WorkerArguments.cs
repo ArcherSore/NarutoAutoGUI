@@ -1,9 +1,6 @@
 namespace NarutoAutoWorker;
 
-internal sealed record WorkerArguments(
-    Guid WorkerInstanceId,
-    string LaunchToken,
-    string ManifestPath)
+internal sealed record WorkerArguments(Guid WorkerInstanceId, string LaunchToken, string ManifestPath)
 {
     internal static WorkerArguments Parse(string[] args)
     {

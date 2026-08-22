@@ -8,7 +8,7 @@
 2. `docs/ARCHITECTURE.md`
 3. `docs/STATUS.md`
 4. `docs/ROADMAP.md`
-5. 涉及 Child Session 时再阅读 `src/ChildSessionDemo/README.md` 和相关源码。
+5. 涉及 Child Session 时再阅读 `src/NarutoAutoGUI/ChildSession/` 下的相关源码。
 
 ## 开发原则
 
@@ -21,6 +21,13 @@
 - 除非任务明确要求，否则不修改 MaaNOP、MFAAvalonia 或 MaaFramework，也不引入 Worker/IPC。
 - 不提交 `bin/`、`obj/`、`artifacts/`、发布包、日志或本机凭据。
 - 不在代码、文档、脚本或命令历史中提交密码。
+
+## 代码风格
+
+- 手写代码每行最多 120 个字符；以字符列宽为准，不使用不可复现的像素宽度作为判断标准。
+- 一条表达式、声明、调用或标记在 120 个字符内可以完整表达时，必须保持单行。
+- 只有单行会超过 120 个字符时才换行；换行后按语义层级缩进，不做装饰性展开或无意义的逐参数换行。
+- 修改完成后检查所有受影响的手写代码，确保没有超过 120 个字符的代码行。
 
 ## 完成任务
 

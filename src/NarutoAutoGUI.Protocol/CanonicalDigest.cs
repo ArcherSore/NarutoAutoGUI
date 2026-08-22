@@ -87,10 +87,10 @@ public static class CanonicalDigest
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions
-               {
-                   Indented = false,
-                   SkipValidation = false
-               }))
+        {
+            Indented = false,
+            SkipValidation = false
+        }))
         {
             WriteCanonical(writer, element);
         }
@@ -104,9 +104,7 @@ public static class CanonicalDigest
             || !digest.StartsWith("sha256:", StringComparison.Ordinal)
             || digest.AsSpan(7).IndexOfAnyExcept("0123456789abcdef") >= 0)
         {
-            throw new ArgumentException(
-                "摘要必须使用 sha256:<64 lowercase hex> 格式。",
-                parameterName);
+            throw new ArgumentException("摘要必须使用 sha256:<64 lowercase hex> 格式。", parameterName);
         }
     }
 

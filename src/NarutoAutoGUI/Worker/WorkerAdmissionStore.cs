@@ -138,10 +138,7 @@ internal sealed class WorkerAdmissionStore
         var security = new FileSecurity();
         security.SetOwner(sid);
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        security.AddAccessRule(new FileSystemAccessRule(
-            sid,
-            FileSystemRights.FullControl,
-            AccessControlType.Allow));
+        security.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl, AccessControlType.Allow));
         new FileInfo(path).SetAccessControl(security);
     }
 }

@@ -86,16 +86,13 @@
                             </Grid.RowDefinitions>
 
                             <StackPanel Grid.Row="0">
-                                <TextBlock Text="自动化控制台"
-                                           Style="{StaticResource WindowTitleTextStyle}" />
+                                <TextBlock Text="自动化控制台" Style="{StaticResource WindowTitleTextStyle}" />
                                 <TextBlock Margin="0,4,0,0"
                                            Text="准备环境、完成游戏登录，然后从主桌面开始任务"
                                            Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
 
-                            <Border Grid.Row="1"
-                                    Margin="0,20,0,0"
-                                    Style="{StaticResource StatusPanelStyle}">
+                            <Border Grid.Row="1" Margin="0,20,0,0" Style="{StaticResource StatusPanelStyle}">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -103,12 +100,17 @@
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
-                                    <TextBlock Text="当前任务"
-                                               Style="{StaticResource SectionTitleTextStyle}" />
+                                    <TextBlock Text="当前任务" Style="{StaticResource SectionTitleTextStyle}" />
                                     <TextBlock Grid.Row="1"
                                                Margin="0,6,0,0"
-                                               Text="{Binding SelectedItem.Label, ElementName=MaaNopTaskComboBox, TargetNullValue=尚未选择任务, FallbackValue=尚未选择任务}"
-                                               Style="{StaticResource StatusPrimaryTextStyle}" />
+                                               Style="{StaticResource StatusPrimaryTextStyle}">
+                                        <TextBlock.Text>
+                                            <Binding Path="SelectedItem.Label"
+                                                     ElementName="MaaNopTaskComboBox"
+                                                     TargetNullValue="尚未选择任务"
+                                                     FallbackValue="尚未选择任务" />
+                                        </TextBlock.Text>
+                                    </TextBlock>
                                     <TextBlock Grid.Row="2"
                                                Margin="0,4,0,0"
                                                Text="{Binding Text, ElementName=OptionSummaryText}"
@@ -120,22 +122,31 @@
                                                     Content="准备运行环境(_O)"
                                                     Style="{StaticResource PrimaryButtonStyle}"
                                                     ToolTip="{Binding Text, ElementName=HomeNextStepText}"
-                                                    AutomationProperties.HelpText="{Binding Text, ElementName=HomeNextStepText}"
-                                                    Click="PrepareEnvironmentButton_Click" />
+                                                    Click="PrepareEnvironmentButton_Click">
+                                                <AutomationProperties.HelpText>
+                                                    <Binding Path="Text" ElementName="HomeNextStepText" />
+                                                </AutomationProperties.HelpText>
+                                            </Button>
                                             <Button x:Name="StartRunButton"
                                                     Margin="0,0,8,8"
                                                     Content="开始任务(_U)"
                                                     Style="{StaticResource PrimaryButtonStyle}"
                                                     ToolTip="{Binding Text, ElementName=HomeNextStepText}"
-                                                    AutomationProperties.HelpText="{Binding Text, ElementName=HomeNextStepText}"
-                                                    Click="StartRunButton_Click" />
+                                                    Click="StartRunButton_Click">
+                                                <AutomationProperties.HelpText>
+                                                    <Binding Path="Text" ElementName="HomeNextStepText" />
+                                                </AutomationProperties.HelpText>
+                                            </Button>
                                             <Button x:Name="StopRunButton"
                                                     Margin="0,0,8,8"
                                                     Content="停止任务(_X)"
                                                     Style="{StaticResource DestructiveButtonStyle}"
                                                     ToolTip="{Binding Text, ElementName=HomeNextStepText}"
-                                                    AutomationProperties.HelpText="{Binding Text, ElementName=HomeNextStepText}"
-                                                    Click="StopRunButton_Click" />
+                                                    Click="StopRunButton_Click">
+                                                <AutomationProperties.HelpText>
+                                                    <Binding Path="Text" ElementName="HomeNextStepText" />
+                                                </AutomationProperties.HelpText>
+                                            </Button>
                                             <Button x:Name="LaunchGameButton"
                                                     Margin="0,0,8,8"
                                                     Content="仅启动游戏(_G)"
@@ -160,8 +171,7 @@
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0">
-                                    <TextBlock Text="桌面分身"
-                                               Style="{StaticResource SectionTitleTextStyle}" />
+                                    <TextBlock Text="桌面分身" Style="{StaticResource SectionTitleTextStyle}" />
                                     <TextBlock Margin="0,6,0,0"
                                                Text="{Binding Text, ElementName=SessionStatusText}"
                                                Style="{StaticResource StatusPrimaryTextStyle}" />
@@ -170,8 +180,7 @@
                                                Style="{StaticResource MonospaceMetaTextStyle}" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="2">
-                                    <TextBlock Text="Worker"
-                                               Style="{StaticResource SectionTitleTextStyle}" />
+                                    <TextBlock Text="Worker" Style="{StaticResource SectionTitleTextStyle}" />
                                     <TextBlock x:Name="HomeWorkerSummaryText"
                                                Margin="0,6,0,0"
                                                Text="尚未启动"
@@ -181,8 +190,7 @@
                                                Style="{StaticResource MutedTextStyle}" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="4">
-                                    <TextBlock Text="运行状态"
-                                               Style="{StaticResource SectionTitleTextStyle}" />
+                                    <TextBlock Text="运行状态" Style="{StaticResource SectionTitleTextStyle}" />
                                     <TextBlock x:Name="HomeRunSummaryText"
                                                Margin="0,6,0,0"
                                                Text="尚未运行"
@@ -215,8 +223,7 @@
                             </Grid.RowDefinitions>
 
                             <StackPanel Grid.Row="0">
-                                <TextBlock Text="任务"
-                                           Style="{StaticResource WindowTitleTextStyle}" />
+                                <TextBlock Text="任务" Style="{StaticResource WindowTitleTextStyle}" />
                                 <TextBlock Margin="0,4,0,0"
                                            Text="选择任务并调整 MaaNOP 参数；修改会自动保存"
                                            Style="{StaticResource SecondaryTextStyle}" />
@@ -228,8 +235,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
-                                    <TextBlock Text="MaaNOP 项目"
-                                               Style="{StaticResource SectionTitleTextStyle}" />
+                                    <TextBlock Text="MaaNOP 项目" Style="{StaticResource SectionTitleTextStyle}" />
                                     <TextBlock x:Name="ProjectStatusText"
                                                Margin="0,4,0,0"
                                                Text="MaaNOP 项目未就绪"
@@ -244,8 +250,7 @@
                             </Grid>
 
                             <StackPanel Grid.Row="2" Margin="0,20,0,0">
-                                <Label Content="任务(_T)"
-                                       Target="{Binding ElementName=MaaNopTaskComboBox}" />
+                                <Label Content="任务(_T)" Target="{Binding ElementName=MaaNopTaskComboBox}" />
                                 <ComboBox x:Name="MaaNopTaskComboBox"
                                           Margin="0,6,0,0"
                                           DisplayMemberPath="Label"
@@ -268,12 +273,9 @@
                                            AutomationProperties.LiveSetting="Polite" />
                             </Border>
 
-                            <Border Grid.Row="4"
-                                    Margin="0,16,0,0"
-                                    Style="{StaticResource StatusPanelStyle}">
+                            <Border Grid.Row="4" Margin="0,16,0,0" Style="{StaticResource StatusPanelStyle}">
                                 <StackPanel>
-                                    <TextBlock Text="任务控制"
-                                               Style="{StaticResource SectionTitleTextStyle}" />
+                                    <TextBlock Text="任务控制" Style="{StaticResource SectionTitleTextStyle}" />
                                     <TextBlock Margin="0,6,0,0"
                                                Text="先准备运行环境并完成游戏登录，然后开始任务。运行中可以停止本次任务。"
                                                TextWrapping="Wrap"
@@ -284,22 +286,31 @@
                                                 Content="准备运行环境(_O)"
                                                 Style="{StaticResource PrimaryButtonStyle}"
                                                 ToolTip="{Binding Text, ElementName=HomeNextStepText}"
-                                                AutomationProperties.HelpText="{Binding Text, ElementName=HomeNextStepText}"
-                                                Click="PrepareEnvironmentButton_Click" />
+                                                Click="PrepareEnvironmentButton_Click">
+                                            <AutomationProperties.HelpText>
+                                                <Binding Path="Text" ElementName="HomeNextStepText" />
+                                            </AutomationProperties.HelpText>
+                                        </Button>
                                         <Button x:Name="TaskStartRunButton"
                                                 Margin="0,0,8,8"
                                                 Content="开始任务(_U)"
                                                 Style="{StaticResource PrimaryButtonStyle}"
                                                 ToolTip="{Binding Text, ElementName=HomeNextStepText}"
-                                                AutomationProperties.HelpText="{Binding Text, ElementName=HomeNextStepText}"
-                                                Click="StartRunButton_Click" />
+                                                Click="StartRunButton_Click">
+                                            <AutomationProperties.HelpText>
+                                                <Binding Path="Text" ElementName="HomeNextStepText" />
+                                            </AutomationProperties.HelpText>
+                                        </Button>
                                         <Button x:Name="TaskStopRunButton"
                                                 Margin="0,0,8,8"
                                                 Content="停止任务(_X)"
                                                 Style="{StaticResource DestructiveButtonStyle}"
                                                 ToolTip="{Binding Text, ElementName=HomeNextStepText}"
-                                                AutomationProperties.HelpText="{Binding Text, ElementName=HomeNextStepText}"
-                                                Click="StopRunButton_Click" />
+                                                Click="StopRunButton_Click">
+                                            <AutomationProperties.HelpText>
+                                                <Binding Path="Text" ElementName="HomeNextStepText" />
+                                            </AutomationProperties.HelpText>
+                                        </Button>
                                     </WrapPanel>
                                     <TextBlock Margin="0,4,0,0"
                                                Text="{Binding Text, ElementName=HomeNextStepText}"
@@ -380,16 +391,13 @@
                             </Grid.RowDefinitions>
 
                             <StackPanel Grid.Row="0">
-                                <TextBlock Text="桌面分身"
-                                           Style="{StaticResource WindowTitleTextStyle}" />
+                                <TextBlock Text="桌面分身" Style="{StaticResource WindowTitleTextStyle}" />
                                 <TextBlock Margin="0,4,0,0"
                                            Text="管理用于运行游戏和自动化任务的独立 Windows Session"
                                            Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
 
-                            <Border Grid.Row="1"
-                                    Margin="0,20,0,0"
-                                    Style="{StaticResource StatusPanelStyle}">
+                            <Border Grid.Row="1" Margin="0,20,0,0" Style="{StaticResource StatusPanelStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="3" />
@@ -419,11 +427,8 @@
                                                    Style="{StaticResource MonospaceMetaTextStyle}" />
                                     </StackPanel>
 
-                                    <StackPanel Grid.Column="4"
-                                                HorizontalAlignment="Right"
-                                                VerticalAlignment="Center">
-                                        <Border x:Name="SessionStatusBadge"
-                                                Style="{StaticResource StatusBadgeStyle}">
+                                    <StackPanel Grid.Column="4" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Border x:Name="SessionStatusBadge" Style="{StaticResource StatusBadgeStyle}">
                                             <StackPanel Orientation="Horizontal">
                                                 <Ellipse x:Name="SessionStatusIndicator"
                                                          Width="6"
@@ -479,9 +484,7 @@
                         </Grid>
                     </ScrollViewer>
 
-                    <Grid x:Name="LogsView"
-                          Margin="24"
-                          Visibility="Collapsed">
+                    <Grid x:Name="LogsView" Margin="24" Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="16" />
@@ -495,8 +498,7 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="运行日志"
-                                               Style="{StaticResource WindowTitleTextStyle}" />
+                                    <TextBlock Text="运行日志" Style="{StaticResource WindowTitleTextStyle}" />
                                     <TextBlock Margin="10,4,0,0"
                                                Text="INFO+"
                                                Style="{StaticResource MonospaceMetaTextStyle}" />
@@ -560,16 +562,28 @@
                                         </Border>
                                         <DataTemplate.Triggers>
                                             <DataTrigger Binding="{Binding DisplayLevel}" Value="WARN">
-                                                <Setter TargetName="SeverityMarker" Property="Background" Value="{StaticResource Brush.Warning}" />
-                                                <Setter TargetName="LogLevelText" Property="Foreground" Value="{StaticResource Brush.Warning.Foreground}" />
+                                                <Setter TargetName="SeverityMarker"
+                                                        Property="Background"
+                                                        Value="{StaticResource Brush.Warning}" />
+                                                <Setter TargetName="LogLevelText"
+                                                        Property="Foreground"
+                                                        Value="{StaticResource Brush.Warning.Foreground}" />
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding DisplayLevel}" Value="ERROR">
-                                                <Setter TargetName="SeverityMarker" Property="Background" Value="{StaticResource Brush.Error}" />
-                                                <Setter TargetName="LogLevelText" Property="Foreground" Value="{StaticResource Brush.Error.Foreground}" />
+                                                <Setter TargetName="SeverityMarker"
+                                                        Property="Background"
+                                                        Value="{StaticResource Brush.Error}" />
+                                                <Setter TargetName="LogLevelText"
+                                                        Property="Foreground"
+                                                        Value="{StaticResource Brush.Error.Foreground}" />
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding DisplayLevel}" Value="CRITICAL">
-                                                <Setter TargetName="SeverityMarker" Property="Background" Value="{StaticResource Brush.Error}" />
-                                                <Setter TargetName="LogLevelText" Property="Foreground" Value="{StaticResource Brush.Error.Foreground}" />
+                                                <Setter TargetName="SeverityMarker"
+                                                        Property="Background"
+                                                        Value="{StaticResource Brush.Error}" />
+                                                <Setter TargetName="LogLevelText"
+                                                        Property="Foreground"
+                                                        Value="{StaticResource Brush.Error.Foreground}" />
                                             </DataTrigger>
                                         </DataTemplate.Triggers>
                                     </DataTemplate>
@@ -581,10 +595,12 @@
                                        VerticalAlignment="Center"
                                        IsHitTestVisible="False">
                                 <TextBlock.Style>
-                                    <Style TargetType="{x:Type TextBlock}" BasedOn="{StaticResource SecondaryTextStyle}">
+                                    <Style TargetType="{x:Type TextBlock}"
+                                           BasedOn="{StaticResource SecondaryTextStyle}">
                                         <Setter Property="Visibility" Value="Collapsed" />
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding HasItems, ElementName=LogListBox}" Value="False">
+                                            <DataTrigger Binding="{Binding HasItems, ElementName=LogListBox}"
+                                                         Value="False">
                                                 <Setter Property="Visibility" Value="Visible" />
                                             </DataTrigger>
                                         </Style.Triggers>
@@ -610,9 +626,7 @@
                                   HorizontalContentAlignment="Stretch"
                                   HorizontalScrollBarVisibility="Disabled"
                                   VerticalScrollBarVisibility="Auto">
-                        <Grid Margin="24"
-                              MaxWidth="820"
-                              HorizontalAlignment="Left">
+                        <Grid Margin="24" MaxWidth="820" HorizontalAlignment="Left">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -622,16 +636,14 @@
                             </Grid.RowDefinitions>
 
                             <StackPanel Grid.Row="0">
-                                <TextBlock Text="设置"
-                                           Style="{StaticResource WindowTitleTextStyle}" />
+                                <TextBlock Text="设置" Style="{StaticResource WindowTitleTextStyle}" />
                                 <TextBlock Margin="0,4,0,0"
                                            Text="配置游戏入口、MaaNOP 项目和应用行为"
                                            Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
 
                             <StackPanel Grid.Row="1" Margin="0,24,0,0">
-                                <TextBlock Text="游戏启动"
-                                           Style="{StaticResource SectionTitleTextStyle}" />
+                                <TextBlock Text="游戏启动" Style="{StaticResource SectionTitleTextStyle}" />
                                 <Label Margin="0,14,0,0"
                                        Content="游戏程序(_P)"
                                        Target="{Binding ElementName=GamePathTextBox}" />
@@ -671,8 +683,7 @@
                                     SnapsToDevicePixels="True" />
 
                             <StackPanel Grid.Row="3" Margin="0,24,0,0">
-                                <TextBlock Text="MaaNOP"
-                                           Style="{StaticResource SectionTitleTextStyle}" />
+                                <TextBlock Text="MaaNOP" Style="{StaticResource SectionTitleTextStyle}" />
                                 <Label Margin="0,14,0,0"
                                        Content="项目目录(_M)"
                                        Target="{Binding ElementName=MaaNopProjectDirectoryTextBox}" />
@@ -684,7 +695,7 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBox x:Name="MaaNopProjectDirectoryTextBox"
                                              ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
-                                             AutomationProperties.HelpText="直接包含 interface.json 的 MaaNOP Project Directory"
+                                             AutomationProperties.HelpText="直接包含 interface.json 的 MaaNOP 项目目录"
                                              LostKeyboardFocus="MaaNopProjectDirectoryTextBox_LostKeyboardFocus" />
                                     <Button x:Name="BrowseMaaNopProjectButton"
                                             Grid.Column="2"
@@ -702,8 +713,7 @@
                                         Margin="0,0,0,24"
                                         Background="{StaticResource Brush.Border}"
                                         SnapsToDevicePixels="True" />
-                                <TextBlock Text="应用行为"
-                                           Style="{StaticResource SectionTitleTextStyle}" />
+                                <TextBlock Text="应用行为" Style="{StaticResource SectionTitleTextStyle}" />
                                 <TextBlock Margin="0,10,0,0"
                                            Text="关闭主窗口时会隐藏到系统托盘，任务与桌面分身继续运行。请使用托盘菜单中的“退出程序”完成清理。"
                                            Style="{StaticResource SecondaryTextStyle}" />

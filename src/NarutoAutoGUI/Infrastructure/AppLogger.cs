@@ -75,8 +75,7 @@ internal sealed class AppLogger : IDisposable
                 _writer!.WriteLine(line);
                 _writer.Flush();
             }
-            catch (Exception loggingException) when (loggingException is IOException
-                                                          or UnauthorizedAccessException)
+            catch (Exception loggingException) when (loggingException is IOException or UnauthorizedAccessException)
             {
                 Debugger.Log(0, "NarutoAutoGUI", $"File logging failed: {loggingException}\n");
             }
@@ -161,15 +160,13 @@ internal sealed class AppLogger : IDisposable
                         File.Delete(path);
                     }
                 }
-                catch (Exception exception) when (exception is IOException
-                                                      or UnauthorizedAccessException)
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
                 {
                     Debugger.Log(0, "NarutoAutoGUI", $"Log retention cleanup failed: {exception}\n");
                 }
             }
         }
-        catch (Exception exception) when (exception is IOException
-                                              or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             Debugger.Log(0, "NarutoAutoGUI", $"Log enumeration failed: {exception}\n");
         }
@@ -183,8 +180,7 @@ internal sealed class AppLogger : IDisposable
             Directory.CreateDirectory(preferred);
             return (preferred, null);
         }
-        catch (Exception exception) when (exception is IOException
-                                              or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             var candidates = new[]
             {

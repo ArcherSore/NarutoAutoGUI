@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-第一轮正式 GUI 和 ADR 0020 的首个最小 Worker/IPC + MaaFramework 端到端切片已完成并通过交互式实机验收。`win-x64-options-v2-scroll` 在同一 Worker 上同时通过 admission、fresh Snapshot、Dependency Readiness、真实自然 Succeeded Run、真实 Running 后取消、取消后存活和再次执行；GUI 使用正式 PI 显式 option 编辑与最终 MaaNOP Config/Run Plan 路径，不含测试旁路。Supported Baseline 的 MaaNOP snapshot、Python `maa` 与 Maa.Framework 精确组合仍未冻结，须下一轮单独决定。`src/ChildSessionDemo` 的共享 baseline 仍保持冻结；正式 GUI 位于 `src/NarutoAutoGUI`，Worker 位于 `src/NarutoAutoWorker`。
+第一轮正式 GUI 和 ADR 0020 的首个最小 Worker/IPC + MaaFramework 端到端切片已完成并通过交互式实机验收。`win-x64-options-v2-scroll` 在同一 Worker 上同时通过 admission、fresh Snapshot、Dependency Readiness、真实自然 Succeeded Run、真实 Running 后取消、取消后存活和再次执行；GUI 使用正式 PI 显式 option 编辑与最终 MaaNOP Config/Run Plan 路径，不含测试旁路。Supported Baseline 的 MaaNOP snapshot、Python `maa` 与 Maa.Framework 精确组合仍未冻结，须下一轮单独决定。已验证的 Child Session 实现现位于 `src/NarutoAutoGUI/ChildSession`，不再保留独立 Demo；Worker 位于 `src/NarutoAutoWorker`。
 
 ## 本轮已实现
 
@@ -68,15 +68,20 @@
 - 2026-08-21：PI Loader 对尚未实现的 resource/task/option controller/resource 约束改为 fail closed，并增加三类带准确 JSON path 的负向自检。NarutoAutoGUI Release build 和直接 `--self-test` 通过；构建 0 错误，仅有既有 `NU1900` 漏洞元数据网络警告。
 - 2026-08-22：ProjectModel 将原单文件中的 definitions、PI Loader 和 option Resolver 拆分为内部实现文件，并将 option 结构、默认 input、引用和完整递归图合法性前移到 Loader。自动自检新增非法 input/case 组合、缺失 case、非法正则、默认值类型错误和未激活分支循环等负向 fixture；NarutoAutoGUI Release build 和直接 `--self-test` 通过。本机 MaaNOP v1.3.0 真实 PI 的结构/default 只读核对通过；构建 0 错误，仅有既有 `NU1900` 漏洞元数据网络警告。
 - 2026-08-22：ProjectOptionResolver 将运行期 `pipeline_override` 从 GUI 递归深合并对象改为 MaaFramework 接受的有序 fragment 数组，并新增 task/global/resource/controller/task/nested 六段顺序、同节点 fragment 隔离、int/bool 精确占位符、嵌入字符串、dormant nested option 和 select 顶层 override fail-closed 自检。NarutoAutoGUI Release `win-x64` build 与直接 `--self-test` 通过，0 警告、0 错误；真实 MaaNOP Run 尚待用户验收，不据此声明交互式 E2E 已复验。
-- 2026-08-22：PI Loader 补齐两个 Win32 窗口正则和三个 MaaFramework 控制方式字段的语义校验，自动自检增加五类带准确 JSON path 的负向 fixture；Worker 为不可信 Launch Manifest 保留正则创建错误和实际窗口文本匹配超时诊断。NarutoAutoGUI 与 NarutoAutoWorker Release `win-x64` build、GUI 直接 `--self-test` 均通过，0 警告、0 错误；未修改已冻结 Child Session baseline。
+- 2026-08-22：PI Loader 补齐两个 Win32 窗口正则和三个 MaaFramework 控制方式字段的语义校验，自动自检增加五类带准确 JSON path 的负向 fixture；Worker 为不可信 Launch Manifest 保留正则创建错误和实际窗口文本匹配超时诊断。NarutoAutoGUI 与 NarutoAutoWorker Release `win-x64` build、GUI 直接 `--self-test` 均通过，0 警告、0 错误；未修改已验证的 Child Session 流程。
 - 2026-08-22：删除 task catalog 的 `DefaultOnlyValid/ValidationError` 冗余状态和构造期二次默认 Resolve；非法 PI 统一在 `ProjectPlanModule.Open` 的 Loader seam 失败，task 切换仍验证可能重新激活的 dormant intent。NarutoAutoGUI Release `win-x64` build 与直接 `--self-test` 通过，0 警告、0 错误。
 - 2026-08-22：ProjectModel 以内部 enum 替代 option type 与 pipeline type 字符串，并新增 `ProjectInputValue` 统一 Loader 默认值和 Resolver 显式值的校验/类型转换。自动自检新增非法显式 int/bool 不落盘覆盖；NarutoAutoGUI Release `win-x64` build 与直接 `--self-test` 通过，0 警告、0 错误。
 - 2026-08-22：固定单 controller/resource 的当前 UI 对非空 `controller.option` 与 `resource.option` 改为 fail closed；Loader 接受字段缺失或空数组，合法 `ProjectDefinition` 和 Resolver 不再携带不可编辑的 scope。自动自检相应收口为 task/global/task/nested 有序 fragment，并新增两个 option scope 负向 fixture；NarutoAutoGUI Release `win-x64` build 与直接 `--self-test` 通过，0 警告、0 错误。
+- 2026-08-22：将四个已验证的 Child Session 核心实现迁入正式 GUI 的 `ChildSession` 目录，删除不再使用的独立 Demo、
+  发布脚本和项目文件，并移除 MSBuild 源码链接。全仓库手写 C#、XAML、PowerShell 与项目/配置文件完成 120 列审计，
+  可在 120 列内完整表达的 C# 调用、声明和 XAML 起始标记已收回单行；GUI 与 Worker Release `win-x64` build、
+  GUI 直接 `--self-test`、Roslyn whitespace `--verify-no-changes` 均通过，0 警告、0 错误。自动验证不包含需要真实桌面
+  的 Child Session 交互式回归；对应手动回归见下方记录。
 - build 期间 NuGet 无法访问漏洞元数据源，产生 `NU1900` 警告；包还原和编译本身成功。该警告不是代码编译错误。
 
-以下项目需要管理员权限、可见桌面或真实外部程序，本轮自动验证不能替代手动回归，当前不声明正式 GUI 已完成实机复验：RDP ActiveX 创建/恢复、托盘交互、游戏/MaaNOP 跨 Session 启动、异常断开后重建连接、创建/启动过程中从托盘退出、退出确认取消/注销失败恢复、第二实例拦截和最终注销。
+以下项目需要管理员权限、可见桌面或真实外部程序，自动验证不能替代手动回归。Child Session 真实桌面交互式回归已完成；游戏/MaaNOP 跨 Session 启动、异常断开后重建连接、创建/启动过程中并发退出等外部程序或故障场景仍需按后续目标单独记录。
 
-2026-08-20 五页面 Fluent UI 仍待真实 Windows 桌面人工回归：默认与最小窗口尺寸下的五页导航、键盘 Tab/访问键、页面独立滚动、日志暂停/恢复跟随、状态驱动按钮切换、托盘隐藏/恢复，以及结合真实 Child Session 的 RDP 显示/隐藏/结束流程。100%、150%、200% 缩放下的布局与文字可读性已由用户实机检查，未观察到明显裁切、重叠或可读性问题；尚未执行的其他交互项目不据此声明通过。
+2026-08-20 五页面 Fluent UI 的部分真实 Windows 桌面人工回归仍待补齐：默认与最小窗口尺寸下的五页导航、键盘 Tab/访问键、页面独立滚动、日志暂停/恢复跟随和状态驱动按钮切换。100%、150%、200% 缩放下的布局与文字可读性已由用户实机检查，未观察到明显裁切、重叠或可读性问题；结合真实 Child Session 的 RDP 显示/隐藏/结束流程已在 2026-08-22 完成回归。
 
 ## 本轮交互式回归
 
@@ -90,11 +95,15 @@
 - 2026-08-19：首片 Cancellation scenario 已完整实机通过。主 GUI 在 fresh Snapshot 中观察到 Run 与唯一 Plan Item 均为 Running 后，对真实 `AccountTraining` Run `abe80566-2eb8-412d-b7b9-acf87cf25266` 发送 `run.stop`；Worker 与 GUI 均记录 `stop_requested`，随后 Worker 记录 `MaaFramework Stop 已确认`，GUI 交互观察到 Stopping，最终 Snapshot 为 Run/Plan Item Cancelled、`activeRun=null`、`lastRun.state=Cancelled`、Worker Ready。该 Run 由同一 Worker PID 37064 接受，创建新的 Agent PID 6132 并提交 MaaFramework jobId 200000067；终结后 Agent 已退出，原游戏 PID 11144/38332、同一 Worker PID 37064 和 Child Session 17 均仍存活。该第二次真实 Run 也证明同一 Worker 能在前一个真实 Run 终结并释放 execution context 后再次接受 Run；Cancellation、取消后存活和 Worker 复用验收项记为通过。
 - 2026-08-19：`win-x64-options-v2-scroll` 的真实 Success scenario 已通过。最终 SchemaVersion 1 Config 选择 `AccountTraining`，以正式 ExplicitOptions 设置 `ServerRange=978`，并显式关闭 `ClaimLevelExp`、`ClaimInfiniteIllusion` 与 `ClaimMail`；Run `16c48275-2f8b-4c04-885f-e38ff3cf3fe6`（planDigest `sha256:9ca9dfd9c8c0b466183c0302cad20e8c111d95d3a2ee1c6ec84a3dcccdd7a1e2`）在隐藏 Child Session 18 后由主 GUI 接受，真实找到游戏 PID 16728/HWND `0x104CE`，启动并连接 Python Agent PID 34244，提交 MaaFramework jobId 200000001，最终不经 Stop 自然终结为 Succeeded。终结后 Agent PID 已退出，Worker PID 29960、游戏 PID 16728/33224 和 Child Session 18 均仍存活。Success 能力记为通过。
 - 2026-08-19：同一 `win-x64-options-v2-scroll` Worker 的 Cancellation/复用回归已通过。Success Run 终结后未重新准备或替换 Worker，主 GUI 再次隐藏同一 Child Session 18，并由同一 Worker PID 29960 接受真实 `AccountTraining` Run `f86ba849-d556-443c-bfd2-0686562be705`（planDigest `sha256:2c1a17506a67d6bb7505dd5a1078d012c49a0a9ee72fe0d9e27aced591ff92fc`）；该 Run 重新找到同一游戏 PID/HWND，创建新 Agent PID 38356 并提交 MaaFramework jobId 200000036。用户在 Run 与唯一 Plan Item 均进入 Running 后显式发送 `run.stop`，GUI/Worker 记录 `stop_requested`，随后 Worker 记录 `MaaFramework Stop 已确认`，最终 Run/Plan Item 为 Cancelled、`activeRun=null`、`lastRun.state=Cancelled`、Worker Ready。Agent PID 38356 已退出，Worker PID 29960、游戏 PID 16728/33224 和 Child Session 18 均继续存活。至此 ADR 0020 的 Success、Cancellation、取消后存活和同 Worker 再次执行条件全部满足，首个真实 E2E vertical slice 由 partial 更新为 PASS。
-- 尚未据此声明通过：Child Session 仍运行时直接选择“退出程序”并由退出流程自动注销、异常断开后重建、创建/启动过程中的并发退出。
+- 2026-08-22：用户完成真实 Windows 桌面的正式 GUI Child Session 交互式回归。迁移后的
+  `src/NarutoAutoGUI/ChildSession` 实现已完成真实桌面复验，覆盖 RDP Child Session 创建/恢复、显示/隐藏、结束分身、
+  托盘相关入口和退出注销流程；本次不额外声明异常断开后重建、创建/启动过程中的并发退出或外部游戏/MaaNOP 启动故障场景。
 
-## 已验证 baseline（冻结 Demo）
+## 已验证 Child Session baseline
 
-2026-08-17 已在 `src/ChildSessionDemo` 完成交互式实机复验：创建/连接/预览/注销 Child Session、固定 `1920×1080 @ 100%`、启动和验证 notepad/MFAAvalonia，以及关闭预览后的清理均通过。正式 GUI 直接编译链接该 baseline 的四个核心实现文件。
+2026-08-17 已通过当时的独立 Demo 完成交互式实机复验：创建/连接/预览/注销 Child Session、固定
+`1920×1080 @ 100%`、启动和验证 notepad/MFAAvalonia，以及关闭预览后的清理均通过。2026-08-22 将四个核心实现
+文件迁入 `src/NarutoAutoGUI/ChildSession` 并删除独立 Demo；迁移只调整所有权、目录和命名空间，不改变已验证流程。
 
 ## 已知限制与 Known Issues
 

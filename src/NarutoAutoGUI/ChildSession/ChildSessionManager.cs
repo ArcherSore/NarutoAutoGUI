@@ -1,4 +1,3 @@
-using MaaNOP.ChildSessionLauncher;
 using NarutoAutoGUI.Infrastructure;
 
 namespace NarutoAutoGUI.ChildSession;
@@ -314,11 +313,7 @@ internal sealed class ChildSessionManager : IDisposable
         }
     }
 
-    private void UpdateState(
-        ChildSessionState state,
-        uint? sessionId,
-        int connectedState,
-        string detail)
+    private void UpdateState(ChildSessionState state, uint? sessionId, int connectedState, string detail)
     {
         Snapshot = new ChildSessionSnapshot(state, sessionId, connectedState, detail);
         StateChanged?.Invoke(this, Snapshot);

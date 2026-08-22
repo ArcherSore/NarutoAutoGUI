@@ -6,10 +6,7 @@ namespace NarutoAutoGUI.ProjectModel;
 
 internal static class ProjectInputValue
 {
-    internal static JsonNode Parse(
-        InputDefinition input,
-        string value,
-        string context)
+    internal static JsonNode Parse(InputDefinition input, string value, string context)
     {
         ValidatePattern(input, value, context);
         return input.PipelineKind switch
@@ -31,10 +28,7 @@ internal static class ProjectInputValue
         };
     }
 
-    private static void ValidatePattern(
-        InputDefinition input,
-        string value,
-        string context)
+    private static void ValidatePattern(InputDefinition input, string value, string context)
     {
         if (input.Verify is null)
         {
@@ -48,10 +42,7 @@ internal static class ProjectInputValue
         Regex regex;
         try
         {
-            regex = new Regex(
-                input.Verify,
-                RegexOptions.CultureInvariant,
-                TimeSpan.FromSeconds(1));
+            regex = new Regex(input.Verify, RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
         }
         catch (ArgumentException exception)
         {

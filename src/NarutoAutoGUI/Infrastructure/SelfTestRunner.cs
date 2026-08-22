@@ -41,7 +41,7 @@ internal static class SelfTestRunner
             Console.WriteLine(
                 "SELF-TEST PASS: settings v2 + legacy migration; PI default/explicit resolver; "
                 + "ordered pipeline override; nested dormant intent; "
-                + "unsupported PI constraint fail-closed; "
+                + "Win32 PI validation; unsupported PI constraint fail-closed; "
                 + "PI structure/default/graph validation; "
                 + "MaaNOP Config v1; RunPlan digest; IPC framing; "
                 + "DEBUG+ file logging");
@@ -323,6 +323,41 @@ internal static class SelfTestRunner
     {
         var sourceInterface = File.ReadAllText(
             Path.Combine(sourceProjectDirectory, "interface.json"));
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "invalid-class-regex",
+            "$.controller[0].win32.class_regex 不是合法正则表达式",
+            root => root["controller"]!.AsArray()[0]!.AsObject()["win32"]!
+                .AsObject()["class_regex"] = "(");
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "invalid-window-regex",
+            "$.controller[0].win32.window_regex 不是合法正则表达式",
+            root => root["controller"]!.AsArray()[0]!.AsObject()["win32"]!
+                .AsObject()["window_regex"] = "[");
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "invalid-screencap-method",
+            "$.controller[0].win32.screencap 不支持值 UnknownScreencap",
+            root => root["controller"]!.AsArray()[0]!.AsObject()["win32"]!
+                .AsObject()["screencap"] = "UnknownScreencap");
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "invalid-mouse-method",
+            "$.controller[0].win32.mouse 不支持值 UnknownMouse",
+            root => root["controller"]!.AsArray()[0]!.AsObject()["win32"]!
+                .AsObject()["mouse"] = "UnknownMouse");
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "invalid-keyboard-method",
+            "$.controller[0].win32.keyboard 不支持值 UnknownKeyboard",
+            root => root["controller"]!.AsArray()[0]!.AsObject()["win32"]!
+                .AsObject()["keyboard"] = "UnknownKeyboard");
         VerifyRejectedProjectInterface(
             testDirectory,
             sourceInterface,

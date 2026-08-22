@@ -22,6 +22,19 @@ internal static class ProjectInterfaceLoader
         "class_regex", "window_regex", "screencap", "mouse", "keyboard"
     };
 
+    private static readonly HashSet<string> AllowedWin32ScreencapMethods = new(StringComparer.Ordinal)
+    {
+        "None", "GDI", "FramePool", "DXGI_DesktopDup", "DXGI_DesktopDup_Window",
+        "PrintWindow", "ScreenDC"
+    };
+
+    private static readonly HashSet<string> AllowedWin32InputMethods = new(StringComparer.Ordinal)
+    {
+        "None", "Seize", "SendMessage", "PostMessage", "LegacyEvent", "PostThreadMessage",
+        "SendMessageWithCursorPos", "PostMessageWithCursorPos", "SendMessageWithWindowPos",
+        "PostMessageWithWindowPos"
+    };
+
     private static readonly HashSet<string> AllowedResourceProperties = new(StringComparer.Ordinal)
     {
         "name", "label", "description", "icon", "path", "option"
@@ -135,14 +148,30 @@ internal static class ProjectInterfaceLoader
         }
         var win32 = RequireObject(RequireProperty(obj, "win32", "$.controller[0]"), "$.controller[0].win32");
         RejectUnknownProperties(win32, AllowedWin32Properties, "$.controller[0].win32");
+        var classRegex = RequireString(win32, "class_regex", "$.controller[0].win32");
+        var windowRegex = RequireString(win32, "window_regex", "$.controller[0].win32");
+        ValidateRegex(classRegex, "$.controller[0].win32.class_regex");
+        ValidateRegex(windowRegex, "$.controller[0].win32.window_regex");
         return (
             new Win32ControllerDefinition(
                 RequireString(obj, "name", "$.controller[0]"),
-                RequireString(win32, "class_regex", "$.controller[0].win32"),
-                RequireString(win32, "window_regex", "$.controller[0].win32"),
-                RequireString(win32, "screencap", "$.controller[0].win32"),
-                RequireString(win32, "mouse", "$.controller[0].win32"),
-                RequireString(win32, "keyboard", "$.controller[0].win32")),
+                classRegex,
+                windowRegex,
+                RequireSupportedString(
+                    win32,
+                    "screencap",
+                    "$.controller[0].win32",
+                    AllowedWin32ScreencapMethods),
+                RequireSupportedString(
+                    win32,
+                    "mouse",
+                    "$.controller[0].win32",
+                    AllowedWin32InputMethods),
+                RequireSupportedString(
+                    win32,
+                    "keyboard",
+                    "$.controller[0].win32",
+                    AllowedWin32InputMethods)),
             ReadStringArray(obj, "option", required: false, "$.controller[0]"));
     }
 
@@ -518,6 +547,36 @@ internal static class ProjectInterfaceLoader
     private static string RequireString(JsonElement obj, string name, string path) =>
         OptionalString(obj, name)
         ?? throw new InvalidDataException($"{path}.{name} 必须是非空 string。 ");
+
+    private static string RequireSupportedString(
+        JsonElement obj,
+        string name,
+        string path,
+        IReadOnlySet<string> supported)
+    {
+        var value = RequireString(obj, name, path);
+        if (!supported.Contains(value))
+        {
+            throw new InvalidDataException(
+                $"{path}.{name} 不支持值 {value}；可选值：{string.Join(", ", supported)}。 ");
+        }
+        return value;
+    }
+
+    private static void ValidateRegex(string pattern, string path)
+    {
+        try
+        {
+            _ = new Regex(
+                pattern,
+                RegexOptions.CultureInvariant,
+                TimeSpan.FromSeconds(1));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidDataException($"{path} 不是合法正则表达式。", exception);
+        }
+    }
 
     private static string? OptionalString(JsonElement obj, string name)
     {

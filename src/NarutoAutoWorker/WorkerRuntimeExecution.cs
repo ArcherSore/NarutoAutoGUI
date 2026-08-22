@@ -235,18 +235,17 @@ internal sealed class WorkerRuntimeExecution
 
     private DesktopWindowInfo FindTargetWindow()
     {
-        var classRegex = new Regex(
+        var classRegex = CreateWindowRegex(
             _manifest.Controller.ClassRegex,
-            RegexOptions.CultureInvariant,
-            TimeSpan.FromSeconds(1));
-        var windowRegex = new Regex(
+            "class_regex");
+        var windowRegex = CreateWindowRegex(
             _manifest.Controller.WindowRegex,
-            RegexOptions.CultureInvariant,
-            TimeSpan.FromSeconds(1));
+            "window_regex");
         using var windows = MaaToolkit.Shared.Desktop.Window.Find();
         foreach (var window in windows)
         {
-            if (!classRegex.IsMatch(window.ClassName) || !windowRegex.IsMatch(window.Name))
+            if (!IsWindowMatch(classRegex, window.ClassName, "class_regex")
+                || !IsWindowMatch(windowRegex, window.Name, "window_regex"))
             {
                 continue;
             }
@@ -268,6 +267,37 @@ internal sealed class WorkerRuntimeExecution
         }
         throw new InvalidOperationException(
             $"未在 Child Session {_childSessionId} 找到窗口：class={_manifest.Controller.ClassRegex}，name={_manifest.Controller.WindowRegex}。 ");
+    }
+
+    private static Regex CreateWindowRegex(string pattern, string field)
+    {
+        try
+        {
+            return new Regex(
+                pattern,
+                RegexOptions.CultureInvariant,
+                TimeSpan.FromSeconds(1));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidDataException(
+                $"Launch Manifest controller.{field} 不是合法正则表达式。",
+                exception);
+        }
+    }
+
+    private static bool IsWindowMatch(Regex regex, string value, string field)
+    {
+        try
+        {
+            return regex.IsMatch(value);
+        }
+        catch (RegexMatchTimeoutException exception)
+        {
+            throw new InvalidDataException(
+                $"Launch Manifest controller.{field} 匹配窗口信息时超时。",
+                exception);
+        }
     }
 
     private Process StartAgentProcess(string identifier, string nativeAssemblyDirectory)

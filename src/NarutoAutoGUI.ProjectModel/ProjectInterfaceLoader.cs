@@ -219,6 +219,12 @@ internal static class ProjectInterfaceLoader
             {
                 throw new InvalidDataException($"首版不支持 option type：{type}（{path}）。 ");
             }
+            if (type is "select" or "switch"
+                && option.TryGetProperty("pipeline_override", out _))
+            {
+                throw new InvalidDataException(
+                    $"{type} option {path} 不能声明 pipeline_override；请放到对应 case 中。 ");
+            }
             result.Add(property.Name, new OptionDefinition(
                 property.Name,
                 ReadDisplayString(option, "label") ?? property.Name,

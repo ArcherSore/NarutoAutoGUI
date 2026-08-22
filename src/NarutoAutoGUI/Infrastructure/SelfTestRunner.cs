@@ -40,7 +40,8 @@ internal static class SelfTestRunner
 
             Console.WriteLine(
                 "SELF-TEST PASS: settings v2 + legacy migration; PI default/explicit resolver; "
-                + "nested dormant intent; unsupported PI constraint fail-closed; "
+                + "ordered pipeline override; nested dormant intent; "
+                + "unsupported PI constraint fail-closed; "
                 + "PI structure/default/graph validation; "
                 + "MaaNOP Config v1; RunPlan digest; IPC framing; "
                 + "DEBUG+ file logging");
@@ -142,7 +143,7 @@ internal static class SelfTestRunner
         var defaultConfiguration = project.GetConfiguration();
         var defaultServer = defaultConfiguration.GlobalOptions.Single();
         var defaultMode = defaultConfiguration.TaskOptions.Single();
-        if (defaultServer.Inputs.Single().Value != "978-1012"
+        if (defaultServer.Inputs.Single(input => input.Name == "server_range").Value != "978-1012"
             || defaultServer.IsExplicit
             || defaultMode.SelectedCase != "Default"
             || defaultMode.ActiveChildren.Single().SelectedCase != "On")
@@ -151,12 +152,27 @@ internal static class SelfTestRunner
         }
 
         var defaultAttempt = project.CreateRunStartAttempt();
+        var defaultPipeline = defaultAttempt.Plan.Items[0].PipelineOverride;
         if (defaultAttempt.Plan.Items.Count != 1
             || defaultAttempt.Plan.Items[0].TaskName != "RealTask"
             || defaultAttempt.Plan.ResolvedGlobalOptions.GetProperty("ServerRange")
                 .GetProperty("server_range").GetString() != "978-1012"
             || defaultAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Mode").GetString() != "Default"
             || defaultAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Nested").GetString() != "On"
+            || defaultPipeline.ValueKind != JsonValueKind.Array
+            || defaultPipeline.GetArrayLength() != 6
+            || !defaultPipeline[0].GetProperty("ScopeOrder").GetProperty("task").GetBoolean()
+            || !defaultPipeline[1].GetProperty("ScopeOrder").GetProperty("global").GetBoolean()
+            || !defaultPipeline[2].GetProperty("ScopeOrder").GetProperty("resource").GetBoolean()
+            || !defaultPipeline[3].GetProperty("ScopeOrder").GetProperty("controller").GetBoolean()
+            || !defaultPipeline[4].GetProperty("ScopeOrder").GetProperty("task_option").GetBoolean()
+            || !defaultPipeline[5].GetProperty("ScopeOrder").GetProperty("nested").GetBoolean()
+            || defaultPipeline[1].GetProperty("TypedValues").GetProperty("retry_count").GetInt32() != 3
+            || !defaultPipeline[1].GetProperty("TypedValues").GetProperty("enabled").GetBoolean()
+            || defaultPipeline[1].GetProperty("TypedValues").GetProperty("summary").GetString()
+                != "978-1012:3:true"
+            || defaultPipeline[0].GetProperty("SelfTestEntry").TryGetProperty("mode", out _)
+            || defaultPipeline[4].GetProperty("SelfTestEntry").TryGetProperty("enabled", out _)
             || defaultAttempt.PlanDigest != CanonicalDigest.ComputePlanDigestV1(defaultAttempt.Plan))
         {
             throw new InvalidOperationException("正式 PI Resolver / RunPlan / planDigest 验证失败。");
@@ -177,15 +193,18 @@ internal static class SelfTestRunner
         }
 
         var explicitAttempt = project.CreateRunStartAttempt();
-        var explicitServerRange = explicitAttempt.Plan.Items[0].PipelineOverride
+        var explicitPipeline = explicitAttempt.Plan.Items[0].PipelineOverride;
+        var explicitServerRange = explicitPipeline[1]
             .GetProperty("ParseServer").GetProperty("recognition").GetProperty("param")
             .GetProperty("custom_recognition_param").GetString();
         if (explicitAttempt.Plan.ResolvedGlobalOptions.GetProperty("ServerRange")
                 .GetProperty("server_range").GetString() != "978"
             || explicitAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Nested").GetString() != "Off"
             || explicitServerRange != "978"
-            || explicitAttempt.Plan.Items[0].PipelineOverride.GetProperty("SelfTestEntry")
-                .GetProperty("nested").GetBoolean()
+            || explicitPipeline.GetArrayLength() != 6
+            || explicitPipeline[5].GetProperty("SelfTestEntry").GetProperty("nested").GetBoolean()
+            || explicitPipeline[1].GetProperty("TypedValues").GetProperty("summary").GetString()
+                != "978:3:true"
             || explicitAttempt.PlanDigest == defaultAttempt.PlanDigest)
         {
             throw new InvalidOperationException("PI explicit input/switch resolution 验证失败。");
@@ -206,14 +225,17 @@ internal static class SelfTestRunner
             }
         }
         var dormantAttempt = project.CreateRunStartAttempt();
-        if (dormantAttempt.Plan.Items[0].ResolvedOptions.TryGetProperty("Nested", out _))
+        if (dormantAttempt.Plan.Items[0].ResolvedOptions.TryGetProperty("Nested", out _)
+            || dormantAttempt.Plan.Items[0].PipelineOverride.GetArrayLength() != 5)
         {
             throw new InvalidOperationException("Dormant option 不应进入 Run Plan。");
         }
 
         project.SetSelectedCase("Mode", "Default");
         var restoredAttempt = project.CreateRunStartAttempt();
-        if (restoredAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Nested").GetString() != "Off")
+        if (restoredAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Nested").GetString() != "Off"
+            || restoredAttempt.Plan.Items[0].PipelineOverride[5]
+                .GetProperty("SelfTestEntry").GetProperty("nested").GetBoolean())
         {
             throw new InvalidOperationException("PI nested dormant intent 恢复验证失败。");
         }
@@ -227,7 +249,8 @@ internal static class SelfTestRunner
         {
             // Expected: invalid edits are not persisted.
         }
-        if (project.GetConfiguration().GlobalOptions.Single().Inputs.Single().Value != "978")
+        if (project.GetConfiguration().GlobalOptions.Single().Inputs
+                .Single(input => input.Name == "server_range").Value != "978")
         {
             throw new InvalidOperationException("非法显式值不应覆盖最后一次合法配置。");
         }
@@ -310,6 +333,13 @@ internal static class SelfTestRunner
         VerifyRejectedProjectInterface(
             testDirectory,
             sourceInterface,
+            "invalid-select-pipeline-override",
+            "select option $.option.Mode 不能声明 pipeline_override",
+            root => root["option"]!.AsObject()["Mode"]!.AsObject()["pipeline_override"] =
+                new JsonObject { ["Unexpected"] = new JsonObject() });
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
             "invalid-default-case",
             "$.option.Mode.default_case",
             root => root["option"]!.AsObject()["Mode"]!.AsObject()["default_case"] =
@@ -388,6 +418,7 @@ internal static class SelfTestRunner
               "controller": [{
                 "name": "Win32",
                 "type": "Win32",
+                "option": ["ControllerDefaults"],
                 "win32": {
                   "class_regex": ".*",
                   "window_regex": "SelfTestWindow",
@@ -396,7 +427,11 @@ internal static class SelfTestRunner
                   "keyboard": "Seize"
                 }
               }],
-              "resource": [{"name": "Default", "path": ["./resource"]}],
+              "resource": [{
+                "name": "Default",
+                "path": ["./resource"],
+                "option": ["ResourceDefaults"]
+              }],
               "agent": {"child_exec": "python", "child_args": ["./agent/main.py"]},
               "global_option": ["ServerRange"],
               "task": [{
@@ -404,28 +439,67 @@ internal static class SelfTestRunner
                 "label": "Real task",
                 "entry": "SelfTestEntry",
                 "option": ["Mode"],
-                "pipeline_override": {"SelfTestEntry": {"enabled": true}}
+                "pipeline_override": {
+                  "SelfTestEntry": {"enabled": true},
+                  "ScopeOrder": {"task": true}
+                }
               }],
               "option": {
                 "ServerRange": {
                   "type": "input",
                   "label": "Server range",
-                  "inputs": [{
-                    "name": "server_range",
-                    "label": "Server",
-                    "default": "978-1012",
-                    "pipeline_type": "string",
-                    "verify": "^(?:\\d+(?:-\\d+)?)(?:,\\d+(?:-\\d+)?)*$",
-                    "pattern_msg": "Use ranges such as 978 or 978-1012"
-                  }],
+                  "inputs": [
+                    {
+                      "name": "server_range",
+                      "label": "Server",
+                      "default": "978-1012",
+                      "pipeline_type": "string",
+                      "verify": "^(?:\\d+(?:-\\d+)?)(?:,\\d+(?:-\\d+)?)*$",
+                      "pattern_msg": "Use ranges such as 978 or 978-1012"
+                    },
+                    {
+                      "name": "retry_count",
+                      "label": "Retry count",
+                      "default": "3",
+                      "pipeline_type": "int"
+                    },
+                    {
+                      "name": "enabled",
+                      "label": "Enabled",
+                      "default": "true",
+                      "pipeline_type": "bool"
+                    }
+                  ],
                   "pipeline_override": {
                     "ParseServer": {
                       "recognition": {
                         "type": "Custom",
                         "param": {"custom_recognition_param": "{server_range}"}
                       }
-                    }
+                    },
+                    "TypedValues": {
+                      "retry_count": "{retry_count}",
+                      "enabled": "{enabled}",
+                      "summary": "{server_range}:{retry_count}:{enabled}"
+                    },
+                    "ScopeOrder": {"global": true}
                   }
+                },
+                "ResourceDefaults": {
+                  "type": "select",
+                  "default_case": "Default",
+                  "cases": [{
+                    "name": "Default",
+                    "pipeline_override": {"ScopeOrder": {"resource": true}}
+                  }]
+                },
+                "ControllerDefaults": {
+                  "type": "select",
+                  "default_case": "Default",
+                  "cases": [{
+                    "name": "Default",
+                    "pipeline_override": {"ScopeOrder": {"controller": true}}
+                  }]
                 },
                 "Mode": {
                   "type": "select",
@@ -435,7 +509,10 @@ internal static class SelfTestRunner
                       "name": "Default",
                       "label": "Default mode",
                       "option": ["Nested"],
-                      "pipeline_override": {"SelfTestEntry": {"mode": "default"}}
+                      "pipeline_override": {
+                        "SelfTestEntry": {"mode": "default"},
+                        "ScopeOrder": {"task_option": true}
+                      }
                     },
                     {
                       "name": "Minimal",
@@ -448,8 +525,20 @@ internal static class SelfTestRunner
                   "type": "switch",
                   "default_case": "On",
                   "cases": [
-                    {"name": "On", "pipeline_override": {"SelfTestEntry": {"nested": true}}},
-                    {"name": "Off", "pipeline_override": {"SelfTestEntry": {"nested": false}}}
+                    {
+                      "name": "On",
+                      "pipeline_override": {
+                        "SelfTestEntry": {"nested": true},
+                        "ScopeOrder": {"nested": true}
+                      }
+                    },
+                    {
+                      "name": "Off",
+                      "pipeline_override": {
+                        "SelfTestEntry": {"nested": false},
+                        "ScopeOrder": {"nested": false}
+                      }
+                    }
                   ]
                 }
               }

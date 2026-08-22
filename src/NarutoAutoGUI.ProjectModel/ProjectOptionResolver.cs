@@ -12,19 +12,21 @@ internal static class ProjectOptionResolver
         TaskDefinition task,
         MaaNopConfig config)
     {
-        var merged = new JsonObject();
-        MergeObject(merged, JsonNode.Parse(task.PipelineOverride.GetRawText())!.AsObject());
+        var pipelineOverrides = new JsonArray
+        {
+            ParseObject(task.PipelineOverride)
+        };
 
         var globalValues = new JsonObject();
         var taskValues = new JsonObject();
-        ResolveScope(project, project.GlobalOptions, config, globalValues, merged, "global_option");
-        ResolveScope(project, project.ResourceOptions, config, new JsonObject(), merged, "resource.option");
-        ResolveScope(project, project.ControllerOptions, config, new JsonObject(), merged, "controller.option");
-        ResolveScope(project, task.Options, config, taskValues, merged, $"task.{task.Name}.option");
+        ResolveScope(project, project.GlobalOptions, config, globalValues, pipelineOverrides, "global_option");
+        ResolveScope(project, project.ResourceOptions, config, new JsonObject(), pipelineOverrides, "resource.option");
+        ResolveScope(project, project.ControllerOptions, config, new JsonObject(), pipelineOverrides, "controller.option");
+        ResolveScope(project, task.Options, config, taskValues, pipelineOverrides, $"task.{task.Name}.option");
         return new ResolvedProjectOptions(
             ToElement(globalValues),
             ToElement(taskValues),
-            ToElement(merged));
+            ToElement(pipelineOverrides));
     }
 
     internal static void ValidateScope(
@@ -38,7 +40,7 @@ internal static class ProjectOptionResolver
             optionNames,
             config,
             new JsonObject(),
-            new JsonObject(),
+            new JsonArray(),
             scope);
     }
 
@@ -47,7 +49,7 @@ internal static class ProjectOptionResolver
         IReadOnlyList<string> optionNames,
         MaaNopConfig config,
         JsonObject resolvedValues,
-        JsonObject mergedPipeline,
+        JsonArray pipelineOverrides,
         string scope)
     {
         foreach (var optionName in optionNames)
@@ -57,7 +59,7 @@ internal static class ProjectOptionResolver
                 optionName,
                 config,
                 resolvedValues,
-                mergedPipeline,
+                pipelineOverrides,
                 scope);
         }
     }
@@ -67,7 +69,7 @@ internal static class ProjectOptionResolver
         string optionName,
         MaaNopConfig config,
         JsonObject resolvedValues,
-        JsonObject mergedPipeline,
+        JsonArray pipelineOverrides,
         string scope)
     {
         var option = project.Options[optionName];
@@ -106,7 +108,9 @@ internal static class ProjectOptionResolver
                             resolvedValue);
                     }
                     resolvedValues[optionName] = values;
-                    MergeTemplated(mergedPipeline, option.PipelineOverride, substitutions);
+                    pipelineOverrides.Add(CreateTemplatedOverride(
+                        option.PipelineOverride,
+                        substitutions));
                     break;
                 }
                 case "select":
@@ -118,12 +122,7 @@ internal static class ProjectOptionResolver
                                    ?? throw new InvalidDataException(
                                        $"option {optionName} 的 case {selectedName} 不存在。 ");
                     resolvedValues[optionName] = selected.Name;
-                    MergeObject(
-                        mergedPipeline,
-                        JsonNode.Parse(option.PipelineOverride.GetRawText())!.AsObject());
-                    MergeObject(
-                        mergedPipeline,
-                        JsonNode.Parse(selected.PipelineOverride.GetRawText())!.AsObject());
+                    pipelineOverrides.Add(ParseObject(selected.PipelineOverride));
                     foreach (var nested in selected.Options)
                     {
                         ResolveOption(
@@ -131,7 +130,7 @@ internal static class ProjectOptionResolver
                             nested,
                             config,
                             resolvedValues,
-                            mergedPipeline,
+                            pipelineOverrides,
                             scope);
                     }
                     break;
@@ -166,14 +165,13 @@ internal static class ProjectOptionResolver
         };
     }
 
-    private static void MergeTemplated(
-        JsonObject target,
+    private static JsonObject CreateTemplatedOverride(
         JsonElement template,
         IReadOnlyDictionary<string, JsonNode?> substitutions)
     {
-        var node = JsonNode.Parse(template.GetRawText())!.AsObject();
+        var node = ParseObject(template);
         Substitute(node, substitutions);
-        MergeObject(target, node);
+        return node;
     }
 
     private static void Substitute(
@@ -239,21 +237,8 @@ internal static class ProjectOptionResolver
         return JsonValue.Create(result);
     }
 
-    private static void MergeObject(JsonObject target, JsonObject source)
-    {
-        foreach (var property in source)
-        {
-            if (property.Value is JsonObject sourceObject
-                && target[property.Key] is JsonObject targetObject)
-            {
-                MergeObject(targetObject, sourceObject);
-            }
-            else
-            {
-                target[property.Key] = property.Value?.DeepClone();
-            }
-        }
-    }
+    private static JsonObject ParseObject(JsonElement element) =>
+        JsonNode.Parse(element.GetRawText())!.AsObject();
 
     private static JsonElement ToElement(JsonNode node)
     {

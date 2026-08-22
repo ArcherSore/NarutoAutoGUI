@@ -5,9 +5,7 @@ namespace NarutoAutoGUI.ProjectModel;
 
 public sealed record ProjectTaskChoice(
     string Name,
-    string Label,
-    bool DefaultOnlyValid,
-    string? ValidationError);
+    string Label);
 
 public sealed record RunStartAttempt(
     Guid RunId,
@@ -24,24 +22,9 @@ public sealed class ProjectPlanModule
     {
         _project = project;
         _configStore = configStore;
-        Tasks = project.Tasks.Select(task =>
-        {
-            try
-            {
-                _ = ProjectOptionResolver.Resolve(project, task, new MaaNopConfig());
-                return new ProjectTaskChoice(task.Name, task.Label, true, null);
-            }
-            catch (Exception exception) when (exception is InvalidDataException
-                                                   or JsonException
-                                                   or ArgumentException)
-            {
-                return new ProjectTaskChoice(
-                    task.Name,
-                    task.Label,
-                    false,
-                    exception.GetBaseException().Message);
-            }
-        }).ToArray();
+        Tasks = project.Tasks
+            .Select(task => new ProjectTaskChoice(task.Name, task.Label))
+            .ToArray();
 
         var config = configStore.Load();
         ValidateConfigShape(config);
@@ -70,13 +53,8 @@ public sealed class ProjectPlanModule
 
     public void SelectTask(string taskName)
     {
-        var task = Tasks.SingleOrDefault(candidate => candidate.Name == taskName)
-                   ?? throw new ArgumentException($"PI 中不存在 task：{taskName}。", nameof(taskName));
-        if (!task.DefaultOnlyValid)
-        {
-            throw new InvalidOperationException(
-                $"task {taskName} 无法使用纯默认 option：{task.ValidationError}");
-        }
+        _ = Tasks.SingleOrDefault(candidate => candidate.Name == taskName)
+            ?? throw new ArgumentException($"PI 中不存在 task：{taskName}。", nameof(taskName));
 
         var current = LoadConfig();
         var updated = current with

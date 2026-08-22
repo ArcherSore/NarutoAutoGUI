@@ -122,9 +122,11 @@ internal static class SelfTestRunner
     {
         var configPath = Path.Combine(testDirectory, "maanop-config.json");
         var project = ProjectPlanModule.Open(projectDirectory, configPath);
-        if (project.Tasks.Count != 1 || !project.Tasks[0].DefaultOnlyValid)
+        if (project.Tasks.Count != 1
+            || project.Tasks[0].Name != "RealTask"
+            || project.Tasks[0].Label != "Real task")
         {
-            throw new InvalidOperationException("PI default-only task catalog 验证失败。");
+            throw new InvalidOperationException("PI task catalog 验证失败。");
         }
 
         project.SelectTask("RealTask");

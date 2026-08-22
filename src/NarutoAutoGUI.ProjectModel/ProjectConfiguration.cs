@@ -3,12 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace NarutoAutoGUI.ProjectModel;
 
-public enum ProjectOptionKind
-{
-    Input,
-    Select,
-    Switch
-}
+public enum ProjectOptionKind { Input, Select, Switch }
 
 public sealed record ProjectInputEditor(
     string Name,
@@ -52,7 +47,7 @@ internal static class ExplicitOptionIntent
             return new Dictionary<string, string>(StringComparer.Ordinal);
         }
         var root = RequireObject(element, option.Name);
-        RejectUnknown(root, ["Inputs"], option.Name);
+        RejectUnknown(root, "Inputs", option.Name);
         if (!root.TryGetProperty("Inputs", out var inputs)
             || inputs.ValueKind != JsonValueKind.Object)
         {
@@ -92,7 +87,7 @@ internal static class ExplicitOptionIntent
             return null;
         }
         var root = RequireObject(element, option.Name);
-        RejectUnknown(root, ["SelectedCase"], option.Name);
+        RejectUnknown(root, "SelectedCase", option.Name);
         if (!root.TryGetProperty("SelectedCase", out var selected)
             || selected.ValueKind != JsonValueKind.String
             || string.IsNullOrWhiteSpace(selected.GetString()))
@@ -126,15 +121,11 @@ internal static class ExplicitOptionIntent
         return element;
     }
 
-    private static void RejectUnknown(
-        JsonElement element,
-        IEnumerable<string> allowed,
-        string optionName)
+    private static void RejectUnknown(JsonElement element, string allowed, string optionName)
     {
-        var names = allowed.ToHashSet(StringComparer.Ordinal);
         foreach (var property in element.EnumerateObject())
         {
-            if (!names.Contains(property.Name))
+            if (!string.Equals(property.Name, allowed, StringComparison.Ordinal))
             {
                 throw new InvalidDataException(
                     $"ExplicitOptions.{optionName} 包含未知字段 {property.Name}。 ");
@@ -142,9 +133,5 @@ internal static class ExplicitOptionIntent
         }
     }
 
-    private static JsonElement ToElement(JsonNode node)
-    {
-        using var document = JsonDocument.Parse(node.ToJsonString());
-        return document.RootElement.Clone();
-    }
+    private static JsonElement ToElement(JsonNode node) => JsonSerializer.SerializeToElement(node);
 }

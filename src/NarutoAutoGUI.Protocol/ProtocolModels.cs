@@ -176,35 +176,11 @@ public sealed record RunPlanItem(
     JsonElement ResolvedOptions,
     JsonElement PipelineOverride);
 
-public enum WorkerState
-{
-    Starting,
-    Ready,
-    NotReady,
-    Faulted,
-    Stopping
-}
+public enum WorkerState { Starting, Ready, NotReady, Faulted, Stopping }
 
-public enum RunState
-{
-    Idle,
-    Starting,
-    Running,
-    Stopping,
-    Succeeded,
-    Failed,
-    Cancelled
-}
+public enum RunState { Idle, Starting, Running, Stopping, Succeeded, Failed, Cancelled }
 
-public enum PlanItemState
-{
-    Pending,
-    Starting,
-    Running,
-    Succeeded,
-    Failed,
-    Cancelled
-}
+public enum PlanItemState { Pending, Starting, Running, Succeeded, Failed, Cancelled }
 
 public sealed record StructuredReason(
     string Code,

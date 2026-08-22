@@ -12,14 +12,12 @@ public static class PipeIdentity
     {
         if (!OperatingSystem.IsWindows())
         {
-            throw new PlatformNotSupportedException("NarutoAutoGUI Worker IPC 只支持 Windows。 ");
+            throw new PlatformNotSupportedException("NarutoAutoGUI Worker IPC 只支持 Windows。");
         }
 
         using var identity = WindowsIdentity.GetCurrent();
-        var sid = identity.User?.Value
-                  ?? throw new InvalidOperationException("无法取得当前 Windows 用户 SID。 ");
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sid)))
-            .ToLowerInvariant();
+        var sid = identity.User?.Value ?? throw new InvalidOperationException("无法取得当前 Windows 用户 SID。");
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sid))).ToLowerInvariant();
         return $"{Prefix}.{hash[..24]}";
     }
 }

@@ -23,21 +23,21 @@ public sealed class ProtocolConnection : IAsyncDisposable
     {
         ThrowIfDisposed();
         var prefix = new byte[sizeof(uint)];
-        var firstRead = await _stream.ReadAsync(prefix.AsMemory(0, 1), cancellationToken);
-        if (firstRead == 0)
+        var prefixBytesRead = await _stream.ReadAsync(prefix, cancellationToken);
+        if (prefixBytesRead == 0)
         {
             return null;
         }
+        await _stream.ReadExactlyAsync(prefix.AsMemory(prefixBytesRead), cancellationToken);
 
-        await ReadExactlyAsync(_stream, prefix.AsMemory(1), cancellationToken);
         var payloadLength = BinaryPrimitives.ReadUInt32LittleEndian(prefix);
         if (payloadLength == 0 || payloadLength > ProtocolConstants.MaximumFramePayloadBytes)
         {
             throw new ProtocolException($"非法 IPC frame 长度：{payloadLength}。 ");
         }
 
-        var payload = GC.AllocateUninitializedArray<byte>(checked((int)payloadLength));
-        await ReadExactlyAsync(_stream, payload, cancellationToken);
+        var payload = GC.AllocateUninitializedArray<byte>((int)payloadLength);
+        await _stream.ReadExactlyAsync(payload, cancellationToken);
 
         string json;
         try
@@ -70,7 +70,7 @@ public sealed class ProtocolConnection : IAsyncDisposable
         }
 
         var prefix = new byte[sizeof(uint)];
-        BinaryPrimitives.WriteUInt32LittleEndian(prefix, checked((uint)payload.Length));
+        BinaryPrimitives.WriteUInt32LittleEndian(prefix, (uint)payload.Length);
 
         await _writeGate.WaitAsync(cancellationToken);
         try
@@ -97,23 +97,6 @@ public sealed class ProtocolConnection : IAsyncDisposable
         await _stream.DisposeAsync();
     }
 
-    private static async Task ReadExactlyAsync(
-        Stream stream,
-        Memory<byte> buffer,
-        CancellationToken cancellationToken)
-    {
-        var read = 0;
-        while (read < buffer.Length)
-        {
-            var count = await stream.ReadAsync(buffer[read..], cancellationToken);
-            if (count == 0)
-            {
-                throw new EndOfStreamException("IPC frame 在 payload 完成前结束。 ");
-            }
-            read += count;
-        }
-    }
-
     private void ThrowIfDisposed()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -122,12 +105,7 @@ public sealed class ProtocolConnection : IAsyncDisposable
 
 public sealed class ProtocolException : Exception
 {
-    public ProtocolException(string message) : base(message)
-    {
-    }
+    public ProtocolException(string message) : base(message) { }
 
-    public ProtocolException(string message, Exception innerException)
-        : base(message, innerException)
-    {
-    }
+    public ProtocolException(string message, Exception innerException) : base(message, innerException) { }
 }

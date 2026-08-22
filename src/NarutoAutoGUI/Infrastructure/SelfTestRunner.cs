@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using NarutoAutoGUI.Models;
 using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
@@ -21,6 +22,8 @@ internal static class SelfTestRunner
             var projectDirectory = CreateProjectFixture(testDirectory);
             VerifySettings(logger, testDirectory, projectDirectory);
             VerifyProjectPlan(testDirectory, projectDirectory);
+            VerifyUnsupportedProjectConstraints(testDirectory, projectDirectory);
+            VerifyInvalidProjectInterfaces(testDirectory, projectDirectory);
             VerifyProtocolFrame();
 
             logger.Debug("self-test-debug");
@@ -37,7 +40,9 @@ internal static class SelfTestRunner
 
             Console.WriteLine(
                 "SELF-TEST PASS: settings v2 + legacy migration; PI default/explicit resolver; "
-                + "nested dormant intent; MaaNOP Config v1; RunPlan digest; IPC framing; "
+                + "nested dormant intent; unsupported PI constraint fail-closed; "
+                + "PI structure/default/graph validation; "
+                + "MaaNOP Config v1; RunPlan digest; IPC framing; "
                 + "DEBUG+ file logging");
             return 0;
         }
@@ -125,11 +130,12 @@ internal static class SelfTestRunner
         using (var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath)))
         {
             var root = configDocument.RootElement;
-            if (root.GetProperty("SchemaVersion").GetInt32() != 1
+            if (root.GetProperty("SchemaVersion").GetInt32() != MaaNopConfig.CurrentSchemaVersion
                 || root.GetProperty("SelectedTasks")[0].GetString() != "RealTask"
                 || root.GetProperty("ExplicitOptions").EnumerateObject().Any())
             {
-                throw new InvalidOperationException("MaaNOP Config SchemaVersion 1 验证失败。");
+                throw new InvalidOperationException(
+                    $"MaaNOP Config SchemaVersion {MaaNopConfig.CurrentSchemaVersion} 验证失败。");
             }
         }
 
@@ -256,6 +262,114 @@ internal static class SelfTestRunner
             || decoded.Operation != ProtocolOperations.WorkerGetSnapshot)
         {
             throw new InvalidOperationException("Named Pipe frame round-trip 验证失败。");
+        }
+    }
+
+    private static void VerifyUnsupportedProjectConstraints(
+        string testDirectory,
+        string sourceProjectDirectory)
+    {
+        var sourceInterface = File.ReadAllText(
+            Path.Combine(sourceProjectDirectory, "interface.json"));
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "unsupported-resource-controller",
+            "$.resource[0].controller",
+            root => root["resource"]!.AsArray()[0]!.AsObject()["controller"] =
+                new JsonArray("Win32"));
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "unsupported-task-controller",
+            "$.task[0].controller",
+            root => root["task"]!.AsArray()[0]!.AsObject()["controller"] =
+                new JsonArray("Win32"));
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "unsupported-option-resource",
+            "$.option.ServerRange.resource",
+            root => root["option"]!.AsObject()["ServerRange"]!.AsObject()["resource"] =
+                new JsonArray("Default"));
+    }
+
+    private static void VerifyInvalidProjectInterfaces(
+        string testDirectory,
+        string sourceProjectDirectory)
+    {
+        var sourceInterface = File.ReadAllText(
+            Path.Combine(sourceProjectDirectory, "interface.json"));
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "invalid-input-cases",
+            "input option $.option.ServerRange 不能声明 cases",
+            root => root["option"]!.AsObject()["ServerRange"]!.AsObject()["cases"] =
+                new JsonArray(new JsonObject { ["name"] = "Unexpected" }));
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "invalid-default-case",
+            "$.option.Mode.default_case",
+            root => root["option"]!.AsObject()["Mode"]!.AsObject()["default_case"] =
+                "Missing");
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "invalid-input-regex",
+            "$.option.ServerRange.inputs[0].verify",
+            root => root["option"]!.AsObject()["ServerRange"]!.AsObject()["inputs"]!
+                .AsArray()[0]!.AsObject()["verify"] = "(");
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "invalid-input-default-type",
+            "$.option.ServerRange.inputs[0].default 不是合法 int",
+            root => root["option"]!.AsObject()["ServerRange"]!.AsObject()["inputs"]!
+                .AsArray()[0]!.AsObject()["pipeline_type"] = "int");
+        VerifyRejectedProjectInterface(
+            testDirectory,
+            sourceInterface,
+            "inactive-option-cycle",
+            "option 递归引用形成循环：Mode -> Mode",
+            root =>
+            {
+                var cases = root["option"]!.AsObject()["Mode"]!.AsObject()["cases"]!.AsArray();
+                var minimal = cases
+                    .Select(item => item!.AsObject())
+                    .Single(item => item["name"]!.GetValue<string>() == "Minimal");
+                minimal["option"] = new JsonArray("Mode");
+            });
+    }
+
+    private static void VerifyRejectedProjectInterface(
+        string testDirectory,
+        string sourceInterface,
+        string fixtureName,
+        string expectedError,
+        Action<JsonObject> mutate)
+    {
+        var projectDirectory = Path.Combine(testDirectory, fixtureName);
+        Directory.CreateDirectory(projectDirectory);
+        var root = JsonNode.Parse(sourceInterface)?.AsObject()
+                   ?? throw new InvalidOperationException("PI fail-closed fixture 解析失败。");
+        mutate(root);
+        File.WriteAllText(
+            Path.Combine(projectDirectory, "interface.json"),
+            root.ToJsonString());
+
+        try
+        {
+            _ = ProjectPlanModule.Open(
+                projectDirectory,
+                Path.Combine(projectDirectory, "maanop-config.json"));
+            throw new InvalidOperationException($"PI 未拒绝非法定义：{fixtureName}。");
+        }
+        catch (InvalidDataException exception)
+            when (exception.Message.Contains(expectedError, StringComparison.Ordinal))
+        {
+            // Expected: unsupported or invalid PI semantics fail closed with useful context.
         }
     }
 

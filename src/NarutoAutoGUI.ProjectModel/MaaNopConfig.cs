@@ -5,7 +5,9 @@ namespace NarutoAutoGUI.ProjectModel;
 
 public sealed record MaaNopConfig
 {
-    public int SchemaVersion { get; init; } = 1;
+    public const int CurrentSchemaVersion = 1;
+
+    public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public IReadOnlyList<string> SelectedTasks { get; init; } = [];
     public IReadOnlyDictionary<string, JsonElement> ExplicitOptions { get; init; } =
         new Dictionary<string, JsonElement>(StringComparer.Ordinal);
@@ -45,7 +47,7 @@ internal sealed class MaaNopConfigStore
             FileOptions.SequentialScan);
         var config = JsonSerializer.Deserialize<MaaNopConfig>(stream, JsonOptions)
                      ?? throw new InvalidDataException("maanop-config.json 为空。 ");
-        if (config.SchemaVersion != 1)
+        if (config.SchemaVersion != MaaNopConfig.CurrentSchemaVersion)
         {
             throw new InvalidDataException(
                 $"不支持 MaaNOP Config SchemaVersion {config.SchemaVersion}。 ");
@@ -56,9 +58,10 @@ internal sealed class MaaNopConfigStore
 
     internal void Save(MaaNopConfig config)
     {
-        if (config.SchemaVersion != 1)
+        if (config.SchemaVersion != MaaNopConfig.CurrentSchemaVersion)
         {
-            throw new InvalidDataException("只能保存 SchemaVersion 1 MaaNOP Config。 ");
+            throw new InvalidDataException(
+                $"只能保存 SchemaVersion {MaaNopConfig.CurrentSchemaVersion} MaaNOP Config。 ");
         }
 
         var directory = Path.GetDirectoryName(_path)
@@ -71,9 +74,7 @@ internal sealed class MaaNopConfigStore
                        tempPath,
                        FileMode.CreateNew,
                        FileAccess.Write,
-                       FileShare.None,
-                       bufferSize: 4096,
-                       FileOptions.WriteThrough))
+                       FileShare.None))
             {
                 JsonSerializer.Serialize(stream, config, JsonOptions);
                 stream.Flush(flushToDisk: true);

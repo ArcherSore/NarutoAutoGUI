@@ -26,6 +26,11 @@
 - 主窗口已应用集中式 WPF 视觉设计系统：统一浅色语义令牌、字体与 4/8 DIP 间距、四级按钮、输入框、状态 Badge、日志层级和交互状态；顶部保留状态卡，其余主功能使用扁平分区、留白与细分隔线，仅日志视口保留容器边框；不改变事件处理器和功能行为。
 - 正式主窗口已使用 WPF-UI 4.3.0 重构为 Windows 11 Fluent Shell：`FluentWindow`、`TitleBar`、左侧 `NavigationView` 和内置 Fluent 图标承载首页、任务、桌面分身、日志、设置五个顶层页面，操作状态与进度条固定在全局底栏。五个页面仍位于同一个 `MainWindow` XAML namescope，通过根容器 `Visibility` 切换；未引入 `Frame`、独立 Page/UserControl、MVVM、NavigationService 或 PageService。页面内输入、按钮、下拉框和日志列表仍为标准 WPF 控件并沿用 `DesignSystem.xaml`。
 - 首页集中呈现当前任务、参数、Session、Worker 和 Run 的用户化摘要；任务页直接承载动态 option editor，将 Worker/PID/Snapshot/runId 等信息收进默认折叠的运行环境诊断；桌面分身操作按钮按实际状态互斥显示。设置表单改为标签在上、输入框在下，日志页取消固定高度并填满剩余页面空间；各配置页独立滚动，日志页没有外层滚动器。
+- 首页已重组为“运行控制台”：顶部以单一横向区域呈现当前任务、现有状态投影、当前 Plan Item/下一步和固定的
+  准备/开始/停止入口；下方以等宽双列呈现内部 16:9 游戏画面 Placeholder 与 `maanop.run` 运行动态。运行动态
+  图标只按既有日志 Level 映射，底部状态栏只投影已有整体、Worker、Session、IPC 连接和操作状态。此次保持当前
+  WPF-UI Theme，不实现截图 backend，不改变其他页面、命令可用性、协议或运行生命周期。Home 使用禁用横向滚动的
+  外层纵向 overflow fallback；下方双列保持正常视口高度，运行动态列表继续作为独立的主要滚动区域。
 - 根据实机可发现性反馈，首页和任务页均固定展示“准备运行环境 / 开始任务 / 停止任务”三个任务控制入口；当前不可执行的操作保留位置并显示禁用态，动态下一步提示同时作为任务页说明、悬浮提示和辅助功能 HelpText。任务页明确说明参数修改自动保存；现有协议仍为停止/取消本次 Run，不声明暂停后恢复能力。
 - 开始任务只要求 Child Session 已连接、Worker Ready、Snapshot fresh 且任务配置有效；子桌面显示或隐藏均可开始，不再将隐藏预览作为 Run 前置条件。
 - 全局 GUI、后台任务和进程异常记录；预期的启动/RDP/Win32/COM 失败不会直接使 GUI 崩溃。
@@ -103,6 +108,15 @@
   调整。build-output GUI `--self-test` 通过。
   GUI/Worker Release build 和 build-output 自检均通过，0 警告、0 错误；Child Session/RDP
   baseline 未修改。
+- 2026-08-25：完成 Home“运行控制台”信息架构、画面 Placeholder、Level 图标运行动态和底部全局状态栏后，
+  `MainWindow.xaml` XML 解析、NarutoAutoGUI Release `win-x64` build 和 build-output `--self-test` 通过，
+  构建 0 警告、0 错误。当前 Theme、其他四页、Worker/IPC 协议和 Child Session/RDP baseline 未修改；
+  920×640、100%/150%/200% 缩放及真实状态切换下的视觉与键盘回归仍待交互式执行。
+- 2026-08-25：为 Home 恢复外层纵向 overflow fallback，并将下方双列约束为 1180×760 正常视口的既有高度，
+  避免外层无限测量吞并运行动态列表的独立滚动。XAML contract 与 WPF measure harness 覆盖 920×640、1180×760、
+  长任务标签、长 option 摘要、长下一步状态、运行动态内外层滚动范围，以及 PerMonitorV2 下 200% DPI 位图渲染；
+  NarutoAutoGUI Release `win-x64` build 与 build-output `--self-test` 通过，0 警告、0 错误。真实窗口视觉、滚轮、
+  键盘和跨显示器 DPI 切换仍待交互式回归。
 - build 期间 NuGet 无法访问漏洞元数据源，产生 `NU1900` 警告；包还原和编译本身成功。该警告不是代码编译错误。
 
 以下项目需要管理员权限、可见桌面或真实外部程序，自动验证不能替代手动回归。Child Session 真实桌面交互式回归已完成；游戏/MaaNOP 跨 Session 启动、异常断开后重建连接、创建/启动过程中并发退出等外部程序或故障场景仍需按后续目标单独记录。

@@ -49,6 +49,7 @@ public partial class MainWindow : FluentWindow
     private WorkerCoordinatorSnapshot _workerSnapshot = WorkerCoordinatorSnapshot.Empty;
     private ProjectPlanModule? _projectPlan;
     private RunStartAttempt? _pendingStartAttempt;
+    private ScrollViewer? _homeLogScrollViewer;
     private ScrollViewer? _logScrollViewer;
     private bool _allowClose;
     private bool _busy;
@@ -89,6 +90,9 @@ public partial class MainWindow : FluentWindow
         GamePathTextBox.Text = settings.GameExecutablePath;
         GameArgumentsTextBox.Text = settings.GameArguments;
         MaaNopProjectDirectoryTextBox.Text = settings.MaaNopProjectDirectory;
+        HomeLogListBox.AddHandler(
+            ScrollViewer.ScrollChangedEvent,
+            new ScrollChangedEventHandler(LogListBox_ScrollChanged));
         LogListBox.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler(LogListBox_ScrollChanged));
         _sessionManager.StateChanged += OnSessionStateChanged;
         _workerCoordinator.StateChanged += OnWorkerStateChanged;
@@ -117,6 +121,7 @@ public partial class MainWindow : FluentWindow
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         Loaded -= MainWindow_Loaded;
+        _homeLogScrollViewer = FindVisualChild<ScrollViewer>(HomeLogListBox);
         _logScrollViewer = FindVisualChild<ScrollViewer>(LogListBox);
         TryLoadProject(showError: !string.IsNullOrWhiteSpace(MaaNopProjectDirectoryTextBox.Text));
         var existingId = _sessionManager.DetectExistingSession();
@@ -1085,7 +1090,14 @@ public partial class MainWindow : FluentWindow
     {
         if (e.OriginalSource is ScrollViewer scrollViewer)
         {
-            _logScrollViewer = scrollViewer;
+            if (ReferenceEquals(sender, HomeLogListBox))
+            {
+                _homeLogScrollViewer = scrollViewer;
+            }
+            else
+            {
+                _logScrollViewer = scrollViewer;
+            }
         }
 
         if (e.VerticalChange < 0)
@@ -1095,7 +1107,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        if (e.VerticalChange > 0 && IsLogNearBottom())
+        if (e.VerticalChange > 0 && IsScrollViewerNearBottom(e.OriginalSource as ScrollViewer))
         {
             ResumeLogFollow(scrollToEnd: false);
         }
@@ -1117,28 +1129,41 @@ public partial class MainWindow : FluentWindow
 
     private bool IsLogNearBottom()
     {
+        if (HomeView.Visibility == Visibility.Visible)
+        {
+            _homeLogScrollViewer ??= FindVisualChild<ScrollViewer>(HomeLogListBox);
+            return IsScrollViewerNearBottom(_homeLogScrollViewer);
+        }
+
         _logScrollViewer ??= FindVisualChild<ScrollViewer>(LogListBox);
-        return _logScrollViewer is null
-               || _logScrollViewer.ScrollableHeight - _logScrollViewer.VerticalOffset <= 2.0;
+        return IsScrollViewerNearBottom(_logScrollViewer);
     }
+
+    private static bool IsScrollViewerNearBottom(ScrollViewer? scrollViewer) =>
+        scrollViewer is null || scrollViewer.ScrollableHeight - scrollViewer.VerticalOffset <= 2.0;
 
     private void ScrollLogsToEnd()
     {
         if (LogLines.LastOrDefault() is LogEntry lastLine)
         {
+            HomeLogListBox.ScrollIntoView(lastLine);
             LogListBox.ScrollIntoView(lastLine);
         }
     }
 
     private void UpdateResumeLogFollowButton()
     {
-        ResumeLogFollowButton.Visibility = _followLogs || _newLogCount == 0
+        var visibility = _followLogs || _newLogCount == 0
             ? Visibility.Collapsed
             : Visibility.Visible;
-        ResumeLogFollowButton.Content = $"{_newLogCount} 条新日志，继续跟随(_F)";
-        System.Windows.Automation.AutomationProperties.SetName(
-            ResumeLogFollowButton,
-            $"{_newLogCount} 条新日志，继续跟随");
+        var content = $"{_newLogCount} 条新日志，继续跟随(_F)";
+        var automationName = $"{_newLogCount} 条新日志，继续跟随";
+        HomeResumeLogFollowButton.Visibility = visibility;
+        HomeResumeLogFollowButton.Content = content;
+        ResumeLogFollowButton.Visibility = visibility;
+        ResumeLogFollowButton.Content = content;
+        System.Windows.Automation.AutomationProperties.SetName(HomeResumeLogFollowButton, automationName);
+        System.Windows.Automation.AutomationProperties.SetName(ResumeLogFollowButton, automationName);
     }
 
     private void OnSessionStateChanged(object? sender, ChildSessionSnapshot snapshot)
@@ -1219,6 +1244,9 @@ public partial class MainWindow : FluentWindow
                                       && state == ChildSessionState.ConnectedHidden;
         HideSessionButton.IsEnabled = canStartCommand
                                       && state == ChildSessionState.ConnectedVisible;
+        HomeOpenDesktopButton.IsEnabled = canStartCommand
+                                          && state is (ChildSessionState.ConnectedVisible
+                                              or ChildSessionState.ConnectedHidden);
         TerminateSessionButton.IsEnabled = canStartCommand
                                            && _sessionSnapshot.ChildSessionId is not null;
         CreateSessionButton.Visibility = state is ChildSessionState.NotRunning
@@ -1306,7 +1334,181 @@ public partial class MainWindow : FluentWindow
                         : readyToStart
                             ? "运行环境已就绪，可以开始任务。"
                             : "准备桌面分身、Worker 和游戏后即可开始任务。";
+        UpdateDashboardPresentation(readyToStart);
     }
+
+    private void UpdateDashboardPresentation(bool readyToStart)
+    {
+        var (statusText, statusBrushKey) = GetDashboardStatusPresentation(_workerSnapshot, readyToStart);
+        var statusBrush = (WpfBrush)FindResource(statusBrushKey);
+        HomeRunSummaryText.Text = statusText;
+        HomeStatusIndicator.Fill = statusBrush;
+
+        var worker = _workerSnapshot.WorkerSnapshot;
+        var activeRun = _workerSnapshot.SnapshotFresh ? worker?.ActiveRun : null;
+        var lastRun = _workerSnapshot.SnapshotFresh ? worker?.LastRun : null;
+        if (activeRun is not null)
+        {
+            var item = GetCurrentPlanItem(activeRun);
+            HomeCurrentStepText.Text = item is null
+                ? GetHomeRunSummary(activeRun)
+                : $"{item.TaskLabel} · {GetPlanItemStateText(item.State)}";
+        }
+        else if (lastRun is not null)
+        {
+            HomeCurrentStepText.Text = GetHomeRunSummary(lastRun);
+        }
+        else
+        {
+            HomeCurrentStepText.Text = "等待下一步";
+        }
+
+        UpdateBottomStatusBar(statusText, statusBrush);
+    }
+
+    private static (string Text, string BrushKey) GetDashboardStatusPresentation(
+        WorkerCoordinatorSnapshot snapshot,
+        bool readyToStart)
+    {
+        if (snapshot.Observation == WorkerObservation.WorkerStarting)
+        {
+            return ("正在启动", "Brush.Primary");
+        }
+
+        if (snapshot.Observation == WorkerObservation.WorkerRecoveryConflict)
+        {
+            return ("运行失败", "Brush.Error");
+        }
+
+        if (snapshot.Observation != WorkerObservation.Connected || !snapshot.SnapshotFresh)
+        {
+            return ("尚未就绪", "Brush.Text.Muted");
+        }
+
+        var worker = snapshot.WorkerSnapshot;
+        if (worker?.WorkerState == WorkerState.Stopping)
+        {
+            return ("正在停止", "Brush.Warning");
+        }
+
+        if (worker?.WorkerState == WorkerState.Starting)
+        {
+            return ("正在启动", "Brush.Primary");
+        }
+
+        if (worker?.WorkerState == WorkerState.Faulted)
+        {
+            return ("运行失败", "Brush.Error");
+        }
+
+        var run = worker?.ActiveRun ?? worker?.LastRun;
+        if (run is not null)
+        {
+            return run.State switch
+            {
+                RunState.Starting => ("正在启动", "Brush.Primary"),
+                RunState.Running => ("运行中", "Brush.Success"),
+                RunState.Stopping => ("正在停止", "Brush.Warning"),
+                RunState.Failed => ("运行失败", "Brush.Error"),
+                RunState.Succeeded => ("已完成", "Brush.Success"),
+                RunState.Cancelled => ("已停止", "Brush.Text.Muted"),
+                _ => readyToStart
+                    ? ("准备就绪", "Brush.Primary")
+                    : ("尚未就绪", "Brush.Text.Muted")
+            };
+        }
+
+        return readyToStart
+            ? ("准备就绪", "Brush.Primary")
+            : ("尚未就绪", "Brush.Text.Muted");
+    }
+
+    private static PlanItemSnapshot? GetCurrentPlanItem(RunSnapshot run)
+    {
+        if (run.CurrentPlanItemId is Guid currentId)
+        {
+            return run.Items.FirstOrDefault(item => item.PlanItemId == currentId);
+        }
+
+        if (run.CurrentPlanItemIndex is int currentIndex
+            && currentIndex >= 0
+            && currentIndex < run.Items.Count)
+        {
+            return run.Items[currentIndex];
+        }
+
+        return run.Items.Count == 1 ? run.Items[0] : null;
+    }
+
+    private static string GetPlanItemStateText(PlanItemState state) => state switch
+    {
+        PlanItemState.Pending => "等待执行",
+        PlanItemState.Starting => "正在启动",
+        PlanItemState.Running => "正在执行",
+        PlanItemState.Succeeded => "已完成",
+        PlanItemState.Failed => "执行失败",
+        PlanItemState.Cancelled => "已停止",
+        _ => "状态未知"
+    };
+
+    private void UpdateBottomStatusBar(string statusText, WpfBrush statusBrush)
+    {
+        GlobalReadyText.Text = $"整体：{statusText}";
+        GlobalReadyIndicator.Fill = statusBrush;
+
+        GlobalWorkerStatusText.Text = $"Worker：{GetHomeWorkerSummary(_workerSnapshot)}";
+        GlobalWorkerIndicator.Fill = (WpfBrush)FindResource(GetWorkerStatusBrushKey(_workerSnapshot));
+
+        GlobalSessionStatusText.Text = GetBottomSessionText(_sessionSnapshot);
+        GlobalSessionIndicator.Fill = (WpfBrush)FindResource(GetSessionStatusBrushKey(_sessionSnapshot.State));
+
+        var ipcConnected = _workerSnapshot.Observation == WorkerObservation.Connected;
+        GlobalIpcStatusText.Text = ipcConnected ? "IPC：已连接" : "IPC：未连接";
+        GlobalIpcIndicator.Fill = (WpfBrush)FindResource(
+            ipcConnected ? "Brush.Success" : "Brush.Text.Muted");
+    }
+
+    private static string GetWorkerStatusBrushKey(WorkerCoordinatorSnapshot snapshot)
+    {
+        if (snapshot.Observation == WorkerObservation.Connected && snapshot.SnapshotFresh)
+        {
+            return snapshot.WorkerSnapshot?.WorkerState switch
+            {
+                WorkerState.Ready => "Brush.Success",
+                WorkerState.Starting => "Brush.Primary",
+                WorkerState.Stopping or WorkerState.NotReady => "Brush.Warning",
+                WorkerState.Faulted => "Brush.Error",
+                _ => "Brush.Primary"
+            };
+        }
+
+        return snapshot.Observation switch
+        {
+            WorkerObservation.WorkerStarting => "Brush.Primary",
+            WorkerObservation.IpcDisconnected or WorkerObservation.WorkerRecoveryConflict => "Brush.Error",
+            _ => "Brush.Text.Muted"
+        };
+    }
+
+    private static string GetBottomSessionText(ChildSessionSnapshot snapshot)
+    {
+        if (snapshot.ChildSessionId is uint sessionId
+            && snapshot.State is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden))
+        {
+            return $"Session：{sessionId}";
+        }
+
+        return $"Session：{GetStateBadgeText(snapshot.State)}";
+    }
+
+    private static string GetSessionStatusBrushKey(ChildSessionState state) => state switch
+    {
+        ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden => "Brush.Success",
+        ChildSessionState.Connecting or ChildSessionState.Existing => "Brush.Primary",
+        ChildSessionState.Disconnecting => "Brush.Warning",
+        ChildSessionState.Faulted => "Brush.Error",
+        _ => "Brush.Text.Muted"
+    };
 
     private static string GetStateText(ChildSessionState state) => state switch
     {

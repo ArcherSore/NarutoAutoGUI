@@ -106,7 +106,7 @@ public partial class MainWindow : FluentWindow
         UpdateCommandAvailability();
     }
 
-    internal ObservableCollection<LogEntry> LogLines { get; } = [];
+    public ObservableCollection<LogEntry> LogLines { get; } = [];
 
     internal event EventHandler? HiddenToTray;
 

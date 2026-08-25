@@ -117,6 +117,11 @@
   长任务标签、长 option 摘要、长下一步状态、运行动态内外层滚动范围，以及 PerMonitorV2 下 200% DPI 位图渲染；
   NarutoAutoGUI Release `win-x64` build 与 build-output `--self-test` 通过，0 警告、0 错误。真实窗口视觉、滚轮、
   键盘和跨显示器 DPI 切换仍待交互式回归。
+- 2026-08-25：修复 `LogLines` 非公开导致 WPF 无法绑定首页“运行动态”和日志页的问题，并增加
+  `TypeDescriptor` 可发现性回归断言。NarutoAutoGUI Release `win-x64` build 通过，0 警告、0 错误；新增断言通过后，
+  完整 build-output 自检在后续既有 Named Pipe 场景因当前权限返回 `Access denied`，因此不声明完整自检通过。
+  当时正在运行的真实 E2E GUI、Worker 和 Child Session 未被停止或替换；修复后的真实窗口显示已于 2026-08-26
+  完成交互式复验。
 - build 期间 NuGet 无法访问漏洞元数据源，产生 `NU1900` 警告；包还原和编译本身成功。该警告不是代码编译错误。
 
 以下项目需要管理员权限、可见桌面或真实外部程序，自动验证不能替代手动回归。Child Session 真实桌面交互式回归已完成；游戏/MaaNOP 跨 Session 启动、异常断开后重建连接、创建/启动过程中并发退出等外部程序或故障场景仍需按后续目标单独记录。
@@ -125,6 +130,11 @@
 
 ## 本轮交互式回归
 
+- 2026-08-26：用户使用包含 `LogLines` Binding 修复的正式 `artifacts\NarutoAutoGUI\win-x64` 产物完成真实 E2E
+  验收，并确认首页“运行动态”会实时显示 MaaNOP `focus` 日志。GUI 创建 Child Session 31，验证 Worker PID 33420，
+  Dependency Readiness=Ready；真实 `AccountTraining` Run `db74b582-0789-4ba9-85d9-913f0d54bd8a` 从服务器 979
+  处理到 1012（31/31），文件日志记录 `maanop.run` 至 Worker sequence 288，最终自然终结为 Succeeded。验收后
+  Child Session 31 已正常注销。此次不额外声明断线补取、Worker Instance replacement 或其他 Fluent UI 交互项通过。
 - 2026-08-20：Fluent UI 完整包首次在 Child Session 20 提交 Worker 后未在 60 秒内完成 admission + fresh Snapshot，Admission Record 中没有 Worker PID；结束/重建环境后再次启动成功。该结果证明问题具有偶发性，也暴露出原实现缺少 `RunEx` 后 PID 验证与超时回滚；对应强化修复已进入 `win-x64-worker-launch-fix`，等待复验。
 - 2026-08-20：用户在真实 Windows 桌面检查五页面 Fluent UI 的 100%、150%、200% 缩放，三档均未观察到明显布局或文字可读性问题。
 - 2026-08-20：在 GUI-only 的 `win-x64-fluent-shell` 产物点击“准备运行环境”时，MaaNOP v1.3.0 已成功加载且 Child Session 21 已连接，随后因产物中缺少 `worker\NarutoAutoWorker.exe` 明确失败。该结果属于不完整测试产物的发布问题，不是 Worker 启动、Named Pipe、RDP 或 MaaNOP 运行时失败；完整 GUI + Worker 发布仍待具备 .NET 9 SDK 后通过正式脚本重新生成。

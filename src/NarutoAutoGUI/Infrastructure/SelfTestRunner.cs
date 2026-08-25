@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using NarutoAutoGUI.Models;
@@ -359,6 +360,11 @@ internal static class SelfTestRunner
 
     private static void VerifyRunLogRouting(AppLogger logger)
     {
+        if (TypeDescriptor.GetProperties(typeof(MainWindow))[nameof(MainWindow.LogLines)] is null)
+        {
+            throw new InvalidOperationException("GUI 运行日志集合无法被 WPF Binding 发现。 ");
+        }
+
         var timestampUtc = new DateTime(2026, 8, 24, 6, 30, 0, DateTimeKind.Utc);
         var userEntry = new WorkerLogEntry(
             1,

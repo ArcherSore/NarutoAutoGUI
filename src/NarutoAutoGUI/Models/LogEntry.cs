@@ -1,6 +1,6 @@
 namespace NarutoAutoGUI.Models;
 
-internal enum LogLevel
+public enum LogLevel
 {
     Debug = 0,
     Info = 1,
@@ -9,7 +9,7 @@ internal enum LogLevel
     Critical = 4
 }
 
-internal sealed record LogEntry(DateTimeOffset Timestamp, LogLevel Level, string Message)
+public sealed record LogEntry(DateTimeOffset Timestamp, LogLevel Level, string Message)
 {
     public string DisplayLevel => Level.ToString().ToUpperInvariant();
 

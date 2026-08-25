@@ -54,13 +54,28 @@ internal static class WorkerSelfTestRunner
         adapter = new MaaRunLogAdapter((level, source, message) => buffer.Add(level, source, message));
         adapter.Handle("Node.Action.Starting", details);
         adapter.Handle("Node.Action.Failed", details);
-        adapter.Handle("Node.Action.Succeeded", "{\"focus\":null}");
-        adapter.Handle("Node.Action.Succeeded", "{\"focus\":{\"Node.Action.Succeeded\":\" \"}}");
+        adapter.Handle("evt", "{}");
+        adapter.Handle("evt", "{\"focus\":null}");
+        adapter.Handle("evt", "{\"focus\":42}");
+        adapter.Handle("evt", "{\"focus\":true}");
+        adapter.Handle("evt", "{\"focus\":[]}");
+        adapter.Handle("evt", "{\"focus\":{\"evt\":\" \"}}");
         if (buffer.GetSince(0, 500).Entries.Count != 0)
         {
             throw new InvalidOperationException("非字符串、未匹配或空 focus 不应产生运行日志。 ");
         }
 
+        buffer = new WorkerLogBuffer();
+        adapter = new MaaRunLogAdapter((level, source, message) => buffer.Add(level, source, message));
+        adapter.Handle("evt", "{\"nullval\":null,\"arrval\":[1,2],\"focus\":{\"evt\":\"{nullval} {arrval}\"}}");
+        entries = buffer.GetSince(0, 500).Entries;
+        if (entries.Count != 1 || entries[0].Message != "{nullval} {arrval}")
+        {
+            throw new InvalidOperationException("null/array 占位符应保持原样不变。 ");
+        }
+
+        buffer = new WorkerLogBuffer();
+        adapter = new MaaRunLogAdapter((level, source, message) => buffer.Add(level, source, message));
         adapter.Handle("Node.Action.Succeeded", "not-json");
         adapter.Handle("Node.Action.Succeeded", "still-not-json");
         entries = buffer.GetSince(0, 500).Entries;

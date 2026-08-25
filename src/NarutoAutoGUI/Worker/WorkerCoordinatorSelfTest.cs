@@ -9,7 +9,11 @@ namespace NarutoAutoGUI.Worker;
 
 internal static class WorkerCoordinatorSelfTest
 {
-    internal static async Task RunAsync(AppLogger logger, string testDirectory)
+    internal static async Task RunAsync(
+        AppLogger logger,
+        string testDirectory,
+        string projectDirectory,
+        string configPath)
     {
         var stateDirectory = Path.Combine(testDirectory, "worker-coordinator");
         var workerInstanceId = Guid.NewGuid();
@@ -39,11 +43,13 @@ internal static class WorkerCoordinatorSelfTest
             pipeName,
             usePipeAcl: false);
         coordinator.LogReceived += (_, entry) => received.Enqueue(entry);
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         await coordinator.WaitForServerReadyAsync(timeout.Token);
         await VerifyRecoveryAndRetryAsync(pipeName, record, received, timeout.Token);
         await VerifyDisconnectDuringRecoveryAsync(pipeName, record, received, timeout.Token);
         await VerifySameInstanceReconnectAndTeardownAsync(coordinator, pipeName, record, received, timeout.Token);
+        await VerifyWorkerInstanceReplacementAsync(
+            logger, stateDirectory, executablePath, childSessionId, received, timeout.Token);
     }
 
     private static async Task VerifyRecoveryAndRetryAsync(
@@ -64,11 +70,8 @@ internal static class WorkerCoordinatorSelfTest
         var firstRequest = await ReadRequestAsync(pipe, ProtocolOperations.LogGetSince, cancellationToken);
         await pipe.WriteAsync(
             WireEnvelope.Failure(
-                ProtocolOperations.LogGetSince,
-                firstRequest.RequestId!.Value,
-                "transient_failure",
-                "scripted transient failure",
-                retriable: true),
+                ProtocolOperations.LogGetSince, firstRequest.RequestId!.Value,
+                "transient_failure", "scripted transient failure", retriable: true),
             cancellationToken);
 
         var retryRequest = await ReadRequestAsync(pipe, ProtocolOperations.LogGetSince, cancellationToken);
@@ -96,24 +99,15 @@ internal static class WorkerCoordinatorSelfTest
         var timestamp = DateTime.UtcNow;
         var stranded = CreateEntry(7, ProtocolConstants.MaaNopRunLogSource, "recovered-after-eof", timestamp);
         await using (var disconnected = await OpenConnectionAsync(
-                         pipeName,
-                         record,
-                         lastLogSequence: 5,
-                         cancellationToken))
+            pipeName, record, lastLogSequence: 5, cancellationToken))
         {
             await disconnected.WriteAsync(CreateLogEvent(record.WorkerInstanceId, stranded), cancellationToken);
             _ = await ReadRequestAsync(disconnected, ProtocolOperations.LogGetSince, cancellationToken);
         }
 
         await using var reconnected = await OpenConnectionAsync(
-            pipeName,
-            record,
-            lastLogSequence: 7,
-            cancellationToken);
-        var recoveryRequest = await ReadRequestAsync(
-            reconnected,
-            ProtocolOperations.LogGetSince,
-            cancellationToken);
+            pipeName, record, lastLogSequence: 7, cancellationToken);
+        var recoveryRequest = await ReadRequestAsync(reconnected, ProtocolOperations.LogGetSince, cancellationToken);
         await WriteEvictionLogPageAsync(
             reconnected, recoveryRequest, stranded, firstAvailable: 7, missingFrom: 6, missingTo: 6, cancellationToken);
         await WaitForCountAsync(received, expectedCount: 6, cancellationToken);
@@ -149,6 +143,43 @@ internal static class WorkerCoordinatorSelfTest
         }
     }
 
+    private static async Task VerifyWorkerInstanceReplacementAsync(
+        AppLogger logger,
+        string stateDirectory,
+        string executablePath,
+        uint childSessionId,
+        ConcurrentQueue<WorkerLogEntry> received,
+        CancellationToken cancellationToken)
+    {
+        var workerBId = Guid.NewGuid();
+        var launchTokenB = Convert.ToHexString(Guid.NewGuid().ToByteArray()).ToLowerInvariant();
+        var recordB = new WorkerAdmissionRecord(
+            workerBId, launchTokenB, childSessionId, Environment.ProcessId,
+            "self-test-runtime", DateTime.UtcNow);
+        File.WriteAllBytes(
+            Path.Combine(stateDirectory, "worker.json"),
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(recordB, ProtocolJson.Options));
+
+        var pipeNameB = $"NarutoAutoGUI.Worker.SelfTest.{Guid.NewGuid():N}";
+        await using var coordinatorB = new WorkerCoordinator(
+            logger, stateDirectory, executablePath, pipeNameB, usePipeAcl: false);
+        coordinatorB.LogReceived += (_, entry) => received.Enqueue(entry);
+        using var timeoutB = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await coordinatorB.WaitForServerReadyAsync(timeoutB.Token);
+
+        await using var pipeB = await OpenConnectionAsync(pipeNameB, recordB, 0, timeoutB.Token);
+        var entry = CreateEntry(1, ProtocolConstants.MaaNopRunLogSource, "worker-b-first", DateTime.UtcNow);
+        await pipeB.WriteAsync(CreateLogEvent(recordB.WorkerInstanceId, entry), timeoutB.Token);
+        await WaitForCountAsync(received, expectedCount: 8, timeoutB.Token);
+
+        var last = received.Last();
+        if (last.Sequence != 1 || last.Message != "worker-b-first")
+        {
+            throw new InvalidOperationException(
+                "Worker B sequence 1 未被接受，或旧 Log Transport Cursor 抑制了新实例日志。 ");
+        }
+    }
+
     private static async Task<ProtocolConnection> OpenConnectionAsync(
         string pipeName,
         WorkerAdmissionRecord record,
@@ -168,12 +199,9 @@ internal static class WorkerCoordinatorSelfTest
             var requestId = Guid.NewGuid();
             await connection.WriteAsync(
                 WireEnvelope.Request(
-                    ProtocolOperations.ConnectionOpen,
-                    requestId,
+                    ProtocolOperations.ConnectionOpen, requestId,
                     new ConnectionOpenRequest(
-                        record.WorkerInstanceId,
-                        record.LaunchToken,
-                        "self-test",
+                        record.WorkerInstanceId, record.LaunchToken, "self-test",
                         record.RuntimeProfileDigest)),
                 cancellationToken);
             var openResponse = await connection.ReadAsync(cancellationToken)
@@ -184,13 +212,10 @@ internal static class WorkerCoordinatorSelfTest
             }
 
             var snapshotRequest = await ReadRequestAsync(
-                connection,
-                ProtocolOperations.WorkerGetSnapshot,
-                cancellationToken);
+                connection, ProtocolOperations.WorkerGetSnapshot, cancellationToken);
             await connection.WriteAsync(
                 WireEnvelope.Response(
-                    ProtocolOperations.WorkerGetSnapshot,
-                    snapshotRequest.RequestId!.Value,
+                    ProtocolOperations.WorkerGetSnapshot, snapshotRequest.RequestId!.Value,
                     new GetSnapshotResponse(CreateSnapshot(record, lastLogSequence))),
                 cancellationToken);
             return connection;

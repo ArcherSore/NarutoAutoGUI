@@ -29,7 +29,9 @@ internal static class SelfTestRunner
             VerifyProtocolFrame();
             VerifyWorkerLogSequenceTracker();
             VerifyRunLogRouting(logger);
-            Task.Run(() => WorkerCoordinatorSelfTest.RunAsync(logger, testDirectory)).GetAwaiter().GetResult();
+            Task.Run(() => WorkerCoordinatorSelfTest.RunAsync(
+                logger, testDirectory, projectDirectory,
+                Path.Combine(testDirectory, "maanop-config.json"))).GetAwaiter().GetResult();
 
             logger.Debug("self-test-debug");
             logger.Info("self-test-info");
@@ -52,7 +54,8 @@ internal static class SelfTestRunner
                 + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
                 + "PI structure/default/graph validation; typed input validation; "
                 + "MaaNOP Config v1; RunPlan digest; IPC framing; "
-                + "log sequence tracking/recovery; run-log routing; DEBUG+ file logging");
+                + "log sequence tracking/recovery; Worker Instance replacement; "
+                + "run-log routing; DEBUG+ file logging");
             return 0;
         }
         catch (Exception exception)
@@ -326,13 +329,13 @@ internal static class SelfTestRunner
         }
         if (tracker.BeginWorkerInstance(firstInstance) || tracker.LastContiguousSequence != 3)
         {
-            throw new InvalidOperationException("同一 Worker Instance 不应重置日志 cursor。 ");
+            throw new InvalidOperationException("同一 Worker Instance 不应重置 Log Transport Cursor。 ");
         }
         if (!tracker.BeginWorkerInstance(secondInstance)
             || tracker.LastContiguousSequence != 0
             || tracker.HighestObservedSequence != 0)
         {
-            throw new InvalidOperationException("新 Worker Instance 未重置日志 cursor。 ");
+            throw new InvalidOperationException("新 Worker Instance 未重置 Log Transport Cursor。 ");
         }
         if (tracker.Observe(1) != WorkerLogSequenceDisposition.Contiguous
             || tracker.LastContiguousSequence != 1)

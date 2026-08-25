@@ -925,7 +925,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
                 if (_logSequence.LastContiguousSequence == afterSequence
                     && _logSequence.LastContiguousSequence < _logSequence.HighestObservedSequence)
                 {
-                    throw new ProtocolException("log.getSince 未推进日志 cursor。 ");
+                    throw new ProtocolException("log.getSince 未推进 Log Transport Cursor。 ");
                 }
             }
         }

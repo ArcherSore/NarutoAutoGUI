@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoWorker;
@@ -67,11 +68,20 @@ internal sealed class WorkerLogBuffer
             var first = _entries.First?.Value.Entry.Sequence ?? _nextSequence;
             var last = _entries.Last?.Value.Entry.Sequence ?? 0;
             var gap = afterSequence + 1 < first;
-            var result = _entries
-                .Where(item => item.Entry.Sequence > afterSequence)
-                .Take(effectiveLimit)
-                .Select(item => item.Entry)
-                .ToArray();
+            var result = new List<WorkerLogEntry>(effectiveLimit);
+            var responseBytes = 16 * 1024;
+            foreach (var item in _entries.Where(item => item.Entry.Sequence > afterSequence))
+            {
+                var entryBytes = JsonSerializer.SerializeToUtf8Bytes(item.Entry, ProtocolJson.Options).Length + 1;
+                if (result.Count >= effectiveLimit
+                    || (result.Count > 0
+                        && responseBytes + entryBytes > ProtocolConstants.MaximumLogGetSinceResponseBytes))
+                {
+                    break;
+                }
+                result.Add(item.Entry);
+                responseBytes += entryBytes;
+            }
             var returnedLast = result.LastOrDefault()?.Sequence ?? afterSequence;
             return new LogGetSinceResponse(
                 result,

@@ -17,7 +17,8 @@
 - 按进程名和 Session ID 避免在当前 Child Session 中重复启动，并记录 PID/SessionId。
 - 主窗口 X 隐藏到托盘；托盘提供显示主窗口、显示子桌面、结束分身和退出。
 - 真正退出且 Session 存在时确认；确认后注销 Session，注销失败则取消退出。
-- DEBUG/INFO/WARN/ERROR/CRITICAL 统一日志；GUI INFO+，程序目录滚动文件 DEBUG+，可从 GUI 直接打开日志目录。
+- DEBUG/INFO/WARN/ERROR/CRITICAL diagnostic log 写入程序目录滚动文件，可从 GUI 直接打开日志目录；GUI 运行日志
+  只显示 MaaNOP 字符串 `focus` 投影出的 `maanop.run`，不显示 GUI/Worker/IPC/RDP 等诊断信息。
 - GUI 按实际 Session 状态启用创建/显示/隐藏/结束命令，并明确区分子桌面可见与已隐藏；异步操作显示进度与等待光标。
 - 桌面分身的创建、显示和隐藏命令统一使用清晰的蓝色描边可用态；不可用命令保持灰色降级态，结束命令保持红色危险态。
 - GUI 日志仅在用户接近底部时自动跟随；向上滚动后暂停，并显示新日志计数与恢复跟随操作。
@@ -33,6 +34,9 @@
 - 同一 Windows Session 只允许运行一个 NarutoAutoGUI 正式 GUI 实例，第二实例提示后退出。
 - 主窗口和托盘的 Session/程序操作使用同一个应用级操作门；退出从入口禁止新操作，等待在途操作完成，并在注销前后重新确认 Session 状态。
 - 正式 GUI 使用最终 MaaNOP Config schema、真实 Project Interface 默认解析、不可变单项 Run Plan 和 Canonical Digest v1；通过用户级 Named Pipe 管理 Child Session Worker 的 admission、Snapshot、Run/Stop 和有界日志。
+- Worker 以 `MaaTasker.Callback` 为唯一 MaaNOP 运行日志接入点，只将与 Callback message 精确匹配的字符串
+  `focus` 投影为既有 WorkerLogEntry；GUI 按 `source=maanop.run` 精确过滤。日志 cursor 按 Worker Instance 隔离，
+  实时 sequence gap 不再越过缺口，而由 `log.getSince` 单飞补取；原有协议 schema 保持不变。
 - 正式 GUI 从真实 PI 通用生成 global 与当前 task 的 input、switch、select、递归 active option 编辑器；显式值写入 SchemaVersion 1 `maanop-config.json`，可恢复为跟随项目默认，未激活子分支的合法显式值作为 Dormant Intent 保留。首片仍只允许一个 top-level task 和一个 Plan Item，不包含硬编码 `ServerRange`、task entry 或 pipeline override。
 - 当前固定单 Win32 controller、单 resource 的 PI 子集明确拒绝尚未实现的非空 `controller.option`、`resource.option`，以及 `resource.controller`、`task.controller/resource` 和 `option.controller/resource` 约束字段，不再接受后静默忽略；本机 MaaNOP v1.3.0 真实 `interface.json` 未使用这些字段。
 - ProjectModel 保持 `ProjectPlanModule` 外部 interface 不变，将内部 definitions、Project Interface Loader 和 option Resolver 拆分到独立文件；Loader 在返回 `ProjectDefinition` 前统一校验 option 类型结构、所有 input 默认值/正则/`pipeline_type`、全部 option 引用和包含未激活 case 的完整递归图，Resolver 与配置编辑器只消费已验证的 PI 模型。
@@ -77,6 +81,28 @@
   可在 120 列内完整表达的 C# 调用、声明和 XAML 起始标记已收回单行；GUI 与 Worker Release `win-x64` build、
   GUI 直接 `--self-test`、Roslyn whitespace `--verify-no-changes` 均通过，0 警告、0 错误。自动验证不包含需要真实桌面
   的 Child Session 交互式回归；对应手动回归见下方记录。
+- 2026-08-24：完成 MaaNOP 字符串 `focus` 运行日志接入、GUI user-facing source 过滤、Worker Instance cursor 重置、
+  sequence gap 补取和 `log.getSince` 响应预算。GUI 与 Worker Release `win-x64` build 均为 0 警告、0 错误；在独立
+  `artifacts\NarutoAutoGUI\win-x64-maanop-run-log` 目录完成 self-contained GUI + Worker publish，发布后 GUI 自检
+  覆盖 cursor/source 过滤，Worker 自检覆盖 focus 投影与响应预算，结果全部通过。真实 MaaNOP focus Run、断线补取和
+  Worker Instance 替换尚未执行交互式回归，不据此声明 E2E 已验证；Child Session/RDP baseline 未修改。
+- 2026-08-24：MaaNOP Run Log 代码审查修复后，Callback 退订失败不再改变 Run outcome；Coordinator 对 live/recovered
+  日志串行发布，Child Session 结束或 recovery 期间 Pipe EOF 会取消旧连接的在途补取，补取失败则只在
+  active connection 上延迟重试。新增真实 Named Pipe 脚本化自检，覆盖一次补取失败后重试、恢复期间新增事件、
+  sequence 顺序、recovery 期间 Pipe EOF 后同 Worker Instance 重连、eviction gap 恢复，以及 teardown 后忽略旧响应；
+  Worker 自检改为经 Callback Adapter 验证 `maanop.run` 输出、Run 关联、告警
+  限频、UTF-8 截断和并发 sequence，GUI 自检覆盖 timestamp/source 路由与 diagnostic 文件保留。最终 GUI/Worker
+  Release build、build-output GUI/Worker 自检、Roslyn whitespace 和 120 列检查均通过；最终 self-contained 产物已生成，
+  但从该目录运行 DLL 被本机 Application Control policy 阻止，因此不声明最终发布目录自检通过。真实 MaaNOP Run 与
+  Worker Instance replacement 交互式回归仍待执行，Child Session/RDP baseline 未修改。
+- 2026-08-25：MaaNOP Run Log 自检覆盖度修复。Worker focus 投影自检不再直接调用
+  `MaaRunLogFormatter.Format`，改为经 `MaaRunLogAdapter.Handle` 缝隙验证输出、过滤和告警
+  限频（spec line 177）；`WorkerLogSequenceTracker` 自检补充 different-instance cursor 重置后
+  的 gap 检测（spec line 199）；`WorkerCoordinatorSelfTest` 的 recovery 验证扩展为单次补取
+  flight 内多次 live gap event 追平（spec line 194），后续 disconnect/teardown 测试序号同步
+  调整。build-output GUI `--self-test` 通过。
+  GUI/Worker Release build 和 build-output 自检均通过，0 警告、0 错误；Child Session/RDP
+  baseline 未修改。
 - build 期间 NuGet 无法访问漏洞元数据源，产生 `NU1900` 警告；包还原和编译本身成功。该警告不是代码编译错误。
 
 以下项目需要管理员权限、可见桌面或真实外部程序，自动验证不能替代手动回归。Child Session 真实桌面交互式回归已完成；游戏/MaaNOP 跨 Session 启动、异常断开后重建连接、创建/启动过程中并发退出等外部程序或故障场景仍需按后续目标单独记录。

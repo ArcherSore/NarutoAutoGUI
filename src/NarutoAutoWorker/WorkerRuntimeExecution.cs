@@ -7,8 +7,7 @@ using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoWorker;
 
-internal enum RuntimeExecutionOutcome
-{
+internal enum RuntimeExecutionOutcome {
     Succeeded,
     Failed,
     Cancelled,
@@ -33,6 +32,7 @@ internal sealed class WorkerRuntimeExecution
     private readonly uint _childSessionId;
     private readonly Action<string, string, string> _log;
     private readonly Action _onRunning;
+    private readonly MaaRunLogAdapter _runLogAdapter;
     private readonly TaskCompletionSource<MaaTasker> _taskerReady = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource<bool> _stopConfirmed = new(
@@ -61,6 +61,7 @@ internal sealed class WorkerRuntimeExecution
         _childSessionId = childSessionId;
         _log = log;
         _onRunning = onRunning;
+        _runLogAdapter = new MaaRunLogAdapter(log);
     }
 
     internal async Task<RuntimeExecutionResult> ExecuteAsync(CancellationToken cancellationToken)
@@ -85,6 +86,7 @@ internal sealed class WorkerRuntimeExecution
                 Resource = _resource,
                 DisposeOptions = DisposeOptions.None
             };
+            _tasker.Callback += OnTaskerCallback;
             if (!_tasker.IsInitialized)
             {
                 throw new InvalidOperationException("MaaTasker 初始化后 IsInitialized=false。 ");
@@ -387,6 +389,25 @@ internal sealed class WorkerRuntimeExecution
 
         try
         {
+            if (_tasker is not null)
+            {
+                _tasker.Callback -= OnTaskerCallback;
+            }
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                _log("WARN", "maanop.callback", $"MaaFramework Callback 退订失败：{exception.GetBaseException().Message}");
+            }
+            catch
+            {
+                // A logging failure must not change the Run outcome.
+            }
+        }
+
+        try
+        {
             _agentClient?.Dispose();
             _tasker?.Dispose();
             _resource?.Dispose();
@@ -407,6 +428,11 @@ internal sealed class WorkerRuntimeExecution
         }
 
         return (errors.Count == 0, forced, errors.Count == 0 ? null : string.Join("；", errors));
+    }
+
+    private void OnTaskerCallback(object? sender, MaaCallbackEventArgs args)
+    {
+        _runLogAdapter.Handle(args.Message, args.Details);
     }
 
     private void ReportRunningOnce()

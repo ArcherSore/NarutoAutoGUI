@@ -500,11 +500,11 @@
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="运行日志" Style="{StaticResource WindowTitleTextStyle}" />
                                     <TextBlock Margin="10,4,0,0"
-                                               Text="INFO+"
+                                               Text="MaaNOP"
                                                Style="{StaticResource MonospaceMetaTextStyle}" />
                                 </StackPanel>
                                 <TextBlock Margin="0,4,0,0"
-                                           Text="显示最近 1000 条 INFO 及以上日志"
+                                           Text="显示最近 1000 条 MaaNOP 任务日志；诊断信息请查看日志文件"
                                            Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
                             <Button Grid.Column="1"
@@ -522,7 +522,7 @@
                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                                      AutomationProperties.Name="运行日志"
-                                     AutomationProperties.HelpText="显示最近一千条 INFO 及以上级别日志">
+                                     AutomationProperties.HelpText="显示最近一千条 MaaNOP focus 任务日志">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <Border MinHeight="22" Padding="4,2">

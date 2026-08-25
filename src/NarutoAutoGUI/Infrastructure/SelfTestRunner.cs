@@ -3,6 +3,8 @@ using System.Text.Json.Nodes;
 using NarutoAutoGUI.Models;
 using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
+using NarutoAutoGUI.Views;
+using NarutoAutoGUI.Worker;
 
 namespace NarutoAutoGUI.Infrastructure;
 
@@ -25,6 +27,9 @@ internal static class SelfTestRunner
             VerifyUnsupportedProjectConstraints(testDirectory, projectDirectory);
             VerifyInvalidProjectInterfaces(testDirectory, projectDirectory);
             VerifyProtocolFrame();
+            VerifyWorkerLogSequenceTracker();
+            VerifyRunLogRouting(logger);
+            Task.Run(() => WorkerCoordinatorSelfTest.RunAsync(logger, testDirectory)).GetAwaiter().GetResult();
 
             logger.Debug("self-test-debug");
             logger.Info("self-test-info");
@@ -33,7 +38,10 @@ internal static class SelfTestRunner
                 Environment.NewLine,
                 Directory.EnumerateFiles(logDirectory, "*.log").Select(File.ReadAllText));
             if (!logText.Contains("[DEBUG] self-test-debug", StringComparison.Ordinal)
-                || !logText.Contains("[INFO] self-test-info", StringComparison.Ordinal))
+                || !logText.Contains("[INFO] self-test-info", StringComparison.Ordinal)
+                || !logText.Contains("[maanop.run] 用户日志", StringComparison.Ordinal)
+                || !logText.Contains("[runtime.task] 用户日志", StringComparison.Ordinal)
+                || !logText.Contains("GUI diagnostic only", StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("DEBUG+ 文件日志验证失败。");
             }
@@ -44,7 +52,7 @@ internal static class SelfTestRunner
                 + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
                 + "PI structure/default/graph validation; typed input validation; "
                 + "MaaNOP Config v1; RunPlan digest; IPC framing; "
-                + "DEBUG+ file logging");
+                + "log sequence tracking/recovery; run-log routing; DEBUG+ file logging");
             return 0;
         }
         catch (Exception exception)
@@ -298,6 +306,86 @@ internal static class SelfTestRunner
         {
             throw new InvalidOperationException("Named Pipe frame round-trip 验证失败。");
         }
+    }
+
+    private static void VerifyWorkerLogSequenceTracker()
+    {
+        var firstInstance = Guid.NewGuid();
+        var secondInstance = Guid.NewGuid();
+        var tracker = new WorkerLogSequenceTracker();
+        if (!tracker.BeginWorkerInstance(firstInstance)
+            || tracker.Observe(1) != WorkerLogSequenceDisposition.Contiguous
+            || tracker.Observe(3) != WorkerLogSequenceDisposition.Gap
+            || tracker.LastContiguousSequence != 1
+            || tracker.HighestObservedSequence != 3
+            || tracker.Observe(2) != WorkerLogSequenceDisposition.Contiguous
+            || tracker.Observe(3) != WorkerLogSequenceDisposition.Contiguous
+            || tracker.Observe(3) != WorkerLogSequenceDisposition.Duplicate)
+        {
+            throw new InvalidOperationException("Worker 日志连续 sequence 跟踪验证失败。 ");
+        }
+        if (tracker.BeginWorkerInstance(firstInstance) || tracker.LastContiguousSequence != 3)
+        {
+            throw new InvalidOperationException("同一 Worker Instance 不应重置日志 cursor。 ");
+        }
+        if (!tracker.BeginWorkerInstance(secondInstance)
+            || tracker.LastContiguousSequence != 0
+            || tracker.HighestObservedSequence != 0)
+        {
+            throw new InvalidOperationException("新 Worker Instance 未重置日志 cursor。 ");
+        }
+        if (tracker.Observe(1) != WorkerLogSequenceDisposition.Contiguous
+            || tracker.LastContiguousSequence != 1)
+        {
+            throw new InvalidOperationException("新 Worker Instance 重置后首条日志未被接受。 ");
+        }
+        if (tracker.Observe(5) != WorkerLogSequenceDisposition.Gap
+            || tracker.LastContiguousSequence != 1
+            || tracker.HighestObservedSequence != 5)
+        {
+            throw new InvalidOperationException("新 Worker Instance 的 gap 检测或 target 跟踪失败。 ");
+        }
+
+        tracker.ObserveTarget(8);
+        tracker.SkipToFirstAvailable(6);
+        if (tracker.LastContiguousSequence != 5 || tracker.Observe(6) != WorkerLogSequenceDisposition.Contiguous)
+        {
+            throw new InvalidOperationException("Worker 日志 eviction gap 恢复验证失败。 ");
+        }
+    }
+
+    private static void VerifyRunLogRouting(AppLogger logger)
+    {
+        var timestampUtc = new DateTime(2026, 8, 24, 6, 30, 0, DateTimeKind.Utc);
+        var userEntry = new WorkerLogEntry(
+            1,
+            timestampUtc,
+            "INFO",
+            ProtocolConstants.MaaNopRunLogSource,
+            "用户日志",
+            false,
+            null,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "Task");
+        var diagnosticEntry = userEntry with { Sequence = 2, Source = "runtime.task" };
+        var visibleEntries = new[] { userEntry, diagnosticEntry }
+            .Select(MainWindow.CreateUserFacingRunLogEntry)
+            .Where(entry => entry is not null)
+            .Cast<LogEntry>()
+            .ToArray();
+        var expectedTimestamp = new DateTimeOffset(timestampUtc).ToLocalTime();
+        if (visibleEntries.Length != 1
+            || visibleEntries[0].Timestamp != expectedTimestamp
+            || visibleEntries[0].Level != LogLevel.Info
+            || visibleEntries[0].Message != userEntry.Message)
+        {
+            throw new InvalidOperationException("GUI 运行日志 source、timestamp 或 message 路由验证失败。 ");
+        }
+
+        MainWindow.WriteWorkerDiagnosticLog(logger, userEntry);
+        MainWindow.WriteWorkerDiagnosticLog(logger, diagnosticEntry);
+        logger.Info("GUI diagnostic only");
     }
 
     private static void VerifyUnsupportedProjectConstraints(string testDirectory, string sourceProjectDirectory)

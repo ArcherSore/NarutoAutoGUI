@@ -14,7 +14,7 @@ NarutoAutoGUI/
    ├─ NarutoAutoWorker/              # Child Session Worker 与固定 runtime
    └─ NarutoAutoGUI/                 # 正式 .NET 8 WPF GUI
       ├─ App.xaml(.cs)               # 单实例、应用操作门、退出、托盘、全局异常
-      ├─ Views/MainWindow.xaml(.cs)  # 状态、路径、启动按钮、INFO+ 日志
+      ├─ Views/MainWindow.xaml(.cs)  # 状态、路径、启动按钮、MaaNOP focus 运行日志
       ├─ Models/                     # 配置和日志模型
       ├─ Infrastructure/             # 配置、滚动日志、自动自检
       ├─ ChildSession/               # RDP/WTS/COM 实现、状态模型、生命周期与程序启动编排
@@ -59,10 +59,14 @@ NarutoAutoGUI/
 
 - 启动配置：`<程序目录>\config\settings.json`。保存游戏 exe、参数和 MaaNOP exe 路径，不保存账户密码。
 - 火影忍者 Online 默认运行 `C:\Users\17321\AppData\Roaming\Tencent\QQMicroGameBox\Launch.exe -/appid:1103286479`；不使用 `QQGameLauncher.exe`。工作目录不提供配置字段，统一自动使用所选 exe 的父目录。
-- 文件日志：默认写入 `<程序目录>\logs`，记录 DEBUG+；按日期命名，单文件最大 10 MB，保留 14 天。若程序目录不可写，则依次回退到 LocalAppData 和临时目录并记录 WARN。
-- GUI 日志：订阅同一个日志源，仅显示 INFO+，保留最近 1000 条；主窗口可直接打开当前实际日志目录。
-- 日志覆盖应用/Session/RDP 生命周期、程序路径、PID、SessionId、异常堆栈以及 Child Session 模块返回的
-  Win32/COM 错误码。
+- 文件日志：默认写入 `<程序目录>\logs`，记录 DEBUG+；按日期命名，单文件最大 10 MB，保留 14 天。若程序目录
+  不可写，则依次回退到 LocalAppData 和临时目录并记录 WARN。
+- GUI 运行日志：只显示 MaaNOP 通过字符串 `focus` 明确声明的 user-facing Run Log，保留最近 1000 条；
+  主窗口可直接打开当前实际日志目录。
+- Worker 在 `MaaTasker.Callback` 中将匹配的字符串 `focus` 投影为 `source=maanop.run` 的既有
+  WorkerLogEntry。实时 sequence gap 通过 `log.getSince` 补取，Worker Instance 变化时 cursor 重置。
+- Diagnostic log 不进入 GUI 列表，继续覆盖应用/Session/RDP 生命周期、程序路径、PID、SessionId、异常堆栈
+  以及 Child Session 模块返回的 Win32/COM 错误码。
 
 ## 明确边界
 

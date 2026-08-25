@@ -40,11 +40,15 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
 {
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan AdmissionTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan LogRecoveryRetryDelay = TimeSpan.FromSeconds(1);
     private readonly object _gate = new();
+    private readonly object _logDispatchGate = new();
     private readonly AppLogger _logger;
     private readonly WorkerAdmissionStore _store;
     private readonly ChildSessionWorkerLauncher _launcher;
     private readonly string _workerExecutablePath;
+    private readonly string _pipeName;
+    private readonly bool _usePipeAcl;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ConcurrentDictionary<Guid, TaskCompletionSource<WireEnvelope>> _pending = new();
     private readonly TaskCompletionSource<bool> _serverReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -52,14 +56,28 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     private ProtocolConnection? _connection;
     private WorkerAdmissionRecord? _admission;
     private TaskCompletionSource<WorkerSnapshot>? _awaitedFreshSnapshot;
-    private long _lastReceivedLogSequence;
+    private readonly WorkerLogSequenceTracker _logSequence = new();
+    private Task? _logRecoveryTask;
+    private int _logRecoveryGeneration;
 
     internal WorkerCoordinator(AppLogger logger, string stateDirectory, string workerExecutablePath)
+        : this(logger, stateDirectory, workerExecutablePath, PipeIdentity.ForCurrentUser(), usePipeAcl: true)
+    {
+    }
+
+    internal WorkerCoordinator(
+        AppLogger logger,
+        string stateDirectory,
+        string workerExecutablePath,
+        string pipeName,
+        bool usePipeAcl)
     {
         _logger = logger;
         _store = new WorkerAdmissionStore(stateDirectory);
         _launcher = new ChildSessionWorkerLauncher(logger);
         _workerExecutablePath = Path.GetFullPath(workerExecutablePath);
+        _pipeName = pipeName;
+        _usePipeAcl = usePipeAcl;
         try
         {
             _admission = _store.Load();
@@ -83,6 +101,11 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             _logger.Error("读取 Worker Admission Record 失败。", exception);
         }
         _serverTask = Task.Run(() => ServerLoopAsync(_shutdown.Token));
+        _ = _serverTask.ContinueWith(
+            task => _serverReady.TrySetException(task.Exception!.GetBaseException()),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     internal event EventHandler<WorkerCoordinatorSnapshot>? StateChanged;
@@ -90,12 +113,15 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
 
     internal WorkerCoordinatorSnapshot Snapshot { get; private set; }
 
+    internal Task WaitForServerReadyAsync(CancellationToken cancellationToken) =>
+        _serverReady.Task.WaitAsync(cancellationToken);
+
     internal async Task<WorkerSnapshot> PrepareWorkerAsync(
         uint childSessionId,
         ProjectPlanModule project,
         CancellationToken cancellationToken = default)
     {
-        await _serverReady.Task.WaitAsync(cancellationToken);
+        await WaitForServerReadyAsync(cancellationToken);
         lock (_gate)
         {
             if (Snapshot.Observation == WorkerObservation.Connected
@@ -357,17 +383,22 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     internal void ChildSessionEnded()
     {
         WorkerAdmissionRecord? record;
-        lock (_gate)
+        lock (_logDispatchGate)
         {
-            record = _admission;
-            _admission = null;
-            _connection = null;
-            _awaitedFreshSnapshot = null;
-            UpdateSnapshotLocked(new WorkerCoordinatorSnapshot(
-                WorkerObservation.ChildSessionEnded,
-                false,
-                Snapshot.WorkerSnapshot,
-                "Child Session 已结束"));
+            lock (_gate)
+            {
+                record = _admission;
+                _admission = null;
+                _connection = null;
+                _awaitedFreshSnapshot = null;
+                _logRecoveryGeneration++;
+                _logRecoveryTask = null;
+                UpdateSnapshotLocked(new WorkerCoordinatorSnapshot(
+                    WorkerObservation.ChildSessionEnded,
+                    false,
+                    Snapshot.WorkerSnapshot,
+                    "Child Session 已结束"));
+            }
         }
         if (record is not null)
         {
@@ -399,10 +430,10 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
 
     private async Task ServerLoopAsync(CancellationToken cancellationToken)
     {
-        _serverReady.TrySetResult(true);
         while (!cancellationToken.IsCancellationRequested)
         {
             await using var server = CreatePipeServer();
+            _serverReady.TrySetResult(true);
             try
             {
                 await server.WaitForConnectionAsync(cancellationToken);
@@ -423,8 +454,20 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         }
     }
 
-    private static NamedPipeServerStream CreatePipeServer()
+    private NamedPipeServerStream CreatePipeServer()
     {
+        if (!_usePipeAcl)
+        {
+            return new NamedPipeServerStream(
+                _pipeName,
+                PipeDirection.InOut,
+                maxNumberOfServerInstances: 1,
+                PipeTransmissionMode.Byte,
+                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly,
+                inBufferSize: 64 * 1024,
+                outBufferSize: 64 * 1024);
+        }
+
         using var identity = WindowsIdentity.GetCurrent();
         var userSid = identity.User ?? throw new InvalidOperationException("无法取得当前 Windows 用户 SID。 ");
         var networkSid = new SecurityIdentifier(WellKnownSidType.NetworkSid, null);
@@ -434,7 +477,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         security.AddAccessRule(new PipeAccessRule(networkSid, PipeAccessRights.FullControl, AccessControlType.Deny));
         security.AddAccessRule(new PipeAccessRule(userSid, PipeAccessRights.FullControl, AccessControlType.Allow));
         return NamedPipeServerStreamAcl.Create(
-            PipeIdentity.ForCurrentUser(),
+            _pipeName,
             PipeDirection.InOut,
             maxNumberOfServerInstances: 1,
             PipeTransmissionMode.Byte,
@@ -479,41 +522,69 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
                     admission.ChildSessionId)),
             cancellationToken);
 
-        lock (_gate)
+        int logRecoveryGeneration;
+        lock (_logDispatchGate)
         {
-            if (admission.WorkerPid != clientPid)
+            lock (_gate)
             {
-                admission = admission with { WorkerPid = clientPid };
-                _admission = admission;
-                _store.SaveRecord(admission);
+                if (admission.WorkerPid != clientPid)
+                {
+                    admission = admission with { WorkerPid = clientPid };
+                    _admission = admission;
+                    _store.SaveRecord(admission);
+                }
+                _connection = connection;
+                _logSequence.BeginWorkerInstance(admission.WorkerInstanceId);
+                _logRecoveryGeneration++;
+                _logRecoveryTask = null;
+                logRecoveryGeneration = _logRecoveryGeneration;
+                UpdateSnapshotLocked(new WorkerCoordinatorSnapshot(
+                    WorkerObservation.Connected,
+                    false,
+                    Snapshot.WorkerSnapshot,
+                    "Worker 已接纳，正在同步 Snapshot"));
             }
-            _connection = connection;
-            UpdateSnapshotLocked(new WorkerCoordinatorSnapshot(
-                WorkerObservation.Connected,
-                false,
-                Snapshot.WorkerSnapshot,
-                "Worker 已接纳，正在同步 Snapshot"));
         }
         RaiseStateChanged();
 
-        var reader = ReadLoopAsync(connection, admission.WorkerInstanceId, cancellationToken);
+        using var connectionLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var reader = ReadLoopAsync(
+            connection,
+            admission.WorkerInstanceId,
+            logRecoveryGeneration,
+            connectionLifetime.Token);
+        _ = reader.ContinueWith(
+            _ => connectionLifetime.Cancel(),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
         try
         {
             var response = await SendRequestAsync<object, GetSnapshotResponse>(
                 ProtocolOperations.WorkerGetSnapshot,
                 new { },
-                cancellationToken);
+                connectionLifetime.Token);
             ApplyFreshSnapshot(response.Snapshot, admission);
-            await RecoverLogsAsync(response.Snapshot, cancellationToken);
+            await EnsureLogRecoveryAsync(
+                admission.WorkerInstanceId,
+                logRecoveryGeneration,
+                response.Snapshot.LastLogSequence,
+                connectionLifetime.Token);
             await reader;
         }
         finally
         {
-            lock (_gate)
+            connectionLifetime.Cancel();
+            lock (_logDispatchGate)
             {
-                if (ReferenceEquals(_connection, connection))
+                lock (_gate)
                 {
-                    _connection = null;
+                    if (ReferenceEquals(_connection, connection))
+                    {
+                        _connection = null;
+                        _logRecoveryGeneration++;
+                        _logRecoveryTask = null;
+                    }
                 }
             }
         }
@@ -522,6 +593,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     private async Task ReadLoopAsync(
         ProtocolConnection connection,
         Guid workerInstanceId,
+        int logRecoveryGeneration,
         CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
@@ -562,7 +634,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
                         {
                             throw new ProtocolException("log.entry workerInstanceId 不匹配。 ");
                         }
-                        ApplyLog(log.Entry);
+                        ApplyLiveLog(workerInstanceId, logRecoveryGeneration, log.Entry, cancellationToken);
                         break;
                     }
             }
@@ -693,42 +765,210 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         }
     }
 
-    private void ApplyLog(WorkerLogEntry entry)
+    private void ApplyLiveLog(
+        Guid workerInstanceId,
+        int logRecoveryGeneration,
+        WorkerLogEntry entry,
+        CancellationToken cancellationToken)
+    {
+        var disposition = ApplyObservedLog(workerInstanceId, logRecoveryGeneration, entry);
+        if (disposition == WorkerLogSequenceDisposition.Gap)
+        {
+            _ = EnsureLogRecoveryAsync(workerInstanceId, logRecoveryGeneration, entry.Sequence, cancellationToken);
+        }
+    }
+
+    private Task EnsureLogRecoveryAsync(
+        Guid workerInstanceId,
+        int logRecoveryGeneration,
+        long targetSequence,
+        CancellationToken cancellationToken)
     {
         lock (_gate)
         {
-            if (entry.Sequence <= _lastReceivedLogSequence)
+            if (!IsActiveLogConnectionLocked(workerInstanceId, logRecoveryGeneration))
             {
-                return;
+                return Task.CompletedTask;
             }
-            _lastReceivedLogSequence = entry.Sequence;
+            _logSequence.ObserveTarget(targetSequence);
+            if (_logSequence.LastContiguousSequence >= _logSequence.HighestObservedSequence)
+            {
+                return Task.CompletedTask;
+            }
+            if (_logRecoveryTask is { IsCompleted: false })
+            {
+                return _logRecoveryTask;
+            }
+
+            _logRecoveryTask = Task.Run(
+                () => RunLogRecoveryAsync(workerInstanceId, logRecoveryGeneration, cancellationToken),
+                CancellationToken.None);
+            return _logRecoveryTask;
         }
-        LogReceived?.Invoke(this, entry);
     }
 
-    private async Task RecoverLogsAsync(WorkerSnapshot snapshot, CancellationToken cancellationToken)
+    private async Task RunLogRecoveryAsync(
+        Guid workerInstanceId,
+        int logRecoveryGeneration,
+        CancellationToken cancellationToken)
     {
-        while (_lastReceivedLogSequence < snapshot.LastLogSequence)
+        var allowRestart = true;
+        try
         {
-            var page = await SendRequestAsync<LogGetSinceRequest, LogGetSinceResponse>(
-                ProtocolOperations.LogGetSince,
-                new LogGetSinceRequest(_lastReceivedLogSequence, 500),
-                cancellationToken);
-            if (page.Gap)
+            while (true)
             {
-                _logger.Warn(
-                    $"Worker 日志存在断档：{page.MissingFromSequence}-{page.MissingToSequence}。 ");
+                try
+                {
+                    await RecoverLogsAsync(workerInstanceId, logRecoveryGeneration, cancellationToken);
+                    return;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    allowRestart = false;
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    _logger.Warn($"恢复 Worker 日志失败，将重试：{exception.GetBaseException().Message}");
+                }
+
+                lock (_gate)
+                {
+                    if (!IsActiveLogConnectionLocked(workerInstanceId, logRecoveryGeneration)
+                        || _logSequence.LastContiguousSequence >= _logSequence.HighestObservedSequence)
+                    {
+                        return;
+                    }
+                }
+                await Task.Delay(LogRecoveryRetryDelay, cancellationToken);
             }
-            foreach (var entry in page.Entries)
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            allowRestart = false;
+        }
+        finally
+        {
+            var restart = false;
+            lock (_gate)
             {
-                ApplyLog(entry);
+                if (IsActiveLogConnectionLocked(workerInstanceId, logRecoveryGeneration))
+                {
+                    _logRecoveryTask = null;
+                    restart = allowRestart
+                              && _logSequence.LastContiguousSequence < _logSequence.HighestObservedSequence;
+                }
             }
-            if (!page.HasMore || page.Entries.Count == 0)
+            if (restart)
             {
-                break;
+                _ = EnsureLogRecoveryAsync(
+                    workerInstanceId,
+                    logRecoveryGeneration,
+                    targetSequence: 0,
+                    cancellationToken);
             }
         }
     }
+
+    private async Task RecoverLogsAsync(
+        Guid workerInstanceId,
+        int logRecoveryGeneration,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            long afterSequence;
+            lock (_gate)
+            {
+                if (!IsActiveLogConnectionLocked(workerInstanceId, logRecoveryGeneration)
+                    || _logSequence.LastContiguousSequence >= _logSequence.HighestObservedSequence)
+                {
+                    return;
+                }
+                afterSequence = _logSequence.LastContiguousSequence;
+            }
+
+            var page = await SendRequestAsync<LogGetSinceRequest, LogGetSinceResponse>(
+                ProtocolOperations.LogGetSince,
+                new LogGetSinceRequest(afterSequence, 500),
+                cancellationToken);
+            string? gapWarning = null;
+            lock (_gate)
+            {
+                if (!IsActiveLogConnectionLocked(workerInstanceId, logRecoveryGeneration))
+                {
+                    return;
+                }
+                _logSequence.ObserveTarget(page.LastLogSequence);
+                if (page.Gap)
+                {
+                    _logSequence.SkipToFirstAvailable(page.FirstAvailableSequence);
+                    gapWarning = $"Worker 日志存在断档：{page.MissingFromSequence}-{page.MissingToSequence}。 ";
+                }
+            }
+            if (gapWarning is not null)
+            {
+                _logger.Warn(gapWarning);
+            }
+
+            foreach (var entry in page.Entries)
+            {
+                ApplyRecoveredLog(workerInstanceId, logRecoveryGeneration, entry);
+            }
+
+            lock (_gate)
+            {
+                if (!IsActiveLogConnectionLocked(workerInstanceId, logRecoveryGeneration))
+                {
+                    return;
+                }
+                if (_logSequence.LastContiguousSequence == afterSequence
+                    && _logSequence.LastContiguousSequence < _logSequence.HighestObservedSequence)
+                {
+                    throw new ProtocolException("log.getSince 未推进日志 cursor。 ");
+                }
+            }
+        }
+    }
+
+    private void ApplyRecoveredLog(Guid workerInstanceId, int logRecoveryGeneration, WorkerLogEntry entry)
+    {
+        var disposition = ApplyObservedLog(workerInstanceId, logRecoveryGeneration, entry);
+        if (disposition == WorkerLogSequenceDisposition.Gap)
+        {
+            throw new ProtocolException($"log.getSince 返回非连续 sequence：{entry.Sequence}。 ");
+        }
+    }
+
+    private WorkerLogSequenceDisposition? ApplyObservedLog(
+        Guid workerInstanceId,
+        int logRecoveryGeneration,
+        WorkerLogEntry entry)
+    {
+        WorkerLogSequenceDisposition disposition;
+        lock (_logDispatchGate)
+        {
+            lock (_gate)
+            {
+                if (!IsActiveLogConnectionLocked(workerInstanceId, logRecoveryGeneration))
+                {
+                    return null;
+                }
+                disposition = _logSequence.Observe(entry.Sequence);
+            }
+            if (disposition == WorkerLogSequenceDisposition.Contiguous)
+            {
+                LogReceived?.Invoke(this, entry);
+            }
+        }
+        return disposition;
+    }
+
+    private bool IsActiveLogConnectionLocked(Guid workerInstanceId, int logRecoveryGeneration) =>
+        _logRecoveryGeneration == logRecoveryGeneration
+        && _connection is not null
+        && _admission?.WorkerInstanceId == workerInstanceId
+        && _logSequence.WorkerInstanceId == workerInstanceId;
 
     private async Task<TResponse> SendRequestAsync<TRequest, TResponse>(
         string operation,

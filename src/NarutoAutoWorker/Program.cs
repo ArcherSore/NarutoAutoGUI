@@ -12,6 +12,11 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase))
+            {
+                return WorkerSelfTestRunner.Run();
+            }
+
             var arguments = WorkerArguments.Parse(args);
             var manifest = LaunchManifestLoader.Load(arguments);
             using var process = Process.GetCurrentProcess();

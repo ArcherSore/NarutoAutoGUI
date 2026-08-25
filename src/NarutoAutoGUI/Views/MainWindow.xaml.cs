@@ -90,7 +90,6 @@ public partial class MainWindow : FluentWindow
         GameArgumentsTextBox.Text = settings.GameArguments;
         MaaNopProjectDirectoryTextBox.Text = settings.MaaNopProjectDirectory;
         LogListBox.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler(LogListBox_ScrollChanged));
-        _logger.EntryWritten += OnLogEntryWritten;
         _sessionManager.StateChanged += OnSessionStateChanged;
         _workerCoordinator.StateChanged += OnWorkerStateChanged;
         _workerCoordinator.LogReceived += OnWorkerLogReceived;
@@ -139,7 +138,6 @@ public partial class MainWindow : FluentWindow
     {
         if (_allowClose)
         {
-            _logger.EntryWritten -= OnLogEntryWritten;
             _sessionManager.StateChanged -= OnSessionStateChanged;
             _workerCoordinator.StateChanged -= OnWorkerStateChanged;
             _workerCoordinator.LogReceived -= OnWorkerLogReceived;
@@ -875,19 +873,59 @@ public partial class MainWindow : FluentWindow
         return dialog.ShowDialog() == true ? dialog.FolderName : null;
     }
 
-    private void OnLogEntryWritten(object? sender, LogEntry entry)
+    internal static bool IsUserFacingRunLog(WorkerLogEntry entry) =>
+        string.Equals(entry.Source, ProtocolConstants.MaaNopRunLogSource, StringComparison.Ordinal);
+
+    internal static LogEntry? CreateUserFacingRunLogEntry(WorkerLogEntry workerEntry)
     {
-        if (entry.Level < LogLevel.Info)
+        if (!IsUserFacingRunLog(workerEntry))
         {
-            return;
+            return null;
         }
 
+        var timestampUtc = DateTime.SpecifyKind(workerEntry.TimestampUtc, DateTimeKind.Utc);
+        return new LogEntry(
+            new DateTimeOffset(timestampUtc).ToLocalTime(),
+            ParseWorkerLogLevel(workerEntry.Level),
+            workerEntry.Message);
+    }
+
+    internal static void WriteWorkerDiagnosticLog(AppLogger logger, WorkerLogEntry entry)
+    {
+        var message = $"Worker #{entry.Sequence} [{entry.Source}] {entry.Message}";
+        switch (ParseWorkerLogLevel(entry.Level))
+        {
+            case LogLevel.Critical:
+                logger.Critical(message);
+                break;
+            case LogLevel.Error:
+                logger.Error(message);
+                break;
+            case LogLevel.Warn:
+                logger.Warn(message);
+                break;
+            case LogLevel.Debug:
+                logger.Debug(message);
+                break;
+            default:
+                logger.Info(message);
+                break;
+        }
+    }
+
+    private void AddRunLogEntry(WorkerLogEntry workerEntry)
+    {
         if (!Dispatcher.CheckAccess())
         {
-            _ = Dispatcher.BeginInvoke(() => OnLogEntryWritten(sender, entry));
+            _ = Dispatcher.BeginInvoke(() => AddRunLogEntry(workerEntry));
             return;
         }
 
+        var entry = CreateUserFacingRunLogEntry(workerEntry);
+        if (entry is null)
+        {
+            return;
+        }
         var shouldFollow = _followLogs && IsLogNearBottom();
         LogLines.Add(entry);
         while (LogLines.Count > MaximumGuiLogEntries)
@@ -923,27 +961,22 @@ public partial class MainWindow : FluentWindow
 
     private void OnWorkerLogReceived(object? sender, WorkerLogEntry entry)
     {
-        var message = $"Worker #{entry.Sequence} [{entry.Source}] {entry.Message}";
-        switch (entry.Level.ToLowerInvariant())
+        WriteWorkerDiagnosticLog(_logger, entry);
+
+        if (IsUserFacingRunLog(entry))
         {
-            case "critical":
-                _logger.Critical(message);
-                break;
-            case "error":
-                _logger.Error(message);
-                break;
-            case "warning":
-            case "warn":
-                _logger.Warn(message);
-                break;
-            case "debug":
-                _logger.Debug(message);
-                break;
-            default:
-                _logger.Info(message);
-                break;
+            AddRunLogEntry(entry);
         }
     }
+
+    private static LogLevel ParseWorkerLogLevel(string level) => level.ToLowerInvariant() switch
+    {
+        "critical" => LogLevel.Critical,
+        "error" => LogLevel.Error,
+        "warning" or "warn" => LogLevel.Warn,
+        "debug" => LogLevel.Debug,
+        _ => LogLevel.Info
+    };
 
     private void UpdateWorkerPresentation(WorkerCoordinatorSnapshot snapshot)
     {

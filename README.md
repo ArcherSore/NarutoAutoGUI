@@ -15,7 +15,7 @@ NarutoAutoGUI 是 MaaNOP 的 Windows GUI / Frontend，并计划逐步替代 MFAA
 - 从 MaaNOP Project Interface 生成任务与参数配置，并通过 Child Session Worker、Named Pipe 和 MaaFramework 执行或停止单项任务。
 - Worker 启动验证 PID/Session，并在失败时记录 Task Scheduler 状态和清理无效 Admission。
 - 主窗口关闭时隐藏到托盘；真正退出前确认并注销仍在运行的 Child Session。
-- GUI 显示 INFO+；文件保存 DEBUG+，按天/10 MB 滚动并保留 14 天。
+- GUI 只显示 MaaNOP 字符串 `focus` 任务日志；诊断日志保存到文件，按天/10 MB 滚动并保留 14 天。
 
 ## 构建
 

@@ -7,7 +7,8 @@ using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoWorker;
 
-internal enum RuntimeExecutionOutcome {
+internal enum RuntimeExecutionOutcome
+{
     Succeeded,
     Failed,
     Cancelled,
@@ -43,6 +44,9 @@ internal sealed class WorkerRuntimeExecution
     private MaaTasker? _tasker;
     private MaaAgentClient? _agentClient;
     private Process? _agentProcess;
+    private LatestFramePreview? _preview;
+    private CancellationTokenSource? _previewCancellation;
+    private Task? _previewProducerTask;
     private bool _stopRequested;
     private bool _runningReported;
     private bool _preserveContext;
@@ -77,6 +81,13 @@ internal sealed class WorkerRuntimeExecution
                 ParseEnum<Win32InputMethod>(_manifest.Controller.KeyboardMethod),
                 LinkOption.Start,
                 CheckStatusOption.ThrowIfNotSucceeded);
+            var preview = new LatestFramePreview(_runId, new MaaCachedImageFrameSource(_controller), _log);
+            var previewCancellation = new CancellationTokenSource();
+            _preview = preview;
+            _previewCancellation = previewCancellation;
+            _previewProducerTask = Task.Run(
+                () => RunPreviewProducerAsync(preview, previewCancellation.Token),
+                CancellationToken.None);
             _resource = new MaaResource(
                 CheckStatusOption.ThrowIfNotSucceeded,
                 _manifest.Resources.SelectMany(resource => resource.Paths));
@@ -113,7 +124,7 @@ internal sealed class WorkerRuntimeExecution
                 await Task.Delay(100, cancellationToken);
             }
 
-            if (_stopRequested)
+            if (IsStopRequested())
             {
                 try
                 {
@@ -233,7 +244,10 @@ internal sealed class WorkerRuntimeExecution
         {
             _stopRequested = true;
         }
+        StopPreviewProducer();
     }
+
+    internal LatestPreviewFrame? ReadLatestPreview() => _preview?.ReadLatest();
 
     private DesktopWindowInfo FindTargetWindow()
     {
@@ -347,6 +361,8 @@ internal sealed class WorkerRuntimeExecution
             return (false, false, "Stop 未确认，保留 execution context 供诊断。 ");
         }
 
+        await StopPreviewProducerAsync();
+
         var forced = false;
         var errors = new List<string>();
         try
@@ -425,6 +441,9 @@ internal sealed class WorkerRuntimeExecution
             _resource = null;
             _controller = null;
             _agentProcess = null;
+            _preview = null;
+            _previewCancellation = null;
+            _previewProducerTask = null;
         }
 
         return (errors.Count == 0, forced, errors.Count == 0 ? null : string.Join("；", errors));
@@ -446,6 +465,81 @@ internal sealed class WorkerRuntimeExecution
             _runningReported = true;
         }
         _onRunning();
+    }
+
+    private bool IsStopRequested()
+    {
+        lock (_gate)
+        {
+            return _stopRequested;
+        }
+    }
+
+    private async Task RunPreviewProducerAsync(LatestFramePreview preview, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var cycleStarted = Stopwatch.GetTimestamp();
+                preview.Pump(DateTime.UtcNow);
+                var remaining = TimeSpan.FromMilliseconds(ProtocolConstants.PreviewIntervalMilliseconds)
+                                - Stopwatch.GetElapsedTime(cycleStarted);
+                if (remaining > TimeSpan.Zero)
+                {
+                    await Task.Delay(remaining, cancellationToken);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            LogPreviewFailure("Preview producer 意外终止。", exception);
+        }
+    }
+
+    private void StopPreviewProducer()
+    {
+        _preview?.Stop();
+        try
+        {
+            _previewCancellation?.Cancel();
+        }
+        catch (Exception exception)
+        {
+            LogPreviewFailure("停止 Preview producer 失败。", exception);
+        }
+    }
+
+    private async Task StopPreviewProducerAsync()
+    {
+        StopPreviewProducer();
+        if (_previewProducerTask is not null)
+        {
+            try
+            {
+                await _previewProducerTask;
+            }
+            catch (Exception exception)
+            {
+                LogPreviewFailure("等待 Preview producer 结束失败。", exception);
+            }
+        }
+        _previewCancellation?.Dispose();
+    }
+
+    private void LogPreviewFailure(string message, Exception exception)
+    {
+        try
+        {
+            _log("WARN", "preview.lifecycle", $"{message} {exception.GetBaseException().Message}");
+        }
+        catch
+        {
+            // Preview diagnostics must never change the Run outcome.
+        }
     }
 
     private static T ParseEnum<T>(string value) where T : struct, Enum

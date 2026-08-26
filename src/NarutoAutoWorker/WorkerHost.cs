@@ -214,6 +214,10 @@ internal sealed class WorkerHost
                     request.Operation,
                     requestId,
                     GetLogs(ProtocolJson.Deserialize<LogGetSinceRequest>(request.Data))),
+                ProtocolOperations.PreviewGetLatest => HandlePreviewGetLatest(
+                    request.Operation,
+                    requestId,
+                    ProtocolJson.Deserialize<PreviewGetLatestRequest>(request.Data)),
                 ProtocolOperations.WorkerShutdown => HandleShutdown(request.Operation, requestId),
                 _ => throw new WorkerRequestException(
                     "invalid_request",
@@ -571,6 +575,91 @@ internal sealed class WorkerHost
             throw new WorkerRequestException("invalid_request", "afterSequence 必须 >=0 且 limit 必须 >0。 ");
         }
     }
+
+    private WireEnvelope HandlePreviewGetLatest(string operation, Guid requestId, PreviewGetLatestRequest request)
+    {
+        if (request.AfterRevision < 0)
+        {
+            throw new WorkerRequestException("invalid_request", "afterRevision 必须 >=0。 ");
+        }
+
+        WorkerRuntimeExecution? execution;
+        Guid? activeRunId;
+        lock (_stateGate)
+        {
+            execution = _execution;
+            activeRunId = _activeRun?.RunId;
+        }
+
+        PreviewGetLatestResponse response;
+        if (execution is null || activeRunId is null)
+        {
+            response = PreviewUnavailable(activeRunId, "no_active_run");
+        }
+        else if (activeRunId != request.RunId)
+        {
+            response = PreviewUnavailable(activeRunId, "run_mismatch");
+        }
+        else if (execution.ReadLatestPreview() is not { } frame)
+        {
+            response = PreviewUnavailable(activeRunId, "no_frame");
+        }
+        else if (frame.Revision > request.AfterRevision)
+        {
+            response = new PreviewGetLatestResponse(
+                "frame",
+                _manifest.WorkerInstanceId,
+                frame.RunId,
+                frame.Revision,
+                frame.SampledAtUtc,
+                frame.PixelWidth,
+                frame.PixelHeight,
+                "image/png",
+                frame.PngBytes,
+                null);
+        }
+        else
+        {
+            response = new PreviewGetLatestResponse(
+                "not_modified",
+                _manifest.WorkerInstanceId,
+                activeRunId,
+                frame.Revision,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+        }
+
+        var envelope = WireEnvelope.Response(operation, requestId, response);
+        var responseBytes = JsonSerializer.SerializeToUtf8Bytes(envelope, ProtocolJson.Options).Length;
+        if (responseBytes <= ProtocolConstants.MaximumPreviewResponseBytes)
+        {
+            return envelope;
+        }
+
+        Log(
+            "WARN",
+            "preview.transport",
+            $"Preview response 超过预算：{responseBytes} > "
+            + $"{ProtocolConstants.MaximumPreviewResponseBytes} bytes。 ",
+            activeRunId);
+        return WireEnvelope.Response(operation, requestId, PreviewUnavailable(activeRunId, "frame_too_large"));
+    }
+
+    private PreviewGetLatestResponse PreviewUnavailable(Guid? runId, string reason) => new(
+        "unavailable",
+        _manifest.WorkerInstanceId,
+        runId,
+        0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        reason);
 
     private void ValidateRunPlan(RunStartRequest request)
     {

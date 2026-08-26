@@ -16,6 +16,11 @@ public static class ProtocolConstants
     public const int MaximumSnapshotPayloadBytes = 3 * 1024 * 1024;
     public const int MaximumLogMessageBytes = 64 * 1024;
     public const int MaximumLogGetSinceResponseBytes = 1024 * 1024;
+    public const int PreviewIntervalMilliseconds = 200;
+    public const int MaximumPreviewPixelWidth = 640;
+    public const int MaximumPreviewPixelHeight = 360;
+    public const int MaximumPreviewPngBytes = 1400 * 1024;
+    public const int MaximumPreviewResponseBytes = 2 * 1024 * 1024;
     public const string MaaNopRunLogSource = "maanop.run";
 }
 
@@ -28,6 +33,7 @@ public static class ProtocolOperations
     public const string RunStart = "run.start";
     public const string RunStop = "run.stop";
     public const string LogGetSince = "log.getSince";
+    public const string PreviewGetLatest = "preview.getLatest";
     public const string WorkerStateChanged = "worker.stateChanged";
     public const string RunStateChanged = "run.stateChanged";
     public const string LogEntry = "log.entry";
@@ -277,6 +283,20 @@ public sealed record LogGetSinceResponse(
     bool Gap,
     long? MissingFromSequence,
     long? MissingToSequence);
+
+public sealed record PreviewGetLatestRequest(Guid RunId, long AfterRevision);
+
+public sealed record PreviewGetLatestResponse(
+    string Disposition,
+    Guid WorkerInstanceId,
+    Guid? RunId,
+    long Revision,
+    DateTime? SampledAtUtc,
+    int? PixelWidth,
+    int? PixelHeight,
+    string? ContentType,
+    byte[]? PngBytes,
+    string? Reason);
 
 public sealed record StateChangedEvent(Guid WorkerInstanceId, long StateRevision, WorkerSnapshot Snapshot);
 

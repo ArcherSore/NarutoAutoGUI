@@ -65,9 +65,19 @@ NarutoAutoGUI/
   主窗口可直接打开当前实际日志目录。
 - Worker 在 `MaaTasker.Callback` 中将匹配的字符串 `focus` 投影为 `source=maanop.run` 的既有
   WorkerLogEntry。实时 sequence gap 通过 `log.getSince` 补取，Worker Instance 变化时 cursor 重置。
+- Active Run 的 `WorkerRuntimeExecution` 持有唯一后台 producer，使用已有 `MaaWin32Controller.GetCachedImage` 约每
+  200 ms 采样一次，最多缓存一个 640×360 PNG latest frame，并在释放 Controller 前结束 producer。GUI 只在可见 Home
+  上用 `preview.getLatest(runId, afterRevision)` 单飞轮询；Idle、Stopping、终态、断线、Worker replacement、
+  隐藏/最小化窗口时立即清空显示并恢复 Placeholder。正常取消后的迟到 Preview response 按 requestId 消费并丢弃，
+  不作为无法关联的 envelope 断开 Worker IPC。
+- Preview 使用 `sampledAtUtc` 表示 Worker 复制 cached image 的时间，并以 Worker Instance、Run 和 revision 校验陈旧响应。
+  PNG 为 1400 KiB、完整响应为 2 MiB，仍位于现有 4 MiB Named Pipe JSON frame 内；不增加二进制通道或第二个 Controller。
 - Diagnostic log 不进入 GUI 列表，继续覆盖应用/Session/RDP 生命周期、程序路径、PID、SessionId、异常堆栈
-  以及 Child Session 模块返回的 Win32/COM 错误码。
+  以及 Child Session 模块返回的 Win32/COM 错误码。Preview 采样、编码、IPC 或 GUI 解码失败也只写限频诊断，不能改变
+  Run、Worker admission、cleanup 或 Child Session 生命周期。
 
 ## 明确边界
 
-当前只包含一个 top-level task、一个 Plan Item 的最小 Worker/IPC + MaaFramework 闭环。不包含多任务调度、自动登录/扫码、自动隐藏子桌面、自动开始 MaaNOP 任务、Worker replacement UI 或可调分辨率/DPI。
+当前只包含一个 top-level task、一个 Plan Item 的最小 Worker/IPC + MaaFramework 闭环，以及 Active Run 期间固定约 5 FPS
+的只读 latest-frame Preview。不包含多任务调度、自动登录/扫码、自动隐藏子桌面、自动开始 MaaNOP 任务、Worker
+replacement UI、可调 Preview FPS、截图历史、录制、保存截图、画面点击控制或可调分辨率/DPI。

@@ -237,17 +237,24 @@
                                                     BorderBrush="{StaticResource Brush.Border}"
                                                     BorderThickness="1"
                                                     CornerRadius="{StaticResource Radius.Control}">
-                                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <ui:SymbolIcon FontSize="64"
-                                                                   Foreground="{StaticResource Brush.Text.Muted}"
-                                                                   Symbol="Desktop48" />
-                                                    <TextBlock Margin="0,16,0,0"
-                                                               HorizontalAlignment="Center"
-                                                               FontSize="28"
-                                                               FontWeight="SemiBold"
-                                                               Foreground="{StaticResource Brush.Text.Secondary}"
-                                                               Text="暂无游戏画面" />
-                                                </StackPanel>
+                                                <Grid>
+                                                    <Image x:Name="HomePreviewImage"
+                                                           Stretch="Uniform"
+                                                           Visibility="Collapsed" />
+                                                    <StackPanel x:Name="HomePreviewPlaceholder"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center">
+                                                        <ui:SymbolIcon FontSize="64"
+                                                                       Foreground="{StaticResource Brush.Text.Muted}"
+                                                                       Symbol="Desktop48" />
+                                                        <TextBlock Margin="0,16,0,0"
+                                                                   HorizontalAlignment="Center"
+                                                                   FontSize="28"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{StaticResource Brush.Text.Secondary}"
+                                                                   Text="暂无游戏画面" />
+                                                    </StackPanel>
+                                                </Grid>
                                             </Border>
                                         </Viewbox>
                                         <WrapPanel Grid.Row="4" HorizontalAlignment="Center">

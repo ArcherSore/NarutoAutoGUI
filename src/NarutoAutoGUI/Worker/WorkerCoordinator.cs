@@ -51,6 +51,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     private readonly bool _usePipeAcl;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ConcurrentDictionary<Guid, TaskCompletionSource<WireEnvelope>> _pending = new();
+    private readonly ConcurrentDictionary<Guid, byte> _abandonedRequests = new();
     private readonly TaskCompletionSource<bool> _serverReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Task _serverTask;
     private ProtocolConnection? _connection;
@@ -380,6 +381,33 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             cancellationToken);
     }
 
+    internal async Task<PreviewGetLatestResponse> GetLatestPreviewAsync(
+        Guid runId,
+        long afterRevision,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(afterRevision);
+        Guid workerInstanceId;
+        lock (_gate)
+        {
+            var worker = Snapshot.WorkerSnapshot;
+            if (Snapshot.Observation != WorkerObservation.Connected
+                || !Snapshot.SnapshotFresh
+                || worker?.ActiveRun?.RunId != runId)
+            {
+                throw new InvalidOperationException("当前 Worker/Snapshot/Run 状态不允许读取 Preview。 ");
+            }
+            workerInstanceId = worker.WorkerInstanceId;
+        }
+
+        var response = await SendRequestAsync<PreviewGetLatestRequest, PreviewGetLatestResponse>(
+            ProtocolOperations.PreviewGetLatest,
+            new PreviewGetLatestRequest(runId, afterRevision),
+            cancellationToken);
+        ValidatePreviewResponse(response, workerInstanceId, runId, afterRevision);
+        return response;
+    }
+
     internal void ChildSessionEnded()
     {
         WorkerAdmissionRecord? record;
@@ -411,13 +439,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _shutdown.Cancel();
-        lock (_gate)
-        {
-            foreach (var pending in _pending.Values)
-            {
-                pending.TrySetCanceled();
-            }
-        }
+        CancelPendingRequests();
         try
         {
             await _serverTask;
@@ -587,6 +609,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
                     }
                 }
             }
+            CancelPendingRequests();
         }
     }
 
@@ -603,12 +626,17 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             {
                 return;
             }
-            if (envelope.MessageType == ProtocolMessageTypes.Response
-                && envelope.RequestId is Guid requestId
-                && _pending.TryRemove(requestId, out var pending))
+            if (envelope.MessageType == ProtocolMessageTypes.Response && envelope.RequestId is Guid requestId)
             {
-                pending.TrySetResult(envelope);
-                continue;
+                if (_pending.TryRemove(requestId, out var pending))
+                {
+                    pending.TrySetResult(envelope);
+                    continue;
+                }
+                if (_abandonedRequests.TryRemove(requestId, out _))
+                {
+                    continue;
+                }
             }
             if (envelope.MessageType != ProtocolMessageTypes.Event)
             {
@@ -1000,10 +1028,59 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             }
             return ProtocolJson.Deserialize<TResponse>(response.Data);
         }
-        finally
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            AbandonPendingRequest(requestId);
+            throw;
+        }
+        catch (TimeoutException)
+        {
+            AbandonPendingRequest(requestId);
+            throw;
+        }
+        catch
         {
             _pending.TryRemove(requestId, out _);
+            throw;
         }
+    }
+
+    private void AbandonPendingRequest(Guid requestId)
+    {
+        _abandonedRequests.TryAdd(requestId, 0);
+        if (!_pending.TryRemove(requestId, out _))
+        {
+            _abandonedRequests.TryRemove(requestId, out _);
+            return;
+        }
+        _ = ExpireAbandonedRequestAsync(requestId);
+    }
+
+    private async Task ExpireAbandonedRequestAsync(Guid requestId)
+    {
+        try
+        {
+            await Task.Delay(RequestTimeout, _shutdown.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            _abandonedRequests.TryRemove(requestId, out _);
+        }
+    }
+
+    private void CancelPendingRequests()
+    {
+        foreach (var pair in _pending)
+        {
+            if (_pending.TryRemove(pair.Key, out var pending))
+            {
+                pending.TrySetCanceled();
+            }
+        }
+        _abandonedRequests.Clear();
     }
 
     private void EnsureStartAllowed(string desiredRuntimeProfileDigest)
@@ -1042,6 +1119,66 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         if (snapshot.ActiveRun is not null && snapshot.ActiveRun.State != snapshot.RunState)
         {
             throw new ProtocolException("Worker Snapshot activeRun.state 与 runState 不一致。 ");
+        }
+    }
+
+    private static void ValidatePreviewResponse(
+        PreviewGetLatestResponse response,
+        Guid workerInstanceId,
+        Guid runId,
+        long afterRevision)
+    {
+        if (response.WorkerInstanceId != workerInstanceId)
+        {
+            throw new ProtocolException("Preview response workerInstanceId 不匹配。 ");
+        }
+
+        switch (response.Disposition)
+        {
+            case "frame":
+                if (response.RunId != runId
+                    || response.Revision <= afterRevision
+                    || response.SampledAtUtc is not { Kind: DateTimeKind.Utc }
+                    || response.PixelWidth is not > 0
+                    || response.PixelHeight is not > 0
+                    || response.PixelWidth > ProtocolConstants.MaximumPreviewPixelWidth
+                    || response.PixelHeight > ProtocolConstants.MaximumPreviewPixelHeight
+                    || response.ContentType != "image/png"
+                    || response.PngBytes is not { Length: > 0 } pngBytes
+                    || pngBytes.Length > ProtocolConstants.MaximumPreviewPngBytes
+                    || response.Reason is not null)
+                {
+                    throw new ProtocolException("Preview frame response schema 非法。 ");
+                }
+                break;
+            case "not_modified":
+                if (response.RunId != runId
+                    || response.Revision > afterRevision
+                    || response.SampledAtUtc is not null
+                    || response.PixelWidth is not null
+                    || response.PixelHeight is not null
+                    || response.ContentType is not null
+                    || response.PngBytes is not null
+                    || response.Reason is not null)
+                {
+                    throw new ProtocolException("Preview not_modified response schema 非法。 ");
+                }
+                break;
+            case "unavailable":
+                if (response.RunId is not null && response.RunId != runId
+                    || response.Revision != 0
+                    || response.SampledAtUtc is not null
+                    || response.PixelWidth is not null
+                    || response.PixelHeight is not null
+                    || response.ContentType is not null
+                    || response.PngBytes is not null
+                    || string.IsNullOrWhiteSpace(response.Reason))
+                {
+                    throw new ProtocolException("Preview unavailable response schema 非法。 ");
+                }
+                break;
+            default:
+                throw new ProtocolException($"未知 Preview disposition：{response.Disposition}。 ");
         }
     }
 

@@ -28,6 +28,7 @@ internal static class SelfTestRunner
             VerifyUnsupportedProjectConstraints(testDirectory, projectDirectory);
             VerifyInvalidProjectInterfaces(testDirectory, projectDirectory);
             VerifyProtocolFrame();
+            VerifyPreviewProtocol();
             VerifyWorkerLogSequenceTracker();
             VerifyRunLogRouting(logger);
             Task.Run(() => WorkerCoordinatorSelfTest.RunAsync(
@@ -54,7 +55,7 @@ internal static class SelfTestRunner
                 + "ordered pipeline override; nested dormant intent; "
                 + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
                 + "PI structure/default/graph validation; typed input validation; "
-                + "MaaNOP Config v1; RunPlan digest; IPC framing; "
+                + "MaaNOP Config v1; RunPlan digest; IPC framing; preview schema; "
                 + "log sequence tracking/recovery; Worker Instance replacement; "
                 + "run-log routing; DEBUG+ file logging");
             return 0;
@@ -309,6 +310,45 @@ internal static class SelfTestRunner
         if (decoded?.RequestId != requestId || decoded.Operation != ProtocolOperations.WorkerGetSnapshot)
         {
             throw new InvalidOperationException("Named Pipe frame round-trip 验证失败。");
+        }
+    }
+
+    private static void VerifyPreviewProtocol()
+    {
+        var response = new PreviewGetLatestResponse(
+            "frame",
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            3,
+            new DateTime(2026, 8, 26, 8, 30, 0, DateTimeKind.Utc),
+            4,
+            3,
+            "image/png",
+            [1, 2, 3],
+            null);
+        var json = JsonSerializer.Serialize(response, ProtocolJson.Options);
+        if (!json.Contains("\"sampledAtUtc\"", StringComparison.Ordinal)
+            || json.Contains("capturedAtUtc", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Preview timestamp 字段名不是 sampledAtUtc。 ");
+        }
+        var decoded = JsonSerializer.Deserialize<PreviewGetLatestResponse>(json, ProtocolJson.Options);
+        if (decoded is null
+            || decoded with { PngBytes = response.PngBytes } != response
+            || !decoded.PngBytes!.SequenceEqual(response.PngBytes!))
+        {
+            throw new InvalidOperationException("Preview JSON/base64 round-trip 验证失败。 ");
+        }
+
+        var staleFieldJson = json.Replace("\"sampledAtUtc\"", "\"capturedAtUtc\"", StringComparison.Ordinal);
+        try
+        {
+            _ = JsonSerializer.Deserialize<PreviewGetLatestResponse>(staleFieldJson, ProtocolJson.Options);
+            throw new InvalidOperationException("Preview schema 未拒绝旧 capturedAtUtc 字段。 ");
+        }
+        catch (JsonException)
+        {
+            // Expected: GUI and Worker ship together and use one strict schema.
         }
     }
 

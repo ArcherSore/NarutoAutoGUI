@@ -26,11 +26,11 @@
 - 主窗口已应用集中式 WPF 视觉设计系统：统一浅色语义令牌、字体与 4/8 DIP 间距、四级按钮、输入框、状态 Badge、日志层级和交互状态；顶部保留状态卡，其余主功能使用扁平分区、留白与细分隔线，仅日志视口保留容器边框；不改变事件处理器和功能行为。
 - 正式主窗口已使用 WPF-UI 4.3.0 重构为 Windows 11 Fluent Shell：`FluentWindow`、`TitleBar`、左侧 `NavigationView` 和内置 Fluent 图标承载首页、任务、桌面分身、日志、设置五个顶层页面，操作状态与进度条固定在全局底栏。五个页面仍位于同一个 `MainWindow` XAML namescope，通过根容器 `Visibility` 切换；未引入 `Frame`、独立 Page/UserControl、MVVM、NavigationService 或 PageService。页面内输入、按钮、下拉框和日志列表仍为标准 WPF 控件并沿用 `DesignSystem.xaml`。
 - 首页集中呈现当前任务、参数、Session、Worker 和 Run 的用户化摘要；任务页直接承载动态 option editor，将 Worker/PID/Snapshot/runId 等信息收进默认折叠的运行环境诊断；桌面分身操作按钮按实际状态互斥显示。设置表单改为标签在上、输入框在下，日志页取消固定高度并填满剩余页面空间；各配置页独立滚动，日志页没有外层滚动器。
-- 首页已重组为“运行控制台”：顶部以单一横向区域呈现当前任务、现有状态投影、当前 Plan Item/下一步和固定的
-  准备/开始/停止入口；下方以等宽双列呈现内部 16:9 游戏画面 Placeholder 与 `maanop.run` 运行动态。运行动态
-  图标只按既有日志 Level 映射，底部状态栏只投影已有整体、Worker、Session、IPC 连接和操作状态。此次保持当前
-  WPF-UI Theme，不实现截图 backend，不改变其他页面、命令可用性、协议或运行生命周期。Home 使用禁用横向滚动的
-  外层纵向 overflow fallback；下方双列保持正常视口高度，运行动态列表继续作为独立的主要滚动区域。
+- 首页“运行控制台”顶部以单一横向区域呈现当前任务、现有状态投影、当前 Plan Item/下一步和固定的准备/开始/停止入口；
+  下方以等宽双列呈现内部 16:9 游戏画面与 `maanop.run` 运行动态。游戏画面在 Active Run 的 Starting/Running 期间通过
+  Worker latest-frame cache 固定约 5 FPS 只读显示；Idle、Stopping、终态、断线、Worker replacement、窗口隐藏或离开
+  Home 时继续显示原 Placeholder，窗口最小化也停止请求。运行动态图标只按既有日志 Level 映射，底部状态栏只投影已有
+  整体、Worker、Session、IPC 连接和操作状态；Home 仍使用禁用横向滚动的外层纵向 overflow fallback。
 - 根据实机可发现性反馈，首页和任务页均固定展示“准备运行环境 / 开始任务 / 停止任务”三个任务控制入口；当前不可执行的操作保留位置并显示禁用态，动态下一步提示同时作为任务页说明、悬浮提示和辅助功能 HelpText。任务页明确说明参数修改自动保存；现有协议仍为停止/取消本次 Run，不声明暂停后恢复能力。
 - 开始任务只要求 Child Session 已连接、Worker Ready、Snapshot fresh 且任务配置有效；子桌面显示或隐藏均可开始，不再将隐藏预览作为 Run 前置条件。
 - 全局 GUI、后台任务和进程异常记录；预期的启动/RDP/Win32/COM 失败不会直接使 GUI 崩溃。
@@ -50,6 +50,12 @@
 - `ProjectTaskChoice` 只承载 task 名称与显示标签；PI 默认 option 的合法性已成为 Loader 成功返回后的不变量，不再保留 `DefaultOnlyValid/ValidationError` 双重状态。切换 task 时仍在保存 Config 前 Resolve 新激活的 option 图，以拦截非法 dormant intent。
 - ProjectModel 内部使用 `OptionDefinitionKind` 与 `PipelineValueKind` 表达已验证的 option/input 类型，不再让 Resolver、配置编辑器重复解释协议字符串；`ProjectInputValue` 统一执行默认值与显式值的 verify、正则超时、InvariantCulture int/bool 解析和类型化 `JsonNode` 转换。
 - Worker 自带固定 MaaFramework runtime，在 Child Session 中负责 Win32 Controller、MaaNOP Resource、MaaTasker 和每 Run Python Agent 生命周期；MFAAvalonia 不进入正常执行链。
+- WorkerRuntimeExecution 持有唯一后台 producer，复用当前 Run 的唯一 MaaWin32Controller cached image，按 200 ms tick
+  缩放、PNG 编码、内容去重并只缓存最新一帧；缓存使用 runId/revision/`sampledAtUtc`/像素尺寸/PNG bytes，不创建第二个
+  Controller 或帧队列，并在释放 Controller 前结束 producer。
+  `preview.getLatest` 使用现有 Named Pipe JSON 的 PNG + base64，预算为 PNG 1400 KiB、完整响应 2 MiB、transport 4 MiB。
+  Preview 采样、编码、IPC、GUI 解码和诊断日志失败均不改变 Run 状态、结果、取消、cleanup、Worker admission 或
+  Child Session 生命周期。
 - Worker 使用专用的 Task Scheduler 强化启动路径：`RunEx` 后等待新的 Worker PID 并验证 Child Session，记录 Task State 与 `LastTaskResult`，再清理临时任务；进程验证成功后 PID 写回 Admission。若进程未生成则 10 秒内失败并清理 Pending Admission；若 admission + fresh Snapshot 在 60 秒内未完成且 Worker PID 缺失或进程已退出，则自动回滚 `worker.json` 与 launch manifest，避免下一次准备环境被陈旧记录阻塞。
 
 ## 本轮自动验证
@@ -122,6 +128,32 @@
   完整 build-output 自检在后续既有 Named Pipe 场景因当前权限返回 `Access denied`，因此不声明完整自检通过。
   当时正在运行的真实 E2E GUI、Worker 和 Child Session 未被停止或替换；修复后的真实窗口显示已于 2026-08-26
   完成交互式复验。
+- 2026-08-26：完成 ADR 0021 Active Run latest-frame Preview V1。Worker 自检通过脚本化 frame source 覆盖 200 ms tick、
+  内容去重、revision、`sampledAtUtc`、失败限频、停止清空、在途帧拒绝和 PNG/base64 响应预算；GUI 自检通过真实
+  Named Pipe 覆盖 afterRevision、`not_modified`、严格 schema 和 stale Worker Instance 拒绝。NarutoAutoGUI 与
+  NarutoAutoWorker Release `win-x64` build 均通过，0 警告、0 错误；最终 Worker build-output DLL 自检通过。GUI 协议与
+  Coordinator 自检在本轮较早 build-output 通过；最终重建后的 GUI DLL 在仓库路径和隔离临时副本均被本机 Application
+  Control policy 以 `0x800711C7` 阻止载入，因此不声明最终 GUI build-output 自检通过。真实 Maa cached image、Home
+  连续显示、页面/窗口可见性切换和 Running→Stopping 仍待消费级电脑上的交互式 Run 回归；Roslyn whitespace、120 列
+  和 `git diff --check` 已通过，未修改 Child Session/RDP/WTS/Task Scheduler baseline。
+- 2026-08-26：ADR 0021 Preview 代码审查非 P1 修复。恢复 8 处装饰性换行为 120 列内单行
+  （`LatestFramePreview`、`WorkerHost`、`WorkerRuntimeExecution`、`WorkerSelfTestRunner`、
+  `MainWindow.xaml.cs`、`WorkerCoordinatorSelfTest`）；Coordinator `ValidatePreviewResponse`
+  的 `unavailable` 分支增加 run identity 校验，拒绝携带非空且不属于当前请求 runId 的
+  unavailable 响应（null runId 仍接受以表示 `no_active_run`）。Coordinator 自检新增三类
+  Preview 负路径：unavailable 错误 runId 拒绝、unavailable null runId 接受、frame 错误 runId
+  拒绝；Worker 自检新增 2 MiB 响应预算拒绝边界和 4 MiB transport write-before-send guard。
+  NarutoAutoGUI 与 NarutoAutoWorker Release `win-x64` build 均通过，0 警告、0 错误；Worker
+  build-output DLL 自检与 GUI build-output DLL 自检均通过，`git diff --check` 通过。未修改
+  Preview producer 无界 cleanup wait 和 Preview request cancellation 后迟到 response 两个 P1
+  问题，留待后续单独设计。Child Session/RDP/WTS/Task Scheduler baseline 未修改。
+- 2026-08-26：ADR 0021 Preview P1 复核与 IPC 修复。Coordinator 对调用方已取消或超时、但可能已经写入 Pipe 的请求
+  保留有界 requestId tombstone；迟到 response 会被消费并丢弃，不再作为无法关联的 envelope 断开 Worker IPC。
+  真实 Named Pipe 自检覆盖取消 Preview、发送迟到 response、随后继续完成下一次 Preview 请求；NarutoAutoGUI Release
+  `win-x64` build 与 build-output GUI `--self-test` 均通过，0 警告、0 错误。另结合 MaaFramework 官方接口与实现复核：
+  `GetCachedImage` 只同步复制最近 cached image，没有 cancellation/timeout API；为保持单 Controller 与释放安全，cleanup
+  继续先等待 producer 结束再释放 Controller，不增加会并发释放或遗留旧 Controller 的 timeout。真实 Maa cached image、
+  Running→Stopping 和自然终态的及时结束仍作为交互式回归项，由用户在目标机器验证。Child Session baseline 未修改。
 - build 期间 NuGet 无法访问漏洞元数据源，产生 `NU1900` 警告；包还原和编译本身成功。该警告不是代码编译错误。
 
 以下项目需要管理员权限、可见桌面或真实外部程序，自动验证不能替代手动回归。Child Session 真实桌面交互式回归已完成；游戏/MaaNOP 跨 Session 启动、异常断开后重建连接、创建/启动过程中并发退出等外部程序或故障场景仍需按后续目标单独记录。

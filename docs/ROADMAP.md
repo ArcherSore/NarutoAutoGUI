@@ -22,4 +22,13 @@
 11. MFAAvalonia 只保留为人工诊断后备，不进入正常执行、配置、恢复或 Worker 替换链路。
 12. Supported Baseline 所采用的 MaaNOP 本机目录、tag 或 commit 仍未自动冻结；首个真实 E2E 已通过，下一轮可单独决定是否开始固定 MaaNOP snapshot、Python `maa` 与 Maa.Framework 精确组合。
 
+## 已完成：Active Run 游戏画面 Preview V1
+
+13. Worker 复用当前 Active Run 的唯一 MaaWin32Controller cached image，固定约 5 FPS 只保存最新一帧；GUI 通过现有
+    Named Pipe JSON 轮询 PNG + base64，并以 Worker Instance、Run 和 revision 拒绝陈旧或重复画面。
+14. Idle、Stopping、终态、断线、Worker replacement、窗口隐藏/最小化或离开 Home 时显示 Placeholder；所有 Preview
+    失败只记诊断，不改变 Run、Worker admission、cleanup 或 Child Session 生命周期。
+15. 本阶段不继续实现 30/60 FPS、可配置 FPS、帧历史、录制、截图保存、点击控制、独立 Preview Window、二进制传输或
+    Child Session 整个桌面捕获。
+
 自动登录/扫码、自动隐藏子桌面、自动开始 MaaNOP 任务和可调分辨率/DPI 不属于第一轮，也不会在未单独确认范围前实现。

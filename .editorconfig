@@ -2,4 +2,13 @@ root = true
 
 [*.{cs,xaml,csproj,props,targets,ps1,json,xml,yml,yaml}]
 max_line_length = 120
+end_of_line = lf
 
+[*.cs]
+# 混合大括号风格：声明块（types/methods/properties 等）左大括号换行，
+# 控制流（control_blocks：if/while/for/foreach/switch/try/using/lock 等）左大括号同行。
+csharp_new_line_before_open_brace = types, methods, local_functions, properties, accessors, anonymous_types, anonymous_methods, lambdas, events, indexers, object_collection
+# else/catch/finally 与前一个右大括号保持同一行。
+csharp_new_line_before_else = false
+csharp_new_line_before_catch = false
+csharp_new_line_before_finally = false

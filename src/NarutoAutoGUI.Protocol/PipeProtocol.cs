@@ -24,15 +24,13 @@ public sealed class ProtocolConnection : IAsyncDisposable
         ThrowIfDisposed();
         var prefix = new byte[sizeof(uint)];
         var prefixBytesRead = await _stream.ReadAsync(prefix, cancellationToken);
-        if (prefixBytesRead == 0)
-        {
+        if (prefixBytesRead == 0) {
             return null;
         }
         await _stream.ReadExactlyAsync(prefix.AsMemory(prefixBytesRead), cancellationToken);
 
         var payloadLength = BinaryPrimitives.ReadUInt32LittleEndian(prefix);
-        if (payloadLength == 0 || payloadLength > ProtocolConstants.MaximumFramePayloadBytes)
-        {
+        if (payloadLength == 0 || payloadLength > ProtocolConstants.MaximumFramePayloadBytes) {
             throw new ProtocolException($"非法 IPC frame 长度：{payloadLength}。 ");
         }
 
@@ -40,22 +38,16 @@ public sealed class ProtocolConnection : IAsyncDisposable
         await _stream.ReadExactlyAsync(payload, cancellationToken);
 
         string json;
-        try
-        {
+        try {
             json = StrictUtf8.GetString(payload);
-        }
-        catch (DecoderFallbackException exception)
-        {
+        } catch (DecoderFallbackException exception) {
             throw new ProtocolException("IPC frame 不是合法 UTF-8。", exception);
         }
 
-        try
-        {
+        try {
             return JsonSerializer.Deserialize<WireEnvelope>(json, ProtocolJson.Options)
                    ?? throw new ProtocolException("IPC envelope 为空。 ");
-        }
-        catch (JsonException exception)
-        {
+        } catch (JsonException exception) {
             throw new ProtocolException("IPC envelope 不是合法 JSON。", exception);
         }
     }
@@ -64,8 +56,7 @@ public sealed class ProtocolConnection : IAsyncDisposable
     {
         ThrowIfDisposed();
         var payload = JsonSerializer.SerializeToUtf8Bytes(envelope, ProtocolJson.Options);
-        if (payload.Length == 0 || payload.Length > ProtocolConstants.MaximumFramePayloadBytes)
-        {
+        if (payload.Length == 0 || payload.Length > ProtocolConstants.MaximumFramePayloadBytes) {
             throw new ProtocolException($"IPC frame payload 越界：{payload.Length} bytes。 ");
         }
 
@@ -73,22 +64,18 @@ public sealed class ProtocolConnection : IAsyncDisposable
         BinaryPrimitives.WriteUInt32LittleEndian(prefix, (uint)payload.Length);
 
         await _writeGate.WaitAsync(cancellationToken);
-        try
-        {
+        try {
             await _stream.WriteAsync(prefix, cancellationToken);
             await _stream.WriteAsync(payload, cancellationToken);
             await _stream.FlushAsync(cancellationToken);
-        }
-        finally
-        {
+        } finally {
             _writeGate.Release();
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
-        {
+        if (_disposed) {
             return;
         }
 

@@ -15,19 +15,13 @@ public static class CanonicalDigest
         FormatDigest(SHA256.HashData(bytes));
 
     public static string ComputeRuntimeProfileDigestV1(
-        string projectRoot,
-        Win32ControllerDefinition controller,
-        IReadOnlyList<ResourceDefinition> resources,
-        AgentDefinition agent)
+        string projectRoot, Win32ControllerDefinition controller,
+        IReadOnlyList<ResourceDefinition> resources, AgentDefinition agent)
     {
         var normalizedProjectRoot = PathCanonicalizerV1.Canonicalize(projectRoot);
         var normalizedResources = resources.Select(resource => new ResourceDefinition(
-            resource.Name,
-            resource.Paths.Select(PathCanonicalizerV1.Canonicalize).ToArray())).ToArray();
-        var normalizedAgent = agent with
-        {
-            WorkingDirectory = PathCanonicalizerV1.Canonicalize(agent.WorkingDirectory)
-        };
+            resource.Name, resource.Paths.Select(PathCanonicalizerV1.Canonicalize).ToArray())).ToArray();
+        var normalizedAgent = agent with { WorkingDirectory = PathCanonicalizerV1.Canonicalize(agent.WorkingDirectory) };
 
         var element = ProtocolJson.ToElement(new
         {
@@ -86,12 +80,10 @@ public static class CanonicalDigest
     public static byte[] GetCanonicalUtf8(JsonElement element)
     {
         var buffer = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions
-        {
+        using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions {
             Indented = false,
             SkipValidation = false
-        }))
-        {
+        })) {
             WriteCanonical(writer, element);
         }
 
@@ -102,8 +94,7 @@ public static class CanonicalDigest
     {
         if (digest.Length != 71
             || !digest.StartsWith("sha256:", StringComparison.Ordinal)
-            || digest.AsSpan(7).IndexOfAnyExcept("0123456789abcdef") >= 0)
-        {
+            || digest.AsSpan(7).IndexOfAnyExcept("0123456789abcdef") >= 0) {
             throw new ArgumentException("摘要必须使用 sha256:<64 lowercase hex> 格式。", parameterName);
         }
     }
@@ -123,13 +114,11 @@ public static class CanonicalDigest
 
     private static void WriteCanonical(Utf8JsonWriter writer, JsonElement element)
     {
-        switch (element.ValueKind)
-        {
+        switch (element.ValueKind) {
             case JsonValueKind.Object:
                 writer.WriteStartObject();
                 foreach (var property in element.EnumerateObject()
-                             .OrderBy(property => property.Name, StringComparer.Ordinal))
-                {
+                             .OrderBy(property => property.Name, StringComparer.Ordinal)) {
                     writer.WritePropertyName(property.Name);
                     WriteCanonical(writer, property.Value);
                 }
@@ -137,8 +126,7 @@ public static class CanonicalDigest
                 break;
             case JsonValueKind.Array:
                 writer.WriteStartArray();
-                foreach (var item in element.EnumerateArray())
-                {
+                foreach (var item in element.EnumerateArray()) {
                     WriteCanonical(writer, item);
                 }
                 writer.WriteEndArray();
@@ -168,20 +156,17 @@ public static class PathCanonicalizerV1
 {
     public static string Canonicalize(string path)
     {
-        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
-        {
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)) {
             throw new ArgumentException("参与 Runtime Profile Digest 的路径必须是绝对路径。", nameof(path));
         }
 
         var full = Path.GetFullPath(path).Replace('/', '\\');
-        if (full.Length >= 2 && full[1] == ':' && char.IsLetter(full[0]))
-        {
+        if (full.Length >= 2 && full[1] == ':' && char.IsLetter(full[0])) {
             full = char.ToUpperInvariant(full[0]) + full[1..];
         }
 
         var root = Path.GetPathRoot(full)?.Replace('/', '\\') ?? string.Empty;
-        while (full.Length > root.Length && full.EndsWith('\\'))
-        {
+        while (full.Length > root.Length && full.EndsWith('\\')) {
             full = full[..^1];
         }
 

@@ -39,8 +39,7 @@ internal sealed class ChildSessionService
 
     public static void EnsureChildSessionsEnabled()
     {
-        if (!ChildSessionNativeMethods.IsChildSessionsEnabled())
-        {
+        if (!ChildSessionNativeMethods.IsChildSessionsEnabled()) {
             ChildSessionNativeMethods.EnableChildSessions();
         }
     }
@@ -67,37 +66,30 @@ internal sealed class ChildSessionService
         _host.LoginCompleted += OnLoginCompleted;
         _host.ConnectionFailed += OnConnectionFailed;
 
-        try
-        {
+        try {
             _host.ConnectToChildSession(DefaultDesktopSize, userName, password);
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(ConnectionTimeout);
 
             bool ok;
-            try
-            {
+            try {
                 ok = await _connectionTcs.Task
                     .WaitAsync(timeoutCts.Token)
                     .ConfigureAwait(true);
-            }
-            catch (OperationCanceledException)
-            {
+            } catch (OperationCanceledException) {
                 TryDisconnect();
                 throw new InvalidOperationException(
                     $"桌面分身连接及登录初始化未能在 {ConnectionTimeout.TotalSeconds:0} 秒内完成。");
             }
 
-            if (!ok)
-            {
+            if (!ok) {
                 TryDisconnect();
                 throw new InvalidOperationException(_lastFailure?.Message ?? "RDP 连接失败。");
             }
 
             ChildSessionId = ChildSessionNativeMethods.TryGetChildSessionId();
-        }
-        finally
-        {
+        } finally {
             _host.LoginCompleted -= OnLoginCompleted;
             _host.ConnectionFailed -= OnConnectionFailed;
             _connectionTcs = null;
@@ -108,14 +100,11 @@ internal sealed class ChildSessionService
 
     private void TryDisconnect()
     {
-        try
-        {
+        try {
             _host.DisconnectSession();
-        }
-        catch (Exception exception) when (exception is COMException
-                                              or TargetInvocationException
-                                              or InvalidOperationException)
-        {
+        } catch (Exception exception) when (exception is COMException
+                                                or TargetInvocationException
+                                                or InvalidOperationException) {
             Console.WriteLine($"RDP disconnect 忽略异常：{exception.GetBaseException().Message}");
         }
     }

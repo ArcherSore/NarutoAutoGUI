@@ -6,12 +6,8 @@ using NarutoAutoGUI.Protocol;
 namespace NarutoAutoGUI.Worker;
 
 internal sealed record WorkerAdmissionRecord(
-    Guid WorkerInstanceId,
-    string LaunchToken,
-    uint ChildSessionId,
-    int? WorkerPid,
-    string RuntimeProfileDigest,
-    DateTime CreatedAtUtc);
+    Guid WorkerInstanceId, string LaunchToken, uint ChildSessionId,
+    int? WorkerPid, string RuntimeProfileDigest, DateTime CreatedAtUtc);
 
 internal sealed class WorkerAdmissionStore
 {
@@ -31,8 +27,7 @@ internal sealed class WorkerAdmissionStore
 
     internal WorkerAdmissionRecord? Load()
     {
-        if (!File.Exists(_recordPath))
-        {
+        if (!File.Exists(_recordPath)) {
             return null;
         }
         var bytes = File.ReadAllBytes(_recordPath);
@@ -43,8 +38,7 @@ internal sealed class WorkerAdmissionStore
     internal void SaveManifest(LaunchManifest manifest)
     {
         var bytes = JsonSerializer.SerializeToUtf8Bytes(manifest, ProtocolJson.Options);
-        if (bytes.Length > ProtocolConstants.MaximumLaunchManifestBytes)
-        {
+        if (bytes.Length > ProtocolConstants.MaximumLaunchManifestBytes) {
             throw new InvalidDataException(
                 $"Launch Manifest 超过 {ProtocolConstants.MaximumLaunchManifestBytes} bytes。 ");
         }
@@ -60,16 +54,14 @@ internal sealed class WorkerAdmissionStore
     internal void DeleteManifest(Guid workerInstanceId)
     {
         var path = GetManifestPath(workerInstanceId);
-        if (File.Exists(path))
-        {
+        if (File.Exists(path)) {
             File.Delete(path);
         }
     }
 
     internal void DeleteRecord()
     {
-        if (File.Exists(_recordPath))
-        {
+        if (File.Exists(_recordPath)) {
             File.Delete(_recordPath);
         }
     }
@@ -80,27 +72,18 @@ internal sealed class WorkerAdmissionStore
                         ?? throw new InvalidOperationException("状态文件路径没有父目录。 ");
         EnsurePrivateDirectory(directory);
         var tempPath = Path.Combine(directory, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
-        try
-        {
+        try {
             using (var stream = new FileStream(
-                       tempPath,
-                       FileMode.CreateNew,
-                       FileAccess.Write,
-                       FileShare.None,
-                       bufferSize: 4096,
-                       FileOptions.WriteThrough))
-            {
+                       tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                       bufferSize: 4096, FileOptions.WriteThrough)) {
                 stream.Write(bytes);
                 stream.Flush(flushToDisk: true);
             }
             ApplyPrivateFileAcl(tempPath);
             File.Move(tempPath, path, overwrite: true);
             ApplyPrivateFileAcl(path);
-        }
-        finally
-        {
-            if (File.Exists(tempPath))
-            {
+        } finally {
+            if (File.Exists(tempPath)) {
                 File.Delete(tempPath);
             }
         }
@@ -109,8 +92,7 @@ internal sealed class WorkerAdmissionStore
     private static void EnsurePrivateDirectory(string directory)
     {
         Directory.CreateDirectory(directory);
-        if (!OperatingSystem.IsWindows())
-        {
+        if (!OperatingSystem.IsWindows()) {
             return;
         }
         var sid = WindowsIdentity.GetCurrent().User
@@ -119,18 +101,15 @@ internal sealed class WorkerAdmissionStore
         security.SetOwner(sid);
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
         security.AddAccessRule(new FileSystemAccessRule(
-            sid,
-            FileSystemRights.FullControl,
+            sid, FileSystemRights.FullControl,
             InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
-            PropagationFlags.None,
-            AccessControlType.Allow));
+            PropagationFlags.None, AccessControlType.Allow));
         new DirectoryInfo(directory).SetAccessControl(security);
     }
 
     private static void ApplyPrivateFileAcl(string path)
     {
-        if (!OperatingSystem.IsWindows())
-        {
+        if (!OperatingSystem.IsWindows()) {
             return;
         }
         var sid = WindowsIdentity.GetCurrent().User

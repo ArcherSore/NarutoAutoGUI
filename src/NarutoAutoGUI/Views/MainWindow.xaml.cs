@@ -79,13 +79,9 @@ public partial class MainWindow : FluentWindow
     private sealed record OptionDefaultTag(string OptionName);
 
     internal MainWindow(
-        AppLogger logger,
-        AppSettingsStore settingsStore,
-        AppSettings settings,
-        ChildSessionManager sessionManager,
-        ChildSessionProgramService programService,
-        WorkerCoordinator workerCoordinator,
-        Func<Func<Task>, Task> runApplicationOperationAsync,
+        AppLogger logger, AppSettingsStore settingsStore, AppSettings settings,
+        ChildSessionManager sessionManager, ChildSessionProgramService programService,
+        WorkerCoordinator workerCoordinator, Func<Func<Task>, Task> runApplicationOperationAsync,
         Func<Task> requestExitAsync)
     {
         InitializeComponent();
@@ -139,8 +135,7 @@ public partial class MainWindow : FluentWindow
         _logScrollViewer = FindVisualChild<ScrollViewer>(LogListBox);
         TryLoadProject(showError: !string.IsNullOrWhiteSpace(MaaNopProjectDirectoryTextBox.Text));
         var existingId = _sessionManager.DetectExistingSession();
-        if (existingId is null)
-        {
+        if (existingId is null) {
             return;
         }
 
@@ -155,8 +150,7 @@ public partial class MainWindow : FluentWindow
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
-        if (_allowClose)
-        {
+        if (_allowClose) {
             StopPreviewPolling(clearImage: true);
             _sessionManager.StateChanged -= OnSessionStateChanged;
             _workerCoordinator.StateChanged -= OnWorkerStateChanged;
@@ -176,8 +170,7 @@ public partial class MainWindow : FluentWindow
     private void NavigationItem_Click(object sender, RoutedEventArgs e)
     {
         if (sender is WpfNavigationViewItem { Tag: string sectionName }
-            && Enum.TryParse(sectionName, ignoreCase: false, out MainSection section))
-        {
+            && Enum.TryParse(sectionName, ignoreCase: false, out MainSection section)) {
             SwitchSection(section);
         }
     }
@@ -226,18 +219,14 @@ public partial class MainWindow : FluentWindow
 
     private void HideSessionButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_exitInProgress)
-        {
+        if (_exitInProgress) {
             return;
         }
 
-        try
-        {
+        try {
             _sessionManager.HidePreview();
             OperationStatusText.Text = "子桌面已隐藏，连接保持存活";
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             HandleOperationError("隐藏子桌面失败", exception);
         }
     }
@@ -246,12 +235,8 @@ public partial class MainWindow : FluentWindow
     {
         var answer = WpfMessageBox.Show(
             "结束桌面分身将注销 Session，并结束其中运行的程序。确认继续吗？",
-            "结束桌面分身",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning,
-            MessageBoxResult.No);
-        if (answer != MessageBoxResult.Yes)
-        {
+            "结束桌面分身", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (answer != MessageBoxResult.Yes) {
             return;
         }
 
@@ -267,8 +252,7 @@ public partial class MainWindow : FluentWindow
     private void BrowseGameButton_Click(object sender, RoutedEventArgs e)
     {
         var path = BrowseExecutable(GamePathTextBox.Text, "选择游戏程序");
-        if (path is not null)
-        {
+        if (path is not null) {
             GamePathTextBox.Text = path;
             TrySaveSettings(showError: true);
         }
@@ -279,11 +263,9 @@ public partial class MainWindow : FluentWindow
         var path = BrowseProjectDirectory(
             MaaNopProjectDirectoryTextBox.Text,
             "选择直接包含 interface.json 的 MaaNOP Project Directory");
-        if (path is not null)
-        {
+        if (path is not null) {
             MaaNopProjectDirectoryTextBox.Text = path;
-            if (TrySaveSettings(showError: true))
-            {
+            if (TrySaveSettings(showError: true)) {
                 TryLoadProject(showError: true);
             }
         }
@@ -297,23 +279,18 @@ public partial class MainWindow : FluentWindow
 
     private bool TryOpenLogsDirectory(bool showError)
     {
-        try
-        {
+        try {
             Directory.CreateDirectory(_logger.LogDirectory);
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
                 FileName = "explorer.exe",
                 Arguments = $"\"{_logger.LogDirectory}\"",
                 UseShellExecute = true
             });
             return true;
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             _logger.Error("打开日志目录失败。", exception);
             OperationStatusText.Text = "失败：无法打开日志目录";
-            if (showError)
-            {
+            if (showError) {
                 ShowActionableError(
                     "打开日志目录失败",
                     exception,
@@ -335,12 +312,8 @@ public partial class MainWindow : FluentWindow
                 LoadProject();
                 var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
                 await _workerCoordinator.PrepareWorkerAsync(
-                    sessionId,
-                    _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"));
-                await _programService.LaunchIfNeededAsync(
-                    sessionId,
-                    GamePathTextBox.Text,
-                    GameArgumentsTextBox.Text);
+                    sessionId, _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"));
+                await _programService.LaunchIfNeededAsync(sessionId, GamePathTextBox.Text, GameArgumentsTextBox.Text);
                 _sessionManager.ShowPreview();
                 _logger.Info("真实 E2E 环境已准备；完成游戏登录后即可开始任务。 ");
             });
@@ -356,8 +329,7 @@ public partial class MainWindow : FluentWindow
                 LoadProject();
                 var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
                 await _workerCoordinator.PrepareWorkerAsync(
-                    sessionId,
-                    _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"));
+                    sessionId, _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"));
             });
     }
 
@@ -368,21 +340,18 @@ public partial class MainWindow : FluentWindow
             async () =>
             {
                 if (_sessionSnapshot.State is not (ChildSessionState.ConnectedVisible
-                    or ChildSessionState.ConnectedHidden))
-                {
+                    or ChildSessionState.ConnectedHidden)) {
                     throw new InvalidOperationException("Child Session 尚未连接，当前不能开始任务。 ");
                 }
                 var project = _projectPlan
                               ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 ");
-                if (!_projectConfigurationValid)
-                {
+                if (!_projectConfigurationValid) {
                     throw new InvalidOperationException(
                         "当前 MaaNOP Config 尚未通过正式 PI Resolver 校验。 ");
                 }
                 _pendingStartAttempt ??= project.CreateRunStartAttempt();
                 var response = await _workerCoordinator.StartRunAsync(_pendingStartAttempt);
-                if (response.Disposition is not ("accepted" or "already_accepted"))
-                {
+                if (response.Disposition is not ("accepted" or "already_accepted")) {
                     throw new InvalidDataException($"未知 run.start disposition：{response.Disposition}。 ");
                 }
                 _logger.Info(
@@ -402,14 +371,12 @@ public partial class MainWindow : FluentWindow
                 var activeRun = _workerSnapshot.WorkerSnapshot?.ActiveRun
                                 ?? throw new InvalidOperationException("Worker 当前没有 active Run。 ");
                 if (activeRun.State != RunState.Running
-                    || activeRun.Items.Single().State != PlanItemState.Running)
-                {
+                    || activeRun.Items.Single().State != PlanItemState.Running) {
                     throw new InvalidOperationException(
                         "首片取消验收必须先确认 Run 与唯一 Plan Item 都已进入 Running。 ");
                 }
                 var response = await _workerCoordinator.StopRunAsync(activeRun.RunId);
-                if (response.Disposition != "stop_requested")
-                {
+                if (response.Disposition != "stop_requested") {
                     throw new InvalidDataException(
                         $"首次 run.stop 未返回 stop_requested：{response.Disposition}。 ");
                 }
@@ -421,21 +388,17 @@ public partial class MainWindow : FluentWindow
 
     private void MaaNopTaskComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_updatingTaskSelection || MaaNopTaskComboBox.SelectedItem is not ProjectTaskChoice task)
-        {
+        if (_updatingTaskSelection || MaaNopTaskComboBox.SelectedItem is not ProjectTaskChoice task) {
             return;
         }
-        try
-        {
+        try {
             (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
                 .SelectTask(task.Name);
             _pendingStartAttempt = null;
             RenderOptionEditors();
             _logger.Info($"已保存 MaaNOP Config：SelectedTasks=[{task.Name}]。 ");
             UpdateCommandAvailability();
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             HandleOperationError("保存 MaaNOP task 选择失败", exception);
         }
     }
@@ -443,13 +406,11 @@ public partial class MainWindow : FluentWindow
     private void OptionInputTextBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         if (_updatingOptionEditors
-            || sender is not WpfTextBox { Tag: OptionInputTag tag } textBox)
-        {
+            || sender is not WpfTextBox { Tag: OptionInputTag tag } textBox) {
             return;
         }
 
-        try
-        {
+        try {
             var configuration = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
                 .SetInputValue(tag.OptionName, tag.InputName, textBox.Text);
             _pendingStartAttempt = null;
@@ -457,9 +418,7 @@ public partial class MainWindow : FluentWindow
             _logger.Info(
                 $"已保存 MaaNOP explicit input：option={tag.OptionName}，input={tag.InputName}。 ");
             UpdateCommandAvailability();
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             HandleOperationError("保存 MaaNOP input option 失败", exception);
             TryRenderOptionEditors();
         }
@@ -468,26 +427,21 @@ public partial class MainWindow : FluentWindow
     private void OptionCaseComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_updatingOptionEditors
-            || sender is not WpfComboBox
-            {
+            || sender is not WpfComboBox {
                 Tag: OptionCaseTag tag,
                 SelectedItem: ProjectCaseEditor selected
-            })
-        {
+            }) {
             return;
         }
 
-        try
-        {
+        try {
             var configuration = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
                 .SetSelectedCase(tag.OptionName, selected.Name);
             _pendingStartAttempt = null;
             RenderOptionEditors(configuration);
             _logger.Info($"已保存 MaaNOP explicit case：option={tag.OptionName}。 ");
             UpdateCommandAvailability();
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             HandleOperationError("保存 MaaNOP select/switch option 失败", exception);
             TryRenderOptionEditors();
         }
@@ -495,22 +449,18 @@ public partial class MainWindow : FluentWindow
 
     private void FollowProjectDefaultButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_updatingOptionEditors || sender is not WpfButton { Tag: OptionDefaultTag tag })
-        {
+        if (_updatingOptionEditors || sender is not WpfButton { Tag: OptionDefaultTag tag }) {
             return;
         }
 
-        try
-        {
+        try {
             var configuration = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
                 .FollowProjectDefault(tag.OptionName);
             _pendingStartAttempt = null;
             RenderOptionEditors(configuration);
             _logger.Info($"MaaNOP option 已恢复为跟随项目默认：{tag.OptionName}。 ");
             UpdateCommandAvailability();
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             HandleOperationError("恢复 MaaNOP option 默认值失败", exception);
             TryRenderOptionEditors();
         }
@@ -518,12 +468,9 @@ public partial class MainWindow : FluentWindow
 
     private void TryRenderOptionEditors()
     {
-        try
-        {
+        try {
             RenderOptionEditors();
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             _projectConfigurationValid = false;
             ProjectValidationText.Text = exception.GetBaseException().Message;
             _logger.Warn("刷新 MaaNOP option 编辑器失败。", exception);
@@ -537,15 +484,12 @@ public partial class MainWindow : FluentWindow
                       ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 ");
         configuration ??= project.GetConfiguration();
         _updatingOptionEditors = true;
-        try
-        {
+        try {
             OptionEditorPanel.Children.Clear();
             AddOptionSection("全局参数", configuration.GlobalOptions);
             AddOptionSection("任务参数", configuration.TaskOptions);
-            if (OptionEditorPanel.Children.Count == 0)
-            {
-                OptionEditorPanel.Children.Add(new TextBlock
-                {
+            if (OptionEditorPanel.Children.Count == 0) {
+                OptionEditorPanel.Children.Add(new TextBlock {
                     Text = project.SelectedTaskName is null
                         ? "请先选择任务。"
                         : "当前任务没有可编辑参数。",
@@ -560,27 +504,22 @@ public partial class MainWindow : FluentWindow
             ProjectValidationText.Text =
                 "当前配置已通过校验；任务将使用当前显式值与其余项目默认值。";
             _projectConfigurationValid = true;
-        }
-        finally
-        {
+        } finally {
             _updatingOptionEditors = false;
         }
     }
 
     private void AddOptionSection(string title, IReadOnlyList<ProjectOptionEditor> options)
     {
-        if (options.Count == 0)
-        {
+        if (options.Count == 0) {
             return;
         }
-        OptionEditorPanel.Children.Add(new TextBlock
-        {
+        OptionEditorPanel.Children.Add(new TextBlock {
             Text = title,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, OptionEditorPanel.Children.Count == 0 ? 0 : 10, 0, 4)
         });
-        foreach (var option in options)
-        {
+        foreach (var option in options) {
             AddOptionEditor(option, depth: 0);
         }
     }
@@ -591,16 +530,14 @@ public partial class MainWindow : FluentWindow
         var header = new Grid();
         header.ColumnDefinitions.Add(new ColumnDefinition());
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var title = new TextBlock
-        {
+        var title = new TextBlock {
             Text = string.IsNullOrWhiteSpace(option.Label) ? option.Name : option.Label,
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
             ToolTip = option.Description
         };
         header.Children.Add(title);
-        var followDefault = new WpfButton
-        {
+        var followDefault = new WpfButton {
             Content = option.IsExplicit ? "恢复默认" : "跟随默认",
             IsEnabled = option.IsExplicit,
             Tag = new OptionDefaultTag(option.Name),
@@ -613,10 +550,8 @@ public partial class MainWindow : FluentWindow
         header.Children.Add(followDefault);
         panel.Children.Add(header);
 
-        if (!string.IsNullOrWhiteSpace(option.Description))
-        {
-            panel.Children.Add(new TextBlock
-            {
+        if (!string.IsNullOrWhiteSpace(option.Description)) {
+            panel.Children.Add(new TextBlock {
                 Text = option.Description,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = WpfSystemColors.GrayTextBrush,
@@ -624,23 +559,19 @@ public partial class MainWindow : FluentWindow
             });
         }
 
-        if (option.Kind == ProjectOptionKind.Input)
-        {
-            foreach (var input in option.Inputs)
-            {
+        if (option.Kind == ProjectOptionKind.Input) {
+            foreach (var input in option.Inputs) {
                 var row = new Grid { Margin = new Thickness(0, 2, 0, 2) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
                 row.ColumnDefinitions.Add(new ColumnDefinition());
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                var label = new TextBlock
-                {
+                var label = new TextBlock {
                     Text = string.IsNullOrWhiteSpace(input.Label) ? input.Name : input.Label,
                     VerticalAlignment = VerticalAlignment.Center,
                     ToolTip = input.Description
                 };
                 row.Children.Add(label);
-                var editor = new WpfTextBox
-                {
+                var editor = new WpfTextBox {
                     Text = input.Value,
                     Tag = new OptionInputTag(option.Name, input.Name),
                     MinWidth = 180,
@@ -649,8 +580,7 @@ public partial class MainWindow : FluentWindow
                 editor.LostKeyboardFocus += OptionInputTextBox_LostKeyboardFocus;
                 Grid.SetColumn(editor, 1);
                 row.Children.Add(editor);
-                var defaultText = new TextBlock
-                {
+                var defaultText = new TextBlock {
                     Text = input.IsExplicit ? "显式" : $"默认 {input.DefaultValue}",
                     Foreground = WpfSystemColors.GrayTextBrush,
                     VerticalAlignment = VerticalAlignment.Center,
@@ -660,11 +590,8 @@ public partial class MainWindow : FluentWindow
                 row.Children.Add(defaultText);
                 panel.Children.Add(row);
             }
-        }
-        else
-        {
-            var selector = new WpfComboBox
-            {
+        } else {
+            var selector = new WpfComboBox {
                 ItemsSource = option.Cases,
                 DisplayMemberPath = nameof(ProjectCaseEditor.Label),
                 SelectedItem = option.Cases.Single(item => item.Name == option.SelectedCase),
@@ -680,8 +607,7 @@ public partial class MainWindow : FluentWindow
         }
 
         OptionEditorPanel.Children.Add(panel);
-        foreach (var child in option.ActiveChildren)
-        {
+        foreach (var child in option.ActiveChildren) {
             AddOptionEditor(child, depth + 1);
         }
     }
@@ -693,8 +619,7 @@ public partial class MainWindow : FluentWindow
     private static IEnumerable<ProjectOptionEditor> Flatten(ProjectOptionEditor option)
     {
         yield return option;
-        foreach (var child in option.ActiveChildren.SelectMany(Flatten))
-        {
+        foreach (var child in option.ActiveChildren.SelectMany(Flatten)) {
             yield return child;
         }
     }
@@ -707,43 +632,31 @@ public partial class MainWindow : FluentWindow
             {
                 SaveSettings();
                 var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
-                await _programService.LaunchIfNeededAsync(
-                    sessionId,
-                    path,
-                    arguments);
+                await _programService.LaunchIfNeededAsync(sessionId, path, arguments);
             });
     }
 
     private async Task RunOperationAsync(string status, Func<Task> operation)
     {
-        if (_busy || _exitInProgress)
-        {
+        if (_busy || _exitInProgress) {
             return;
         }
 
         SetBusy(true, status);
-        try
-        {
+        try {
             await _runApplicationOperationAsync(operation);
             OperationStatusText.Text = "操作完成";
-        }
-        catch (OperationCanceledException)
-        {
+        } catch (OperationCanceledException) {
             _logger.Warn($"操作已取消：{status}");
             OperationStatusText.Text = "操作已取消";
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             var operationName = status.TrimEnd('.', '…');
-            if (operationName.StartsWith("正在", StringComparison.Ordinal))
-            {
+            if (operationName.StartsWith("正在", StringComparison.Ordinal)) {
                 operationName = operationName[2..];
             }
 
             HandleOperationError($"{operationName}失败", exception);
-        }
-        finally
-        {
+        } finally {
             SetBusy(false, OperationStatusText.Text);
         }
     }
@@ -768,28 +681,22 @@ public partial class MainWindow : FluentWindow
         TrySaveSettings(showError: true);
 
     private void MaaNopProjectDirectoryTextBox_LostKeyboardFocus(
-        object sender,
-        System.Windows.Input.KeyboardFocusChangedEventArgs e)
+        object sender, System.Windows.Input.KeyboardFocusChangedEventArgs e)
     {
-        if (TrySaveSettings(showError: true))
-        {
+        if (TrySaveSettings(showError: true)) {
             TryLoadProject(showError: true);
         }
     }
 
     private bool TrySaveSettings(bool showError)
     {
-        try
-        {
+        try {
             SaveSettings();
             return true;
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             _logger.Error("保存程序路径配置失败。", exception);
             OperationStatusText.Text = "失败：保存配置";
-            if (showError)
-            {
+            if (showError) {
                 ShowActionableError("保存配置失败", exception, "请确认程序目录可写，或将程序移动到有写入权限的目录后重试。", offerLogDirectory: true);
             }
 
@@ -800,8 +707,7 @@ public partial class MainWindow : FluentWindow
     private void LoadProject()
     {
         var projectDirectory = MaaNopProjectDirectoryTextBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(projectDirectory))
-        {
+        if (string.IsNullOrWhiteSpace(projectDirectory)) {
             throw new InvalidOperationException("请选择 MaaNOP Project Directory。 ");
         }
 
@@ -809,15 +715,12 @@ public partial class MainWindow : FluentWindow
         _projectPlan = project;
         _pendingStartAttempt = null;
         _updatingTaskSelection = true;
-        try
-        {
+        try {
             MaaNopTaskComboBox.ItemsSource = project.Tasks;
             MaaNopTaskComboBox.SelectedItem = project.SelectedTaskName is null
                 ? null
                 : project.Tasks.Single(task => task.Name == project.SelectedTaskName);
-        }
-        finally
-        {
+        } finally {
             _updatingTaskSelection = false;
         }
 
@@ -833,13 +736,10 @@ public partial class MainWindow : FluentWindow
 
     private bool TryLoadProject(bool showError)
     {
-        try
-        {
+        try {
             LoadProject();
             return true;
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             _projectPlan = null;
             _pendingStartAttempt = null;
             _projectConfigurationValid = false;
@@ -850,8 +750,7 @@ public partial class MainWindow : FluentWindow
             ProjectValidationText.Text = exception.GetBaseException().Message;
             _logger.Warn("加载 MaaNOP Project Interface 失败。", exception);
             UpdateCommandAvailability();
-            if (showError)
-            {
+            if (showError) {
                 ShowActionableError(
                     "加载 MaaNOP 项目失败",
                     exception,
@@ -864,23 +763,18 @@ public partial class MainWindow : FluentWindow
 
     private static string? BrowseExecutable(string currentPath, string title)
     {
-        var dialog = new WpfOpenFileDialog
-        {
+        var dialog = new WpfOpenFileDialog {
             Title = title,
             Filter = "Windows 程序 (*.exe)|*.exe",
             CheckFileExists = true,
             Multiselect = false
         };
 
-        if (!string.IsNullOrWhiteSpace(currentPath))
-        {
-            try
-            {
+        if (!string.IsNullOrWhiteSpace(currentPath)) {
+            try {
                 dialog.InitialDirectory = Path.GetDirectoryName(Path.GetFullPath(currentPath));
                 dialog.FileName = Path.GetFileName(currentPath);
-            }
-            catch
-            {
+            } catch {
                 // Ignore malformed current text; the dialog remains usable.
             }
         }
@@ -891,8 +785,7 @@ public partial class MainWindow : FluentWindow
     private static string? BrowseProjectDirectory(string currentPath, string title)
     {
         var dialog = new WpfOpenFolderDialog { Title = title, Multiselect = false };
-        if (!string.IsNullOrWhiteSpace(currentPath) && Directory.Exists(currentPath))
-        {
+        if (!string.IsNullOrWhiteSpace(currentPath) && Directory.Exists(currentPath)) {
             dialog.InitialDirectory = Path.GetFullPath(currentPath);
         }
         return dialog.ShowDialog() == true ? dialog.FolderName : null;
@@ -903,23 +796,18 @@ public partial class MainWindow : FluentWindow
 
     internal static LogEntry? CreateUserFacingRunLogEntry(WorkerLogEntry workerEntry)
     {
-        if (!IsUserFacingRunLog(workerEntry))
-        {
+        if (!IsUserFacingRunLog(workerEntry)) {
             return null;
         }
 
         var timestampUtc = DateTime.SpecifyKind(workerEntry.TimestampUtc, DateTimeKind.Utc);
-        return new LogEntry(
-            new DateTimeOffset(timestampUtc).ToLocalTime(),
-            ParseWorkerLogLevel(workerEntry.Level),
-            workerEntry.Message);
+        return new LogEntry(new DateTimeOffset(timestampUtc).ToLocalTime(), ParseWorkerLogLevel(workerEntry.Level), workerEntry.Message);
     }
 
     internal static void WriteWorkerDiagnosticLog(AppLogger logger, WorkerLogEntry entry)
     {
         var message = $"Worker #{entry.Sequence} [{entry.Source}] {entry.Message}";
-        switch (ParseWorkerLogLevel(entry.Level))
-        {
+        switch (ParseWorkerLogLevel(entry.Level)) {
             case LogLevel.Critical:
                 logger.Critical(message);
                 break;
@@ -940,26 +828,22 @@ public partial class MainWindow : FluentWindow
 
     private void AddRunLogEntry(WorkerLogEntry workerEntry)
     {
-        if (!Dispatcher.CheckAccess())
-        {
+        if (!Dispatcher.CheckAccess()) {
             _ = Dispatcher.BeginInvoke(() => AddRunLogEntry(workerEntry));
             return;
         }
 
         var entry = CreateUserFacingRunLogEntry(workerEntry);
-        if (entry is null)
-        {
+        if (entry is null) {
             return;
         }
         var shouldFollow = _followLogs && IsLogNearBottom();
         LogLines.Add(entry);
-        while (LogLines.Count > MaximumGuiLogEntries)
-        {
+        while (LogLines.Count > MaximumGuiLogEntries) {
             LogLines.RemoveAt(0);
         }
 
-        if (shouldFollow)
-        {
+        if (shouldFollow) {
             _newLogCount = 0;
             UpdateResumeLogFollowButton();
             _ = Dispatcher.BeginInvoke(ScrollLogsToEnd, DispatcherPriority.Background);
@@ -973,8 +857,7 @@ public partial class MainWindow : FluentWindow
 
     private void OnWorkerStateChanged(object? sender, WorkerCoordinatorSnapshot snapshot)
     {
-        if (!Dispatcher.CheckAccess())
-        {
+        if (!Dispatcher.CheckAccess()) {
             _ = Dispatcher.BeginInvoke(() => OnWorkerStateChanged(sender, snapshot));
             return;
         }
@@ -992,15 +875,12 @@ public partial class MainWindow : FluentWindow
 
     private void UpdatePreviewPolling()
     {
-        if (!TryGetPreviewTarget(out var workerInstanceId, out var runId))
-        {
+        if (!TryGetPreviewTarget(out var workerInstanceId, out var runId)) {
             StopPreviewPolling(clearImage: true);
             return;
         }
-        if (_previewWorkerInstanceId == workerInstanceId
-            && _previewRunId == runId
-            && _previewPollingTask is { IsCompleted: false })
-        {
+        if (_previewWorkerInstanceId == workerInstanceId && _previewRunId == runId
+            && _previewPollingTask is { IsCompleted: false }) {
             return;
         }
 
@@ -1015,56 +895,36 @@ public partial class MainWindow : FluentWindow
     }
 
     private async Task RunPreviewPollingAsync(
-        Guid workerInstanceId,
-        Guid runId,
-        int generation,
-        CancellationTokenSource cancellation)
+        Guid workerInstanceId, Guid runId, int generation, CancellationTokenSource cancellation)
     {
-        try
-        {
-            while (!cancellation.IsCancellationRequested)
-            {
+        try {
+            while (!cancellation.IsCancellationRequested) {
                 var cycleStarted = Stopwatch.GetTimestamp();
-                try
-                {
+                try {
                     var response = await _workerCoordinator.GetLatestPreviewAsync(
-                        runId,
-                        _previewRevision,
-                        cancellation.Token);
-                    if (!IsCurrentPreviewTarget(workerInstanceId, runId, generation))
-                    {
+                        runId, _previewRevision, cancellation.Token);
+                    if (!IsCurrentPreviewTarget(workerInstanceId, runId, generation)) {
                         return;
                     }
-                    if (response.Disposition == "frame")
-                    {
+                    if (response.Disposition == "frame") {
                         _previewRevision = response.Revision;
                         DisplayPreviewFrame(response);
                     }
-                }
-                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-                {
+                } catch (OperationCanceledException) when (cancellation.IsCancellationRequested) {
                     return;
-                }
-                catch (Exception exception)
-                {
+                } catch (Exception exception) {
                     LogPreviewFailure("Preview 请求或显示失败。", exception);
                 }
 
                 var remaining = PreviewPollingInterval - Stopwatch.GetElapsedTime(cycleStarted);
-                if (remaining > TimeSpan.Zero)
-                {
+                if (remaining > TimeSpan.Zero) {
                     await Task.Delay(remaining, cancellation.Token);
                 }
             }
-        }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-        {
-        }
-        finally
-        {
+        } catch (OperationCanceledException) when (cancellation.IsCancellationRequested) {
+        } finally {
             cancellation.Dispose();
-            if (_previewPollingGeneration == generation)
-            {
+            if (_previewPollingGeneration == generation) {
                 _previewPollingCancellation = null;
                 _previewPollingTask = null;
             }
@@ -1075,14 +935,9 @@ public partial class MainWindow : FluentWindow
     {
         var worker = _workerSnapshot.WorkerSnapshot;
         var activeRun = worker?.ActiveRun;
-        if (IsVisible
-            && WindowState != WindowState.Minimized
-            && HomeView.Visibility == Visibility.Visible
-            && _workerSnapshot.Observation == WorkerObservation.Connected
-            && _workerSnapshot.SnapshotFresh
-            && worker is not null
-            && activeRun?.State is RunState.Starting or RunState.Running)
-        {
+        if (IsVisible && WindowState != WindowState.Minimized && HomeView.Visibility == Visibility.Visible
+            && _workerSnapshot.Observation == WorkerObservation.Connected && _workerSnapshot.SnapshotFresh
+            && worker is not null && activeRun?.State is RunState.Starting or RunState.Running) {
             workerInstanceId = worker.WorkerInstanceId;
             runId = activeRun.RunId;
             return true;
@@ -1094,12 +949,9 @@ public partial class MainWindow : FluentWindow
     }
 
     private bool IsCurrentPreviewTarget(Guid workerInstanceId, Guid runId, int generation) =>
-        _previewPollingGeneration == generation
-        && _previewWorkerInstanceId == workerInstanceId
-        && _previewRunId == runId
-        && TryGetPreviewTarget(out var currentWorkerInstanceId, out var currentRunId)
-        && currentWorkerInstanceId == workerInstanceId
-        && currentRunId == runId;
+        _previewPollingGeneration == generation && _previewWorkerInstanceId == workerInstanceId
+        && _previewRunId == runId && TryGetPreviewTarget(out var currentWorkerInstanceId, out var currentRunId)
+        && currentWorkerInstanceId == workerInstanceId && currentRunId == runId;
 
     private void StopPreviewPolling(bool clearImage)
     {
@@ -1111,16 +963,12 @@ public partial class MainWindow : FluentWindow
         _previewRunId = null;
         _previewRevision = 0;
         _nextPreviewFailureLogAtUtc = DateTime.MinValue;
-        try
-        {
+        try {
             cancellation?.Cancel();
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             LogPreviewFailure("停止 Preview 轮询失败。", exception);
         }
-        if (clearImage)
-        {
+        if (clearImage) {
             ShowPreviewPlaceholder();
         }
     }
@@ -1133,8 +981,7 @@ public partial class MainWindow : FluentWindow
         image.CacheOption = BitmapCacheOption.OnLoad;
         image.StreamSource = stream;
         image.EndInit();
-        if (image.PixelWidth != response.PixelWidth || image.PixelHeight != response.PixelHeight)
-        {
+        if (image.PixelWidth != response.PixelWidth || image.PixelHeight != response.PixelHeight) {
             throw new InvalidDataException("Preview PNG 像素尺寸与响应元数据不一致。 ");
         }
         image.Freeze();
@@ -1153,17 +1000,13 @@ public partial class MainWindow : FluentWindow
     private void LogPreviewFailure(string message, Exception exception)
     {
         var nowUtc = DateTime.UtcNow;
-        if (nowUtc < _nextPreviewFailureLogAtUtc)
-        {
+        if (nowUtc < _nextPreviewFailureLogAtUtc) {
             return;
         }
         _nextPreviewFailureLogAtUtc = nowUtc + PreviewFailureLogInterval;
-        try
-        {
+        try {
             _logger.Warn(message, exception);
-        }
-        catch
-        {
+        } catch {
             // Preview diagnostics must never affect Run or GUI lifecycle.
         }
     }
@@ -1172,14 +1015,12 @@ public partial class MainWindow : FluentWindow
     {
         WriteWorkerDiagnosticLog(_logger, entry);
 
-        if (IsUserFacingRunLog(entry))
-        {
+        if (IsUserFacingRunLog(entry)) {
             AddRunLogEntry(entry);
         }
     }
 
-    private static LogLevel ParseWorkerLogLevel(string level) => level.ToLowerInvariant() switch
-    {
+    private static LogLevel ParseWorkerLogLevel(string level) => level.ToLowerInvariant() switch {
         "critical" => LogLevel.Critical,
         "error" => LogLevel.Error,
         "warning" or "warn" => LogLevel.Warn,
@@ -1193,8 +1034,7 @@ public partial class MainWindow : FluentWindow
         HomeWorkerSummaryText.Text = GetHomeWorkerSummary(snapshot);
         WorkerDetailText.Text = snapshot.Detail;
         var worker = snapshot.WorkerSnapshot;
-        if (worker is null)
-        {
+        if (worker is null) {
             WorkerStateText.Text = "Worker — · Snapshot stale";
             DependencyStatusText.Text = "依赖尚未探测";
             RunStatusText.Text = "Run — · Plan Item —";
@@ -1213,8 +1053,7 @@ public partial class MainWindow : FluentWindow
             + $"{dependencies.Python.Value ?? dependencies.Python.Error}";
 
         var run = worker.ActiveRun ?? worker.LastRun;
-        if (run is null)
-        {
+        if (run is null) {
             RunStatusText.Text = "Run Idle · activeRun=null · lastRun=null";
             HomeRunSummaryText.Text = "尚未运行";
             return;
@@ -1227,8 +1066,7 @@ public partial class MainWindow : FluentWindow
         HomeRunSummaryText.Text = GetHomeRunSummary(run);
     }
 
-    private static string GetWorkerObservationText(WorkerObservation observation) => observation switch
-    {
+    private static string GetWorkerObservationText(WorkerObservation observation) => observation switch {
         WorkerObservation.WorkerNotStarted => "Worker 尚未启动",
         WorkerObservation.WorkerStarting => "Worker 正在启动",
         WorkerObservation.Connected => "Worker 已连接",
@@ -1241,10 +1079,8 @@ public partial class MainWindow : FluentWindow
 
     private static string GetHomeWorkerSummary(WorkerCoordinatorSnapshot snapshot)
     {
-        if (snapshot.Observation != WorkerObservation.Connected)
-        {
-            return snapshot.Observation switch
-            {
+        if (snapshot.Observation != WorkerObservation.Connected) {
+            return snapshot.Observation switch {
                 WorkerObservation.WorkerNotStarted => "尚未启动",
                 WorkerObservation.WorkerStarting => "正在启动",
                 WorkerObservation.IpcDisconnected => "连接已断开",
@@ -1255,13 +1091,11 @@ public partial class MainWindow : FluentWindow
             };
         }
 
-        if (!snapshot.SnapshotFresh)
-        {
+        if (!snapshot.SnapshotFresh) {
             return "正在同步状态";
         }
 
-        return snapshot.WorkerSnapshot?.WorkerState switch
-        {
+        return snapshot.WorkerSnapshot?.WorkerState switch {
             WorkerState.Starting => "正在启动",
             WorkerState.Ready => "已就绪",
             WorkerState.NotReady => "尚未就绪",
@@ -1274,8 +1108,7 @@ public partial class MainWindow : FluentWindow
     private static string GetHomeRunSummary(RunSnapshot run)
     {
         var taskLabel = run.Items.SingleOrDefault()?.TaskLabel;
-        var stateText = run.State switch
-        {
+        var stateText = run.State switch {
             RunState.Idle => "尚未运行",
             RunState.Starting => "正在启动",
             RunState.Running => "正在运行",
@@ -1292,27 +1125,21 @@ public partial class MainWindow : FluentWindow
 
     private void LogListBox_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
-        if (e.OriginalSource is ScrollViewer scrollViewer)
-        {
-            if (ReferenceEquals(sender, HomeLogListBox))
-            {
+        if (e.OriginalSource is ScrollViewer scrollViewer) {
+            if (ReferenceEquals(sender, HomeLogListBox)) {
                 _homeLogScrollViewer = scrollViewer;
-            }
-            else
-            {
+            } else {
                 _logScrollViewer = scrollViewer;
             }
         }
 
-        if (e.VerticalChange < 0)
-        {
+        if (e.VerticalChange < 0) {
             _followLogs = false;
             UpdateResumeLogFollowButton();
             return;
         }
 
-        if (e.VerticalChange > 0 && IsScrollViewerNearBottom(e.OriginalSource as ScrollViewer))
-        {
+        if (e.VerticalChange > 0 && IsScrollViewerNearBottom(e.OriginalSource as ScrollViewer)) {
             ResumeLogFollow(scrollToEnd: false);
         }
     }
@@ -1325,16 +1152,14 @@ public partial class MainWindow : FluentWindow
         _followLogs = true;
         _newLogCount = 0;
         UpdateResumeLogFollowButton();
-        if (scrollToEnd)
-        {
+        if (scrollToEnd) {
             ScrollLogsToEnd();
         }
     }
 
     private bool IsLogNearBottom()
     {
-        if (HomeView.Visibility == Visibility.Visible)
-        {
+        if (HomeView.Visibility == Visibility.Visible) {
             _homeLogScrollViewer ??= FindVisualChild<ScrollViewer>(HomeLogListBox);
             return IsScrollViewerNearBottom(_homeLogScrollViewer);
         }
@@ -1348,8 +1173,7 @@ public partial class MainWindow : FluentWindow
 
     private void ScrollLogsToEnd()
     {
-        if (LogLines.LastOrDefault() is LogEntry lastLine)
-        {
+        if (LogLines.LastOrDefault() is LogEntry lastLine) {
             HomeLogListBox.ScrollIntoView(lastLine);
             LogListBox.ScrollIntoView(lastLine);
         }
@@ -1372,8 +1196,7 @@ public partial class MainWindow : FluentWindow
 
     private void OnSessionStateChanged(object? sender, ChildSessionSnapshot snapshot)
     {
-        if (!Dispatcher.CheckAccess())
-        {
+        if (!Dispatcher.CheckAccess()) {
             _ = Dispatcher.BeginInvoke(() => OnSessionStateChanged(sender, snapshot));
             return;
         }
@@ -1392,28 +1215,15 @@ public partial class MainWindow : FluentWindow
             : $"Session —  ·  RDP {snapshot.RdpConnectedState}";
         SessionStatusBadgeText.Text = GetStateBadgeText(snapshot.State);
 
-        var (surfaceKey, borderKey, foregroundKey, indicatorKey) = snapshot.State switch
-        {
+        var (surfaceKey, borderKey, foregroundKey, indicatorKey) = snapshot.State switch {
             ChildSessionState.ConnectedVisible => (
-                "Brush.Success.Surface",
-                "Brush.Success.Border",
-                "Brush.Success.Foreground",
-                "Brush.Success"),
+                "Brush.Success.Surface", "Brush.Success.Border", "Brush.Success.Foreground", "Brush.Success"),
             ChildSessionState.Disconnecting => (
-                "Brush.Warning.Surface",
-                "Brush.Warning.Border",
-                "Brush.Warning.Foreground",
-                "Brush.Warning"),
+                "Brush.Warning.Surface", "Brush.Warning.Border", "Brush.Warning.Foreground", "Brush.Warning"),
             ChildSessionState.Faulted => (
-                "Brush.Error.Surface",
-                "Brush.Error.Border",
-                "Brush.Error.Foreground",
-                "Brush.Error"),
+                "Brush.Error.Surface", "Brush.Error.Border", "Brush.Error.Foreground", "Brush.Error"),
             ChildSessionState.NotRunning => (
-                "Brush.Surface.Disabled",
-                "Brush.Border",
-                "Brush.Text.Secondary",
-                "Brush.Text.Muted"),
+                "Brush.Surface.Disabled", "Brush.Border", "Brush.Text.Secondary", "Brush.Text.Muted"),
             _ => ("Brush.Info.Surface", "Brush.Primary.Border", "Brush.Info.Foreground", "Brush.Primary")
         };
 
@@ -1435,27 +1245,18 @@ public partial class MainWindow : FluentWindow
     private void UpdateCommandAvailability()
     {
         var state = _sessionSnapshot.State;
-        var canStartCommand = !_busy
-                              && !_exitInProgress
-                              && state is not ChildSessionState.Connecting
-                              && state is not ChildSessionState.Disconnecting;
+        var canStartCommand = !_busy && !_exitInProgress
+            && state is not ChildSessionState.Connecting && state is not ChildSessionState.Disconnecting;
 
         CreateSessionButton.IsEnabled = canStartCommand
-                                        && state is ChildSessionState.NotRunning
-                                            or ChildSessionState.Existing
-                                            or ChildSessionState.Faulted;
-        ShowSessionButton.IsEnabled = canStartCommand
-                                      && state == ChildSessionState.ConnectedHidden;
-        HideSessionButton.IsEnabled = canStartCommand
-                                      && state == ChildSessionState.ConnectedVisible;
+            && state is ChildSessionState.NotRunning or ChildSessionState.Existing or ChildSessionState.Faulted;
+        ShowSessionButton.IsEnabled = canStartCommand && state == ChildSessionState.ConnectedHidden;
+        HideSessionButton.IsEnabled = canStartCommand && state == ChildSessionState.ConnectedVisible;
         HomeOpenDesktopButton.IsEnabled = canStartCommand
-                                          && state is (ChildSessionState.ConnectedVisible
-                                              or ChildSessionState.ConnectedHidden);
-        TerminateSessionButton.IsEnabled = canStartCommand
-                                           && _sessionSnapshot.ChildSessionId is not null;
+            && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
+        TerminateSessionButton.IsEnabled = canStartCommand && _sessionSnapshot.ChildSessionId is not null;
         CreateSessionButton.Visibility = state is ChildSessionState.NotRunning
-            or ChildSessionState.Existing
-            or ChildSessionState.Faulted
+            or ChildSessionState.Existing or ChildSessionState.Faulted
                 ? Visibility.Visible
                 : Visibility.Collapsed;
         ShowSessionButton.Visibility = state == ChildSessionState.ConnectedHidden
@@ -1470,15 +1271,11 @@ public partial class MainWindow : FluentWindow
 
         var projectReady = _projectPlan is not null;
         var worker = _workerSnapshot.WorkerSnapshot;
-        var workerIdleFresh = _workerSnapshot.Observation == WorkerObservation.Connected
-                              && _workerSnapshot.SnapshotFresh
-                              && worker is not null
-                              && worker.ActiveRun is null
-                              && worker.RunState == RunState.Idle;
+        var workerIdleFresh = _workerSnapshot.Observation == WorkerObservation.Connected && _workerSnapshot.SnapshotFresh
+            && worker is not null && worker.ActiveRun is null && worker.RunState == RunState.Idle;
         var canEditProject = canStartCommand
-                             && (_workerSnapshot.Observation is WorkerObservation.WorkerNotStarted
-                                     or WorkerObservation.ChildSessionEnded
-                                 || workerIdleFresh);
+            && (_workerSnapshot.Observation is WorkerObservation.WorkerNotStarted or WorkerObservation.ChildSessionEnded
+                || workerIdleFresh);
 
         // Game launch remains available without a Session because it uses the frozen
         // EnsureConnectedAsync + Task Scheduler flow.
@@ -1487,44 +1284,28 @@ public partial class MainWindow : FluentWindow
         BrowseMaaNopProjectButton.IsEnabled = canEditProject;
         MaaNopTaskComboBox.IsEnabled = canEditProject && projectReady;
         OptionEditorPanel.IsEnabled = canEditProject && projectReady;
-        PrepareWorkerButton.IsEnabled = canStartCommand
-                                        && projectReady
-                                        && _workerSnapshot.Observation is WorkerObservation.WorkerNotStarted
-                                            or WorkerObservation.ChildSessionEnded;
+        PrepareWorkerButton.IsEnabled = canStartCommand && projectReady
+            && _workerSnapshot.Observation is WorkerObservation.WorkerNotStarted or WorkerObservation.ChildSessionEnded;
 
-        var selectedTaskValid = _projectPlan?.SelectedTaskName is not null
-                                && _projectConfigurationValid;
+        var selectedTaskValid = _projectPlan?.SelectedTaskName is not null && _projectConfigurationValid;
         StartRunButton.IsEnabled = canStartCommand
-                                   && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden)
-                                   && workerIdleFresh
-                                   && worker!.WorkerState == WorkerState.Ready
-                                   && projectReady
-                                   && selectedTaskValid
-                                   && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
+            && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden)
+            && workerIdleFresh && worker!.WorkerState == WorkerState.Ready && projectReady
+            && selectedTaskValid && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
         TaskStartRunButton.IsEnabled = StartRunButton.IsEnabled;
         var active = worker?.ActiveRun;
-        StopRunButton.IsEnabled = canStartCommand
-                                  && _workerSnapshot.Observation == WorkerObservation.Connected
-                                  && _workerSnapshot.SnapshotFresh
-                                  && active?.State == RunState.Running
-                                  && active.Items.Count == 1
-                                  && active.Items[0].State == PlanItemState.Running;
+        StopRunButton.IsEnabled = canStartCommand && _workerSnapshot.Observation == WorkerObservation.Connected
+            && _workerSnapshot.SnapshotFresh && active?.State == RunState.Running
+            && active.Items.Count == 1 && active.Items[0].State == PlanItemState.Running;
         TaskStopRunButton.IsEnabled = StopRunButton.IsEnabled;
 
-        var environmentReady = workerIdleFresh
-                               && worker!.WorkerState == WorkerState.Ready
-                               && projectReady
-                               && selectedTaskValid
-                               && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
+        var environmentReady = workerIdleFresh && worker!.WorkerState == WorkerState.Ready && projectReady
+            && selectedTaskValid && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
         var hasActiveRun = active is not null;
         var runningRun = active?.State == RunState.Running;
-        var readyToStart = !hasActiveRun
-                           && environmentReady
-                           && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
-        PrepareEnvironmentButton.IsEnabled = canStartCommand
-                                             && projectReady
-                                             && !hasActiveRun
-                                             && !environmentReady;
+        var readyToStart = !hasActiveRun && environmentReady
+            && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
+        PrepareEnvironmentButton.IsEnabled = canStartCommand && projectReady && !hasActiveRun && !environmentReady;
         TaskPrepareEnvironmentButton.IsEnabled = PrepareEnvironmentButton.IsEnabled;
 
         HomeNextStepText.Text = _busy
@@ -1551,19 +1332,14 @@ public partial class MainWindow : FluentWindow
         var worker = _workerSnapshot.WorkerSnapshot;
         var activeRun = _workerSnapshot.SnapshotFresh ? worker?.ActiveRun : null;
         var lastRun = _workerSnapshot.SnapshotFresh ? worker?.LastRun : null;
-        if (activeRun is not null)
-        {
+        if (activeRun is not null) {
             var item = GetCurrentPlanItem(activeRun);
             HomeCurrentStepText.Text = item is null
                 ? GetHomeRunSummary(activeRun)
                 : $"{item.TaskLabel} · {GetPlanItemStateText(item.State)}";
-        }
-        else if (lastRun is not null)
-        {
+        } else if (lastRun is not null) {
             HomeCurrentStepText.Text = GetHomeRunSummary(lastRun);
-        }
-        else
-        {
+        } else {
             HomeCurrentStepText.Text = "等待下一步";
         }
 
@@ -1574,42 +1350,34 @@ public partial class MainWindow : FluentWindow
         WorkerCoordinatorSnapshot snapshot,
         bool readyToStart)
     {
-        if (snapshot.Observation == WorkerObservation.WorkerStarting)
-        {
+        if (snapshot.Observation == WorkerObservation.WorkerStarting) {
             return ("正在启动", "Brush.Primary");
         }
 
-        if (snapshot.Observation == WorkerObservation.WorkerRecoveryConflict)
-        {
+        if (snapshot.Observation == WorkerObservation.WorkerRecoveryConflict) {
             return ("运行失败", "Brush.Error");
         }
 
-        if (snapshot.Observation != WorkerObservation.Connected || !snapshot.SnapshotFresh)
-        {
+        if (snapshot.Observation != WorkerObservation.Connected || !snapshot.SnapshotFresh) {
             return ("尚未就绪", "Brush.Text.Muted");
         }
 
         var worker = snapshot.WorkerSnapshot;
-        if (worker?.WorkerState == WorkerState.Stopping)
-        {
+        if (worker?.WorkerState == WorkerState.Stopping) {
             return ("正在停止", "Brush.Warning");
         }
 
-        if (worker?.WorkerState == WorkerState.Starting)
-        {
+        if (worker?.WorkerState == WorkerState.Starting) {
             return ("正在启动", "Brush.Primary");
         }
 
-        if (worker?.WorkerState == WorkerState.Faulted)
-        {
+        if (worker?.WorkerState == WorkerState.Faulted) {
             return ("运行失败", "Brush.Error");
         }
 
         var run = worker?.ActiveRun ?? worker?.LastRun;
-        if (run is not null)
-        {
-            return run.State switch
-            {
+        if (run is not null) {
+            return run.State switch {
                 RunState.Starting => ("正在启动", "Brush.Primary"),
                 RunState.Running => ("运行中", "Brush.Success"),
                 RunState.Stopping => ("正在停止", "Brush.Warning"),
@@ -1629,23 +1397,19 @@ public partial class MainWindow : FluentWindow
 
     private static PlanItemSnapshot? GetCurrentPlanItem(RunSnapshot run)
     {
-        if (run.CurrentPlanItemId is Guid currentId)
-        {
+        if (run.CurrentPlanItemId is Guid currentId) {
             return run.Items.FirstOrDefault(item => item.PlanItemId == currentId);
         }
 
         if (run.CurrentPlanItemIndex is int currentIndex
-            && currentIndex >= 0
-            && currentIndex < run.Items.Count)
-        {
+            && currentIndex >= 0 && currentIndex < run.Items.Count) {
             return run.Items[currentIndex];
         }
 
         return run.Items.Count == 1 ? run.Items[0] : null;
     }
 
-    private static string GetPlanItemStateText(PlanItemState state) => state switch
-    {
+    private static string GetPlanItemStateText(PlanItemState state) => state switch {
         PlanItemState.Pending => "等待执行",
         PlanItemState.Starting => "正在启动",
         PlanItemState.Running => "正在执行",
@@ -1674,10 +1438,8 @@ public partial class MainWindow : FluentWindow
 
     private static string GetWorkerStatusBrushKey(WorkerCoordinatorSnapshot snapshot)
     {
-        if (snapshot.Observation == WorkerObservation.Connected && snapshot.SnapshotFresh)
-        {
-            return snapshot.WorkerSnapshot?.WorkerState switch
-            {
+        if (snapshot.Observation == WorkerObservation.Connected && snapshot.SnapshotFresh) {
+            return snapshot.WorkerSnapshot?.WorkerState switch {
                 WorkerState.Ready => "Brush.Success",
                 WorkerState.Starting => "Brush.Primary",
                 WorkerState.Stopping or WorkerState.NotReady => "Brush.Warning",
@@ -1686,8 +1448,7 @@ public partial class MainWindow : FluentWindow
             };
         }
 
-        return snapshot.Observation switch
-        {
+        return snapshot.Observation switch {
             WorkerObservation.WorkerStarting => "Brush.Primary",
             WorkerObservation.IpcDisconnected or WorkerObservation.WorkerRecoveryConflict => "Brush.Error",
             _ => "Brush.Text.Muted"
@@ -1697,16 +1458,14 @@ public partial class MainWindow : FluentWindow
     private static string GetBottomSessionText(ChildSessionSnapshot snapshot)
     {
         if (snapshot.ChildSessionId is uint sessionId
-            && snapshot.State is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden))
-        {
+            && snapshot.State is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden)) {
             return $"Session：{sessionId}";
         }
 
         return $"Session：{GetStateBadgeText(snapshot.State)}";
     }
 
-    private static string GetSessionStatusBrushKey(ChildSessionState state) => state switch
-    {
+    private static string GetSessionStatusBrushKey(ChildSessionState state) => state switch {
         ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden => "Brush.Success",
         ChildSessionState.Connecting or ChildSessionState.Existing => "Brush.Primary",
         ChildSessionState.Disconnecting => "Brush.Warning",
@@ -1714,8 +1473,7 @@ public partial class MainWindow : FluentWindow
         _ => "Brush.Text.Muted"
     };
 
-    private static string GetStateText(ChildSessionState state) => state switch
-    {
+    private static string GetStateText(ChildSessionState state) => state switch {
         ChildSessionState.NotRunning => "桌面分身未运行",
         ChildSessionState.Existing => "检测到已有桌面分身",
         ChildSessionState.Connecting => "正在连接桌面分身…",
@@ -1726,8 +1484,7 @@ public partial class MainWindow : FluentWindow
         _ => state.ToString()
     };
 
-    private static string GetStateDetail(ChildSessionState state) => state switch
-    {
+    private static string GetStateDetail(ChildSessionState state) => state switch {
         ChildSessionState.NotRunning => "创建或一键启动时将自动建立桌面分身。",
         ChildSessionState.Existing => "可以恢复已有桌面分身的连接。",
         ChildSessionState.Connecting => "正在建立 RDP 连接，请稍候。",
@@ -1738,8 +1495,7 @@ public partial class MainWindow : FluentWindow
         _ => string.Empty
     };
 
-    private static string GetStateBadgeText(ChildSessionState state) => state switch
-    {
+    private static string GetStateBadgeText(ChildSessionState state) => state switch {
         ChildSessionState.NotRunning => "未运行",
         ChildSessionState.Existing => "已检测",
         ChildSessionState.Connecting => "连接中",
@@ -1752,13 +1508,11 @@ public partial class MainWindow : FluentWindow
 
     private static string GetRecoveryGuidance(string operation)
     {
-        if (operation.Contains("启动", StringComparison.Ordinal))
-        {
+        if (operation.Contains("启动", StringComparison.Ordinal)) {
             return "请确认程序路径和启动参数正确，并检查桌面分身连接状态后重试。";
         }
 
-        if (operation.Contains("桌面分身", StringComparison.Ordinal) || operation.Contains("子桌面", StringComparison.Ordinal))
-        {
+        if (operation.Contains("桌面分身", StringComparison.Ordinal) || operation.Contains("子桌面", StringComparison.Ordinal)) {
             return "请确认程序以管理员权限运行，并检查桌面分身状态后重试。";
         }
 
@@ -1768,8 +1522,7 @@ public partial class MainWindow : FluentWindow
     private void ShowActionableError(string title, Exception exception, string recovery, bool offerLogDirectory)
     {
         var message = $"{exception.GetBaseException().Message}\n\n{recovery}";
-        if (!offerLogDirectory)
-        {
+        if (!offerLogDirectory) {
             WpfMessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
@@ -1780,8 +1533,7 @@ public partial class MainWindow : FluentWindow
             MessageBoxButton.YesNo,
             MessageBoxImage.Error,
             MessageBoxResult.No);
-        if (answer == MessageBoxResult.Yes)
-        {
+        if (answer == MessageBoxResult.Yes) {
             TryOpenLogsDirectory(showError: true);
         }
     }
@@ -1789,17 +1541,14 @@ public partial class MainWindow : FluentWindow
     private static T? FindVisualChild<T>(DependencyObject parent)
         where T : DependencyObject
     {
-        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
-        {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++) {
             var child = VisualTreeHelper.GetChild(parent, index);
-            if (child is T result)
-            {
+            if (child is T result) {
                 return result;
             }
 
             var descendant = FindVisualChild<T>(child);
-            if (descendant is not null)
-            {
+            if (descendant is not null) {
                 return descendant;
             }
         }

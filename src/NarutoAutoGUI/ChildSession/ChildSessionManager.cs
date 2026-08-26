@@ -23,11 +23,9 @@ internal sealed class ChildSessionManager : IDisposable
 
     internal uint? DetectExistingSession()
     {
-        try
-        {
+        try {
             var sessionId = ChildSessionService.TryGetChildSessionId();
-            if (sessionId is null)
-            {
+            if (sessionId is null) {
                 UpdateState(ChildSessionState.NotRunning, null, 0, "未检测到桌面分身");
                 _logger.Info("启动检测：当前没有 Child Session。");
                 return null;
@@ -36,9 +34,7 @@ internal sealed class ChildSessionManager : IDisposable
             UpdateState(ChildSessionState.Existing, sessionId, 0, "检测到已有桌面分身，正在恢复连接");
             _logger.Info($"启动检测：发现已有 Child Session {sessionId}。");
             return sessionId;
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             _logger.Error("检测已有 Child Session 失败。", exception);
             UpdateState(ChildSessionState.Faulted, null, 0, exception.GetBaseException().Message);
             return null;
@@ -48,20 +44,16 @@ internal sealed class ChildSessionManager : IDisposable
     internal async Task<uint> EnsureConnectedAsync(bool showPreview, CancellationToken cancellationToken = default)
     {
         await _operationLock.WaitAsync(cancellationToken);
-        try
-        {
+        try {
             ThrowIfDisposed();
             uint? currentSessionId = null;
-            try
-            {
+            try {
                 currentSessionId = ChildSessionService.TryGetChildSessionId();
                 var connectedState = SafeConnectedState();
-                if (_service?.ChildSessionId is uint connectedId
-                    && currentSessionId == connectedId
+                if (_service?.ChildSessionId is uint connectedId && currentSessionId == connectedId
                     && Snapshot.State is (ChildSessionState.ConnectedVisible
                         or ChildSessionState.ConnectedHidden)
-                    && connectedState == 1)
-                {
+                    && connectedState == 1) {
                     SetPreviewVisibility(showPreview);
                     _logger.Debug($"复用已连接的 Child Session {connectedId}，show={showPreview}。");
                     return connectedId;
@@ -69,9 +61,7 @@ internal sealed class ChildSessionManager : IDisposable
 
                 DisposePreview(disconnect: true);
                 UpdateState(
-                    ChildSessionState.Connecting,
-                    currentSessionId,
-                    0,
+                    ChildSessionState.Connecting, currentSessionId, 0,
                     currentSessionId is null ? "正在创建桌面分身" : "正在恢复桌面分身连接");
 
                 _logger.Info("检测并启用 Child Session 支持（需要管理员权限）。");
@@ -100,28 +90,21 @@ internal sealed class ChildSessionManager : IDisposable
                 _logger.Info($"Child Session 已连接：childSessionId={sessionId}，ConnectedState={service.ConnectedState}。");
                 SetPreviewVisibility(showPreview);
                 return sessionId;
-            }
-            catch (Exception exception)
-            {
+            } catch (Exception exception) {
                 _logger.Error("RDP Child Session 创建或恢复失败。", exception);
                 UpdateState(
-                    ChildSessionState.Faulted,
-                    SafeChildSessionId(currentSessionId),
-                    SafeConnectedState(),
-                    exception.GetBaseException().Message);
+                    ChildSessionState.Faulted, SafeChildSessionId(currentSessionId),
+                    SafeConnectedState(), exception.GetBaseException().Message);
                 throw;
             }
-        }
-        finally
-        {
+        } finally {
             _operationLock.Release();
         }
     }
 
     internal void ShowPreview()
     {
-        if (_previewForm is null || SafeConnectedState() != 1)
-        {
+        if (_previewForm is null || SafeConnectedState() != 1) {
             throw new InvalidOperationException("桌面分身尚未建立 RDP 连接，请先创建或恢复连接。");
         }
 
@@ -130,8 +113,7 @@ internal sealed class ChildSessionManager : IDisposable
 
     internal void HidePreview()
     {
-        if (_previewForm is null || SafeConnectedState() != 1)
-        {
+        if (_previewForm is null || SafeConnectedState() != 1) {
             return;
         }
 
@@ -142,8 +124,7 @@ internal sealed class ChildSessionManager : IDisposable
     {
         await _operationLock.WaitAsync(cancellationToken);
         uint? sessionId = null;
-        try
-        {
+        try {
             ThrowIfDisposed();
             sessionId = ChildSessionService.TryGetChildSessionId();
             UpdateState(ChildSessionState.Disconnecting, sessionId, SafeConnectedState(), "正在结束桌面分身");
@@ -157,27 +138,20 @@ internal sealed class ChildSessionManager : IDisposable
                 ? "当前无 Child Session 需要注销。"
                 : $"已注销 Child Session {terminatedId.Value}。");
             UpdateState(ChildSessionState.NotRunning, null, 0, "未运行");
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             _logger.Error("结束 Child Session 失败。", exception);
             UpdateState(
-                ChildSessionState.Faulted,
-                SafeChildSessionId(sessionId),
-                SafeConnectedState(),
-                exception.GetBaseException().Message);
+                ChildSessionState.Faulted, SafeChildSessionId(sessionId),
+                SafeConnectedState(), exception.GetBaseException().Message);
             throw;
-        }
-        finally
-        {
+        } finally {
             _operationLock.Release();
         }
     }
 
     public void Dispose()
     {
-        if (_disposed)
-        {
+        if (_disposed) {
             return;
         }
 
@@ -188,58 +162,49 @@ internal sealed class ChildSessionManager : IDisposable
 
     private void SetPreviewVisibility(bool show)
     {
-        if (_previewForm is null || _service is null)
-        {
+        if (_previewForm is null || _service is null) {
             return;
         }
 
         var connectedState = SafeConnectedState();
-        if (connectedState != 1)
-        {
+        if (connectedState != 1) {
             throw new InvalidOperationException(
                 $"RDP 当前未处于已连接状态（ConnectedState={connectedState}），需要重新建立连接。");
         }
 
-        if (show)
-        {
+        if (show) {
             _previewForm.Show();
             _previewForm.WindowState = System.Windows.Forms.FormWindowState.Normal;
             _previewForm.Activate();
-        }
-        else
-        {
+        } else {
             _previewForm.Hide();
         }
 
         var sessionId = _service.ChildSessionId ?? SafeChildSessionId(Snapshot.ChildSessionId);
         UpdateState(
             show ? ChildSessionState.ConnectedVisible : ChildSessionState.ConnectedHidden,
-            sessionId,
-            connectedState,
+            sessionId, connectedState,
             show ? "已连接，子桌面可见" : "已连接，子桌面已隐藏");
         _logger.Info(show ? "已显示子桌面。" : "已隐藏子桌面（RDP 连接保持存活）。");
     }
 
     private void OnPreviewFormClosing(object? sender, System.Windows.Forms.FormClosingEventArgs e)
     {
-        if (_disposed || Snapshot.State == ChildSessionState.Disconnecting)
-        {
+        if (_disposed || Snapshot.State == ChildSessionState.Disconnecting) {
             return;
         }
 
         e.Cancel = true;
         _previewForm?.Hide();
         var connectedState = SafeConnectedState();
-        if (connectedState != 1)
-        {
+        if (connectedState != 1) {
             _logger.Info($"关闭子桌面窗口已转换为隐藏；RDP 当前状态为 {connectedState}，保留现有故障/连接中状态。");
             return;
         }
 
         UpdateState(
             ChildSessionState.ConnectedHidden,
-            _service?.ChildSessionId ?? SafeChildSessionId(Snapshot.ChildSessionId),
-            connectedState,
+            _service?.ChildSessionId ?? SafeChildSessionId(Snapshot.ChildSessionId), connectedState,
             "已连接，子桌面已隐藏");
         _logger.Info("关闭子桌面窗口已转换为隐藏；RDP 连接保持存活。");
     }
@@ -250,10 +215,8 @@ internal sealed class ChildSessionManager : IDisposable
             $"RDP 状态异常：{e.Message}；ErrorCode={e.ErrorCode}"
             + (e.ExtendedErrorCode is int extended ? $"；ExtendedErrorCode={extended}" : string.Empty));
         UpdateState(
-            ChildSessionState.Faulted,
-            SafeChildSessionId(Snapshot.ChildSessionId),
-            SafeConnectedState(),
-            e.Message.Replace(Environment.NewLine, " "));
+            ChildSessionState.Faulted, SafeChildSessionId(Snapshot.ChildSessionId),
+            SafeConnectedState(), e.Message.Replace(Environment.NewLine, " "));
     }
 
     private void DisposePreview(bool disconnect)
@@ -263,22 +226,17 @@ internal sealed class ChildSessionManager : IDisposable
         _previewForm = null;
         _service = null;
 
-        if (preview is null)
-        {
+        if (preview is null) {
             return;
         }
 
         preview.Host.ConnectionFailed -= OnConnectionFailed;
         preview.FormClosing -= OnPreviewFormClosing;
-        if (disconnect)
-        {
-            try
-            {
+        if (disconnect) {
+            try {
                 service?.Disconnect();
                 _logger.Debug("已请求断开 RDP ActiveX 连接。");
-            }
-            catch (Exception exception)
-            {
+            } catch (Exception exception) {
                 _logger.Warn("断开 RDP ActiveX 时发生可忽略异常。", exception);
             }
         }
@@ -289,12 +247,9 @@ internal sealed class ChildSessionManager : IDisposable
 
     private int SafeConnectedState()
     {
-        try
-        {
+        try {
             return _service?.ConnectedState ?? 0;
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             _logger.Debug($"读取 RDP ConnectedState 失败：{exception.GetBaseException().Message}");
             return 0;
         }
@@ -302,12 +257,9 @@ internal sealed class ChildSessionManager : IDisposable
 
     private uint? SafeChildSessionId(uint? fallback)
     {
-        try
-        {
+        try {
             return ChildSessionService.TryGetChildSessionId();
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             _logger.Warn("读取 Child Session ID 失败，状态展示保留最近一次已知值。", exception);
             return fallback;
         }

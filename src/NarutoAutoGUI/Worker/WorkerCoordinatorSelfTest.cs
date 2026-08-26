@@ -11,10 +11,7 @@ namespace NarutoAutoGUI.Worker;
 internal static class WorkerCoordinatorSelfTest
 {
     internal static async Task RunAsync(
-        AppLogger logger,
-        string testDirectory,
-        string projectDirectory,
-        string configPath)
+        AppLogger logger, string testDirectory, string projectDirectory, string configPath)
     {
         var stateDirectory = Path.Combine(testDirectory, "worker-coordinator");
         var workerInstanceId = Guid.NewGuid();
@@ -22,12 +19,8 @@ internal static class WorkerCoordinatorSelfTest
         var childSessionId = checked((uint)Process.GetCurrentProcess().SessionId);
         const string runtimeProfileDigest = "self-test-runtime";
         var record = new WorkerAdmissionRecord(
-            workerInstanceId,
-            launchToken,
-            childSessionId,
-            Environment.ProcessId,
-            runtimeProfileDigest,
-            DateTime.UtcNow);
+            workerInstanceId, launchToken, childSessionId, Environment.ProcessId,
+            runtimeProfileDigest, DateTime.UtcNow);
         Directory.CreateDirectory(stateDirectory);
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "worker.json"),
@@ -38,11 +31,7 @@ internal static class WorkerCoordinatorSelfTest
         var pipeName = $"NarutoAutoGUI.Worker.SelfTest.{Guid.NewGuid():N}";
 
         await using var coordinator = new WorkerCoordinator(
-            logger,
-            stateDirectory,
-            executablePath,
-            pipeName,
-            usePipeAcl: false);
+            logger, stateDirectory, executablePath, pipeName, usePipeAcl: false);
         coordinator.LogReceived += (_, entry) => received.Enqueue(entry);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         await coordinator.WaitForServerReadyAsync(timeout.Token);
@@ -57,59 +46,46 @@ internal static class WorkerCoordinatorSelfTest
     }
 
     private static async Task VerifyPreviewRequestAsync(
-        WorkerCoordinator coordinator,
-        string pipeName,
-        WorkerAdmissionRecord record,
-        RunSnapshot activeRun,
-        CancellationToken cancellationToken)
+        WorkerCoordinator coordinator, string pipeName, WorkerAdmissionRecord record,
+        RunSnapshot activeRun, CancellationToken cancellationToken)
     {
         await using var pipe = await OpenConnectionAsync(
-            pipeName,
-            record,
-            lastLogSequence: 0,
-            cancellationToken,
-            activeRun);
+            pipeName, record, lastLogSequence: 0, cancellationToken, activeRun);
         await WaitForActiveRunAsync(coordinator, activeRun.RunId, cancellationToken);
 
         var firstResponseTask = coordinator.GetLatestPreviewAsync(activeRun.RunId, 0, cancellationToken);
         var firstRequest = await ReadRequestAsync(pipe, ProtocolOperations.PreviewGetLatest, cancellationToken);
         var firstData = ProtocolJson.Deserialize<PreviewGetLatestRequest>(firstRequest.Data);
-        if (firstData.RunId != activeRun.RunId || firstData.AfterRevision != 0)
-        {
+        if (firstData.RunId != activeRun.RunId || firstData.AfterRevision != 0) {
             throw new InvalidOperationException("Coordinator Preview 首次请求 cursor 非法。 ");
         }
         var sampledAtUtc = DateTime.UtcNow;
         await pipe.WriteAsync(
             WireEnvelope.Response(
-                ProtocolOperations.PreviewGetLatest,
-                firstRequest.RequestId!.Value,
+                ProtocolOperations.PreviewGetLatest, firstRequest.RequestId!.Value,
                 new PreviewGetLatestResponse(
                     "frame", record.WorkerInstanceId, activeRun.RunId, 1, sampledAtUtc,
                     4, 3, "image/png", [1, 2, 3], null)),
             cancellationToken);
         var firstResponse = await firstResponseTask;
-        if (firstResponse.Revision != 1 || firstResponse.SampledAtUtc != sampledAtUtc)
-        {
+        if (firstResponse.Revision != 1 || firstResponse.SampledAtUtc != sampledAtUtc) {
             throw new InvalidOperationException("Coordinator Preview frame 响应验证失败。 ");
         }
 
         var unchangedTask = coordinator.GetLatestPreviewAsync(activeRun.RunId, 1, cancellationToken);
         var unchangedRequest = await ReadRequestAsync(pipe, ProtocolOperations.PreviewGetLatest, cancellationToken);
         var unchangedData = ProtocolJson.Deserialize<PreviewGetLatestRequest>(unchangedRequest.Data);
-        if (unchangedData.AfterRevision != 1)
-        {
+        if (unchangedData.AfterRevision != 1) {
             throw new InvalidOperationException("Coordinator 未携带最新 Preview revision。 ");
         }
         await pipe.WriteAsync(
             WireEnvelope.Response(
-                ProtocolOperations.PreviewGetLatest,
-                unchangedRequest.RequestId!.Value,
+                ProtocolOperations.PreviewGetLatest, unchangedRequest.RequestId!.Value,
                 new PreviewGetLatestResponse(
                     "not_modified", record.WorkerInstanceId, activeRun.RunId, 1,
                     null, null, null, null, null, null)),
             cancellationToken);
-        if ((await unchangedTask).Disposition != "not_modified")
-        {
+        if ((await unchangedTask).Disposition != "not_modified") {
             throw new InvalidOperationException("Coordinator Preview not_modified 验证失败。 ");
         }
 
@@ -117,19 +93,15 @@ internal static class WorkerCoordinatorSelfTest
         var staleIdentityRequest = await ReadRequestAsync(pipe, ProtocolOperations.PreviewGetLatest, cancellationToken);
         await pipe.WriteAsync(
             WireEnvelope.Response(
-                ProtocolOperations.PreviewGetLatest,
-                staleIdentityRequest.RequestId!.Value,
+                ProtocolOperations.PreviewGetLatest, staleIdentityRequest.RequestId!.Value,
                 new PreviewGetLatestResponse(
                     "frame", Guid.NewGuid(), activeRun.RunId, 2, DateTime.UtcNow,
                     4, 3, "image/png", [4, 5, 6], null)),
             cancellationToken);
-        try
-        {
+        try {
             _ = await staleIdentityTask;
             throw new InvalidOperationException("Coordinator 未拒绝错误 Worker Instance 的 Preview。 ");
-        }
-        catch (ProtocolException)
-        {
+        } catch (ProtocolException) {
             // Expected: stale frame identity is fail-closed before GUI display.
         }
 
@@ -137,19 +109,15 @@ internal static class WorkerCoordinatorSelfTest
         var unavailMismatchReq = await ReadRequestAsync(pipe, ProtocolOperations.PreviewGetLatest, cancellationToken);
         await pipe.WriteAsync(
             WireEnvelope.Response(
-                ProtocolOperations.PreviewGetLatest,
-                unavailMismatchReq.RequestId!.Value,
+                ProtocolOperations.PreviewGetLatest, unavailMismatchReq.RequestId!.Value,
                 new PreviewGetLatestResponse(
                     "unavailable", record.WorkerInstanceId, Guid.NewGuid(), 0,
                     null, null, null, null, null, "run_mismatch")),
             cancellationToken);
-        try
-        {
+        try {
             _ = await unavailMismatchTask;
             throw new InvalidOperationException("Coordinator 未拒绝错误 runId 的 unavailable Preview。 ");
-        }
-        catch (ProtocolException)
-        {
+        } catch (ProtocolException) {
             // Expected: unavailable response carrying a foreign runId is fail-closed.
         }
 
@@ -157,16 +125,13 @@ internal static class WorkerCoordinatorSelfTest
         var unavailNullReq = await ReadRequestAsync(pipe, ProtocolOperations.PreviewGetLatest, cancellationToken);
         await pipe.WriteAsync(
             WireEnvelope.Response(
-                ProtocolOperations.PreviewGetLatest,
-                unavailNullReq.RequestId!.Value,
+                ProtocolOperations.PreviewGetLatest, unavailNullReq.RequestId!.Value,
                 new PreviewGetLatestResponse(
                     "unavailable", record.WorkerInstanceId, null, 0,
                     null, null, null, null, null, "no_active_run")),
             cancellationToken);
         var unavailNullResponse = await unavailNullTask;
-        if (unavailNullResponse.Disposition != "unavailable"
-            || unavailNullResponse.Reason != "no_active_run")
-        {
+        if (unavailNullResponse.Disposition != "unavailable" || unavailNullResponse.Reason != "no_active_run") {
             throw new InvalidOperationException("Coordinator 未接受 null runId 的合法 unavailable Preview。 ");
         }
 
@@ -174,19 +139,15 @@ internal static class WorkerCoordinatorSelfTest
         var staleRunReq = await ReadRequestAsync(pipe, ProtocolOperations.PreviewGetLatest, cancellationToken);
         await pipe.WriteAsync(
             WireEnvelope.Response(
-                ProtocolOperations.PreviewGetLatest,
-                staleRunReq.RequestId!.Value,
+                ProtocolOperations.PreviewGetLatest, staleRunReq.RequestId!.Value,
                 new PreviewGetLatestResponse(
                     "frame", record.WorkerInstanceId, Guid.NewGuid(), 2, DateTime.UtcNow,
                     4, 3, "image/png", [7, 8, 9], null)),
             cancellationToken);
-        try
-        {
+        try {
             _ = await staleRunTask;
             throw new InvalidOperationException("Coordinator 未拒绝错误 runId 的 frame Preview。 ");
-        }
-        catch (ProtocolException)
-        {
+        } catch (ProtocolException) {
             // Expected: frame response carrying a foreign runId is fail-closed.
         }
 
@@ -194,47 +155,36 @@ internal static class WorkerCoordinatorSelfTest
         var cancelledTask = coordinator.GetLatestPreviewAsync(activeRun.RunId, 1, cancelledRequest.Token);
         var cancelledEnvelope = await ReadRequestAsync(pipe, ProtocolOperations.PreviewGetLatest, cancellationToken);
         cancelledRequest.Cancel();
-        try
-        {
+        try {
             _ = await cancelledTask;
             throw new InvalidOperationException("Coordinator Preview 取消请求未取消。 ");
-        }
-        catch (OperationCanceledException)
-        {
+        } catch (OperationCanceledException) {
             // Expected: UI polling cancellation only abandons this caller's wait.
         }
         await pipe.WriteAsync(
             WireEnvelope.Response(
-                ProtocolOperations.PreviewGetLatest,
-                cancelledEnvelope.RequestId!.Value,
+                ProtocolOperations.PreviewGetLatest, cancelledEnvelope.RequestId!.Value,
                 new PreviewGetLatestResponse(
                     "not_modified", record.WorkerInstanceId, activeRun.RunId, 1,
                     null, null, null, null, null, null)),
             cancellationToken);
 
         var afterCancellationTask = coordinator.GetLatestPreviewAsync(activeRun.RunId, 1, cancellationToken);
-        var afterCancellationRequest = await ReadRequestAsync(
-            pipe,
-            ProtocolOperations.PreviewGetLatest,
-            cancellationToken);
+        var afterCancellationRequest = await ReadRequestAsync(pipe, ProtocolOperations.PreviewGetLatest, cancellationToken);
         await pipe.WriteAsync(
             WireEnvelope.Response(
-                ProtocolOperations.PreviewGetLatest,
-                afterCancellationRequest.RequestId!.Value,
+                ProtocolOperations.PreviewGetLatest, afterCancellationRequest.RequestId!.Value,
                 new PreviewGetLatestResponse(
                     "not_modified", record.WorkerInstanceId, activeRun.RunId, 1,
                     null, null, null, null, null, null)),
             cancellationToken);
-        if ((await afterCancellationTask).Disposition != "not_modified")
-        {
+        if ((await afterCancellationTask).Disposition != "not_modified") {
             throw new InvalidOperationException("迟到 Preview response 导致 Coordinator IPC 失效。 ");
         }
     }
 
     private static async Task VerifyRecoveryAndRetryAsync(
-        string pipeName,
-        WorkerAdmissionRecord record,
-        ConcurrentQueue<WorkerLogEntry> received,
+        string pipeName, WorkerAdmissionRecord record, ConcurrentQueue<WorkerLogEntry> received,
         CancellationToken cancellationToken)
     {
         await using var pipe = await OpenConnectionAsync(pipeName, record, lastLogSequence: 0, cancellationToken);
@@ -263,23 +213,19 @@ internal static class WorkerCoordinatorSelfTest
         await WaitForCountAsync(received, expectedCount: 5, cancellationToken);
 
         var entries = received.ToArray();
-        if (!entries.Select(entry => entry.Sequence).SequenceEqual([1L, 2L, 3L, 4L, 5L]))
-        {
+        if (!entries.Select(entry => entry.Sequence).SequenceEqual([1L, 2L, 3L, 4L, 5L])) {
             throw new InvalidOperationException("Coordinator gap recovery 未按 sequence 顺序发布。 ");
         }
     }
 
     private static async Task VerifyDisconnectDuringRecoveryAsync(
-        string pipeName,
-        WorkerAdmissionRecord record,
-        ConcurrentQueue<WorkerLogEntry> received,
+        string pipeName, WorkerAdmissionRecord record, ConcurrentQueue<WorkerLogEntry> received,
         CancellationToken cancellationToken)
     {
         var timestamp = DateTime.UtcNow;
         var stranded = CreateEntry(7, ProtocolConstants.MaaNopRunLogSource, "recovered-after-eof", timestamp);
         await using (var disconnected = await OpenConnectionAsync(
-            pipeName, record, lastLogSequence: 5, cancellationToken))
-        {
+            pipeName, record, lastLogSequence: 5, cancellationToken)) {
             await disconnected.WriteAsync(CreateLogEvent(record.WorkerInstanceId, stranded), cancellationToken);
             _ = await ReadRequestAsync(disconnected, ProtocolOperations.LogGetSince, cancellationToken);
         }
@@ -290,18 +236,14 @@ internal static class WorkerCoordinatorSelfTest
         await WriteEvictionLogPageAsync(
             reconnected, recoveryRequest, stranded, firstAvailable: 7, missingFrom: 6, missingTo: 6, cancellationToken);
         await WaitForCountAsync(received, expectedCount: 6, cancellationToken);
-        if (!received.Select(entry => entry.Sequence).SequenceEqual([1L, 2L, 3L, 4L, 5L, 7L]))
-        {
+        if (!received.Select(entry => entry.Sequence).SequenceEqual([1L, 2L, 3L, 4L, 5L, 7L])) {
             throw new InvalidOperationException("Coordinator 断线重连或 eviction gap 恢复失败。 ");
         }
     }
 
     private static async Task VerifySameInstanceReconnectAndTeardownAsync(
-        WorkerCoordinator coordinator,
-        string pipeName,
-        WorkerAdmissionRecord record,
-        ConcurrentQueue<WorkerLogEntry> received,
-        CancellationToken cancellationToken)
+        WorkerCoordinator coordinator, string pipeName, WorkerAdmissionRecord record,
+        ConcurrentQueue<WorkerLogEntry> received, CancellationToken cancellationToken)
     {
         await using var pipe = await OpenConnectionAsync(pipeName, record, lastLogSequence: 7, cancellationToken);
         var timestamp = DateTime.UtcNow;
@@ -316,19 +258,14 @@ internal static class WorkerCoordinatorSelfTest
         var missing = CreateEntry(9, ProtocolConstants.MaaNopRunLogSource, "also-hidden", timestamp);
         await WriteLogPageAsync(pipe, recoveryRequest, [missing, stranded], lastSequence: 10, cancellationToken);
         await Task.Delay(200, cancellationToken);
-        if (received.Count != 7 || received.Last().Sequence != 8)
-        {
+        if (received.Count != 7 || received.Last().Sequence != 8) {
             throw new InvalidOperationException("失效 Worker 的在途 recovery 结果仍被发布。 ");
         }
     }
 
     private static async Task VerifyWorkerInstanceReplacementAsync(
-        AppLogger logger,
-        string stateDirectory,
-        string executablePath,
-        uint childSessionId,
-        ConcurrentQueue<WorkerLogEntry> received,
-        CancellationToken cancellationToken)
+        AppLogger logger, string stateDirectory, string executablePath, uint childSessionId,
+        ConcurrentQueue<WorkerLogEntry> received, CancellationToken cancellationToken)
     {
         var workerBId = Guid.NewGuid();
         var launchTokenB = Convert.ToHexString(Guid.NewGuid().ToByteArray()).ToLowerInvariant();
@@ -352,28 +289,19 @@ internal static class WorkerCoordinatorSelfTest
         await WaitForCountAsync(received, expectedCount: 8, timeoutB.Token);
 
         var last = received.Last();
-        if (last.Sequence != 1 || last.Message != "worker-b-first")
-        {
+        if (last.Sequence != 1 || last.Message != "worker-b-first") {
             throw new InvalidOperationException(
                 "Worker B sequence 1 未被接受，或旧 Log Transport Cursor 抑制了新实例日志。 ");
         }
     }
 
     private static async Task<ProtocolConnection> OpenConnectionAsync(
-        string pipeName,
-        WorkerAdmissionRecord record,
-        long lastLogSequence,
-        CancellationToken cancellationToken,
-        RunSnapshot? activeRun = null)
+        string pipeName, WorkerAdmissionRecord record, long lastLogSequence,
+        CancellationToken cancellationToken, RunSnapshot? activeRun = null)
     {
         var pipe = new NamedPipeClientStream(
-            ".",
-            pipeName,
-            PipeDirection.InOut,
-            PipeOptions.Asynchronous,
-            TokenImpersonationLevel.Identification);
-        try
-        {
+            ".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
+        try {
             await pipe.ConnectAsync(5000, cancellationToken);
             var connection = new ProtocolConnection(pipe);
             var requestId = Guid.NewGuid();
@@ -386,8 +314,7 @@ internal static class WorkerCoordinatorSelfTest
                 cancellationToken);
             var openResponse = await connection.ReadAsync(cancellationToken)
                                ?? throw new EndOfStreamException("Coordinator 未返回 connection.open。 ");
-            if (openResponse.RequestId != requestId || openResponse.Success != true)
-            {
+            if (openResponse.RequestId != requestId || openResponse.Success != true) {
                 throw new InvalidOperationException("Coordinator self-test admission 失败。 ");
             }
 
@@ -399,47 +326,24 @@ internal static class WorkerCoordinatorSelfTest
                     new GetSnapshotResponse(CreateSnapshot(record, lastLogSequence, activeRun))),
                 cancellationToken);
             return connection;
-        }
-        catch
-        {
+        } catch {
             await pipe.DisposeAsync();
             throw;
         }
     }
 
     private static WorkerSnapshot CreateSnapshot(
-        WorkerAdmissionRecord record,
-        long lastLogSequence,
-        RunSnapshot? activeRun = null)
+        WorkerAdmissionRecord record, long lastLogSequence, RunSnapshot? activeRun = null)
     {
         var available = new DependencyCheck(true, "self-test", null);
         return new WorkerSnapshot(
-            ProtocolConstants.SnapshotVersion,
-            DateTime.UtcNow,
-            1,
-            record.WorkerInstanceId,
-            Environment.ProcessId,
-            record.ChildSessionId,
-            "self-test",
-            ProtocolConstants.ProtocolVersion,
-            record.RuntimeProfileDigest,
+            ProtocolConstants.SnapshotVersion, DateTime.UtcNow, 1,
+            record.WorkerInstanceId, Environment.ProcessId, record.ChildSessionId, "self-test",
+            ProtocolConstants.ProtocolVersion, record.RuntimeProfileDigest,
             new ProjectProvenance("self-test", "1", 1, "self-test"),
-            WorkerState.Ready,
-            null,
-            new DependencyStatus(
-                DateTime.UtcNow,
-                "self-test",
-                "self-test",
-                available,
-                available,
-                available,
-                available,
-                available),
-            activeRun?.State ?? RunState.Idle,
-            activeRun,
-            null,
-            1,
-            lastLogSequence);
+            WorkerState.Ready, null,
+            new DependencyStatus(DateTime.UtcNow, "self-test", "self-test", available, available, available, available, available),
+            activeRun?.State ?? RunState.Idle, activeRun, null, 1, lastLogSequence);
     }
 
     private static RunSnapshot CreateActiveRun(RunStartAttempt attempt)
@@ -447,46 +351,22 @@ internal static class WorkerCoordinatorSelfTest
         var startedAtUtc = DateTime.UtcNow;
         var item = attempt.Plan.Items.Single();
         var itemSnapshot = new PlanItemSnapshot(
-            item.PlanItemId,
-            item.TaskName,
-            item.TaskLabel,
-            item.Entry,
-            item.ResolvedOptions,
-            item.PipelineOverride,
-            PlanItemState.Running,
-            startedAtUtc,
-            null,
-            null,
-            null,
-            null);
+            item.PlanItemId, item.TaskName, item.TaskLabel, item.Entry,
+            item.ResolvedOptions, item.PipelineOverride, PlanItemState.Running,
+            startedAtUtc, null, null, null, null);
         return new RunSnapshot(
-            attempt.RunId,
-            attempt.PlanDigest,
-            RunState.Running,
-            attempt.Plan.CreatedAtUtc,
-            startedAtUtc,
-            null,
-            null,
-            item.PlanItemId,
-            0,
-            attempt.Plan,
-            [itemSnapshot],
-            null,
-            null);
+            attempt.RunId, attempt.PlanDigest, RunState.Running, attempt.Plan.CreatedAtUtc,
+            startedAtUtc, null, null, item.PlanItemId, 0,
+            attempt.Plan, [itemSnapshot], null, null);
     }
 
     private static async Task WaitForActiveRunAsync(
-        WorkerCoordinator coordinator,
-        Guid runId,
-        CancellationToken cancellationToken)
+        WorkerCoordinator coordinator, Guid runId, CancellationToken cancellationToken)
     {
-        while (true)
-        {
+        while (true) {
             var snapshot = coordinator.Snapshot;
-            if (snapshot.Observation == WorkerObservation.Connected
-                && snapshot.SnapshotFresh
-                && snapshot.WorkerSnapshot?.ActiveRun?.RunId == runId)
-            {
+            if (snapshot.Observation == WorkerObservation.Connected && snapshot.SnapshotFresh
+                && snapshot.WorkerSnapshot?.ActiveRun?.RunId == runId) {
                 return;
             }
             await Task.Delay(20, cancellationToken);
@@ -500,57 +380,40 @@ internal static class WorkerCoordinatorSelfTest
         WireEnvelope.Event(ProtocolOperations.LogEntry, new LogEntryEvent(workerInstanceId, entry));
 
     private static async Task<WireEnvelope> ReadRequestAsync(
-        ProtocolConnection connection,
-        string operation,
-        CancellationToken cancellationToken)
+        ProtocolConnection connection, string operation, CancellationToken cancellationToken)
     {
         var request = await connection.ReadAsync(cancellationToken)
                       ?? throw new EndOfStreamException($"等待 {operation} 时 Pipe 已关闭。 ");
-        if (request.MessageType != ProtocolMessageTypes.Request
-            || request.Operation != operation
-            || request.RequestId is null)
-        {
+        if (request.MessageType != ProtocolMessageTypes.Request || request.Operation != operation
+            || request.RequestId is null) {
             throw new InvalidOperationException($"预期 request={operation}，实际为 {request.Operation}。 ");
         }
         return request;
     }
 
     private static Task WriteLogPageAsync(
-        ProtocolConnection connection,
-        WireEnvelope request,
-        IReadOnlyList<WorkerLogEntry> entries,
-        long lastSequence,
-        CancellationToken cancellationToken) =>
+        ProtocolConnection connection, WireEnvelope request, IReadOnlyList<WorkerLogEntry> entries,
+        long lastSequence, CancellationToken cancellationToken) =>
         connection.WriteAsync(
             WireEnvelope.Response(
-                ProtocolOperations.LogGetSince,
-                request.RequestId!.Value,
+                ProtocolOperations.LogGetSince, request.RequestId!.Value,
                 new LogGetSinceResponse(entries, 500, 1, lastSequence, false, false, null, null)),
             cancellationToken);
 
     private static Task WriteEvictionLogPageAsync(
-        ProtocolConnection connection,
-        WireEnvelope request,
-        WorkerLogEntry entry,
-        long firstAvailable,
-        long missingFrom,
-        long missingTo,
-        CancellationToken cancellationToken) =>
+        ProtocolConnection connection, WireEnvelope request, WorkerLogEntry entry,
+        long firstAvailable, long missingFrom, long missingTo, CancellationToken cancellationToken) =>
         connection.WriteAsync(
             WireEnvelope.Response(
-                ProtocolOperations.LogGetSince,
-                request.RequestId!.Value,
+                ProtocolOperations.LogGetSince, request.RequestId!.Value,
                 new LogGetSinceResponse(
                     [entry], 500, firstAvailable, entry.Sequence, false, true, missingFrom, missingTo)),
             cancellationToken);
 
     private static async Task WaitForCountAsync(
-        ConcurrentQueue<WorkerLogEntry> entries,
-        int expectedCount,
-        CancellationToken cancellationToken)
+        ConcurrentQueue<WorkerLogEntry> entries, int expectedCount, CancellationToken cancellationToken)
     {
-        while (entries.Count < expectedCount)
-        {
+        while (entries.Count < expectedCount) {
             await Task.Delay(20, cancellationToken);
         }
     }

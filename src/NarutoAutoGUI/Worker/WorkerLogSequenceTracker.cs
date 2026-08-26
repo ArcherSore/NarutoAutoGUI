@@ -17,8 +17,7 @@ internal sealed class WorkerLogSequenceTracker
 
     internal bool BeginWorkerInstance(Guid workerInstanceId)
     {
-        if (WorkerInstanceId == workerInstanceId)
-        {
+        if (WorkerInstanceId == workerInstanceId) {
             return false;
         }
 
@@ -30,8 +29,7 @@ internal sealed class WorkerLogSequenceTracker
 
     internal void ObserveTarget(long sequence)
     {
-        if (sequence < 0)
-        {
+        if (sequence < 0) {
             throw new ArgumentOutOfRangeException(nameof(sequence));
         }
         HighestObservedSequence = Math.Max(HighestObservedSequence, sequence);
@@ -39,18 +37,15 @@ internal sealed class WorkerLogSequenceTracker
 
     internal WorkerLogSequenceDisposition Observe(long sequence)
     {
-        if (sequence <= 0)
-        {
+        if (sequence <= 0) {
             throw new ArgumentOutOfRangeException(nameof(sequence));
         }
-        if (sequence <= LastContiguousSequence)
-        {
+        if (sequence <= LastContiguousSequence) {
             return WorkerLogSequenceDisposition.Duplicate;
         }
 
         HighestObservedSequence = Math.Max(HighestObservedSequence, sequence);
-        if (sequence != LastContiguousSequence + 1)
-        {
+        if (sequence != LastContiguousSequence + 1) {
             return WorkerLogSequenceDisposition.Gap;
         }
 
@@ -60,8 +55,7 @@ internal sealed class WorkerLogSequenceTracker
 
     internal void SkipToFirstAvailable(long firstAvailableSequence)
     {
-        if (firstAvailableSequence <= 0)
-        {
+        if (firstAvailableSequence <= 0) {
             throw new ArgumentOutOfRangeException(nameof(firstAvailableSequence));
         }
 

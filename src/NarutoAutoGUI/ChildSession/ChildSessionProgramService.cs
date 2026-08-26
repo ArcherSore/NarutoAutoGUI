@@ -15,42 +15,32 @@ internal sealed class ChildSessionProgramService
     }
 
     internal async Task<ProgramLaunchResult> LaunchIfNeededAsync(
-        uint childSessionId,
-        string executablePath,
-        string arguments = "",
+        uint childSessionId, string executablePath, string arguments = "",
         CancellationToken cancellationToken = default)
     {
         var fullPath = ValidateExecutablePath(executablePath);
         var workDir = Path.GetDirectoryName(fullPath) ?? AppContext.BaseDirectory;
         var processName = Path.GetFileName(fullPath);
 
-        if (ChildSessionNativeMethods.TryFindProcessInSession(processName, childSessionId, out var existingPid))
-        {
+        if (ChildSessionNativeMethods.TryFindProcessInSession(processName, childSessionId, out var existingPid)) {
             _logger.Info($"跳过重复启动：{processName} 已在 Child Session {childSessionId} 中运行，PID={existingPid}。");
             return new ProgramLaunchResult(false, existingPid, processName);
         }
 
         _logger.Info($"正在 Child Session {childSessionId} 中启动：{fullPath}");
         _logger.Debug($"启动参数：{arguments}；工作目录：{workDir}。");
-        try
-        {
+        try {
             await ChildSessionProcessLauncher.LaunchAsync(childSessionId, fullPath, arguments, workDir);
             _logger.Debug($"Task Scheduler COM RunEx 已提交：{processName}，SessionId={childSessionId}。");
-        }
-        catch (Exception exception)
-        {
-            _logger.Error(
-                $"程序启动请求失败：{fullPath}，Child Session={childSessionId}。",
-                exception);
+        } catch (Exception exception) {
+            _logger.Error($"程序启动请求失败：{fullPath}，Child Session={childSessionId}。", exception);
             throw;
         }
 
         var deadline = DateTime.UtcNow + VerificationTimeout;
-        while (DateTime.UtcNow < deadline)
-        {
+        while (DateTime.UtcNow < deadline) {
             cancellationToken.ThrowIfCancellationRequested();
-            if (ChildSessionNativeMethods.TryFindProcessInSession(processName, childSessionId, out var pid))
-            {
+            if (ChildSessionNativeMethods.TryFindProcessInSession(processName, childSessionId, out var pid)) {
                 _logger.Info($"程序启动验证成功：{processName}，PID={pid}，SessionId={childSessionId}。");
                 return new ProgramLaunchResult(true, pid, processName);
             }
@@ -67,19 +57,16 @@ internal sealed class ChildSessionProgramService
 
     private static string ValidateExecutablePath(string executablePath)
     {
-        if (string.IsNullOrWhiteSpace(executablePath))
-        {
+        if (string.IsNullOrWhiteSpace(executablePath)) {
             throw new ArgumentException("请先配置 exe 路径。", nameof(executablePath));
         }
 
         var fullPath = Path.GetFullPath(executablePath.Trim());
-        if (!File.Exists(fullPath))
-        {
+        if (!File.Exists(fullPath)) {
             throw new FileNotFoundException("配置的程序不存在。", fullPath);
         }
 
-        if (!string.Equals(Path.GetExtension(fullPath), ".exe", StringComparison.OrdinalIgnoreCase))
-        {
+        if (!string.Equals(Path.GetExtension(fullPath), ".exe", StringComparison.OrdinalIgnoreCase)) {
             throw new ArgumentException("当前只允许启动 .exe 程序。", nameof(executablePath));
         }
 

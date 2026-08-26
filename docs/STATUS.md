@@ -154,6 +154,13 @@
   `GetCachedImage` 只同步复制最近 cached image，没有 cancellation/timeout API；为保持单 Controller 与释放安全，cleanup
   继续先等待 producer 结束再释放 Controller，不增加会并发释放或遗留旧 Controller 的 timeout。真实 Maa cached image、
   Running→Stopping 和自然终态的及时结束仍作为交互式回归项，由用户在目标机器验证。Child Session baseline 未修改。
+- 2026-08-26：按最新 AGENTS.md 代码风格整改全仓库手写 C#。通过精确 `.editorconfig`（`csharp_new_line_before_open_brace`
+  列出 types/methods 等声明块、排除 control_blocks，并设 `csharp_new_line_before_catch/else/finally = false`）以
+  `dotnet format whitespace` 将控制流（if/foreach/while/for/switch/try/using/lock）左大括号改同行、`} else`/`} catch`/`}
+  finally` 合并，声明块保持换行；同步将机械逐参数/逐条件换行压缩为每行多项，行尾统一 LF。已验证流程（Child Session、
+  RDP ActiveX、WTS、Task Scheduler COM、分辨率/缩放、进程 Session 验证与清理）仅改格式不改逻辑。NarutoAutoGUI 与
+  NarutoAutoWorker Release `win-x64` build 均通过，0 警告、0 错误；全仓库 120 列检查 0 违规、`dotnet format whitespace
+  --verify-no-changes` 与 `git diff --check` 均通过。
 - build 期间 NuGet 无法访问漏洞元数据源，产生 `NU1900` 警告；包还原和编译本身成功。该警告不是代码编译错误。
 
 以下项目需要管理员权限、可见桌面或真实外部程序，自动验证不能替代手动回归。Child Session 真实桌面交互式回归已完成；游戏/MaaNOP 跨 Session 启动、异常断开后重建连接、创建/启动过程中并发退出等外部程序或故障场景仍需按后续目标单独记录。

@@ -13,12 +13,9 @@ internal static class SelfTestRunner
 {
     internal static int Run()
     {
-        var testDirectory = Path.Combine(
-            Path.GetTempPath(),
-            $"NarutoAutoGUI-self-test-{Guid.NewGuid():N}");
+        var testDirectory = Path.Combine(Path.GetTempPath(), $"NarutoAutoGUI-self-test-{Guid.NewGuid():N}");
 
-        try
-        {
+        try {
             Directory.CreateDirectory(testDirectory);
             var logDirectory = Path.Combine(testDirectory, "logs");
             using var logger = new AppLogger(logDirectory);
@@ -38,15 +35,12 @@ internal static class SelfTestRunner
             logger.Debug("self-test-debug");
             logger.Info("self-test-info");
             logger.Dispose();
-            var logText = string.Join(
-                Environment.NewLine,
-                Directory.EnumerateFiles(logDirectory, "*.log").Select(File.ReadAllText));
+            var logText = string.Join(Environment.NewLine, Directory.EnumerateFiles(logDirectory, "*.log").Select(File.ReadAllText));
             if (!logText.Contains("[DEBUG] self-test-debug", StringComparison.Ordinal)
                 || !logText.Contains("[INFO] self-test-info", StringComparison.Ordinal)
                 || !logText.Contains("[maanop.run] 用户日志", StringComparison.Ordinal)
                 || !logText.Contains("[runtime.task] 用户日志", StringComparison.Ordinal)
-                || !logText.Contains("GUI diagnostic only", StringComparison.Ordinal))
-            {
+                || !logText.Contains("GUI diagnostic only", StringComparison.Ordinal)) {
                 throw new InvalidOperationException("DEBUG+ 文件日志验证失败。");
             }
 
@@ -59,23 +53,15 @@ internal static class SelfTestRunner
                 + "log sequence tracking/recovery; Worker Instance replacement; "
                 + "run-log routing; DEBUG+ file logging");
             return 0;
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             Console.Error.WriteLine($"SELF-TEST FAIL: {exception}");
             return 1;
-        }
-        finally
-        {
-            try
-            {
-                if (Directory.Exists(testDirectory))
-                {
+        } finally {
+            try {
+                if (Directory.Exists(testDirectory)) {
                     Directory.Delete(testDirectory, recursive: true);
                 }
-            }
-            catch
-            {
+            } catch {
                 // The isolated temporary directory can be cleaned by the OS later.
             }
         }
@@ -99,13 +85,11 @@ internal static class SelfTestRunner
         var migrated = store.Load();
         if (migrated.GameExecutablePath != AppSettings.DefaultGameExecutablePath
             || migrated.GameArguments != AppSettings.DefaultGameArguments
-            || migrated.MaaNopProjectDirectory != Path.GetFullPath(legacyAssets))
-        {
+            || migrated.MaaNopProjectDirectory != Path.GetFullPath(legacyAssets)) {
             throw new InvalidOperationException("旧版 Application Settings 内存迁移验证失败。");
         }
 
-        var expected = new AppSettings
-        {
+        var expected = new AppSettings {
             GameExecutablePath = @"C:\Test\Game.exe",
             GameArguments = "--test-game",
             MaaNopProjectDirectory = projectDirectory
@@ -114,16 +98,13 @@ internal static class SelfTestRunner
         var savedJson = File.ReadAllText(settingsPath);
         if (savedJson.Contains("MaaNopExecutablePath", StringComparison.Ordinal)
             || savedJson.Contains("GameWorkingDirectory", StringComparison.Ordinal)
-            || !savedJson.Contains("\"SchemaVersion\": 2", StringComparison.Ordinal))
-        {
+            || !savedJson.Contains("\"SchemaVersion\": 2", StringComparison.Ordinal)) {
             throw new InvalidOperationException("Application Settings SchemaVersion 2 序列化验证失败。");
         }
 
         var actual = store.Load();
-        if (actual.GameExecutablePath != expected.GameExecutablePath
-            || actual.GameArguments != expected.GameArguments
-            || actual.MaaNopProjectDirectory != expected.MaaNopProjectDirectory)
-        {
+        if (actual.GameExecutablePath != expected.GameExecutablePath || actual.GameArguments != expected.GameArguments
+            || actual.MaaNopProjectDirectory != expected.MaaNopProjectDirectory) {
             throw new InvalidOperationException("Application Settings 持久化往返验证失败。");
         }
     }
@@ -132,19 +113,16 @@ internal static class SelfTestRunner
     {
         var configPath = Path.Combine(testDirectory, "maanop-config.json");
         var project = ProjectPlanModule.Open(projectDirectory, configPath);
-        if (project.Tasks.Count != 1 || project.Tasks[0].Name != "RealTask" || project.Tasks[0].Label != "Real task")
-        {
+        if (project.Tasks.Count != 1 || project.Tasks[0].Name != "RealTask" || project.Tasks[0].Label != "Real task") {
             throw new InvalidOperationException("PI task catalog 验证失败。");
         }
 
         project.SelectTask("RealTask");
-        using (var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath)))
-        {
+        using (var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath))) {
             var root = configDocument.RootElement;
             if (root.GetProperty("SchemaVersion").GetInt32() != MaaNopConfig.CurrentSchemaVersion
                 || root.GetProperty("SelectedTasks")[0].GetString() != "RealTask"
-                || root.GetProperty("ExplicitOptions").EnumerateObject().Any())
-            {
+                || root.GetProperty("ExplicitOptions").EnumerateObject().Any()) {
                 throw new InvalidOperationException(
                     $"MaaNOP Config SchemaVersion {MaaNopConfig.CurrentSchemaVersion} 验证失败。");
             }
@@ -156,8 +134,7 @@ internal static class SelfTestRunner
         if (defaultServer.Inputs.Single(input => input.Name == "server_range").Value != "978-1012"
             || defaultServer.IsExplicit
             || defaultMode.SelectedCase != "Default"
-            || defaultMode.ActiveChildren.Single().SelectedCase != "On")
-        {
+            || defaultMode.ActiveChildren.Single().SelectedCase != "On") {
             throw new InvalidOperationException("PI option editor 默认视图验证失败。");
         }
 
@@ -181,21 +158,18 @@ internal static class SelfTestRunner
                 != "978-1012:3:true"
             || defaultPipeline[0].GetProperty("SelfTestEntry").TryGetProperty("mode", out _)
             || defaultPipeline[2].GetProperty("SelfTestEntry").TryGetProperty("enabled", out _)
-            || defaultAttempt.PlanDigest != CanonicalDigest.ComputePlanDigestV1(defaultAttempt.Plan))
-        {
+            || defaultAttempt.PlanDigest != CanonicalDigest.ComputePlanDigestV1(defaultAttempt.Plan)) {
             throw new InvalidOperationException("正式 PI Resolver / RunPlan / planDigest 验证失败。");
         }
 
         project.SetInputValue("ServerRange", "server_range", "978");
         project.SetSelectedCase("Nested", "Off");
-        using (var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath)))
-        {
+        using (var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath))) {
             var explicitOptions = configDocument.RootElement.GetProperty("ExplicitOptions");
             if (explicitOptions.GetProperty("ServerRange").GetProperty("Inputs")
                     .GetProperty("server_range").GetString() != "978"
                 || explicitOptions.GetProperty("Nested").GetProperty("SelectedCase")
-                    .GetString() != "Off")
-            {
+                    .GetString() != "Off") {
                 throw new InvalidOperationException("MaaNOP Config explicit option 序列化验证失败。");
             }
         }
@@ -213,29 +187,24 @@ internal static class SelfTestRunner
             || explicitPipeline[3].GetProperty("SelfTestEntry").GetProperty("nested").GetBoolean()
             || explicitPipeline[1].GetProperty("TypedValues").GetProperty("summary").GetString()
                 != "978:3:true"
-            || explicitAttempt.PlanDigest == defaultAttempt.PlanDigest)
-        {
+            || explicitAttempt.PlanDigest == defaultAttempt.PlanDigest) {
             throw new InvalidOperationException("PI explicit input/switch resolution 验证失败。");
         }
 
         project.SetSelectedCase("Mode", "Minimal");
         var dormantConfiguration = project.GetConfiguration();
-        if (dormantConfiguration.TaskOptions.Single().ActiveChildren.Count != 0)
-        {
+        if (dormantConfiguration.TaskOptions.Single().ActiveChildren.Count != 0) {
             throw new InvalidOperationException("PI nested option active graph 验证失败。");
         }
-        using (var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath)))
-        {
+        using (var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath))) {
             if (configDocument.RootElement.GetProperty("ExplicitOptions")
-                    .GetProperty("Nested").GetProperty("SelectedCase").GetString() != "Off")
-            {
+                    .GetProperty("Nested").GetProperty("SelectedCase").GetString() != "Off") {
                 throw new InvalidOperationException("MaaNOP Config dormant intent 保留验证失败。");
             }
         }
         var dormantAttempt = project.CreateRunStartAttempt();
         if (dormantAttempt.Plan.Items[0].ResolvedOptions.TryGetProperty("Nested", out _)
-            || dormantAttempt.Plan.Items[0].PipelineOverride.GetArrayLength() != 3)
-        {
+            || dormantAttempt.Plan.Items[0].PipelineOverride.GetArrayLength() != 3) {
             throw new InvalidOperationException("Dormant option 不应进入 Run Plan。");
         }
 
@@ -243,18 +212,14 @@ internal static class SelfTestRunner
         var restoredAttempt = project.CreateRunStartAttempt();
         if (restoredAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Nested").GetString() != "Off"
             || restoredAttempt.Plan.Items[0].PipelineOverride[3]
-                .GetProperty("SelfTestEntry").GetProperty("nested").GetBoolean())
-        {
+                .GetProperty("SelfTestEntry").GetProperty("nested").GetBoolean()) {
             throw new InvalidOperationException("PI nested dormant intent 恢复验证失败。");
         }
 
-        try
-        {
+        try {
             project.SetInputValue("ServerRange", "server_range", "not-a-server");
             throw new InvalidOperationException("PI input verify 未拒绝非法显式值。");
-        }
-        catch (InvalidDataException)
-        {
+        } catch (InvalidDataException) {
             // Expected: invalid edits are not persisted.
         }
         VerifyRejectedInputEdit(project, "retry_count", "3.5");
@@ -263,8 +228,7 @@ internal static class SelfTestRunner
             .ToDictionary(input => input.Name, input => input.Value, StringComparer.Ordinal);
         if (retainedInputs["server_range"] != "978"
             || retainedInputs["retry_count"] != "3"
-            || retainedInputs["enabled"] != "true")
-        {
+            || retainedInputs["enabled"] != "true") {
             throw new InvalidOperationException("非法显式值不应覆盖最后一次合法配置。");
         }
 
@@ -275,21 +239,17 @@ internal static class SelfTestRunner
         if (resetAttempt.Plan.ResolvedGlobalOptions.GetProperty("ServerRange")
                 .GetProperty("server_range").GetString() != "978-1012"
             || resetAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Mode").GetString() != "Default"
-            || resetAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Nested").GetString() != "On")
-        {
+            || resetAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Nested").GetString() != "On") {
             throw new InvalidOperationException("PI option 跟随项目默认验证失败。");
         }
     }
 
     private static void VerifyRejectedInputEdit(ProjectPlanModule project, string inputName, string invalidValue)
     {
-        try
-        {
+        try {
             project.SetInputValue("ServerRange", inputName, invalidValue);
             throw new InvalidOperationException($"PI input {inputName} 未拒绝非法显式值。");
-        }
-        catch (InvalidDataException)
-        {
+        } catch (InvalidDataException) {
             // Expected: invalid edits are not persisted.
         }
     }
@@ -299,16 +259,13 @@ internal static class SelfTestRunner
         using var stream = new MemoryStream();
         var requestId = Guid.NewGuid();
         var envelope = WireEnvelope.Request(
-            ProtocolOperations.WorkerGetSnapshot,
-            requestId,
-            new { });
+            ProtocolOperations.WorkerGetSnapshot, requestId, new { });
         var writer = new ProtocolConnection(stream);
         writer.WriteAsync(envelope, CancellationToken.None).GetAwaiter().GetResult();
         stream.Position = 0;
         var reader = new ProtocolConnection(stream);
         var decoded = reader.ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
-        if (decoded?.RequestId != requestId || decoded.Operation != ProtocolOperations.WorkerGetSnapshot)
-        {
+        if (decoded?.RequestId != requestId || decoded.Operation != ProtocolOperations.WorkerGetSnapshot) {
             throw new InvalidOperationException("Named Pipe frame round-trip 验证失败。");
         }
     }
@@ -316,38 +273,26 @@ internal static class SelfTestRunner
     private static void VerifyPreviewProtocol()
     {
         var response = new PreviewGetLatestResponse(
-            "frame",
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            3,
-            new DateTime(2026, 8, 26, 8, 30, 0, DateTimeKind.Utc),
-            4,
-            3,
-            "image/png",
-            [1, 2, 3],
-            null);
+            "frame", Guid.NewGuid(), Guid.NewGuid(), 3,
+            new DateTime(2026, 8, 26, 8, 30, 0, DateTimeKind.Utc), 4, 3, "image/png",
+            [1, 2, 3], null);
         var json = JsonSerializer.Serialize(response, ProtocolJson.Options);
         if (!json.Contains("\"sampledAtUtc\"", StringComparison.Ordinal)
-            || json.Contains("capturedAtUtc", StringComparison.Ordinal))
-        {
+            || json.Contains("capturedAtUtc", StringComparison.Ordinal)) {
             throw new InvalidOperationException("Preview timestamp 字段名不是 sampledAtUtc。 ");
         }
         var decoded = JsonSerializer.Deserialize<PreviewGetLatestResponse>(json, ProtocolJson.Options);
         if (decoded is null
             || decoded with { PngBytes = response.PngBytes } != response
-            || !decoded.PngBytes!.SequenceEqual(response.PngBytes!))
-        {
+            || !decoded.PngBytes!.SequenceEqual(response.PngBytes!)) {
             throw new InvalidOperationException("Preview JSON/base64 round-trip 验证失败。 ");
         }
 
         var staleFieldJson = json.Replace("\"sampledAtUtc\"", "\"capturedAtUtc\"", StringComparison.Ordinal);
-        try
-        {
+        try {
             _ = JsonSerializer.Deserialize<PreviewGetLatestResponse>(staleFieldJson, ProtocolJson.Options);
             throw new InvalidOperationException("Preview schema 未拒绝旧 capturedAtUtc 字段。 ");
-        }
-        catch (JsonException)
-        {
+        } catch (JsonException) {
             // Expected: GUI and Worker ship together and use one strict schema.
         }
     }
@@ -364,59 +309,44 @@ internal static class SelfTestRunner
             || tracker.HighestObservedSequence != 3
             || tracker.Observe(2) != WorkerLogSequenceDisposition.Contiguous
             || tracker.Observe(3) != WorkerLogSequenceDisposition.Contiguous
-            || tracker.Observe(3) != WorkerLogSequenceDisposition.Duplicate)
-        {
+            || tracker.Observe(3) != WorkerLogSequenceDisposition.Duplicate) {
             throw new InvalidOperationException("Worker 日志连续 sequence 跟踪验证失败。 ");
         }
-        if (tracker.BeginWorkerInstance(firstInstance) || tracker.LastContiguousSequence != 3)
-        {
+        if (tracker.BeginWorkerInstance(firstInstance) || tracker.LastContiguousSequence != 3) {
             throw new InvalidOperationException("同一 Worker Instance 不应重置 Log Transport Cursor。 ");
         }
         if (!tracker.BeginWorkerInstance(secondInstance)
             || tracker.LastContiguousSequence != 0
-            || tracker.HighestObservedSequence != 0)
-        {
+            || tracker.HighestObservedSequence != 0) {
             throw new InvalidOperationException("新 Worker Instance 未重置 Log Transport Cursor。 ");
         }
         if (tracker.Observe(1) != WorkerLogSequenceDisposition.Contiguous
-            || tracker.LastContiguousSequence != 1)
-        {
+            || tracker.LastContiguousSequence != 1) {
             throw new InvalidOperationException("新 Worker Instance 重置后首条日志未被接受。 ");
         }
         if (tracker.Observe(5) != WorkerLogSequenceDisposition.Gap
             || tracker.LastContiguousSequence != 1
-            || tracker.HighestObservedSequence != 5)
-        {
+            || tracker.HighestObservedSequence != 5) {
             throw new InvalidOperationException("新 Worker Instance 的 gap 检测或 target 跟踪失败。 ");
         }
 
         tracker.ObserveTarget(8);
         tracker.SkipToFirstAvailable(6);
-        if (tracker.LastContiguousSequence != 5 || tracker.Observe(6) != WorkerLogSequenceDisposition.Contiguous)
-        {
+        if (tracker.LastContiguousSequence != 5 || tracker.Observe(6) != WorkerLogSequenceDisposition.Contiguous) {
             throw new InvalidOperationException("Worker 日志 eviction gap 恢复验证失败。 ");
         }
     }
 
     private static void VerifyRunLogRouting(AppLogger logger)
     {
-        if (TypeDescriptor.GetProperties(typeof(MainWindow))[nameof(MainWindow.LogLines)] is null)
-        {
+        if (TypeDescriptor.GetProperties(typeof(MainWindow))[nameof(MainWindow.LogLines)] is null) {
             throw new InvalidOperationException("GUI 运行日志集合无法被 WPF Binding 发现。 ");
         }
 
         var timestampUtc = new DateTime(2026, 8, 24, 6, 30, 0, DateTimeKind.Utc);
         var userEntry = new WorkerLogEntry(
-            1,
-            timestampUtc,
-            "INFO",
-            ProtocolConstants.MaaNopRunLogSource,
-            "用户日志",
-            false,
-            null,
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            "Task");
+            1, timestampUtc, "INFO", ProtocolConstants.MaaNopRunLogSource, "用户日志",
+            false, null, Guid.NewGuid(), Guid.NewGuid(), "Task");
         var diagnosticEntry = userEntry with { Sequence = 2, Source = "runtime.task" };
         var visibleEntries = new[] { userEntry, diagnosticEntry }
             .Select(MainWindow.CreateUserFacingRunLogEntry)
@@ -427,8 +357,7 @@ internal static class SelfTestRunner
         if (visibleEntries.Length != 1
             || visibleEntries[0].Timestamp != expectedTimestamp
             || visibleEntries[0].Level != LogLevel.Info
-            || visibleEntries[0].Message != userEntry.Message)
-        {
+            || visibleEntries[0].Message != userEntry.Message) {
             throw new InvalidOperationException("GUI 运行日志 source、timestamp 或 message 路由验证失败。 ");
         }
 
@@ -441,36 +370,31 @@ internal static class SelfTestRunner
     {
         var sourceInterface = File.ReadAllText(Path.Combine(sourceProjectDirectory, "interface.json"));
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "unsupported-controller-option",
             "当前 MaaNOP GUI 不支持 $.controller[0].option",
             root => root["controller"]!.AsArray()[0]!.AsObject()["option"] =
                 new JsonArray("ServerRange"));
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "unsupported-resource-option",
             "当前 MaaNOP GUI 不支持 $.resource[0].option",
             root => root["resource"]!.AsArray()[0]!.AsObject()["option"] =
                 new JsonArray("ServerRange"));
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "unsupported-resource-controller",
             "$.resource[0].controller",
             root => root["resource"]!.AsArray()[0]!.AsObject()["controller"] =
                 new JsonArray("Win32"));
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "unsupported-task-controller",
             "$.task[0].controller",
             root => root["task"]!.AsArray()[0]!.AsObject()["controller"] =
                 new JsonArray("Win32"));
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "unsupported-option-resource",
             "$.option.ServerRange.resource",
             root => root["option"]!.AsObject()["ServerRange"]!.AsObject()["resource"] =
@@ -481,78 +405,67 @@ internal static class SelfTestRunner
     {
         var sourceInterface = File.ReadAllText(Path.Combine(sourceProjectDirectory, "interface.json"));
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "invalid-class-regex",
             "$.controller[0].win32.class_regex 不是合法正则表达式",
             root => root["controller"]!.AsArray()[0]!.AsObject()["win32"]!
                 .AsObject()["class_regex"] = "(");
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "invalid-window-regex",
             "$.controller[0].win32.window_regex 不是合法正则表达式",
             root => root["controller"]!.AsArray()[0]!.AsObject()["win32"]!
                 .AsObject()["window_regex"] = "[");
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "invalid-screencap-method",
             "$.controller[0].win32.screencap 不支持值 UnknownScreencap",
             root => root["controller"]!.AsArray()[0]!.AsObject()["win32"]!
                 .AsObject()["screencap"] = "UnknownScreencap");
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "invalid-mouse-method",
             "$.controller[0].win32.mouse 不支持值 UnknownMouse",
             root => root["controller"]!.AsArray()[0]!.AsObject()["win32"]!
                 .AsObject()["mouse"] = "UnknownMouse");
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "invalid-keyboard-method",
             "$.controller[0].win32.keyboard 不支持值 UnknownKeyboard",
             root => root["controller"]!.AsArray()[0]!.AsObject()["win32"]!
                 .AsObject()["keyboard"] = "UnknownKeyboard");
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "invalid-input-cases",
             "input option $.option.ServerRange 不能声明 cases",
             root => root["option"]!.AsObject()["ServerRange"]!.AsObject()["cases"] =
                 new JsonArray(new JsonObject { ["name"] = "Unexpected" }));
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "invalid-select-pipeline-override",
             "select option $.option.Mode 不能声明 pipeline_override",
             root => root["option"]!.AsObject()["Mode"]!.AsObject()["pipeline_override"] =
                 new JsonObject { ["Unexpected"] = new JsonObject() });
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "invalid-default-case",
             "$.option.Mode.default_case",
             root => root["option"]!.AsObject()["Mode"]!.AsObject()["default_case"] =
                 "Missing");
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "invalid-input-regex",
             "$.option.ServerRange.inputs[0].verify",
             root => root["option"]!.AsObject()["ServerRange"]!.AsObject()["inputs"]!
                 .AsArray()[0]!.AsObject()["verify"] = "(");
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "invalid-input-default-type",
             "$.option.ServerRange.inputs[0].default 不是合法 int",
             root => root["option"]!.AsObject()["ServerRange"]!.AsObject()["inputs"]!
                 .AsArray()[0]!.AsObject()["pipeline_type"] = "int");
         VerifyRejectedProjectInterface(
-            testDirectory,
-            sourceInterface,
+            testDirectory, sourceInterface,
             "inactive-option-cycle",
             "option 递归引用形成循环：Mode -> Mode",
             root =>
@@ -566,11 +479,8 @@ internal static class SelfTestRunner
     }
 
     private static void VerifyRejectedProjectInterface(
-        string testDirectory,
-        string sourceInterface,
-        string fixtureName,
-        string expectedError,
-        Action<JsonObject> mutate)
+        string testDirectory, string sourceInterface, string fixtureName,
+        string expectedError, Action<JsonObject> mutate)
     {
         var projectDirectory = Path.Combine(testDirectory, fixtureName);
         Directory.CreateDirectory(projectDirectory);
@@ -579,14 +489,11 @@ internal static class SelfTestRunner
         mutate(root);
         File.WriteAllText(Path.Combine(projectDirectory, "interface.json"), root.ToJsonString());
 
-        try
-        {
+        try {
             _ = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "maanop-config.json"));
             throw new InvalidOperationException($"PI 未拒绝非法定义：{fixtureName}。");
-        }
-        catch (InvalidDataException exception)
-            when (exception.Message.Contains(expectedError, StringComparison.Ordinal))
-        {
+        } catch (InvalidDataException exception)
+              when (exception.Message.Contains(expectedError, StringComparison.Ordinal)) {
             // Expected: unsupported or invalid PI semantics fail closed with useful context.
         }
     }

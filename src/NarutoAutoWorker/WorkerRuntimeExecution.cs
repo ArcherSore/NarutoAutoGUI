@@ -17,10 +17,7 @@ internal enum RuntimeExecutionOutcome
 }
 
 internal sealed record RuntimeExecutionResult(
-    RuntimeExecutionOutcome Outcome,
-    JsonElement? Result,
-    StructuredReason? Error,
-    bool ForcedAgentTermination);
+    RuntimeExecutionOutcome Outcome, JsonElement? Result, StructuredReason? Error, bool ForcedAgentTermination);
 
 internal sealed class WorkerRuntimeExecution
 {
@@ -52,12 +49,8 @@ internal sealed class WorkerRuntimeExecution
     private bool _preserveContext;
 
     internal WorkerRuntimeExecution(
-        LaunchManifest manifest,
-        Guid runId,
-        RunPlanItem item,
-        uint childSessionId,
-        Action<string, string, string> log,
-        Action onRunning)
+        LaunchManifest manifest, Guid runId, RunPlanItem item, uint childSessionId,
+        Action<string, string, string> log, Action onRunning)
     {
         _manifest = manifest;
         _runId = runId;
@@ -70,8 +63,7 @@ internal sealed class WorkerRuntimeExecution
 
     internal async Task<RuntimeExecutionResult> ExecuteAsync(CancellationToken cancellationToken)
     {
-        try
-        {
+        try {
             var window = FindTargetWindow();
             _log("INFO", "runtime.window", $"目标窗口 HWND=0x{window.Handle.ToInt64():X}，Name={window.Name}。 ");
             _controller = new MaaWin32Controller(
@@ -79,8 +71,7 @@ internal sealed class WorkerRuntimeExecution
                 ParseEnum<Win32ScreencapMethod>(_manifest.Controller.ScreencapMethod),
                 ParseEnum<Win32InputMethod>(_manifest.Controller.MouseMethod),
                 ParseEnum<Win32InputMethod>(_manifest.Controller.KeyboardMethod),
-                LinkOption.Start,
-                CheckStatusOption.ThrowIfNotSucceeded);
+                LinkOption.Start, CheckStatusOption.ThrowIfNotSucceeded);
             var preview = new LatestFramePreview(_runId, new MaaCachedImageFrameSource(_controller), _log);
             var previewCancellation = new CancellationTokenSource();
             _preview = preview;
@@ -88,26 +79,17 @@ internal sealed class WorkerRuntimeExecution
             _previewProducerTask = Task.Run(
                 () => RunPreviewProducerAsync(preview, previewCancellation.Token),
                 CancellationToken.None);
-            _resource = new MaaResource(
-                CheckStatusOption.ThrowIfNotSucceeded,
-                _manifest.Resources.SelectMany(resource => resource.Paths));
-            _tasker = new MaaTasker
-            {
-                Controller = _controller,
-                Resource = _resource,
-                DisposeOptions = DisposeOptions.None
-            };
+            _resource = new MaaResource(CheckStatusOption.ThrowIfNotSucceeded, _manifest.Resources.SelectMany(resource => resource.Paths));
+            _tasker = new MaaTasker { Controller = _controller, Resource = _resource, DisposeOptions = DisposeOptions.None };
             _tasker.Callback += OnTaskerCallback;
-            if (!_tasker.IsInitialized)
-            {
+            if (!_tasker.IsInitialized) {
                 throw new InvalidOperationException("MaaTasker 初始化后 IsInitialized=false。 ");
             }
             _taskerReady.TrySetResult(_tasker);
 
             _agentClient = MaaAgentClient.Create(_tasker);
             var linked = _agentClient.LinkStart(StartAgentProcess, cancellationToken);
-            if (!linked || !_agentClient.IsConnected)
-            {
+            if (!linked || !_agentClient.IsConnected) {
                 throw new InvalidOperationException("MaaAgentClient LinkStart 未建立连接。 ");
             }
             _log("INFO", "runtime.agent", $"Python Agent 已连接，identifier={_agentClient.Id}。 ");
@@ -115,91 +97,68 @@ internal sealed class WorkerRuntimeExecution
             var job = _tasker.AppendTask(_item.Entry, _item.PipelineOverride.GetRawText());
             _log("INFO", "runtime.task", $"已提交 MaaFramework task：{_item.Entry}，jobId={job.Id}。 ");
             MaaJobStatus status;
-            while (!(status = job.Status).IsDone())
-            {
-                if (status.IsRunning())
-                {
+            while (!(status = job.Status).IsDone()) {
+                if (status.IsRunning()) {
                     ReportRunningOnce();
                 }
                 await Task.Delay(100, cancellationToken);
             }
 
-            if (IsStopRequested())
-            {
-                try
-                {
+            if (IsStopRequested()) {
+                try {
                     await _stopConfirmed.Task.WaitAsync(StopTimeout, cancellationToken);
-                }
-                catch (Exception exception) when (exception is TimeoutException or StopConfirmationException)
-                {
+                } catch (Exception exception) when (exception is TimeoutException or StopConfirmationException) {
                     _preserveContext = true;
                     return new RuntimeExecutionResult(
-                        RuntimeExecutionOutcome.StopTimedOut,
-                        null,
-                        new StructuredReason("StopTimeout", exception.GetBaseException().Message),
-                        false);
+                        RuntimeExecutionOutcome.StopTimedOut, null,
+                        new StructuredReason("StopTimeout", exception.GetBaseException().Message), false);
                 }
 
                 var cleanup = await CleanupAsync(cancellationToken);
                 return cleanup.Success
                     ? new RuntimeExecutionResult(
                         RuntimeExecutionOutcome.Cancelled,
-                        ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }),
-                        null,
+                        ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }), null,
                         cleanup.ForcedAgentTermination)
                     : new RuntimeExecutionResult(
                         RuntimeExecutionOutcome.CleanupFailed,
                         ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }),
-                        new StructuredReason("AgentCleanupFailed", cleanup.Error!),
-                        cleanup.ForcedAgentTermination);
+                        new StructuredReason("AgentCleanupFailed", cleanup.Error!), cleanup.ForcedAgentTermination);
             }
 
             var normalCleanup = await CleanupAsync(cancellationToken);
-            if (!normalCleanup.Success)
-            {
+            if (!normalCleanup.Success) {
                 return new RuntimeExecutionResult(
                     RuntimeExecutionOutcome.CleanupFailed,
                     ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }),
-                    new StructuredReason("AgentCleanupFailed", normalCleanup.Error!),
-                    normalCleanup.ForcedAgentTermination);
+                    new StructuredReason("AgentCleanupFailed", normalCleanup.Error!), normalCleanup.ForcedAgentTermination);
             }
-            if (status.IsSucceeded())
-            {
+            if (status.IsSucceeded()) {
                 return new RuntimeExecutionResult(
                     RuntimeExecutionOutcome.Succeeded,
-                    ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }),
-                    null,
+                    ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }), null,
                     normalCleanup.ForcedAgentTermination);
             }
             return new RuntimeExecutionResult(
-                RuntimeExecutionOutcome.Failed,
-                ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }),
+                RuntimeExecutionOutcome.Failed, ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }),
                 new StructuredReason("MaaTaskFailed", $"MaaFramework task 终态为 {status}。 "),
                 normalCleanup.ForcedAgentTermination);
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             _taskerReady.TrySetException(exception);
-            if (_preserveContext)
-            {
+            if (_preserveContext) {
                 return new RuntimeExecutionResult(
-                    RuntimeExecutionOutcome.StopTimedOut,
-                    null,
-                    new StructuredReason("StopTimeout", exception.GetBaseException().Message),
-                    false);
+                    RuntimeExecutionOutcome.StopTimedOut, null,
+                    new StructuredReason("StopTimeout", exception.GetBaseException().Message), false);
             }
 
             var cleanup = await CleanupAsync(CancellationToken.None);
             var reason = cleanup.Success
                 ? new StructuredReason("RunExecutionFailed", exception.GetBaseException().Message)
                 : new StructuredReason(
-                    "AgentCleanupFailed",
-                    $"{exception.GetBaseException().Message}；清理失败：{cleanup.Error}");
+                    "AgentCleanupFailed", $"{exception.GetBaseException().Message}；清理失败：{cleanup.Error}");
             return new RuntimeExecutionResult(
                 cleanup.Success ? RuntimeExecutionOutcome.Failed : RuntimeExecutionOutcome.CleanupFailed,
-                null,
-                reason,
-                cleanup.ForcedAgentTermination);
+                null, reason, cleanup.ForcedAgentTermination);
         }
     }
 
@@ -207,32 +166,25 @@ internal sealed class WorkerRuntimeExecution
     {
         RequestStop();
 
-        try
-        {
+        try {
             var tasker = await _taskerReady.Task.WaitAsync(StopTimeout, cancellationToken);
             var stopJob = tasker.Stop();
             var status = await Task.Run(stopJob.Wait, cancellationToken)
                 .WaitAsync(StopTimeout, cancellationToken);
             var deadline = DateTime.UtcNow + StopTimeout;
-            while ((tasker.IsRunning || tasker.IsStopping) && DateTime.UtcNow < deadline)
-            {
+            while ((tasker.IsRunning || tasker.IsStopping) && DateTime.UtcNow < deadline) {
                 await Task.Delay(100, cancellationToken);
             }
-            if (!status.IsSucceeded() || tasker.IsRunning || tasker.IsStopping)
-            {
+            if (!status.IsSucceeded() || tasker.IsRunning || tasker.IsStopping) {
                 throw new StopConfirmationException(
                     $"MaaFramework Stop 未确认：job={status}，running={tasker.IsRunning}，stopping={tasker.IsStopping}。 ");
             }
             _stopConfirmed.TrySetResult(true);
             _log("INFO", "runtime.stop", "MaaFramework Stop 已确认。 ");
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             var actual = exception is StopConfirmationException
                 ? exception
-                : new StopConfirmationException(
-                    $"MaaFramework Stop 在 {StopTimeout.TotalSeconds:0} 秒内未确认。",
-                    exception);
+                : new StopConfirmationException($"MaaFramework Stop 在 {StopTimeout.TotalSeconds:0} 秒内未确认。", exception);
             _stopConfirmed.TrySetException(actual);
             throw actual;
         }
@@ -240,8 +192,7 @@ internal sealed class WorkerRuntimeExecution
 
     internal void RequestStop()
     {
-        lock (_gate)
-        {
+        lock (_gate) {
             _stopRequested = true;
         }
         StopPreviewProducer();
@@ -254,26 +205,21 @@ internal sealed class WorkerRuntimeExecution
         var classRegex = CreateWindowRegex(_manifest.Controller.ClassRegex, "class_regex");
         var windowRegex = CreateWindowRegex(_manifest.Controller.WindowRegex, "window_regex");
         using var windows = MaaToolkit.Shared.Desktop.Window.Find();
-        foreach (var window in windows)
-        {
+        foreach (var window in windows) {
             if (!IsWindowMatch(classRegex, window.ClassName, "class_regex")
-                || !IsWindowMatch(windowRegex, window.Name, "window_regex"))
-            {
+                || !IsWindowMatch(windowRegex, window.Name, "window_regex")) {
                 continue;
             }
             _ = GetWindowThreadProcessId(window.Handle, out var processId);
-            if (processId == 0)
-            {
+            if (processId == 0) {
                 continue;
             }
             using var process = Process.GetProcessById(checked((int)processId));
-            if (process.SessionId != _childSessionId)
-            {
+            if (process.SessionId != _childSessionId) {
                 continue;
             }
             _log(
-                "INFO",
-                "runtime.window",
+                "INFO", "runtime.window",
                 $"目标窗口进程 PID={processId}，SessionId={process.SessionId}，Path={TryGetProcessPath(process)}。 ");
             return window;
         }
@@ -284,36 +230,25 @@ internal sealed class WorkerRuntimeExecution
 
     private static Regex CreateWindowRegex(string pattern, string field)
     {
-        try
-        {
+        try {
             return new Regex(pattern, RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
-        }
-        catch (ArgumentException exception)
-        {
-            throw new InvalidDataException(
-                $"Launch Manifest controller.{field} 不是合法正则表达式。",
-                exception);
+        } catch (ArgumentException exception) {
+            throw new InvalidDataException($"Launch Manifest controller.{field} 不是合法正则表达式。", exception);
         }
     }
 
     private static bool IsWindowMatch(Regex regex, string value, string field)
     {
-        try
-        {
+        try {
             return regex.IsMatch(value);
-        }
-        catch (RegexMatchTimeoutException exception)
-        {
-            throw new InvalidDataException(
-                $"Launch Manifest controller.{field} 匹配窗口信息时超时。",
-                exception);
+        } catch (RegexMatchTimeoutException exception) {
+            throw new InvalidDataException($"Launch Manifest controller.{field} 匹配窗口信息时超时。", exception);
         }
     }
 
     private Process StartAgentProcess(string identifier, string nativeAssemblyDirectory)
     {
-        var startInfo = new ProcessStartInfo
-        {
+        var startInfo = new ProcessStartInfo {
             FileName = _manifest.Agent.ChildExec,
             WorkingDirectory = _manifest.Agent.WorkingDirectory,
             UseShellExecute = false,
@@ -321,28 +256,24 @@ internal sealed class WorkerRuntimeExecution
             RedirectStandardError = true,
             CreateNoWindow = true
         };
-        foreach (var argument in _manifest.Agent.ChildArgs)
-        {
+        foreach (var argument in _manifest.Agent.ChildArgs) {
             startInfo.ArgumentList.Add(argument);
         }
         startInfo.ArgumentList.Add(identifier);
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, args) =>
         {
-            if (args.Data is not null)
-            {
+            if (args.Data is not null) {
                 _log("INFO", "agent.stdout", args.Data);
             }
         };
         process.ErrorDataReceived += (_, args) =>
         {
-            if (args.Data is not null)
-            {
+            if (args.Data is not null) {
                 _log("WARN", "agent.stderr", args.Data);
             }
         };
-        if (!process.Start())
-        {
+        if (!process.Start()) {
             process.Dispose();
             throw new InvalidOperationException("无法启动 Python Agent。 ");
         }
@@ -356,8 +287,7 @@ internal sealed class WorkerRuntimeExecution
     private async Task<(bool Success, bool ForcedAgentTermination, string? Error)> CleanupAsync(
         CancellationToken cancellationToken)
     {
-        if (_preserveContext)
-        {
+        if (_preserveContext) {
             return (false, false, "Stop 未确认，保留 execution context 供诊断。 ");
         }
 
@@ -365,77 +295,53 @@ internal sealed class WorkerRuntimeExecution
 
         var forced = false;
         var errors = new List<string>();
-        try
-        {
-            if (_agentClient is not null && !_agentClient.LinkStop())
-            {
+        try {
+            if (_agentClient is not null && !_agentClient.LinkStop()) {
                 errors.Add("MaaAgentClient.LinkStop 返回 false");
             }
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             errors.Add($"LinkStop: {exception.GetBaseException().Message}");
         }
 
-        if (_agentProcess is { } agentProcess)
-        {
-            try
-            {
-                if (!agentProcess.HasExited)
-                {
+        if (_agentProcess is { } agentProcess) {
+            try {
+                if (!agentProcess.HasExited) {
                     using var grace = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                     grace.CancelAfter(AgentExitGracePeriod);
-                    try
-                    {
+                    try {
                         await agentProcess.WaitForExitAsync(grace.Token);
-                    }
-                    catch (OperationCanceledException)
-                    {
+                    } catch (OperationCanceledException) {
                         forced = true;
                         agentProcess.Kill(entireProcessTree: true);
                         await agentProcess.WaitForExitAsync(CancellationToken.None);
                     }
                 }
-            }
-            catch (Exception exception)
-            {
+            } catch (Exception exception) {
                 errors.Add($"Agent process: {exception.GetBaseException().Message}");
             }
         }
 
-        try
-        {
-            if (_tasker is not null)
-            {
+        try {
+            if (_tasker is not null) {
                 _tasker.Callback -= OnTaskerCallback;
             }
-        }
-        catch (Exception exception)
-        {
-            try
-            {
+        } catch (Exception exception) {
+            try {
                 _log("WARN", "maanop.callback", $"MaaFramework Callback 退订失败：{exception.GetBaseException().Message}");
-            }
-            catch
-            {
+            } catch {
                 // A logging failure must not change the Run outcome.
             }
         }
 
-        try
-        {
+        try {
             _agentClient?.Dispose();
             _tasker?.Dispose();
             _resource?.Dispose();
             _controller?.Dispose();
             _agentProcess?.Dispose();
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             errors.Add($"Dispose: {exception.GetBaseException().Message}");
-        }
-        finally
-        {
+        } finally {
             _agentClient = null;
             _tasker = null;
             _resource = null;
@@ -456,10 +362,8 @@ internal sealed class WorkerRuntimeExecution
 
     private void ReportRunningOnce()
     {
-        lock (_gate)
-        {
-            if (_runningReported)
-            {
+        lock (_gate) {
+            if (_runningReported) {
                 return;
             }
             _runningReported = true;
@@ -469,33 +373,25 @@ internal sealed class WorkerRuntimeExecution
 
     private bool IsStopRequested()
     {
-        lock (_gate)
-        {
+        lock (_gate) {
             return _stopRequested;
         }
     }
 
     private async Task RunPreviewProducerAsync(LatestFramePreview preview, CancellationToken cancellationToken)
     {
-        try
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
+        try {
+            while (!cancellationToken.IsCancellationRequested) {
                 var cycleStarted = Stopwatch.GetTimestamp();
                 preview.Pump(DateTime.UtcNow);
                 var remaining = TimeSpan.FromMilliseconds(ProtocolConstants.PreviewIntervalMilliseconds)
                                 - Stopwatch.GetElapsedTime(cycleStarted);
-                if (remaining > TimeSpan.Zero)
-                {
+                if (remaining > TimeSpan.Zero) {
                     await Task.Delay(remaining, cancellationToken);
                 }
             }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception)
-        {
+        } catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+        } catch (Exception exception) {
             LogPreviewFailure("Preview producer 意外终止。", exception);
         }
     }
@@ -503,12 +399,9 @@ internal sealed class WorkerRuntimeExecution
     private void StopPreviewProducer()
     {
         _preview?.Stop();
-        try
-        {
+        try {
             _previewCancellation?.Cancel();
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             LogPreviewFailure("停止 Preview producer 失败。", exception);
         }
     }
@@ -516,14 +409,10 @@ internal sealed class WorkerRuntimeExecution
     private async Task StopPreviewProducerAsync()
     {
         StopPreviewProducer();
-        if (_previewProducerTask is not null)
-        {
-            try
-            {
+        if (_previewProducerTask is not null) {
+            try {
                 await _previewProducerTask;
-            }
-            catch (Exception exception)
-            {
+            } catch (Exception exception) {
                 LogPreviewFailure("等待 Preview producer 结束失败。", exception);
             }
         }
@@ -532,20 +421,16 @@ internal sealed class WorkerRuntimeExecution
 
     private void LogPreviewFailure(string message, Exception exception)
     {
-        try
-        {
+        try {
             _log("WARN", "preview.lifecycle", $"{message} {exception.GetBaseException().Message}");
-        }
-        catch
-        {
+        } catch {
             // Preview diagnostics must never change the Run outcome.
         }
     }
 
     private static T ParseEnum<T>(string value) where T : struct, Enum
     {
-        if (Enum.TryParse<T>(value, ignoreCase: true, out var result) && Enum.IsDefined(result))
-        {
+        if (Enum.TryParse<T>(value, ignoreCase: true, out var result) && Enum.IsDefined(result)) {
             return result;
         }
         throw new InvalidDataException($"无法映射 MaaFramework {typeof(T).Name}：{value}。 ");
@@ -553,12 +438,9 @@ internal sealed class WorkerRuntimeExecution
 
     private static string TryGetProcessPath(Process process)
     {
-        try
-        {
+        try {
             return process.MainModule?.FileName ?? "unknown";
-        }
-        catch
-        {
+        } catch {
             return "unavailable";
         }
     }

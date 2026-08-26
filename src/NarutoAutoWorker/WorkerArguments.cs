@@ -7,16 +7,13 @@ internal sealed record WorkerArguments(Guid WorkerInstanceId, string LaunchToken
         string? instance = null;
         string? token = null;
         string? manifest = null;
-        for (var index = 0; index < args.Length; index++)
-        {
+        for (var index = 0; index < args.Length; index++) {
             var name = args[index];
-            if (index + 1 >= args.Length)
-            {
+            if (index + 1 >= args.Length) {
                 throw new ArgumentException($"启动参数 {name} 缺少值。 ");
             }
 
-            switch (name)
-            {
+            switch (name) {
                 case "--instance":
                     instance = args[++index];
                     break;
@@ -31,16 +28,13 @@ internal sealed record WorkerArguments(Guid WorkerInstanceId, string LaunchToken
             }
         }
 
-        if (!Guid.TryParse(instance, out var workerInstanceId))
-        {
+        if (!Guid.TryParse(instance, out var workerInstanceId)) {
             throw new ArgumentException("--instance 必须是 GUID。 ");
         }
-        if (string.IsNullOrWhiteSpace(token) || token.Length < 32)
-        {
+        if (string.IsNullOrWhiteSpace(token) || token.Length < 32) {
             throw new ArgumentException("--token 缺失或过短。 ");
         }
-        if (string.IsNullOrWhiteSpace(manifest) || !Path.IsPathFullyQualified(manifest))
-        {
+        if (string.IsNullOrWhiteSpace(manifest) || !Path.IsPathFullyQualified(manifest)) {
             throw new ArgumentException("--manifest 必须是绝对路径。 ");
         }
 

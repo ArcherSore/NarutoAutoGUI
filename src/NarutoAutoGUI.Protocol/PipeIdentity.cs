@@ -10,8 +10,7 @@ public static class PipeIdentity
 
     public static string ForCurrentUser()
     {
-        if (!OperatingSystem.IsWindows())
-        {
+        if (!OperatingSystem.IsWindows()) {
             throw new PlatformNotSupportedException("NarutoAutoGUI Worker IPC 只支持 Windows。");
         }
 

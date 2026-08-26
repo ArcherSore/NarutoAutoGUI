@@ -10,19 +10,15 @@ internal static class DependencyProbe
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(15);
 
     internal static async Task<(DependencyStatus Status, StructuredReason? Reason)> RunAsync(
-        LaunchManifest manifest,
-        CancellationToken cancellationToken)
+        LaunchManifest manifest, CancellationToken cancellationToken)
     {
         DependencyCheck framework;
         var bindingVersion = typeof(MaaGlobal).Assembly.GetName().Version?.ToString() ?? "unknown";
         string runtimeVersion;
-        try
-        {
+        try {
             runtimeVersion = NativeBindingContext.LibraryVersion;
             framework = new DependencyCheck(true, runtimeVersion, null);
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             runtimeVersion = "unavailable";
             framework = new DependencyCheck(false, null, exception.GetBaseException().Message);
         }
@@ -31,11 +27,8 @@ internal static class DependencyProbe
             .SelectMany(resource => resource.Paths)
             .Where(path => !Directory.Exists(path))
             .ToArray();
-        if (resourceErrors.Length > 0)
-        {
-            var reason = new StructuredReason(
-                "ResourceInvalid",
-                $"Resource 目录不存在：{string.Join(", ", resourceErrors)}");
+        if (resourceErrors.Length > 0) {
+            var reason = new StructuredReason("ResourceInvalid", $"Resource 目录不存在：{string.Join(", ", resourceErrors)}");
             return (CreateUnavailableStatus(bindingVersion, runtimeVersion, reason.Message), reason);
         }
 
@@ -46,12 +39,9 @@ internal static class DependencyProbe
 
         ProbePayload? payload = null;
         string? probeError = null;
-        try
-        {
+        try {
             payload = await RunPythonProbeAsync(manifest.Agent, entryPath, cancellationToken);
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             probeError = exception.GetBaseException().Message;
         }
 
@@ -62,23 +52,14 @@ internal static class DependencyProbe
         var agentServer = ImportCheck(payload?.AgentServer, probeError);
         var toolkit = ImportCheck(payload?.Toolkit, probeError);
         var status = new DependencyStatus(
-            DateTime.UtcNow,
-            bindingVersion,
-            runtimeVersion,
-            python,
-            maa,
-            agentServer,
-            toolkit,
-            entryCheck);
+            DateTime.UtcNow, bindingVersion, runtimeVersion, python,
+            maa, agentServer, toolkit, entryCheck);
 
         var failures = new[]
             {
-                ("MaaFrameworkUnavailable", framework),
-                ("PythonMissing", python),
-                ("AgentModuleMissing", maa),
-                ("AgentServerMissing", agentServer),
-                ("ToolkitMissing", toolkit),
-                ("AgentEntryInvalid", entryCheck)
+                ("MaaFrameworkUnavailable", framework), ("PythonMissing", python),
+                ("AgentModuleMissing", maa), ("AgentServerMissing", agentServer),
+                ("ToolkitMissing", toolkit), ("AgentEntryInvalid", entryCheck)
             }
             .Where(item => !item.Item2.Success)
             .ToArray();
@@ -90,18 +71,14 @@ internal static class DependencyProbe
         return (status, reasonResult);
     }
 
-    private static async Task<ProbePayload> RunPythonProbeAsync(
-        AgentDefinition agent,
-        string entryPath,
-        CancellationToken cancellationToken)
+    private static async Task<ProbePayload> RunPythonProbeAsync(AgentDefinition agent, string entryPath, CancellationToken cancellationToken)
     {
         const string script = "import json,sys; result={'executable':sys.executable,'version':sys.version," +
                               "'maa':False,'agentServer':False,'toolkit':False}; import maa; result['maa']=True; " +
                               "from maa.agent.agent_server import AgentServer; result['agentServer']=True; " +
                               "from maa.toolkit import Toolkit; result['toolkit']=True; " +
                               "print(json.dumps(result,ensure_ascii=False))";
-        var startInfo = new ProcessStartInfo
-        {
+        var startInfo = new ProcessStartInfo {
             FileName = agent.ChildExec,
             WorkingDirectory = agent.WorkingDirectory,
             UseShellExecute = false,
@@ -117,19 +94,15 @@ internal static class DependencyProbe
         var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(ProbeTimeout);
-        try
-        {
+        try {
             await process.WaitForExitAsync(timeout.Token);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
+        } catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
             process.Kill(entireProcessTree: true);
             throw new TimeoutException($"Python Agent Probe 超过 {ProbeTimeout.TotalSeconds:0} 秒。 ");
         }
         var stdout = await stdoutTask;
         var stderr = await stderrTask;
-        if (process.ExitCode != 0)
-        {
+        if (process.ExitCode != 0) {
             throw new InvalidOperationException(
                 $"Python Agent Probe 退出码 {process.ExitCode}：{stderr.Trim()}。 ");
         }
@@ -142,8 +115,7 @@ internal static class DependencyProbe
         var candidate = agent.ChildArgs.FirstOrDefault(argument =>
             !argument.StartsWith("-", StringComparison.Ordinal)
             && argument.EndsWith(".py", StringComparison.OrdinalIgnoreCase));
-        if (candidate is null)
-        {
+        if (candidate is null) {
             throw new InvalidDataException("Agent child_args 中没有 Python 入口脚本。 ");
         }
         return Path.GetFullPath(
@@ -161,14 +133,8 @@ internal static class DependencyProbe
     {
         var failed = new DependencyCheck(false, null, error);
         return new DependencyStatus(
-            DateTime.UtcNow,
-            bindingVersion,
-            runtimeVersion,
-            failed,
-            failed,
-            failed,
-            failed,
-            failed);
+            DateTime.UtcNow, bindingVersion, runtimeVersion, failed,
+            failed, failed, failed, failed);
     }
 
     private sealed record ProbePayload(string Executable, string Version, bool Maa, bool AgentServer, bool Toolkit);

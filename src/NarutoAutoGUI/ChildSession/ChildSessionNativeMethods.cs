@@ -40,21 +40,16 @@ internal static class ChildSessionNativeMethods
 
     [DllImport("wtsapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool WTSLogoffSession(
-        IntPtr serverHandle,
-        uint sessionId,
-        [MarshalAs(UnmanagedType.Bool)] bool wait);
+    private static extern bool WTSLogoffSession(IntPtr serverHandle, uint sessionId, [MarshalAs(UnmanagedType.Bool)] bool wait);
 
     // Returns false when WTS reports no Child Session, either as a successful ULONG(-1)
     // result or as ERROR_NOT_FOUND on Windows builds that use that native result shape.
     // All other native call failures retain their Win32 error code and are thrown.
     internal static bool TryGetChildSessionId(out uint childSessionId)
     {
-        if (!WTSGetChildSessionId(out childSessionId))
-        {
+        if (!WTSGetChildSessionId(out childSessionId)) {
             var error = Marshal.GetLastPInvokeError();
-            if (error == ErrorNotFound)
-            {
+            if (error == ErrorNotFound) {
                 childSessionId = NoChildSessionId;
                 return false;
             }
@@ -72,8 +67,7 @@ internal static class ChildSessionNativeMethods
 
     internal static bool IsChildSessionsEnabled()
     {
-        if (!WTSIsChildSessionsEnabled(out var enabled))
-        {
+        if (!WTSIsChildSessionsEnabled(out var enabled)) {
             throw CreateLastWin32Exception("无法读取 RDP Child Session 状态");
         }
 
@@ -84,8 +78,7 @@ internal static class ChildSessionNativeMethods
     // Failure is reported with the concrete Win32 error code; we never pre-reject by edition.
     internal static void EnableChildSessions()
     {
-        if (!WTSEnableChildSessions(true))
-        {
+        if (!WTSEnableChildSessions(true)) {
             throw CreateLastWin32Exception("无法启用 RDP Child Session");
         }
     }
@@ -94,24 +87,20 @@ internal static class ChildSessionNativeMethods
 
     internal static uint? TerminateChildSession(bool wait)
     {
-        if (!WTSGetChildSessionId(out var childSessionId))
-        {
+        if (!WTSGetChildSessionId(out var childSessionId)) {
             var error = Marshal.GetLastPInvokeError();
-            if (error == ErrorNotFound)
-            {
+            if (error == ErrorNotFound) {
                 return null;
             }
 
             throw CreateLastWin32Exception("无法取得 RDP Child Session ID");
         }
 
-        if (childSessionId == NoChildSessionId)
-        {
+        if (childSessionId == NoChildSessionId) {
             return null;
         }
 
-        if (!WTSLogoffSession(CurrentServerHandle, childSessionId, wait))
-        {
+        if (!WTSLogoffSession(CurrentServerHandle, childSessionId, wait)) {
             throw CreateLastWin32Exception($"无法注销 Child Session {childSessionId}");
         }
 
@@ -121,17 +110,14 @@ internal static class ChildSessionNativeMethods
     // Read the configured RDP-Tcp port (default 3389). Informational: fed to AdvancedSettings7.RDPPort.
     internal static int GetConfiguredRdpPort()
     {
-        try
-        {
+        try {
             using var localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
             using var rdpTcpKey = localMachine.OpenSubKey(RdpTcpRegistryPath);
             var configuredPort = rdpTcpKey?.GetValue("PortNumber");
             return configuredPort is int port and > 0 and <= ushort.MaxValue
                 ? port
                 : DefaultRdpPort;
-        }
-        catch (Exception exception) when (exception is SecurityException or UnauthorizedAccessException or IOException)
-        {
+        } catch (Exception exception) when (exception is SecurityException or UnauthorizedAccessException or IOException) {
             return DefaultRdpPort;
         }
     }
@@ -139,17 +125,14 @@ internal static class ChildSessionNativeMethods
     // Informational only. This PoC does NOT install or depend on RDP Wrapper.
     internal static bool IsRdpWrapperEnabled()
     {
-        try
-        {
+        try {
             using var localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
             using var termServiceParametersKey =
                 localMachine.OpenSubKey(TermServiceParametersRegistryPath);
             var serviceLibraryPath =
                 termServiceParametersKey?.GetValue("ServiceDll") as string;
             return serviceLibraryPath?.Contains(RdpWrapperLibraryName, StringComparison.OrdinalIgnoreCase) == true;
-        }
-        catch (Exception exception) when (exception is SecurityException or UnauthorizedAccessException or IOException)
-        {
+        } catch (Exception exception) when (exception is SecurityException or UnauthorizedAccessException or IOException) {
             return false;
         }
     }
@@ -161,18 +144,14 @@ internal static class ChildSessionNativeMethods
     // crash the launcher or tear down an established Child Session.
     internal static List<(uint ProcessId, uint SessionId, string Name)> EnumerateProcesses()
     {
-        try
-        {
+        try {
             using var searcher = new ManagementObjectSearcher("SELECT ProcessId, SessionId, Name FROM Win32_Process");
             using var results = searcher.Get();
             var list = new List<(uint, uint, string)>(results.Count);
 
-            foreach (ManagementObject process in results)
-            {
-                using (process)
-                {
-                    if (process["ProcessId"] is not uint processId || process["SessionId"] is not uint sessionId)
-                    {
+            foreach (ManagementObject process in results) {
+                using (process) {
+                    if (process["ProcessId"] is not uint processId || process["SessionId"] is not uint sessionId) {
                         continue;
                     }
 
@@ -182,25 +161,15 @@ internal static class ChildSessionNativeMethods
             }
 
             return list;
-        }
-        catch (Exception exception) when (exception is ManagementException
-                                              or COMException
-                                              or UnauthorizedAccessException
-                                              or InvalidOperationException)
-        {
+        } catch (Exception exception) when (exception is ManagementException or COMException
+            or UnauthorizedAccessException or InvalidOperationException) {
             var list = new List<(uint, uint, string)>();
-            foreach (var process in Process.GetProcesses())
-            {
-                using (process)
-                {
-                    try
-                    {
+            foreach (var process in Process.GetProcesses()) {
+                using (process) {
+                    try {
                         list.Add(((uint)process.Id, (uint)process.SessionId, process.ProcessName + ".exe"));
-                    }
-                    catch (Exception processException) when (processException is Win32Exception
-                                                                  or InvalidOperationException
-                                                                  or NotSupportedException)
-                    {
+                    } catch (Exception processException) when (processException is Win32Exception
+                        or InvalidOperationException or NotSupportedException) {
                         // A process may exit or become inaccessible between enumeration and read.
                     }
                 }
@@ -215,10 +184,8 @@ internal static class ChildSessionNativeMethods
     internal static bool TryFindProcessInSession(string processName, uint sessionId, out uint processId)
     {
         processId = 0;
-        foreach (var (pid, sid, name) in EnumerateProcesses())
-        {
-            if (sid == sessionId && string.Equals(name, processName, StringComparison.OrdinalIgnoreCase))
-            {
+        foreach (var (pid, sid, name) in EnumerateProcesses()) {
+            if (sid == sessionId && string.Equals(name, processName, StringComparison.OrdinalIgnoreCase)) {
                 processId = pid;
                 return true;
             }

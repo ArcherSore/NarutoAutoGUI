@@ -41,8 +41,7 @@ internal sealed class RdpActiveXHost : AxHost
     {
         get
         {
-            if (!IsHandleCreated)
-            {
+            if (!IsHandleCreated) {
                 return 0;
             }
 
@@ -52,8 +51,7 @@ internal sealed class RdpActiveXHost : AxHost
 
     internal void ConnectToChildSession(DrawingSize desktopSize, string? userName = null, string? password = null)
     {
-        if (ConnectedState != 0)
-        {
+        if (ConnectedState != 0) {
             return;
         }
 
@@ -84,10 +82,8 @@ internal sealed class RdpActiveXHost : AxHost
         // (Windows Hello), child-session auto-logon cannot reuse the password and prompts for it.
         // Supplying the account password here lets the ActiveX log on without a prompt.
         // The password is NOT stored in code; it is passed at runtime via --password.
-        if (!string.IsNullOrEmpty(password))
-        {
-            if (!string.IsNullOrEmpty(userName))
-            {
+        if (!string.IsNullOrEmpty(password)) {
+            if (!string.IsNullOrEmpty(userName)) {
                 RunComStep("设置 UserName", () => SetComProperty(client, "UserName", userName));
             }
             RunComStep("设置 ClearTextPassword", () =>
@@ -108,12 +104,9 @@ internal sealed class RdpActiveXHost : AxHost
         _connectionFailureReported = false;
         _lastConnectionDiagnostic = null;
         _disconnectRequested = false;
-        try
-        {
+        try {
             RunComStep("调用 RDP Connect()", () => InvokeComMethod(client, "Connect"));
-        }
-        catch
-        {
+        } catch {
             _connectionAttemptInProgress = false;
             throw;
         }
@@ -126,19 +119,15 @@ internal sealed class RdpActiveXHost : AxHost
 
     private bool DisconnectCore()
     {
-        if (ConnectedState == 0)
-        {
+        if (ConnectedState == 0) {
             return false;
         }
 
         _disconnectRequested = true;
-        try
-        {
+        try {
             InvokeComMethod(GetRequiredOcx(), "Disconnect");
             return true;
-        }
-        catch
-        {
+        } catch {
             _disconnectRequested = false;
             throw;
         }
@@ -154,14 +143,11 @@ internal sealed class RdpActiveXHost : AxHost
 
     protected override void DetachSink()
     {
-        try
-        {
+        try {
             _eventCookie?.Disconnect();
             _eventCookie = null;
             _eventSink = null;
-        }
-        finally
-        {
+        } finally {
             base.DetachSink();
         }
     }
@@ -179,15 +165,13 @@ internal sealed class RdpActiveXHost : AxHost
         var failedWhileConnecting = _connectionAttemptInProgress;
         _connectionAttemptInProgress = false;
 
-        if (_disconnectRequested)
-        {
+        if (_disconnectRequested) {
             _disconnectRequested = false;
             return;
         }
 
         var extendedDisconnectReason = TryGetExtendedDisconnectReason();
-        if (_connectionFailureReported)
-        {
+        if (_connectionFailureReported) {
             return;
         }
 
@@ -205,8 +189,7 @@ internal sealed class RdpActiveXHost : AxHost
     private void OnFatalError(int errorCode)
     {
         _connectionAttemptInProgress = false;
-        if (_disconnectRequested)
-        {
+        if (_disconnectRequested) {
             return;
         }
 
@@ -217,17 +200,14 @@ internal sealed class RdpActiveXHost : AxHost
 
     private void OnLogonError(int errorCode)
     {
-        if (_disconnectRequested)
-        {
+        if (_disconnectRequested) {
             return;
         }
 
         var message =
             $"RDP 登录阶段：{GetLogonErrorDescription(errorCode)}\n\n错误代码：{FormatErrorCode(errorCode)}";
-        if (IsNonTerminalLogonEvent(errorCode))
-        {
-            _lastConnectionDiagnostic =
-                new ChildSessionConnectionFailedEventArgs(message, errorCode);
+        if (IsNonTerminalLogonEvent(errorCode)) {
+            _lastConnectionDiagnostic = new ChildSessionConnectionFailedEventArgs(message, errorCode);
             return;
         }
 
@@ -237,51 +217,35 @@ internal sealed class RdpActiveXHost : AxHost
 
     private int TryGetExtendedDisconnectReason()
     {
-        try
-        {
+        try {
             return Convert.ToInt32(
-                GetComProperty(GetRequiredOcx(), "ExtendedDisconnectReason"),
-                CultureInfo.InvariantCulture);
-        }
-        catch (Exception exception) when (exception is COMException
-                                              or TargetInvocationException
-                                              or InvalidOperationException)
-        {
+                GetComProperty(GetRequiredOcx(), "ExtendedDisconnectReason"), CultureInfo.InvariantCulture);
+        } catch (Exception exception) when (exception is COMException or TargetInvocationException or InvalidOperationException) {
             return 0;
         }
     }
 
     private string? TryGetErrorDescription(int disconnectReason, int extendedDisconnectReason)
     {
-        try
-        {
+        try {
             return Convert.ToString(
                 InvokeComMethod(
-                    GetRequiredOcx(),
-                    "GetErrorDescription",
-                    disconnectReason,
-                    extendedDisconnectReason),
+                    GetRequiredOcx(), "GetErrorDescription", disconnectReason, extendedDisconnectReason),
                 CultureInfo.CurrentCulture);
-        }
-        catch (Exception exception) when (exception is COMException
-                                              or TargetInvocationException
-                                              or InvalidOperationException)
-        {
+        } catch (Exception exception) when (exception is COMException or TargetInvocationException or InvalidOperationException) {
             return null;
         }
     }
 
     private void ReportConnectionFailure(string message, int errorCode, int? extendedErrorCode = null)
     {
-        if (_connectionFailureReported)
-        {
+        if (_connectionFailureReported) {
             return;
         }
 
         _connectionFailureReported = true;
         ConnectionFailed?.Invoke(
-            this,
-            new ChildSessionConnectionFailedEventArgs(message, errorCode, extendedErrorCode));
+            this, new ChildSessionConnectionFailedEventArgs(message, errorCode, extendedErrorCode));
     }
 
     private static string FormatErrorCode(int errorCode)
@@ -289,8 +253,7 @@ internal sealed class RdpActiveXHost : AxHost
         return $"{errorCode} (0x{unchecked((uint)errorCode):X8})";
     }
 
-    private static string GetFatalErrorDescription(int errorCode) => errorCode switch
-    {
+    private static string GetFatalErrorDescription(int errorCode) => errorCode switch {
         0 => "发生未知错误。",
         1 => "发生内部错误（1）。",
         2 => "内存不足。",
@@ -303,8 +266,7 @@ internal sealed class RdpActiveXHost : AxHost
         _ => "发生未识别的致命错误。"
     };
 
-    private static string GetLogonErrorDescription(int errorCode) => errorCode switch
-    {
+    private static string GetLogonErrorDescription(int errorCode) => errorCode switch {
         -7 => "Winlogon 正在显示“拒绝断开现有会话”对话框。",
         -6 => "Winlogon 正在显示“无权限”对话框。",
         -5 => "Winlogon 正在显示会话争用选项。",
@@ -326,8 +288,7 @@ internal sealed class RdpActiveXHost : AxHost
 
     private object GetRequiredOcx()
     {
-        if (!IsHandleCreated)
-        {
+        if (!IsHandleCreated) {
             _ = Handle;
         }
 
@@ -338,51 +299,35 @@ internal sealed class RdpActiveXHost : AxHost
     private static object? GetComProperty(object target, string propertyName)
     {
         return target.GetType().InvokeMember(
-            propertyName,
-            BindingFlags.GetProperty,
-            binder: null,
-            target,
-            args: null,
-            CultureInfo.InvariantCulture);
+            propertyName, BindingFlags.GetProperty, binder: null, target,
+            args: null, CultureInfo.InvariantCulture);
     }
 
     private static void SetComProperty(object target, string propertyName, object value)
     {
         target.GetType().InvokeMember(
-            propertyName,
-            BindingFlags.SetProperty,
-            binder: null,
-            target,
-            [value],
-            CultureInfo.InvariantCulture);
+            propertyName, BindingFlags.SetProperty, binder: null, target,
+            [value], CultureInfo.InvariantCulture);
     }
 
     private static void TrySetExtendedProperty(
-        IMsRdpExtendedSettings extendedSettings,
-        string propertyName,
-        object value)
+        IMsRdpExtendedSettings extendedSettings, string propertyName, object value)
     {
-        try
-        {
+        try {
             extendedSettings.set_Property(propertyName, ref value);
-        }
-        catch (COMException)
-        {
+        } catch (COMException) {
             // Older MsTscAx may not support the extended property; keep default behavior.
         }
     }
 
     private static void SetAndVerifyExtendedUIntProperty(
-        IMsRdpExtendedSettings extendedSettings,
-        string propertyName,
-        uint expectedValue)
+        IMsRdpExtendedSettings extendedSettings, string propertyName, uint expectedValue)
     {
         object value = expectedValue;
         extendedSettings.set_Property(propertyName, ref value);
 
         var actualValue = Convert.ToUInt32(extendedSettings.get_Property(propertyName), CultureInfo.InvariantCulture);
-        if (actualValue != expectedValue)
-        {
+        if (actualValue != expectedValue) {
             throw new COMException(
                 $"RDP 扩展属性 {propertyName} 写后读不一致：期望 {expectedValue}，实际 {actualValue}。");
         }
@@ -391,25 +336,17 @@ internal sealed class RdpActiveXHost : AxHost
     private static object? InvokeComMethod(object target, string methodName, params object[]? args)
     {
         return target.GetType().InvokeMember(
-            methodName,
-            BindingFlags.InvokeMethod,
-            binder: null,
-            target,
-            args,
-            CultureInfo.InvariantCulture);
+            methodName, BindingFlags.InvokeMethod, binder: null, target,
+            args, CultureInfo.InvariantCulture);
     }
 
     private static void RunComStep(string stepName, Action action)
     {
-        try
-        {
+        try {
             action();
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             var actualException = exception.GetBaseException();
-            if (actualException is COMException comException)
-            {
+            if (actualException is COMException comException) {
                 throw new COMException(
                     $"{stepName}失败：{comException.Message}",
                     comException.ErrorCode);
@@ -445,8 +382,7 @@ internal sealed class RdpActiveXHost : AxHost
     private interface IMsRdpExtendedSettings
     {
         void set_Property(
-            [In, MarshalAs(UnmanagedType.BStr)] string propertyName,
-            [In, MarshalAs(UnmanagedType.Struct)] ref object value);
+            [In, MarshalAs(UnmanagedType.BStr)] string propertyName, [In, MarshalAs(UnmanagedType.Struct)] ref object value);
 
         [return: MarshalAs(UnmanagedType.Struct)]
         object get_Property([In, MarshalAs(UnmanagedType.BStr)] string propertyName);
@@ -477,9 +413,7 @@ internal sealed class RdpActiveXHost : AxHost
 }
 
 internal sealed class ChildSessionConnectionFailedEventArgs(
-    string message,
-    int errorCode,
-    int? extendedErrorCode = null) : EventArgs
+    string message, int errorCode, int? extendedErrorCode = null) : EventArgs
 {
     public string Message { get; } = message;
     public int ErrorCode { get; } = errorCode;

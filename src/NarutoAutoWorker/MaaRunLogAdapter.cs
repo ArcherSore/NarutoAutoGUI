@@ -14,30 +14,21 @@ internal sealed class MaaRunLogAdapter
 
     internal void Handle(string message, string detailsJson)
     {
-        try
-        {
+        try {
             var rendered = MaaRunLogFormatter.Format(message, detailsJson);
-            if (rendered is not null)
-            {
+            if (rendered is not null) {
                 _log("INFO", ProtocolConstants.MaaNopRunLogSource, rendered);
             }
-        }
-        catch (Exception exception)
-        {
-            if (Interlocked.Exchange(ref _warningLogged, 1) != 0)
-            {
+        } catch (Exception exception) {
+            if (Interlocked.Exchange(ref _warningLogged, 1) != 0) {
                 return;
             }
 
-            try
-            {
+            try {
                 _log(
-                    "WARN",
-                    "maanop.callback",
+                    "WARN", "maanop.callback",
                     $"MaaFramework Callback focus 解析失败：{exception.GetBaseException().Message}");
-            }
-            catch
-            {
+            } catch {
                 // A logging failure must never escape the MaaFramework callback thread.
             }
         }

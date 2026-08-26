@@ -15,8 +15,7 @@ public sealed record MaaNopConfig
 
 internal sealed class MaaNopConfigStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
+    private static readonly JsonSerializerOptions JsonOptions = new() {
         PropertyNamingPolicy = null,
         PropertyNameCaseInsensitive = false,
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
@@ -33,22 +32,16 @@ internal sealed class MaaNopConfigStore
 
     internal MaaNopConfig Load()
     {
-        if (!File.Exists(_path))
-        {
+        if (!File.Exists(_path)) {
             return new MaaNopConfig();
         }
 
         using var stream = new FileStream(
-            _path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize: 4096,
-            FileOptions.SequentialScan);
+            _path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 4096, FileOptions.SequentialScan);
         var config = JsonSerializer.Deserialize<MaaNopConfig>(stream, JsonOptions)
                      ?? throw new InvalidDataException("maanop-config.json 为空。 ");
-        if (config.SchemaVersion != MaaNopConfig.CurrentSchemaVersion)
-        {
+        if (config.SchemaVersion != MaaNopConfig.CurrentSchemaVersion) {
             throw new InvalidDataException(
                 $"不支持 MaaNOP Config SchemaVersion {config.SchemaVersion}。 ");
         }
@@ -58,8 +51,7 @@ internal sealed class MaaNopConfigStore
 
     internal void Save(MaaNopConfig config)
     {
-        if (config.SchemaVersion != MaaNopConfig.CurrentSchemaVersion)
-        {
+        if (config.SchemaVersion != MaaNopConfig.CurrentSchemaVersion) {
             throw new InvalidDataException(
                 $"只能保存 SchemaVersion {MaaNopConfig.CurrentSchemaVersion} MaaNOP Config。 ");
         }
@@ -68,20 +60,15 @@ internal sealed class MaaNopConfigStore
                         ?? throw new InvalidOperationException("MaaNOP Config 路径没有父目录。 ");
         Directory.CreateDirectory(directory);
         var tempPath = Path.Combine(directory, $".{Path.GetFileName(_path)}.{Guid.NewGuid():N}.tmp");
-        try
-        {
-            using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            {
+        try {
+            using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
                 JsonSerializer.Serialize(stream, config, JsonOptions);
                 stream.Flush(flushToDisk: true);
             }
 
             File.Move(tempPath, _path, overwrite: true);
-        }
-        finally
-        {
-            if (File.Exists(tempPath))
-            {
+        } finally {
+            if (File.Exists(tempPath)) {
                 File.Delete(tempPath);
             }
         }

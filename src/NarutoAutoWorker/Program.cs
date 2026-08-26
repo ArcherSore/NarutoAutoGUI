@@ -4,28 +4,20 @@ namespace NarutoAutoWorker;
 
 internal static class Program
 {
-    private static readonly string BootstrapLogPath = Path.Combine(
-        Path.GetTempPath(),
-        "NarutoAutoWorker.bootstrap.log");
+    private static readonly string BootstrapLogPath = Path.Combine(Path.GetTempPath(), "NarutoAutoWorker.bootstrap.log");
 
     private static async Task<int> Main(string[] args)
     {
-        try
-        {
-            if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase))
-            {
+        try {
+            if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase)) {
                 return WorkerSelfTestRunner.Run();
             }
 
             var arguments = WorkerArguments.Parse(args);
             var manifest = LaunchManifestLoader.Load(arguments);
             using var process = Process.GetCurrentProcess();
-            using var mutex = new Mutex(
-                initiallyOwned: true,
-                $@"Local\NarutoAutoWorker-{process.SessionId}",
-                out var createdNew);
-            if (!createdNew)
-            {
+            using var mutex = new Mutex(initiallyOwned: true, $@"Local\NarutoWorker-{process.SessionId}", out var createdNew);
+            if (!createdNew) {
                 throw new InvalidOperationException(
                     $"Child Session {process.SessionId} 已有 NarutoAutoWorker。 ");
             }
@@ -39,17 +31,12 @@ internal static class Program
             var host = new WorkerHost(arguments, manifest);
             await host.RunAsync(shutdown.Token);
             return 0;
-        }
-        catch (Exception exception)
-        {
+        } catch (Exception exception) {
             var text = $"[{DateTime.UtcNow:O}] {exception}{Environment.NewLine}";
             Console.Error.Write(text);
-            try
-            {
+            try {
                 File.AppendAllText(BootstrapLogPath, text);
-            }
-            catch
-            {
+            } catch {
             }
             return 1;
         }

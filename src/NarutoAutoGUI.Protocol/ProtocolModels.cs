@@ -59,8 +59,7 @@ public static class ProtocolJson
 
     private static JsonSerializerOptions CreateOptions()
     {
-        var options = new JsonSerializerOptions
-        {
+        var options = new JsonSerializerOptions {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             PropertyNameCaseInsensitive = false,
             ReadCommentHandling = JsonCommentHandling.Disallow,
@@ -84,8 +83,7 @@ public sealed record WireEnvelope
     public ProtocolError? Error { get; init; }
     public required JsonElement Data { get; init; }
 
-    public static WireEnvelope Request<T>(string operation, Guid requestId, T data) => new()
-    {
+    public static WireEnvelope Request<T>(string operation, Guid requestId, T data) => new() {
         ProtocolVersion = ProtocolConstants.ProtocolVersion,
         MessageType = ProtocolMessageTypes.Request,
         Operation = operation,
@@ -93,8 +91,7 @@ public sealed record WireEnvelope
         Data = ProtocolJson.ToElement(data)
     };
 
-    public static WireEnvelope Response<T>(string operation, Guid requestId, T data) => new()
-    {
+    public static WireEnvelope Response<T>(string operation, Guid requestId, T data) => new() {
         ProtocolVersion = ProtocolConstants.ProtocolVersion,
         MessageType = ProtocolMessageTypes.Response,
         Operation = operation,
@@ -104,13 +101,8 @@ public sealed record WireEnvelope
     };
 
     public static WireEnvelope Failure(
-        string operation,
-        Guid requestId,
-        string code,
-        string message,
-        bool retriable = false,
-        JsonElement? details = null) => new()
-        {
+        string operation, Guid requestId, string code, string message,
+        bool retriable = false, JsonElement? details = null) => new() {
             ProtocolVersion = ProtocolConstants.ProtocolVersion,
             MessageType = ProtocolMessageTypes.Response,
             Operation = operation,
@@ -120,8 +112,7 @@ public sealed record WireEnvelope
             Data = ProtocolJson.ToElement(new { })
         };
 
-    public static WireEnvelope Event<T>(string operation, T data) => new()
-    {
+    public static WireEnvelope Event<T>(string operation, T data) => new() {
         ProtocolVersion = ProtocolConstants.ProtocolVersion,
         MessageType = ProtocolMessageTypes.Event,
         Operation = operation,
@@ -134,42 +125,26 @@ public sealed record ProtocolError(string Code, string Message, bool Retriable, 
 public sealed record ProjectProvenance(string Name, string Version, int InterfaceVersion, string SourceInterfaceDigest);
 
 public sealed record Win32ControllerDefinition(
-    string Name,
-    string ClassRegex,
-    string WindowRegex,
-    string ScreencapMethod,
-    string MouseMethod,
-    string KeyboardMethod);
+    string Name, string ClassRegex, string WindowRegex,
+    string ScreencapMethod, string MouseMethod, string KeyboardMethod);
 
 public sealed record ResourceDefinition(string Name, IReadOnlyList<string> Paths);
 
 public sealed record AgentDefinition(string ChildExec, IReadOnlyList<string> ChildArgs, string WorkingDirectory);
 
 public sealed record LaunchManifest(
-    int LaunchContextVersion,
-    Guid WorkerInstanceId,
-    string RuntimeProfileDigest,
-    string ProjectRoot,
-    ProjectProvenance Project,
-    Win32ControllerDefinition Controller,
-    IReadOnlyList<ResourceDefinition> Resources,
-    AgentDefinition Agent);
+    int LaunchContextVersion, Guid WorkerInstanceId, string RuntimeProfileDigest,
+    string ProjectRoot, ProjectProvenance Project, Win32ControllerDefinition Controller,
+    IReadOnlyList<ResourceDefinition> Resources, AgentDefinition Agent);
 
 public sealed record RunPlan(
-    int PlanVersion,
-    DateTime CreatedAtUtc,
-    ProjectProvenance Project,
-    string RuntimeProfileDigest,
-    JsonElement ResolvedGlobalOptions,
+    int PlanVersion, DateTime CreatedAtUtc, ProjectProvenance Project,
+    string RuntimeProfileDigest, JsonElement ResolvedGlobalOptions,
     IReadOnlyList<RunPlanItem> Items);
 
 public sealed record RunPlanItem(
-    Guid PlanItemId,
-    string TaskName,
-    string TaskLabel,
-    string Entry,
-    JsonElement ResolvedOptions,
-    JsonElement PipelineOverride);
+    Guid PlanItemId, string TaskName, string TaskLabel, string Entry,
+    JsonElement ResolvedOptions, JsonElement PipelineOverride);
 
 public enum WorkerState { Starting, Ready, NotReady, Faulted, Stopping }
 
@@ -182,81 +157,36 @@ public sealed record StructuredReason(string Code, string Message, JsonElement? 
 public sealed record DependencyCheck(bool Success, string? Value, string? Error);
 
 public sealed record DependencyStatus(
-    DateTime CheckedAtUtc,
-    string MaaFrameworkBindingVersion,
-    string MaaFrameworkRuntimeVersion,
-    DependencyCheck Python,
-    DependencyCheck MaaImport,
-    DependencyCheck AgentServerImport,
-    DependencyCheck ToolkitImport,
-    DependencyCheck AgentEntry);
+    DateTime CheckedAtUtc, string MaaFrameworkBindingVersion, string MaaFrameworkRuntimeVersion,
+    DependencyCheck Python, DependencyCheck MaaImport, DependencyCheck AgentServerImport,
+    DependencyCheck ToolkitImport, DependencyCheck AgentEntry);
 
 public sealed record WorkerSnapshot(
-    int SnapshotVersion,
-    DateTime CapturedAtUtc,
-    long StateRevision,
-    Guid WorkerInstanceId,
-    int WorkerPid,
-    uint ChildSessionId,
-    string WorkerVersion,
-    int ProtocolVersion,
-    string RuntimeProfileDigest,
-    ProjectProvenance Project,
-    WorkerState WorkerState,
-    StructuredReason? WorkerReason,
-    DependencyStatus DependencyStatus,
-    RunState RunState,
-    RunSnapshot? ActiveRun,
-    RunSnapshot? LastRun,
-    long FirstAvailableLogSequence,
+    int SnapshotVersion, DateTime CapturedAtUtc, long StateRevision, Guid WorkerInstanceId,
+    int WorkerPid, uint ChildSessionId, string WorkerVersion, int ProtocolVersion,
+    string RuntimeProfileDigest, ProjectProvenance Project, WorkerState WorkerState,
+    StructuredReason? WorkerReason, DependencyStatus DependencyStatus, RunState RunState,
+    RunSnapshot? ActiveRun, RunSnapshot? LastRun, long FirstAvailableLogSequence,
     long LastLogSequence);
 
 public sealed record RunSnapshot(
-    Guid RunId,
-    string PlanDigest,
-    RunState State,
-    DateTime CreatedAtUtc,
-    DateTime? StartedAtUtc,
-    DateTime? StopRequestedAtUtc,
-    DateTime? EndedAtUtc,
-    Guid? CurrentPlanItemId,
-    int? CurrentPlanItemIndex,
-    RunPlan Plan,
-    IReadOnlyList<PlanItemSnapshot> Items,
-    JsonElement? Result,
-    StructuredReason? Error);
+    Guid RunId, string PlanDigest, RunState State, DateTime CreatedAtUtc,
+    DateTime? StartedAtUtc, DateTime? StopRequestedAtUtc, DateTime? EndedAtUtc,
+    Guid? CurrentPlanItemId, int? CurrentPlanItemIndex, RunPlan Plan,
+    IReadOnlyList<PlanItemSnapshot> Items, JsonElement? Result, StructuredReason? Error);
 
 public sealed record PlanItemSnapshot(
-    Guid PlanItemId,
-    string TaskName,
-    string TaskLabel,
-    string Entry,
-    JsonElement ResolvedOptions,
-    JsonElement PipelineOverride,
-    PlanItemState State,
-    DateTime? StartedAtUtc,
-    DateTime? EndedAtUtc,
-    string? Reason,
-    JsonElement? Result,
-    StructuredReason? Error);
+    Guid PlanItemId, string TaskName, string TaskLabel, string Entry,
+    JsonElement ResolvedOptions, JsonElement PipelineOverride, PlanItemState State,
+    DateTime? StartedAtUtc, DateTime? EndedAtUtc, string? Reason,
+    JsonElement? Result, StructuredReason? Error);
 
 public sealed record WorkerLogEntry(
-    long Sequence,
-    DateTime TimestampUtc,
-    string Level,
-    string Source,
-    string Message,
-    bool Truncated,
-    int? OriginalByteLength,
-    Guid? RunId,
-    Guid? PlanItemId,
-    string? TaskName);
+    long Sequence, DateTime TimestampUtc, string Level, string Source, string Message,
+    bool Truncated, int? OriginalByteLength, Guid? RunId, Guid? PlanItemId, string? TaskName);
 
 public sealed record ConnectionOpenRequest(
-    Guid WorkerInstanceId,
-    string LaunchToken,
-    string WorkerVersion,
-    string RuntimeProfileDigest);
+    Guid WorkerInstanceId, string LaunchToken, string WorkerVersion, string RuntimeProfileDigest);
 
 public sealed record ConnectionOpenResponse(bool Accepted, Guid WorkerInstanceId, int WorkerPid, uint ChildSessionId);
 
@@ -275,28 +205,16 @@ public sealed record RunStopResponse(string Disposition, RunState State);
 public sealed record LogGetSinceRequest(long AfterSequence, int Limit);
 
 public sealed record LogGetSinceResponse(
-    IReadOnlyList<WorkerLogEntry> Entries,
-    int EffectiveLimit,
-    long FirstAvailableSequence,
-    long LastLogSequence,
-    bool HasMore,
-    bool Gap,
-    long? MissingFromSequence,
-    long? MissingToSequence);
+    IReadOnlyList<WorkerLogEntry> Entries, int EffectiveLimit, long FirstAvailableSequence,
+    long LastLogSequence, bool HasMore, bool Gap,
+    long? MissingFromSequence, long? MissingToSequence);
 
 public sealed record PreviewGetLatestRequest(Guid RunId, long AfterRevision);
 
 public sealed record PreviewGetLatestResponse(
-    string Disposition,
-    Guid WorkerInstanceId,
-    Guid? RunId,
-    long Revision,
-    DateTime? SampledAtUtc,
-    int? PixelWidth,
-    int? PixelHeight,
-    string? ContentType,
-    byte[]? PngBytes,
-    string? Reason);
+    string Disposition, Guid WorkerInstanceId, Guid? RunId, long Revision,
+    DateTime? SampledAtUtc, int? PixelWidth, int? PixelHeight, string? ContentType,
+    byte[]? PngBytes, string? Reason);
 
 public sealed record StateChangedEvent(Guid WorkerInstanceId, long StateRevision, WorkerSnapshot Snapshot);
 

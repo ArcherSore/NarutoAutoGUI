@@ -7,13 +7,11 @@ internal static class MaaRunLogFormatter
 {
     private static readonly Regex PlaceholderPattern = new(
         @"\{(?<name>[A-Za-z_][A-Za-z0-9_]*)\}",
-        RegexOptions.CultureInvariant,
-        TimeSpan.FromSeconds(1));
+        RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
     internal static string? Format(string message, string detailsJson)
     {
-        if (string.IsNullOrEmpty(message) || string.IsNullOrWhiteSpace(detailsJson))
-        {
+        if (string.IsNullOrEmpty(message) || string.IsNullOrWhiteSpace(detailsJson)) {
             return null;
         }
 
@@ -23,14 +21,12 @@ internal static class MaaRunLogFormatter
             || !details.TryGetProperty("focus", out var focus)
             || focus.ValueKind != JsonValueKind.Object
             || !focus.TryGetProperty(message, out var templateElement)
-            || templateElement.ValueKind != JsonValueKind.String)
-        {
+            || templateElement.ValueKind != JsonValueKind.String) {
             return null;
         }
 
         var template = templateElement.GetString();
-        if (string.IsNullOrWhiteSpace(template))
-        {
+        if (string.IsNullOrWhiteSpace(template)) {
             return null;
         }
 
@@ -42,13 +38,11 @@ internal static class MaaRunLogFormatter
 
     private static string? GetReplacement(JsonElement details, string name)
     {
-        if (!details.TryGetProperty(name, out var value))
-        {
+        if (!details.TryGetProperty(name, out var value)) {
             return null;
         }
 
-        return value.ValueKind switch
-        {
+        return value.ValueKind switch {
             JsonValueKind.String => value.GetString(),
             JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False => value.GetRawText(),
             _ => null

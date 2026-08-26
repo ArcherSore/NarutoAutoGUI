@@ -23,8 +23,7 @@ public sealed class ProjectPlanModule
         var config = configStore.Load();
         ValidateConfigShape(config);
         SelectedTaskName = config.SelectedTasks.SingleOrDefault();
-        if (SelectedTaskName is not null && !project.Tasks.Any(task => task.Name == SelectedTaskName))
-        {
+        if (SelectedTaskName is not null && !project.Tasks.Any(task => task.Name == SelectedTaskName)) {
             throw new InvalidDataException(
                 $"MaaNOP Config 选择的 task 不再存在：{SelectedTaskName}。 ");
         }
@@ -50,8 +49,7 @@ public sealed class ProjectPlanModule
             ?? throw new ArgumentException($"PI 中不存在 task：{taskName}。", nameof(taskName));
 
         var current = LoadConfig();
-        var updated = current with
-        {
+        var updated = current with {
             SelectedTasks = [taskName]
         };
         _ = ProjectOptionResolver.Resolve(_project, FindTask(taskName), updated);
@@ -69,12 +67,10 @@ public sealed class ProjectPlanModule
     public ProjectConfigurationView SetInputValue(string optionName, string inputName, string value)
     {
         var option = FindOption(optionName);
-        if (option.Kind != OptionDefinitionKind.Input)
-        {
+        if (option.Kind != OptionDefinitionKind.Input) {
             throw new ArgumentException($"option {optionName} 不是 input。", nameof(optionName));
         }
-        if (!option.Inputs.Any(input => input.Name == inputName))
-        {
+        if (!option.Inputs.Any(input => input.Name == inputName)) {
             throw new ArgumentException(
                 $"option {optionName} 不包含 input {inputName}。",
                 nameof(inputName));
@@ -93,14 +89,12 @@ public sealed class ProjectPlanModule
     public ProjectConfigurationView SetSelectedCase(string optionName, string selectedCase)
     {
         var option = FindOption(optionName);
-        if (option.Kind is not (OptionDefinitionKind.Select or OptionDefinitionKind.Switch))
-        {
+        if (option.Kind is not (OptionDefinitionKind.Select or OptionDefinitionKind.Switch)) {
             throw new ArgumentException(
                 $"option {optionName} 不是 select/switch。",
                 nameof(optionName));
         }
-        if (!option.Cases.Any(item => item.Name == selectedCase))
-        {
+        if (!option.Cases.Any(item => item.Name == selectedCase)) {
             throw new ArgumentException(
                 $"option {optionName} 不包含 case {selectedCase}。",
                 nameof(selectedCase));
@@ -126,14 +120,9 @@ public sealed class ProjectPlanModule
     }
 
     public LaunchManifest CreateLaunchManifest(Guid workerInstanceId) => new(
-        ProtocolConstants.LaunchContextVersion,
-        workerInstanceId,
-        _project.RuntimeProfileDigest,
-        _project.ProjectRoot,
-        _project.Provenance,
-        _project.Controller,
-        _project.Resources,
-        _project.Agent);
+        ProtocolConstants.LaunchContextVersion, workerInstanceId,
+        _project.RuntimeProfileDigest, _project.ProjectRoot, _project.Provenance,
+        _project.Controller, _project.Resources, _project.Agent);
 
     public RunStartAttempt CreateRunStartAttempt()
     {
@@ -145,22 +134,14 @@ public sealed class ProjectPlanModule
         var resolved = ProjectOptionResolver.Resolve(_project, task, config);
         var createdAtUtc = DateTime.UtcNow;
         var item = new RunPlanItem(
-            Guid.NewGuid(),
-            task.Name,
-            task.Label,
-            task.Entry,
-            resolved.ResolvedTaskOptions,
-            resolved.PipelineOverride);
+            Guid.NewGuid(), task.Name, task.Label, task.Entry,
+            resolved.ResolvedTaskOptions, resolved.PipelineOverride);
         var plan = new RunPlan(
-            ProtocolConstants.PlanVersion,
-            createdAtUtc,
-            _project.Provenance,
-            _project.RuntimeProfileDigest,
-            resolved.ResolvedGlobalOptions,
-            [item]);
+            ProtocolConstants.PlanVersion, createdAtUtc,
+            _project.Provenance, _project.RuntimeProfileDigest,
+            resolved.ResolvedGlobalOptions, [item]);
         var serializedBytes = JsonSerializer.SerializeToUtf8Bytes(plan, ProtocolJson.Options);
-        if (serializedBytes.Length > ProtocolConstants.MaximumRunPlanBytes)
-        {
+        if (serializedBytes.Length > ProtocolConstants.MaximumRunPlanBytes) {
             throw new InvalidDataException(
                 $"Run Plan 超过 {ProtocolConstants.MaximumRunPlanBytes} bytes：{serializedBytes.Length}。 ");
         }
@@ -170,19 +151,15 @@ public sealed class ProjectPlanModule
 
     private static void ValidateConfigShape(MaaNopConfig config)
     {
-        if (config.SchemaVersion != MaaNopConfig.CurrentSchemaVersion)
-        {
+        if (config.SchemaVersion != MaaNopConfig.CurrentSchemaVersion) {
             throw new InvalidDataException(
                 $"首片只接受 SchemaVersion {MaaNopConfig.CurrentSchemaVersion} MaaNOP Config。 ");
         }
-        if (config.SelectedTasks.Count > 1)
-        {
+        if (config.SelectedTasks.Count > 1) {
             throw new InvalidDataException("首片临时 UI 只允许选择一个 top-level task。 ");
         }
-        foreach (var (optionName, value) in config.ExplicitOptions)
-        {
-            if (string.IsNullOrWhiteSpace(optionName) || value.ValueKind != JsonValueKind.Object)
-            {
+        foreach (var (optionName, value) in config.ExplicitOptions) {
+            if (string.IsNullOrWhiteSpace(optionName) || value.ValueKind != JsonValueKind.Object) {
                 throw new InvalidDataException("ExplicitOptions key 必须为非空 option name，value 必须为 object。 ");
             }
         }
@@ -193,8 +170,7 @@ public sealed class ProjectPlanModule
         var config = _configStore.Load();
         ValidateConfigShape(config);
         var selected = config.SelectedTasks.SingleOrDefault();
-        if (selected is not null && !_project.Tasks.Any(task => task.Name == selected))
-        {
+        if (selected is not null && !_project.Tasks.Any(task => task.Name == selected)) {
             throw new InvalidDataException($"MaaNOP Config 选择的 task 不再存在：{selected}。 ");
         }
         return config;
@@ -203,8 +179,7 @@ public sealed class ProjectPlanModule
     private void ValidateActiveConfiguration(MaaNopConfig config)
     {
         var taskName = config.SelectedTasks.SingleOrDefault();
-        if (taskName is not null)
-        {
+        if (taskName is not null) {
             _ = ProjectOptionResolver.Resolve(_project, FindTask(taskName), config);
             return;
         }
@@ -228,29 +203,15 @@ public sealed class ProjectPlanModule
     private ProjectOptionEditor BuildEditor(string optionName, MaaNopConfig config)
     {
         var option = FindOption(optionName);
-        if (option.Kind == OptionDefinitionKind.Input)
-        {
+        if (option.Kind == OptionDefinitionKind.Input) {
             var explicitInputs = ExplicitOptionIntent.ReadInputs(option, config);
             var inputs = option.Inputs.Select(input => new ProjectInputEditor(
-                input.Name,
-                input.Label,
-                input.Description,
-                input.Default,
+                input.Name, input.Label, input.Description, input.Default,
                 explicitInputs.TryGetValue(input.Name, out var value) ? value : input.Default,
-                explicitInputs.ContainsKey(input.Name),
-                input.Verify,
-                input.PatternMessage)).ToArray();
+                explicitInputs.ContainsKey(input.Name), input.Verify, input.PatternMessage)).ToArray();
             return new ProjectOptionEditor(
-                option.Name,
-                option.Label,
-                option.Description,
-                ProjectOptionKind.Input,
-                explicitInputs.Count != 0,
-                null,
-                null,
-                [],
-                inputs,
-                []);
+                option.Name, option.Label, option.Description, ProjectOptionKind.Input,
+                explicitInputs.Count != 0, null, null, [], inputs, []);
         }
 
         var explicitCase = ExplicitOptionIntent.ReadSelectedCase(option, config);
@@ -260,19 +221,13 @@ public sealed class ProjectPlanModule
                 $"option {optionName} 的 case {selectedCase} 不存在。 ");
         var children = BuildEditors(selected.Options, config);
         return new ProjectOptionEditor(
-            option.Name,
-            option.Label,
-            option.Description,
+            option.Name, option.Label, option.Description,
             option.Kind == OptionDefinitionKind.Switch
                 ? ProjectOptionKind.Switch
                 : ProjectOptionKind.Select,
-            explicitCase is not null,
-            selectedCase,
-            option.DefaultCase,
+            explicitCase is not null, selectedCase, option.DefaultCase,
             option.Cases.Select(item => new ProjectCaseEditor(
-                item.Name,
-                item.Label,
-                item.Description)).ToArray(),
+                item.Name, item.Label, item.Description)).ToArray(),
             [],
             children);
     }

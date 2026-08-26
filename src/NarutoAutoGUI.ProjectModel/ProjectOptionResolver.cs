@@ -17,65 +17,45 @@ internal static class ProjectOptionResolver
         return new ResolvedProjectOptions(ToElement(globalValues), ToElement(taskValues), ToElement(pipelineOverrides));
     }
 
-    internal static void ValidateScope(
-        ProjectDefinition project,
-        IReadOnlyList<string> optionNames,
-        MaaNopConfig config,
-        string scope)
+    internal static void ValidateScope(ProjectDefinition project, IReadOnlyList<string> optionNames, MaaNopConfig config, string scope)
     {
         ResolveScope(project, optionNames, config, new JsonObject(), new JsonArray(), scope);
     }
 
     private static void ResolveScope(
-        ProjectDefinition project,
-        IReadOnlyList<string> optionNames,
-        MaaNopConfig config,
-        JsonObject resolvedValues,
-        JsonArray pipelineOverrides,
-        string scope)
+        ProjectDefinition project, IReadOnlyList<string> optionNames, MaaNopConfig config,
+        JsonObject resolvedValues, JsonArray pipelineOverrides, string scope)
     {
-        foreach (var optionName in optionNames)
-        {
+        foreach (var optionName in optionNames) {
             ResolveOption(project, optionName, config, resolvedValues, pipelineOverrides, scope);
         }
     }
 
     private static void ResolveOption(
-        ProjectDefinition project,
-        string optionName,
-        MaaNopConfig config,
-        JsonObject resolvedValues,
-        JsonArray pipelineOverrides,
-        string scope)
+        ProjectDefinition project, string optionName, MaaNopConfig config,
+        JsonObject resolvedValues, JsonArray pipelineOverrides, string scope)
     {
         var option = project.Options[optionName];
-        try
-        {
-            switch (option.Kind)
-            {
-                case OptionDefinitionKind.Input:
-                    {
+        try {
+            switch (option.Kind) {
+                case OptionDefinitionKind.Input: {
                         var values = new JsonObject();
                         var substitutions = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
                         var explicitInputs = ExplicitOptionIntent.ReadInputs(option, config);
-                        foreach (var input in option.Inputs)
-                        {
+                        foreach (var input in option.Inputs) {
                             var resolvedValue = explicitInputs.TryGetValue(input.Name, out var explicitValue)
                                 ? explicitValue
                                 : input.Default;
                             values[input.Name] = resolvedValue;
                             substitutions[input.Name] = ProjectInputValue.Parse(
-                                input,
-                                resolvedValue,
-                                $"option {optionName} input {input.Name} 的值");
+                                input, resolvedValue, $"option {optionName} input {input.Name} 的值");
                         }
                         resolvedValues[optionName] = values;
                         pipelineOverrides.Add(CreateTemplatedOverride(option.PipelineOverride, substitutions));
                         break;
                     }
                 case OptionDefinitionKind.Select:
-                case OptionDefinitionKind.Switch:
-                    {
+                case OptionDefinitionKind.Switch: {
                         var selectedName = ExplicitOptionIntent.ReadSelectedCase(option, config)
                                            ?? option.DefaultCase!;
                         var selected = option.Cases.SingleOrDefault(item => item.Name == selectedName)
@@ -83,8 +63,7 @@ internal static class ProjectOptionResolver
                                            $"option {optionName} 的 case {selectedName} 不存在。 ");
                         resolvedValues[optionName] = selected.Name;
                         pipelineOverrides.Add(ParseObject(selected.PipelineOverride));
-                        foreach (var nested in selected.Options)
-                        {
+                        foreach (var nested in selected.Options) {
                             ResolveOption(project, nested, config, resolvedValues, pipelineOverrides, scope);
                         }
                         break;
@@ -93,16 +72,12 @@ internal static class ProjectOptionResolver
                     throw new InvalidOperationException(
                         $"Loader 产生了不支持的 option kind：{option.Kind}。 ");
             }
-        }
-        catch (Exception exception) when (exception is InvalidDataException or JsonException)
-        {
+        } catch (Exception exception) when (exception is InvalidDataException or JsonException) {
             throw new InvalidDataException($"{scope} 解析 {optionName} 失败：{exception.Message}", exception);
         }
     }
 
-    private static JsonObject CreateTemplatedOverride(
-        JsonElement template,
-        IReadOnlyDictionary<string, JsonNode?> substitutions)
+    private static JsonObject CreateTemplatedOverride(JsonElement template, IReadOnlyDictionary<string, JsonNode?> substitutions)
     {
         var node = ParseObject(template);
         Substitute(node, substitutions);
@@ -111,30 +86,19 @@ internal static class ProjectOptionResolver
 
     private static void Substitute(JsonNode? node, IReadOnlyDictionary<string, JsonNode?> substitutions)
     {
-        if (node is JsonObject obj)
-        {
-            foreach (var property in obj.ToArray())
-            {
-                if (property.Value is JsonValue value && value.TryGetValue<string>(out var text))
-                {
+        if (node is JsonObject obj) {
+            foreach (var property in obj.ToArray()) {
+                if (property.Value is JsonValue value && value.TryGetValue<string>(out var text)) {
                     obj[property.Key] = SubstituteString(text, substitutions);
-                }
-                else
-                {
+                } else {
                     Substitute(property.Value, substitutions);
                 }
             }
-        }
-        else if (node is JsonArray array)
-        {
-            for (var index = 0; index < array.Count; index++)
-            {
-                if (array[index] is JsonValue value && value.TryGetValue<string>(out var text))
-                {
+        } else if (node is JsonArray array) {
+            for (var index = 0; index < array.Count; index++) {
+                if (array[index] is JsonValue value && value.TryGetValue<string>(out var text)) {
                     array[index] = SubstituteString(text, substitutions);
-                }
-                else
-                {
+                } else {
                     Substitute(array[index], substitutions);
                 }
             }
@@ -143,20 +107,16 @@ internal static class ProjectOptionResolver
 
     private static JsonNode? SubstituteString(string text, IReadOnlyDictionary<string, JsonNode?> substitutions)
     {
-        if (text.Length > 2 && text[0] == '{' && text[^1] == '}')
-        {
+        if (text.Length > 2 && text[0] == '{' && text[^1] == '}') {
             var name = text[1..^1];
-            if (substitutions.TryGetValue(name, out var exact))
-            {
+            if (substitutions.TryGetValue(name, out var exact)) {
                 return exact?.DeepClone();
             }
         }
 
         var result = text;
-        foreach (var (name, value) in substitutions)
-        {
-            var replacement = value switch
-            {
+        foreach (var (name, value) in substitutions) {
+            var replacement = value switch {
                 JsonValue jsonValue when jsonValue.TryGetValue<string>(out var stringValue) => stringValue,
                 null => string.Empty,
                 _ => value.ToJsonString(ProtocolJson.Options)

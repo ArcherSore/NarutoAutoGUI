@@ -6,8 +6,9 @@
 `win-x64-options-v2-scroll` 在同一 Worker 上同时通过 admission、fresh Snapshot、Dependency Readiness、真实自然
 Succeeded Run、真实 Running 后取消、取消后存活和再次执行；GUI 使用正式 PI 显式 option 编辑与最终 MaaNOP
 Config/Run Plan 路径，不含测试旁路。Phase 1 Windows x64 release workflow 已实现并通过 `workflow_dispatch`，可生成
-经自检、布局校验和 SHA256 校验的 Actions artifact；首个 RC 尚未创建。Supported Baseline 的 MaaNOP snapshot、
-Python `maa` 与 Maa.Framework 精确组合仍未冻结，Python runtime 打包 E2E 也不属于本阶段，须下一轮单独决定。
+经自检、布局校验和 SHA256 校验的 Actions artifact；`v0.1.0-rc.2` prerelease 已创建并成为 MaaNOP Windows x64
+打包的固定 frontend baseline。Python 继续按现有 MaaNOP Project Interface 使用系统 `python`，不进入发布包；当前外部
+Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打包不再作为本阶段前置项。
 已验证的 Child Session 实现现位于 `src/NarutoAutoGUI/ChildSession`，不再保留独立 Demo；Worker 位于
 `src/NarutoAutoWorker`。
 
@@ -67,14 +68,24 @@ Python `maa` 与 Maa.Framework 精确组合仍未冻结，Python runtime 打包 
 
 ## 本轮自动验证
 
+- 2026-08-26：首个可用 prerelease `v0.1.0-rc.2` 已由 run
+  [32982031166](https://github.com/ArcherSore/NarutoAutoGUI/actions/runs/32982031166) 创建。locked build、GUI/Worker
+  自检、发布目录与 ZIP 解包校验、SHA256 sidecar、Actions artifact 和 Release job 全部成功；Release ZIP SHA256 为
+  `3182cfdb9926a34d4793faa06013f79e2ac8c98532aeab8fbe3c2c3783a98456`。此前 `v0.1.0-rc.1` run
+  `32980682112` 的 build-package 已成功，但 Release job 因未显式传递仓库而失败；提交 `2a1d0fe` 增加 `--repo` 后由
+  `rc.2` 完成验证。MaaNOP 提交 `d7b3088` 的 install run
+  [32982465990](https://github.com/ArcherSore/MaaNOP/actions/runs/32982465990) 已固定下载该 Release asset；Windows x64
+  明确跳过 MFAAvalonia 和独立 MaaFramework 下载，SHA、组合边界、最终 package validator 与 artifact 上传均成功，
+  其余 matrix job 也全部成功，release job 因无 MaaNOP tag 正确跳过。
+
 - 2026-08-26：完成 Phase 1 Windows x64 release workflow。`workflow_dispatch` run
   [32968253563](https://github.com/ArcherSore/NarutoAutoGUI/actions/runs/32968253563) 对提交 `b41553c`
   完成 locked restore、Release build/publish、GUI/Worker 自动自检、发布目录校验、ZIP 解包复验、SHA256 sidecar 和
   Actions artifact 上传，`build-package` 全部 step 成功且无失败，tag-only `release` job 正确跳过。amend 前相同文件树的
   run [32967561275](https://github.com/ArcherSore/NarutoAutoGUI/actions/runs/32967561275) 也成功。已验证 artifact 的
   SHA256 与 sidecar 匹配、ZIP 根直接包含 `NarutoAutoGUI.exe` 且没有 wrapper，发布包包含 GUI、Worker 和所需
-  Maa.Framework native runtime，不包含 Python runtime、MaaNOP、源码或顶层 build/log junk。首个 RC、tag 与 GitHub
-  Release 均未创建；Python runtime 打包和固定 Supported Baseline 的 E2E 留待后续。
+  Maa.Framework native runtime，不包含 Python runtime、MaaNOP、源码或顶层 build/log junk。当时尚未创建 RC、tag
+  或 GitHub Release；后续结果见上方 `v0.1.0-rc.2` 记录。
 
 - 2026-08-17：正式项目 Release `win-x64` build 通过。
 - 2026-08-17：正式项目 self-contained `win-x64` publish 通过，输出到 `artifacts\NarutoAutoGUI\win-x64`。

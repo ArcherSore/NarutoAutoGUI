@@ -36,13 +36,21 @@
 16. 已实现 `workflow_dispatch` 的 locked restore、Release build/publish、GUI/Worker 自动自检、发布目录与 ZIP 解包校验、
     SHA256 sidecar 和 Actions artifact；已通过提交 `b41553c` 的 GitHub Actions run `32968253563`。
 17. `v*` tag 路径只接受明确的稳定版或 alpha/beta/rc 版本格式，并使用现有 tag 创建 GitHub Release；dispatch 不创建
-    tag 或 Release。当前尚未创建首个 RC。
+    tag 或 Release。`v0.1.0-rc.2` 已完成首个 prerelease 的 build、self-test、package validation、SHA256 与 Release 验证。
 18. 发布包继续只包含 NarutoAutoGUI、固定 Worker 和 Maa.Framework runtime；本阶段不捆绑 MaaNOP 或 Python runtime，
     也不升级 Maa.Framework 或 target framework。
 
-## 下一步：首个 RC 与固定运行时 E2E
+## 已完成：首个 RC 与 MaaNOP Windows x64 frontend 接管
 
-19. 单独冻结受支持的 MaaNOP snapshot、Python `maa` 与 Maa.Framework 精确组合，再完成 Python runtime 打包 E2E。
-20. 在上述 baseline、打包边界和消费级电脑交互式回归明确通过后，再创建并验证首个 RC tag/GitHub Release。
+19. Python 继续由 MaaNOP Project Interface 以 `child_exec = "python"` 解析系统环境，不 bundle runtime、不修改 PATH；
+    当前语义下的 E2E 与本机回归已完成，不再把 Python runtime 打包作为 frontend 接管前置项。
+20. MaaNOP Windows x64 workflow 已固定 `v0.1.0-rc.2` 的 asset name 与 SHA256，以 NarutoAutoGUI package 为 base，
+    仅 overlay MaaNOP-owned payload；Actions run `32982465990` 的 Windows x64 和其余 matrix job 均成功。
+
+## 下一步：稳定版前收口
+
+21. 按需人工下载 MaaNOP Windows x64 Actions artifact 做额外解包目检；该下载不阻塞已在 Actions 内完成的 package
+    composition、SHA 与边界校验结论。
+22. 在没有新的明确授权前，不创建 MaaNOP stable tag 或 stable Release。
 
 自动登录/扫码、自动隐藏子桌面、自动开始 MaaNOP 任务和可调分辨率/DPI 不属于第一轮，也不会在未单独确认范围前实现。

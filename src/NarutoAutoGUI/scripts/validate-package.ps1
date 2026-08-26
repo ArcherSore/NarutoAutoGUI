@@ -26,6 +26,35 @@ function Assert-PackageDirectory {
     Write-Host "  [ok] $Name ($($files.Count) files)"
 }
 
+function Assert-NoForbiddenPackageContent {
+    param([string]$Path)
+
+    $forbiddenDirectoryNames = @('obj', 'site-packages', '__pycache__')
+    $forbiddenExtensions = @('.cs', '.csproj', '.py', '.pyc', '.pyd', '.ps1', '.sln', '.xaml', '.yml', '.yaml', '.log')
+    $root = (Resolve-Path -LiteralPath $Path).Path.TrimEnd('\', '/')
+    $entries = @(Get-ChildItem -LiteralPath $root -Recurse -Force)
+    $forbidden = @($entries | Where-Object {
+        $name = $_.Name
+        $relativePath = $_.FullName.Substring($root.Length + 1)
+        $isForbiddenDirectory = $_.PSIsContainer -and $forbiddenDirectoryNames -contains $name.ToLowerInvariant()
+        $isForbiddenRootDirectory = $_.PSIsContainer -and
+            $relativePath -match '^(?i)(bin|logs?|src|source)$'
+        $isForbiddenExtension = -not $_.PSIsContainer -and
+            $forbiddenExtensions -contains $_.Extension.ToLowerInvariant()
+        $isPythonRuntime = $name -match '^python(?:w)?(?:\d+(?:\.\d+)*)?\.exe$' -or
+            $name -match '^python\d+\.dll$'
+        $isMaaNOP = $name -match '(?i)maanop'
+        $isForbiddenDirectory -or $isForbiddenRootDirectory -or $isForbiddenExtension -or $isPythonRuntime -or $isMaaNOP
+    })
+
+    if ($forbidden.Count -gt 0) {
+        $relativePaths = @($forbidden | ForEach-Object { $_.FullName.Substring($root.Length + 1) })
+        throw "Package validation failed: forbidden content found: $($relativePaths -join ', ')"
+    }
+
+    Write-Host '  [ok] no Python/MaaNOP/source/bin/obj/log content'
+}
+
 if (-not (Test-Path -LiteralPath $PackageDirectory -PathType Container)) {
     throw "Package directory not found: $PackageDirectory"
 }
@@ -46,7 +75,13 @@ Assert-PackageFile -Name 'worker/NarutoAutoWorker.dll' -Path (Join-Path $workerD
 # MaaWin32ControlUnit.dll is the Win32 controller the Worker relies on.
 $nativeDir = Join-Path $workerDir 'runtimes\win-x64\native'
 Assert-PackageDirectory -Name 'worker/runtimes/win-x64/native' -Path $nativeDir
-Assert-PackageFile -Name 'worker/runtimes/win-x64/native/MaaFramework.dll' -Path (Join-Path $nativeDir 'MaaFramework.dll')
-Assert-PackageFile -Name 'worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll' -Path (Join-Path $nativeDir 'MaaWin32ControlUnit.dll')
+Assert-PackageFile `
+    -Name 'worker/runtimes/win-x64/native/MaaFramework.dll' `
+    -Path (Join-Path $nativeDir 'MaaFramework.dll')
+Assert-PackageFile `
+    -Name 'worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll' `
+    -Path (Join-Path $nativeDir 'MaaWin32ControlUnit.dll')
+
+Assert-NoForbiddenPackageContent -Path $PackageDirectory
 
 Write-Host 'Package validation passed.'

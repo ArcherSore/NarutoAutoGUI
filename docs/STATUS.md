@@ -2,7 +2,14 @@
 
 ## 当前阶段
 
-第一轮正式 GUI 和 ADR 0020 的首个最小 Worker/IPC + MaaFramework 端到端切片已完成并通过交互式实机验收。`win-x64-options-v2-scroll` 在同一 Worker 上同时通过 admission、fresh Snapshot、Dependency Readiness、真实自然 Succeeded Run、真实 Running 后取消、取消后存活和再次执行；GUI 使用正式 PI 显式 option 编辑与最终 MaaNOP Config/Run Plan 路径，不含测试旁路。Supported Baseline 的 MaaNOP snapshot、Python `maa` 与 Maa.Framework 精确组合仍未冻结，须下一轮单独决定。已验证的 Child Session 实现现位于 `src/NarutoAutoGUI/ChildSession`，不再保留独立 Demo；Worker 位于 `src/NarutoAutoWorker`。
+第一轮正式 GUI 和 ADR 0020 的首个最小 Worker/IPC + MaaFramework 端到端切片已完成并通过交互式实机验收。
+`win-x64-options-v2-scroll` 在同一 Worker 上同时通过 admission、fresh Snapshot、Dependency Readiness、真实自然
+Succeeded Run、真实 Running 后取消、取消后存活和再次执行；GUI 使用正式 PI 显式 option 编辑与最终 MaaNOP
+Config/Run Plan 路径，不含测试旁路。Phase 1 Windows x64 release workflow 已实现并通过 `workflow_dispatch`，可生成
+经自检、布局校验和 SHA256 校验的 Actions artifact；首个 RC 尚未创建。Supported Baseline 的 MaaNOP snapshot、
+Python `maa` 与 Maa.Framework 精确组合仍未冻结，Python runtime 打包 E2E 也不属于本阶段，须下一轮单独决定。
+已验证的 Child Session 实现现位于 `src/NarutoAutoGUI/ChildSession`，不再保留独立 Demo；Worker 位于
+`src/NarutoAutoWorker`。
 
 ## 本轮已实现
 
@@ -59,6 +66,15 @@
 - Worker 使用专用的 Task Scheduler 强化启动路径：`RunEx` 后等待新的 Worker PID 并验证 Child Session，记录 Task State 与 `LastTaskResult`，再清理临时任务；进程验证成功后 PID 写回 Admission。若进程未生成则 10 秒内失败并清理 Pending Admission；若 admission + fresh Snapshot 在 60 秒内未完成且 Worker PID 缺失或进程已退出，则自动回滚 `worker.json` 与 launch manifest，避免下一次准备环境被陈旧记录阻塞。
 
 ## 本轮自动验证
+
+- 2026-08-26：完成 Phase 1 Windows x64 release workflow。`workflow_dispatch` run
+  [32968253563](https://github.com/ArcherSore/NarutoAutoGUI/actions/runs/32968253563) 对提交 `b41553c`
+  完成 locked restore、Release build/publish、GUI/Worker 自动自检、发布目录校验、ZIP 解包复验、SHA256 sidecar 和
+  Actions artifact 上传，`build-package` 全部 step 成功且无失败，tag-only `release` job 正确跳过。amend 前相同文件树的
+  run [32967561275](https://github.com/ArcherSore/NarutoAutoGUI/actions/runs/32967561275) 也成功。已验证 artifact 的
+  SHA256 与 sidecar 匹配、ZIP 根直接包含 `NarutoAutoGUI.exe` 且没有 wrapper，发布包包含 GUI、Worker 和所需
+  Maa.Framework native runtime，不包含 Python runtime、MaaNOP、源码或顶层 build/log junk。首个 RC、tag 与 GitHub
+  Release 均未创建；Python runtime 打包和固定 Supported Baseline 的 E2E 留待后续。
 
 - 2026-08-17：正式项目 Release `win-x64` build 通过。
 - 2026-08-17：正式项目 self-contained `win-x64` publish 通过，输出到 `artifacts\NarutoAutoGUI\win-x64`。

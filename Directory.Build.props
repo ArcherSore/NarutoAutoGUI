@@ -1,11 +1,8 @@
 <Project>
 
   <PropertyGroup>
-    <Platforms>x64</Platforms>
-    <PlatformTarget>x64</PlatformTarget>
-    <!-- Generate packages.lock.json next to each .csproj so Release CI can restore with
-         locked mode for reproducible transitive resolution. Local builds are unaffected;
-         enforcement only happens when build.ps1 is invoked with -Locked. -->
+    <!-- Keep packages.lock.json for every project in the restore graph. Release CI enforces
+         the committed resolution when build.ps1 is invoked with -Locked. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 

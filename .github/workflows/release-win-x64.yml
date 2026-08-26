@@ -38,7 +38,9 @@ jobs:
           if ($ref -like 'refs/tags/v*') {
             $tag = $ref -replace '^refs/tags/', ''
             if ($tag -notmatch '^v(\d+\.\d+\.\d+)(-(alpha|beta|rc)(\.\d+)?)?$') {
-              Write-Error "Tag '$tag' is not a recognized release tag (expected vX.Y.Z[-alpha|beta|rc[.N]]). Aborting to avoid an accidental stable release."
+              $message = "Tag '$tag' is not a recognized release tag " `
+                + '(expected vX.Y.Z[-alpha|beta|rc[.N]]). Aborting to avoid an accidental stable release.'
+              Write-Error $message
               exit 1
             }
             $version = $tag -replace '^v', ''
@@ -60,7 +62,12 @@ jobs:
 
       - name: Build + publish (build.ps1, locked restore)
         run: |
-          ./src/NarutoAutoGUI/scripts/build.ps1 -Configuration Release -Runtime win-x64 -OutputDirectory '${{ github.workspace }}/pkg' -Version '${{ steps.version.outputs.PACKAGE_VERSION }}' -Locked
+          ./src/NarutoAutoGUI/scripts/build.ps1 `
+            -Configuration Release `
+            -Runtime win-x64 `
+            -OutputDirectory '${{ github.workspace }}/pkg' `
+            -Version '${{ steps.version.outputs.PACKAGE_VERSION }}' `
+            -Locked
 
       - name: Automated self-tests (test-automated.ps1)
         run: |
@@ -90,7 +97,9 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath $extract -Force
           $rootEntries = @(Get-ChildItem $extract)
           if ($rootEntries.Count -eq 1 -and $rootEntries[0].PSIsContainer) {
-            Write-Error "ZIP has an unexpected wrapper directory '$($rootEntries[0].Name)'. NarutoAutoGUI.exe must sit at the ZIP root."
+            $message = "ZIP has an unexpected wrapper directory '$($rootEntries[0].Name)'. " `
+              + 'NarutoAutoGUI.exe must sit at the ZIP root.'
+            Write-Error $message
             exit 1
           }
           ./src/NarutoAutoGUI/scripts/validate-package.ps1 -PackageDirectory $extract
@@ -142,7 +151,10 @@ jobs:
           $prerelease = '${{ needs.build-package.outputs.isPrerelease }}'
           $zip = (Get-ChildItem dist -Filter *.zip)[0].FullName
           $sha = (Get-ChildItem dist -Filter *.sha256)[0].FullName
-          $releaseArgs = @('release','create',$tag,$zip,$sha,'--verify-tag','--title',"NarutoAutoGUI $tag",'--notes',"Windows x64 package for $tag.")
+          $releaseArgs = @(
+            'release', 'create', $tag, $zip, $sha, '--verify-tag',
+            '--title', "NarutoAutoGUI $tag", '--notes', "Windows x64 package for $tag."
+          )
           if ($prerelease -eq 'True') { $releaseArgs += '--prerelease' }
           Write-Host "Creating release for tag $tag (prerelease=$prerelease)"
           gh @releaseArgs

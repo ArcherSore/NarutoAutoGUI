@@ -104,26 +104,11 @@ jobs:
           }
           ./src/NarutoAutoGUI/scripts/validate-package.ps1 -PackageDirectory $extract
 
-      - name: Generate SHA256 sidecar
-        id: sha
-        run: |
-          $zip = '${{ steps.zip.outputs.ZIP_PATH }}'
-          $zipName = '${{ steps.zip.outputs.ZIP_NAME }}'
-          $hash = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
-          $sidecar = "$zip.sha256"
-          "$hash  $zipName" | Set-Content -Path $sidecar -NoNewline -Encoding ascii
-          Write-Host "SHA256: $hash"
-          Write-Host "Sidecar content:"
-          Get-Content $sidecar
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "SHA_SIDECAR=$sidecar"
-
       - name: Upload Actions artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.version.outputs.ZIP_BASE }}
-          path: |
-            ${{ steps.zip.outputs.ZIP_PATH }}
-            ${{ steps.sha.outputs.SHA_SIDECAR }}
+          path: ${{ steps.zip.outputs.ZIP_PATH }}
           if-no-files-found: error
           retention-days: 14
 
@@ -150,9 +135,8 @@ jobs:
           $tag = $env:GITHUB_REF_NAME
           $prerelease = '${{ needs.build-package.outputs.isPrerelease }}'
           $zip = (Get-ChildItem dist -Filter *.zip)[0].FullName
-          $sha = (Get-ChildItem dist -Filter *.sha256)[0].FullName
           $releaseArgs = @(
-            'release', 'create', $tag, $zip, $sha, '--verify-tag', '--repo', $env:GITHUB_REPOSITORY,
+            'release', 'create', $tag, $zip, '--verify-tag', '--repo', $env:GITHUB_REPOSITORY,
             '--title', "NarutoAutoGUI $tag", '--notes', "Windows x64 package for $tag."
           )
           if ($prerelease -eq 'True') { $releaseArgs += '--prerelease' }

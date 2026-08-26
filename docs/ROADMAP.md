@@ -33,8 +33,9 @@
 
 ## 已完成：Phase 1 Windows x64 发布基础设施
 
-16. 已实现 `workflow_dispatch` 的 locked restore、Release build/publish、GUI/Worker 自动自检、发布目录与 ZIP 解包校验、
-    SHA256 sidecar 和 Actions artifact；已通过提交 `b41553c` 的 GitHub Actions run `32968253563`。
+16. 已实现 `workflow_dispatch` 的 locked restore、Release build/publish、GUI/Worker 自动自检、发布目录与 ZIP 解包校验
+    和 Actions artifact；已通过提交 `b41553c` 的 GitHub Actions run `32968253563`。后续发布只包含 ZIP，不再生成或发布
+    独立 SHA256 sidecar。
 17. `v*` tag 路径只接受明确的稳定版或 alpha/beta/rc 版本格式，并使用现有 tag 创建 GitHub Release；dispatch 不创建
     tag 或 Release。`v0.1.0-rc.2` 已完成首个 prerelease 的 build、self-test、package validation、SHA256 与 Release 验证。
 18. 发布包继续只包含 NarutoAutoGUI、固定 Worker 和 Maa.Framework runtime；本阶段不捆绑 MaaNOP 或 Python runtime，

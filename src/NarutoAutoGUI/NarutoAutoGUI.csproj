@@ -14,6 +14,7 @@
     <!-- SDK 9 can schedule the transitive Protocol reference twice for this mixed
          WPF/project graph; serialize project references to keep ordinary builds deterministic. -->
     <BuildInParallel>false</BuildInParallel>
+    <NoWarn>$(NoWarn);CS2002</NoWarn>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>NarutoAutoGUI</AssemblyName>
     <RootNamespace>NarutoAutoGUI</RootNamespace>
@@ -30,6 +31,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NarutoAutoGUI.ProjectModel\NarutoAutoGUI.ProjectModel.csproj" />
+  </ItemGroup>
+
+  <!-- C# Dev Kit (Roslyn MSBuild workspace) only evaluates the project; it does not run
+       WPF build targets (MarkupCompilePass1) that normally add *.g.cs to @(Compile).
+       Include the already-generated *.g.cs via an evaluation-time glob so InitializeComponent()
+       and XAML control fields resolve in IntelliSense. Conditioned on non-build to avoid
+       CS2002 duplicate warnings during a real build where the targets also add them. -->
+  <ItemGroup Condition="'$(BuildingProject)' != 'true'">
+    <Compile Include="$(IntermediateOutputPath)**\*.g.cs" />
   </ItemGroup>
 
 </Project>

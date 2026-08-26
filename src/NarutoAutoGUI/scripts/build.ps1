@@ -5,7 +5,11 @@ param(
 
     [string]$Runtime = 'win-x64',
 
-    [string]$OutputDirectory
+    [string]$OutputDirectory,
+
+    [string]$Version,
+
+    [switch]$Locked
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,16 +23,27 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $repositoryRoot 'artifacts\NarutoAutoGUI\win-x64'
 }
 
-dotnet restore $projectPath -r $Runtime
+# Release version forwarded to MSBuild as -p:Version; overrides the <Version> in each .csproj
+# without editing project files. The SDK derives AssemblyVersion/FileVersion/PackageVersion
+# from this single property, including prerelease suffixes (e.g. 0.1.0-rc.1).
+$versionArgs = @()
+if ($Version) { $versionArgs += "-p:Version=$Version" }
+
+# Restore against the committed packages.lock.json (RestorePackagesWithLockFile is enabled in
+# Directory.Build.props). Local builds omit -Locked and stay unconstrained.
+$restoreArgs = @('-r', $Runtime)
+if ($Locked) { $restoreArgs += '--locked-mode' }
+
+dotnet restore $projectPath @restoreArgs
 if ($LASTEXITCODE -ne 0) { throw "dotnet restore 失败，退出码 $LASTEXITCODE" }
 
-dotnet restore $workerProjectPath -r $Runtime
+dotnet restore $workerProjectPath @restoreArgs
 if ($LASTEXITCODE -ne 0) { throw "Worker dotnet restore 失败，退出码 $LASTEXITCODE" }
 
-dotnet build $projectPath -c $Configuration -p:Platform=x64 -r $Runtime --no-restore
+dotnet build $projectPath -c $Configuration -p:Platform=x64 -r $Runtime --no-restore @versionArgs
 if ($LASTEXITCODE -ne 0) { throw "dotnet build 失败，退出码 $LASTEXITCODE" }
 
-dotnet build $workerProjectPath -c $Configuration -p:Platform=x64 -r $Runtime --no-restore
+dotnet build $workerProjectPath -c $Configuration -p:Platform=x64 -r $Runtime --no-restore @versionArgs
 if ($LASTEXITCODE -ne 0) { throw "Worker dotnet build 失败，退出码 $LASTEXITCODE" }
 
 dotnet publish $projectPath `
@@ -37,7 +52,8 @@ dotnet publish $projectPath `
     -r $Runtime `
     --self-contained true `
     -o $OutputDirectory `
-    --no-restore
+    --no-restore `
+    @versionArgs
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失败，退出码 $LASTEXITCODE" }
 
 $workerOutputDirectory = Join-Path $OutputDirectory 'worker'
@@ -47,7 +63,8 @@ dotnet publish $workerProjectPath `
     -r $Runtime `
     --self-contained true `
     -o $workerOutputDirectory `
-    --no-restore
+    --no-restore `
+    @versionArgs
 if ($LASTEXITCODE -ne 0) { throw "Worker dotnet publish 失败，退出码 $LASTEXITCODE" }
 
 Write-Host "发布完成: $OutputDirectory (GUI + fixed Worker runtime)"

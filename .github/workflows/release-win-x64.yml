@@ -1,0 +1,148 @@
+name: release-win-x64
+
+# workflow_dispatch: build + publish + validate + zip + sha256 + artifact, then STOP.
+# push tag v*: additionally create a GitHub Release (never auto-creates a tag).
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build-package:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      zipBase: ${{ steps.version.outputs.ZIP_BASE }}
+      isPrerelease: ${{ steps.version.outputs.IS_PRERELEASE }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Resolve package version
+        id: version
+        run: |
+          $ref = $env:GITHUB_REF
+          if ($ref -like 'refs/tags/v*') {
+            $tag = $ref -replace '^refs/tags/', ''
+            if ($tag -notmatch '^v(\d+\.\d+\.\d+)(-(alpha|beta|rc)(\.\d+)?)?$') {
+              Write-Error "Tag '$tag' is not a recognized release tag (expected vX.Y.Z[-alpha|beta|rc[.N]]). Aborting to avoid an accidental stable release."
+              exit 1
+            }
+            $version = $tag -replace '^v', ''
+            $prerelease = $tag -match '-(alpha|beta|rc)(\.\d+)?$'
+            $zipBase = "NarutoAutoGUI-win-x64-v$version"
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "PACKAGE_VERSION=$version"
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "ZIP_BASE=$zipBase"
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "IS_PRERELEASE=$prerelease"
+          } else {
+            $shortSha = $env:GITHUB_SHA.Substring(0, 7)
+            $version = "0.1.0-ci.$env:GITHUB_RUN_NUMBER+sha.$shortSha"
+            $zipBase = "NarutoAutoGUI-win-x64-ci-$env:GITHUB_RUN_NUMBER-$shortSha"
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "PACKAGE_VERSION=$version"
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "ZIP_BASE=$zipBase"
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "IS_PRERELEASE=False"
+          }
+          Write-Host "Package version: $version"
+          Write-Host "Zip base name: $zipBase"
+
+      - name: Build + publish (build.ps1, locked restore)
+        run: |
+          ./src/NarutoAutoGUI/scripts/build.ps1 -Configuration Release -Runtime win-x64 -OutputDirectory '${{ github.workspace }}/pkg' -Version '${{ steps.version.outputs.PACKAGE_VERSION }}' -Locked
+
+      - name: Automated self-tests (test-automated.ps1)
+        run: |
+          ./src/NarutoAutoGUI/scripts/test-automated.ps1 -PublishedDirectory '${{ github.workspace }}/pkg'
+
+      - name: Package layout validation (validate-package.ps1)
+        run: |
+          ./src/NarutoAutoGUI/scripts/validate-package.ps1 -PackageDirectory '${{ github.workspace }}/pkg'
+
+      - name: Create ZIP
+        id: zip
+        run: |
+          $zipBase = '${{ steps.version.outputs.ZIP_BASE }}'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $zip = Join-Path '${{ github.workspace }}' "dist\$zipBase.zip"
+          Compress-Archive -Path '${{ github.workspace }}/pkg/*' -DestinationPath $zip -CompressionLevel Optimal
+          Write-Host "Created ZIP: $zip"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "ZIP_PATH=$zip"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "ZIP_NAME=$zipBase.zip"
+
+      - name: Validate ZIP contents (extract + re-validate)
+        run: |
+          $zip = '${{ steps.zip.outputs.ZIP_PATH }}'
+          $extract = Join-Path $env:TEMP 'naruto-zip-check'
+          if (Test-Path $extract) { Remove-Item -Recurse -Force $extract }
+          New-Item -ItemType Directory -Force -Path $extract | Out-Null
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+          $rootEntries = @(Get-ChildItem $extract)
+          if ($rootEntries.Count -eq 1 -and $rootEntries[0].PSIsContainer) {
+            Write-Error "ZIP has an unexpected wrapper directory '$($rootEntries[0].Name)'. NarutoAutoGUI.exe must sit at the ZIP root."
+            exit 1
+          }
+          ./src/NarutoAutoGUI/scripts/validate-package.ps1 -PackageDirectory $extract
+
+      - name: Generate SHA256 sidecar
+        id: sha
+        run: |
+          $zip = '${{ steps.zip.outputs.ZIP_PATH }}'
+          $zipName = '${{ steps.zip.outputs.ZIP_NAME }}'
+          $hash = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
+          $sidecar = "$zip.sha256"
+          "$hash  $zipName" | Set-Content -Path $sidecar -NoNewline -Encoding ascii
+          Write-Host "SHA256: $hash"
+          Write-Host "Sidecar content:"
+          Get-Content $sidecar
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "SHA_SIDECAR=$sidecar"
+
+      - name: Upload Actions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.ZIP_BASE }}
+          path: |
+            ${{ steps.zip.outputs.ZIP_PATH }}
+            ${{ steps.sha.outputs.SHA_SIDECAR }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: build-package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-package.outputs.zipBase }}
+          path: dist
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $prerelease = '${{ needs.build-package.outputs.isPrerelease }}'
+          $zip = (Get-ChildItem dist -Filter *.zip)[0].FullName
+          $sha = (Get-ChildItem dist -Filter *.sha256)[0].FullName
+          $releaseArgs = @('release','create',$tag,$zip,$sha,'--verify-tag','--title',"NarutoAutoGUI $tag",'--notes',"Windows x64 package for $tag.")
+          if ($prerelease -eq 'True') { $releaseArgs += '--prerelease' }
+          Write-Host "Creating release for tag $tag (prerelease=$prerelease)"
+          gh @releaseArgs

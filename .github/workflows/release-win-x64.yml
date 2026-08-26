@@ -152,7 +152,7 @@ jobs:
           $zip = (Get-ChildItem dist -Filter *.zip)[0].FullName
           $sha = (Get-ChildItem dist -Filter *.sha256)[0].FullName
           $releaseArgs = @(
-            'release', 'create', $tag, $zip, $sha, '--verify-tag',
+            'release', 'create', $tag, $zip, $sha, '--verify-tag', '--repo', $env:GITHUB_REPOSITORY,
             '--title', "NarutoAutoGUI $tag", '--notes', "Windows x64 package for $tag."
           )
           if ($prerelease -eq 'True') { $releaseArgs += '--prerelease' }

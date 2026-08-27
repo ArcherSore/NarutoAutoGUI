@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using NarutoAutoGUI.Infrastructure;
 
 namespace NarutoAutoGUI.ChildSession;
@@ -91,6 +92,19 @@ internal sealed class ChildSessionManager : IDisposable
                 SetPreviewVisibility(showPreview);
                 return sessionId;
             } catch (Exception exception) {
+                var actualException = exception.GetBaseException();
+                if (actualException is COMException comException && unchecked((uint)comException.ErrorCode) == 0x80040111) {
+                    var descriptiveException = new InvalidOperationException(
+                        "初始化 RDP ActiveX 控件失败 (0x80040111 CLASS_E_CLASSNOTAVAILABLE)。"
+                        + "系统无法提供请求的远程桌面类工厂，请确认系统远程桌面组件完整且显卡驱动正常。",
+                        exception);
+                    _logger.Error("RDP Child Session 创建或恢复失败。", descriptiveException);
+                    UpdateState(
+                        ChildSessionState.Faulted, SafeChildSessionId(currentSessionId),
+                        SafeConnectedState(), descriptiveException.Message);
+                    throw descriptiveException;
+                }
+
                 _logger.Error("RDP Child Session 创建或恢复失败。", exception);
                 UpdateState(
                     ChildSessionState.Faulted, SafeChildSessionId(currentSessionId),

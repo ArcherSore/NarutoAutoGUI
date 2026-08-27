@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Models;
 using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
@@ -21,6 +22,7 @@ internal static class SelfTestRunner
             using var logger = new AppLogger(logDirectory);
             var projectDirectory = CreateProjectFixture(testDirectory);
             VerifyGameLaunchProfile(logger, testDirectory);
+            VerifyRdpClientClsid();
             VerifyProjectPlan(testDirectory, projectDirectory);
             VerifyTaskCatalogVariants(testDirectory, projectDirectory);
             VerifyTaskDescriptionMarkup();
@@ -48,6 +50,7 @@ internal static class SelfTestRunner
 
             Console.WriteLine(
                 "SELF-TEST PASS: fixed Naruto game launch profile (AppData-derived launcher, fixed AppId); "
+                + "RDP MsRdpClient10 CLSID; "
                 + "PI default/explicit resolver; "
                 + "ordered pipeline override; nested dormant intent; "
                 + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
@@ -97,6 +100,25 @@ internal static class SelfTestRunner
         var expected = Path.Combine(productionRoot, "Tencent", "QQMicroGameBox", "Launch.exe");
         if (!string.Equals(productionProfile.ExecutablePath, expected, StringComparison.OrdinalIgnoreCase)) {
             throw new InvalidOperationException("Production launch profile 路径推导与当前用户 ApplicationData 不一致。");
+        }
+    }
+
+    private static void VerifyRdpClientClsid()
+    {
+        const string expectedClsid = "8B918B82-7985-4C24-89DF-C33AD2BBFBCD";
+        const string prohibitedClsid = "A0C63C30-F08D-4AB4-907C-34905D770C7D";
+
+        if (!string.Equals(RdpActiveXHost.RdpClientClsid, expectedClsid, StringComparison.OrdinalIgnoreCase)) {
+            throw new InvalidOperationException(
+                $"RDP ActiveX CLSID 预期为 MsRdpClient10 ({expectedClsid})，实际为 {RdpActiveXHost.RdpClientClsid}。");
+        }
+
+        if (string.Equals(RdpActiveXHost.RdpClientClsid, prohibitedClsid, StringComparison.OrdinalIgnoreCase)) {
+            throw new InvalidOperationException("RDP ActiveX CLSID 不能使用 Win11 专用的 MsRdpClient11 (v11)。");
+        }
+
+        if (!Guid.TryParse(RdpActiveXHost.RdpClientClsid, out var clsidGuid) || clsidGuid == Guid.Empty) {
+            throw new InvalidOperationException("RDP ActiveX CLSID 不是有效 GUID。");
         }
     }
 

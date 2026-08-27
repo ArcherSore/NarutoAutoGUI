@@ -249,7 +249,7 @@ internal sealed class WorkerRuntimeExecution
     private Process StartAgentProcess(string identifier, string nativeAssemblyDirectory)
     {
         var startInfo = new ProcessStartInfo {
-            FileName = _manifest.Agent.ChildExec,
+            FileName = DependencyProbe.ResolveAgentExecutablePath(_manifest.Agent),
             WorkingDirectory = _manifest.Agent.WorkingDirectory,
             UseShellExecute = false,
             RedirectStandardOutput = true,

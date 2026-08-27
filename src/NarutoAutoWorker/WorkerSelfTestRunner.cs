@@ -15,10 +15,11 @@ internal static class WorkerSelfTestRunner
             VerifyPreviewResponseBudget();
             VerifyPreviewResponseBudgetRejection();
             VerifyTransportWriteBeforeSendGuard();
+            VerifyAgentExecutableResolution();
             Console.WriteLine(
                 "WORKER SELF-TEST PASS: MaaNOP string focus projection; Callback adapter; "
                 + "log response budget; latest-frame preview; preview response budget; "
-                + "budget rejection; transport write guard");
+                + "budget rejection; transport write guard; agent executable resolution");
             return 0;
         } catch (Exception exception) {
             Console.Error.WriteLine($"WORKER SELF-TEST FAIL: {exception}");
@@ -269,6 +270,43 @@ internal static class WorkerSelfTestRunner
         release.Set();
         if (!pump.Wait(TimeSpan.FromSeconds(2)) || preview.ReadLatest() is not null) {
             throw new InvalidOperationException("Preview Stop 后发布了已经在途的旧帧。 ");
+        }
+    }
+
+    private static void VerifyAgentExecutableResolution()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "WorkerSelfTest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+        try {
+            var pythonSubdir = Path.Combine(tempDirectory, "python");
+            Directory.CreateDirectory(pythonSubdir);
+            var pythonExePath = Path.Combine(pythonSubdir, "python.exe");
+            File.WriteAllText(pythonExePath, "dummy");
+
+            var agentRelative = new AgentDefinition("./python/python.exe", ["./agent/main.py"], tempDirectory);
+            var resolvedRelative = DependencyProbe.ResolveAgentExecutablePath(agentRelative);
+            if (!string.Equals(resolvedRelative, pythonExePath, StringComparison.OrdinalIgnoreCase)) {
+                throw new InvalidOperationException(
+                    $"./python/python.exe child_exec 解析失败：expected={pythonExePath}, actual={resolvedRelative}。 ");
+            }
+
+            var agentSubpath = new AgentDefinition("python/python.exe", ["./agent/main.py"], tempDirectory);
+            var resolvedSubpath = DependencyProbe.ResolveAgentExecutablePath(agentSubpath);
+            if (!string.Equals(resolvedSubpath, pythonExePath, StringComparison.OrdinalIgnoreCase)) {
+                throw new InvalidOperationException(
+                    $"python/python.exe child_exec 解析失败：expected={pythonExePath}, actual={resolvedSubpath}。 ");
+            }
+
+            var agentAbsolute = new AgentDefinition(pythonExePath, ["./agent/main.py"], tempDirectory);
+            var resolvedAbsolute = DependencyProbe.ResolveAgentExecutablePath(agentAbsolute);
+            if (!string.Equals(resolvedAbsolute, pythonExePath, StringComparison.OrdinalIgnoreCase)) {
+                throw new InvalidOperationException(
+                    $"绝对路径 child_exec 解析失败：expected={pythonExePath}, actual={resolvedAbsolute}。 ");
+            }
+        } finally {
+            if (Directory.Exists(tempDirectory)) {
+                Directory.Delete(tempDirectory, recursive: true);
+            }
         }
     }
 

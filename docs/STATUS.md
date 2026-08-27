@@ -15,6 +15,12 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-08-27：支持 Agent 可执行文件相对路径解析（如 `./python/python.exe`）。
+  `DependencyProbe.ResolveAgentExecutablePath` 在 `child_exec` 为相对路径且目标文件存在于 `WorkingDirectory`
+  时，自动解析为绝对路径，避免 Worker 位于 `worker/` 子目录时因 Windows `CreateProcess` 相对基准目录差异导致找不到
+  Python 产生 `PythonMissing` 错误；保留绝对路径直接使用与 PATH 命令名回退行为。更新 `DependencyProbe`
+  与 `WorkerRuntimeExecution`；新增 `VerifyAgentExecutableResolution` 自检覆盖相对路径、绝对路径和系统命令解析。
+
 - 2026-08-27：将 NarutoAutoWorker 使用的 MaaFramework runtime 统一升级到 5.12.3。升级
   `Maa.Framework` (5.10.0) 与 `Maa.Framework.Runtimes` (5.12.3)，匹配 `WorkerRuntimeExecution` 的
   `Win32ScreencapMethods` API；更新 `packages.lock.json`；通过 Release build、`test-automated.ps1`

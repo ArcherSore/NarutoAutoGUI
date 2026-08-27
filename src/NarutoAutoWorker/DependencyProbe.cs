@@ -79,7 +79,7 @@ internal static class DependencyProbe
                               "from maa.toolkit import Toolkit; result['toolkit']=True; " +
                               "print(json.dumps(result,ensure_ascii=False))";
         var startInfo = new ProcessStartInfo {
-            FileName = agent.ChildExec,
+            FileName = ResolveAgentExecutablePath(agent),
             WorkingDirectory = agent.WorkingDirectory,
             UseShellExecute = false,
             RedirectStandardOutput = true,
@@ -109,6 +109,12 @@ internal static class DependencyProbe
         return JsonSerializer.Deserialize<ProbePayload>(stdout.Trim(), ProtocolJson.Options)
                ?? throw new InvalidDataException("Python Agent Probe 未返回 JSON。 ");
     }
+
+    internal static string ResolveAgentExecutablePath(AgentDefinition agent) =>
+        Path.GetFullPath(
+            Path.IsPathFullyQualified(agent.ChildExec)
+                ? agent.ChildExec
+                : Path.Combine(agent.WorkingDirectory, agent.ChildExec));
 
     private static string ResolveAgentEntryPath(AgentDefinition agent)
     {

@@ -47,7 +47,6 @@ internal sealed class AppSettingsStore
             throw new InvalidDataException("GameExecutablePath 不能为空。");
         }
         settings.SchemaVersion = AppSettings.CurrentSchemaVersion;
-        settings.MaaNopProjectDirectory = NormalizeProjectDirectory(settings.MaaNopProjectDirectory, requireInterface: true);
         var directory = Path.GetDirectoryName(_settingsPath)
             ?? throw new InvalidOperationException("配置路径没有父目录。");
         Directory.CreateDirectory(directory);
@@ -93,15 +92,12 @@ internal sealed class AppSettingsStore
                 root,
                 [
                     nameof(AppSettings.SchemaVersion), nameof(AppSettings.GameExecutablePath),
-                    nameof(AppSettings.GameArguments), nameof(AppSettings.MaaNopProjectDirectory)
+                    nameof(AppSettings.GameArguments)
                 ]);
             return new AppSettings {
                 SchemaVersion = schemaVersion,
                 GameExecutablePath = ReadRequiredString(root, nameof(AppSettings.GameExecutablePath)),
-                GameArguments = ReadRequiredString(root, nameof(AppSettings.GameArguments), allowEmpty: true),
-                MaaNopProjectDirectory = NormalizeProjectDirectory(
-                    ReadRequiredString(root, nameof(AppSettings.MaaNopProjectDirectory), allowEmpty: true),
-                    requireInterface: false)
+                GameArguments = ReadRequiredString(root, nameof(AppSettings.GameArguments), allowEmpty: true)
             };
         }
 
@@ -110,61 +106,7 @@ internal sealed class AppSettingsStore
             GameArguments = ReadOptionalString(root, nameof(AppSettings.GameArguments), allowEmpty: true) ?? string.Empty
         };
         ApplyLegacyGameSettingsMigration(settings, root);
-        settings.MaaNopProjectDirectory = ReadLegacyProjectDirectory(root);
         return settings;
-    }
-
-    private string ReadLegacyProjectDirectory(JsonElement root)
-    {
-        if (root.TryGetProperty(nameof(AppSettings.MaaNopProjectDirectory), out var projectElement)) {
-            if (projectElement.ValueKind != JsonValueKind.String) {
-                throw new JsonException("MaaNopProjectDirectory 必须是 string。");
-            }
-            return NormalizeProjectDirectory(projectElement.GetString() ?? string.Empty, requireInterface: false);
-        }
-
-        var legacyExecutable = ReadOptionalString(root, "MaaNopExecutablePath", allowEmpty: true);
-        if (string.IsNullOrWhiteSpace(legacyExecutable)) {
-            return string.Empty;
-        }
-
-        string executableDirectory;
-        try {
-            executableDirectory = Path.GetDirectoryName(Path.GetFullPath(legacyExecutable)) ?? string.Empty;
-        } catch (Exception exception) when (exception is ArgumentException
-                                                or NotSupportedException
-                                                or PathTooLongException) {
-            _logger.Warn($"旧 MaaNOP exe 路径无法迁移：{exception.Message}");
-            return string.Empty;
-        }
-
-        if (File.Exists(Path.Combine(executableDirectory, "interface.json"))) {
-            _logger.Info("已在内存中将旧 MaaNOP exe 路径迁移为其 Project Directory。");
-            return executableDirectory;
-        }
-
-        var assetsDirectory = Path.Combine(executableDirectory, "assets");
-        if (File.Exists(Path.Combine(assetsDirectory, "interface.json"))) {
-            _logger.Info("已在内存中将旧 MaaNOP exe 路径迁移为 assets Project Directory。");
-            return Path.GetFullPath(assetsDirectory);
-        }
-
-        _logger.Warn("旧 MaaNOP exe 路径附近没有可迁移的 interface.json；请重新选择 MaaNOP Project Directory。");
-        return string.Empty;
-    }
-
-    private static string NormalizeProjectDirectory(string value, bool requireInterface)
-    {
-        if (string.IsNullOrWhiteSpace(value)) {
-            return string.Empty;
-        }
-
-        var fullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(value.Trim()));
-        if (requireInterface && !File.Exists(Path.Combine(fullPath, "interface.json"))) {
-            throw new DirectoryNotFoundException(
-                $"MaaNOP Project Directory 必须直接包含 interface.json：{fullPath}");
-        }
-        return fullPath;
     }
 
     private static string ReadRequiredString(JsonElement root, string name, bool allowEmpty = false) =>

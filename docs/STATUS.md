@@ -15,11 +15,25 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-08-27：将 MaaNOP Project Directory 从用户可配置项收口为打包约定。删除 AppSettings.MaaNopProjectDirectory、
+  Settings 页面中的 MaaNOP 项目目录 TextBox / 浏览按钮 / 说明文案、AppSettingsStore 中的
+  NormalizeProjectDirectory、ReadLegacyProjectDirectory、`MaaNopExecutablePath` → Project Directory 旧迁移和
+  `requireInterface` 目录校验；SchemaVersion 由 2 bump 至 3，旧 settings.json 不再兼容，不实现 migration；
+  production 默认使用 `AppContext.BaseDirectory` 作为唯一 Project root，`interface.json` 从
+  `NarutoAutoGUI.exe` 同级目录加载。`ProjectPlanModule.Open(projectDirectory, configPath)` 签名保留作为
+  self-test 的 test seam，production 调用点传入 `AppContext.BaseDirectory`。缺失 `interface.json` 时
+  ProjectInterfaceLoader 抛出“安装目录缺少 interface.json，请确认使用完整的 MaaNOP 发布包。”并附带
+  `AppContext.BaseDirectory` 到 diagnostic log；不再提示“前往设置选择项目路径”。Settings 页面只保留游戏启动
+  与应用行为，未留空占位。GameExecutablePath、GameArguments、Child Session、Worker、IPC、Preview、Tasks
+  页面与发布打包行为未改。`MainWindow.xaml`、`MainWindow.xaml.cs`、`AppSettings.cs`、`AppSettingsStore.cs`、
+  `ProjectInterfaceLoader.cs`、`SelfTestRunner.cs` XML 解析、Release build 与 build-output `--self-test`
+  通过，0 警告、0 错误；新增 `interface.json` 缺失错误信息与 v3 schema 未知字段拒绝自检覆盖。
+
 - .NET 8 WPF x64 正式主窗口和独立 RDP 子桌面预览。
 - 创建/恢复、显示、隐藏、结束 Child Session；展示连接状态、RDP ConnectedState 和 `childSessionId`。
 - 启动时探测已有 Child Session 并自动恢复 RDP 连接。
 - 固定 `1920×1080 @ 100%`，不提供分辨率或 DPI 配置。
-- 游戏 exe、启动参数和 MaaNOP exe 路径配置，保存到程序目录的 `config\settings.json`。
+- 游戏 exe 和启动参数配置，保存到程序目录的 `config\settings.json`；MaaNOP project payload 与 NarutoAutoGUI 一同打包，Project root 固定为 application base directory，`interface.json` 位于 `NarutoAutoGUI.exe` 同级目录，不再由用户在 Settings 中选择。
 - 火影忍者 Online 默认通过 `QQMicroGameBox\Launch.exe -/appid:1103286479` 启动；不使用 `QQGameLauncher.exe`。工作目录自动取 exe 所在目录，不提供配置字段。
 - 旧版配置若没有参数且入口为空或为 `QQGameLauncher.exe`，加载时迁移到上述正确入口；其他自定义 exe 不覆盖。
 - 分别启动游戏/MaaNOP，以及“恢复/创建 → 显示 → 游戏 → MaaNOP → 保持显示”的一键启动。

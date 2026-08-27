@@ -444,13 +444,13 @@
                                             VerticalAlignment="Center">
                                     <TextBlock x:Name="ProjectEmptyStateTitleText"
                                                HorizontalAlignment="Center"
-                                               Text="尚未配置 MaaNOP 项目"
+                                               Text="MaaNOP 项目无法加载"
                                                TextAlignment="Center"
                                                Style="{StaticResource SectionTitleTextStyle}" />
                                     <TextBlock x:Name="ProjectEmptyStateDetailText"
                                                Margin="0,8,0,0"
                                                HorizontalAlignment="Center"
-                                               Text="请先在设置中选择直接包含 interface.json 的 MaaNOP 项目目录。"
+                                               Text="请使用完整的 MaaNOP 发布包，确保安装目录下直接包含 interface.json。"
                                                TextAlignment="Center"
                                                TextWrapping="Wrap"
                                                Style="{StaticResource SecondaryTextStyle}" />
@@ -553,14 +553,12 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <StackPanel Grid.Row="0">
                                 <TextBlock Text="设置" Style="{StaticResource WindowTitleTextStyle}" />
                                 <TextBlock Margin="0,4,0,0"
-                                           Text="配置游戏入口、MaaNOP 项目和应用行为"
+                                           Text="配置游戏入口和应用行为；MaaNOP 项目随发布包固定在程序目录下。"
                                            Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
 
@@ -589,48 +587,16 @@
                                        Content="启动参数(_A)"
                                        Target="{Binding ElementName=GameArgumentsTextBox}" />
                                 <TextBox x:Name="GameArgumentsTextBox"
-                                         Margin="0,6,0,0"
-                                         ToolTip="传递给游戏启动程序的命令行参数"
-                                         AutomationProperties.HelpText="火影忍者 Online 使用 -/appid:1103286479"
-                                         LostKeyboardFocus="PathsTextBox_LostKeyboardFocus" />
+                                          Margin="0,6,0,0"
+                                          ToolTip="传递给游戏启动程序的命令行参数"
+                                          AutomationProperties.HelpText="火影忍者 Online 使用 -/appid:1103286479"
+                                          LostKeyboardFocus="PathsTextBox_LostKeyboardFocus" />
                                 <TextBlock Margin="0,8,0,0"
                                            Text="火影忍者 Online 默认通过 QQMicroGameBox\Launch.exe 和 appid 参数启动。"
                                            Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
 
-                            <Border Grid.Row="2"
-                                    Height="1"
-                                    Margin="0,24,0,0"
-                                    Background="{StaticResource Brush.Border}"
-                                    SnapsToDevicePixels="True" />
-
-                            <StackPanel Grid.Row="3" Margin="0,24,0,0">
-                                <TextBlock Text="MaaNOP" Style="{StaticResource SectionTitleTextStyle}" />
-                                <Label Margin="0,14,0,0"
-                                       Content="项目目录(_M)"
-                                       Target="{Binding ElementName=MaaNopProjectDirectoryTextBox}" />
-                                <Grid Margin="0,6,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="8" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="MaaNopProjectDirectoryTextBox"
-                                             ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
-                                             AutomationProperties.HelpText="直接包含 interface.json 的 MaaNOP 项目目录"
-                                             LostKeyboardFocus="MaaNopProjectDirectoryTextBox_LostKeyboardFocus" />
-                                    <Button x:Name="BrowseMaaNopProjectButton"
-                                            Grid.Column="2"
-                                            Content="浏览…(_R)"
-                                            Style="{StaticResource SubtleButtonStyle}"
-                                            Click="BrowseMaaNopProjectButton_Click" />
-                                </Grid>
-                                <TextBlock Margin="0,8,0,0"
-                                           Text="请选择直接包含 interface.json 的项目目录。"
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                            </StackPanel>
-
-                            <StackPanel Grid.Row="4" Margin="0,24,0,24">
+                            <StackPanel Grid.Row="2" Margin="0,24,0,24">
                                 <Border Height="1"
                                         Margin="0,0,0,24"
                                         Background="{StaticResource Brush.Border}"

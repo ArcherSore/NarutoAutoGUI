@@ -47,7 +47,8 @@ internal static class SelfTestRunner
             }
 
             Console.WriteLine(
-                "SELF-TEST PASS: settings v2 + legacy migration; PI default/explicit resolver; "
+                "SELF-TEST PASS: settings v3 (game settings migration only, no MaaNOP project directory); "
+                + "PI default/explicit resolver; "
                 + "ordered pipeline override; nested dormant intent; "
                 + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
                 + "PI structure/default/graph validation; typed input validation; "
@@ -75,41 +76,52 @@ internal static class SelfTestRunner
     {
         var settingsPath = Path.Combine(testDirectory, "settings.json");
         var store = new AppSettingsStore(logger, settingsPath);
-        var legacyDirectory = Path.Combine(testDirectory, "legacy-maanop");
-        var legacyAssets = Path.Combine(legacyDirectory, "assets");
-        Directory.CreateDirectory(legacyAssets);
-        File.WriteAllText(Path.Combine(legacyAssets, "interface.json"), "{}");
         File.WriteAllText(
             settingsPath,
             JsonSerializer.Serialize(new
             {
                 GameExecutablePath = Path.Combine(testDirectory, "QQGameLauncher.exe"),
-                MaaNopExecutablePath = Path.Combine(legacyDirectory, "MFAAvalonia.exe")
+                MaaNopExecutablePath = Path.Combine(testDirectory, "MFAAvalonia.exe")
             }));
         var migrated = store.Load();
         if (migrated.GameExecutablePath != AppSettings.DefaultGameExecutablePath
-            || migrated.GameArguments != AppSettings.DefaultGameArguments
-            || migrated.MaaNopProjectDirectory != Path.GetFullPath(legacyAssets)) {
-            throw new InvalidOperationException("旧版 Application Settings 内存迁移验证失败。");
+            || migrated.GameArguments != AppSettings.DefaultGameArguments) {
+            throw new InvalidOperationException("旧版 Game Settings 内存迁移验证失败。");
         }
 
         var expected = new AppSettings {
             GameExecutablePath = @"C:\Test\Game.exe",
-            GameArguments = "--test-game",
-            MaaNopProjectDirectory = projectDirectory
+            GameArguments = "--test-game"
         };
         store.Save(expected);
         var savedJson = File.ReadAllText(settingsPath);
         if (savedJson.Contains("MaaNopExecutablePath", StringComparison.Ordinal)
+            || savedJson.Contains("MaaNopProjectDirectory", StringComparison.Ordinal)
             || savedJson.Contains("GameWorkingDirectory", StringComparison.Ordinal)
-            || !savedJson.Contains("\"SchemaVersion\": 2", StringComparison.Ordinal)) {
-            throw new InvalidOperationException("Application Settings SchemaVersion 2 序列化验证失败。");
+            || !savedJson.Contains("\"SchemaVersion\": 3", StringComparison.Ordinal)) {
+            throw new InvalidOperationException("Application Settings SchemaVersion 3 序列化验证失败。");
         }
 
         var actual = store.Load();
-        if (actual.GameExecutablePath != expected.GameExecutablePath || actual.GameArguments != expected.GameArguments
-            || actual.MaaNopProjectDirectory != expected.MaaNopProjectDirectory) {
+        if (actual.GameExecutablePath != expected.GameExecutablePath
+            || actual.GameArguments != expected.GameArguments) {
             throw new InvalidOperationException("Application Settings 持久化往返验证失败。");
+        }
+
+        File.WriteAllText(
+            settingsPath,
+            JsonSerializer.Serialize(new
+            {
+                SchemaVersion = AppSettings.CurrentSchemaVersion,
+                GameExecutablePath = @"C:\Test\Game.exe",
+                GameArguments = "--test-game",
+                MaaNopProjectDirectory = projectDirectory
+            }));
+        try {
+            store.Load();
+            throw new InvalidOperationException("Application Settings 未拒绝未知 MaaNopProjectDirectory 字段。");
+        } catch (InvalidDataException) {
+            // Expected: settings schema is strict; legacy fields are not silently accepted.
         }
     }
 
@@ -484,6 +496,16 @@ internal static class SelfTestRunner
 
     private static void VerifyInvalidProjectInterfaces(string testDirectory, string sourceProjectDirectory)
     {
+        var emptyProjectDirectory = Path.Combine(testDirectory, "missing-interface");
+        Directory.CreateDirectory(emptyProjectDirectory);
+        try {
+            _ = ProjectPlanModule.Open(emptyProjectDirectory, Path.Combine(emptyProjectDirectory, "maanop-config.json"));
+            throw new InvalidOperationException("PI 未拒绝缺失 interface.json 的项目目录。");
+        } catch (FileNotFoundException exception) when (
+            exception.Message.Contains("安装目录缺少 interface.json", StringComparison.Ordinal)) {
+            // Expected: clear installation-oriented error message.
+        }
+
         var sourceInterface = File.ReadAllText(Path.Combine(sourceProjectDirectory, "interface.json"));
         VerifyRejectedProjectInterface(
             testDirectory, sourceInterface,

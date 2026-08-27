@@ -70,7 +70,8 @@ internal static class ProjectInterfaceLoader
         var projectRoot = PathCanonicalizerV1.Canonicalize(projectDirectory);
         var interfacePath = Path.Combine(projectRoot, "interface.json");
         if (!File.Exists(interfacePath)) {
-            throw new FileNotFoundException("MaaNOP Project Directory 必须直接包含 interface.json。", interfacePath);
+            throw new FileNotFoundException(
+                "安装目录缺少 interface.json，请确认使用完整的 MaaNOP 发布包。", interfacePath);
         }
 
         var bytes = File.ReadAllBytes(interfacePath);

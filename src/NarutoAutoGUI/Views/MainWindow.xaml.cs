@@ -20,7 +20,6 @@ using WpfButton = System.Windows.Controls.Button;
 using WpfComboBox = System.Windows.Controls.ComboBox;
 using WpfMessageBox = System.Windows.MessageBox;
 using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
-using WpfOpenFolderDialog = Microsoft.Win32.OpenFolderDialog;
 using WpfTextBox = System.Windows.Controls.TextBox;
 using FluentWindow = Wpf.Ui.Controls.FluentWindow;
 using WpfNavigationViewItem = Wpf.Ui.Controls.NavigationViewItem;
@@ -106,7 +105,6 @@ public partial class MainWindow : FluentWindow
         _sessionSnapshot = sessionManager.Snapshot;
         GamePathTextBox.Text = settings.GameExecutablePath;
         GameArgumentsTextBox.Text = settings.GameArguments;
-        MaaNopProjectDirectoryTextBox.Text = settings.MaaNopProjectDirectory;
         HomeLogListBox.AddHandler(
             ScrollViewer.ScrollChangedEvent,
             new ScrollChangedEventHandler(LogListBox_ScrollChanged));
@@ -139,7 +137,7 @@ public partial class MainWindow : FluentWindow
     {
         Loaded -= MainWindow_Loaded;
         _homeLogScrollViewer = FindVisualChild<ScrollViewer>(HomeLogListBox);
-        TryLoadProject(showError: !string.IsNullOrWhiteSpace(MaaNopProjectDirectoryTextBox.Text));
+        TryLoadProject(showError: false);
         var existingId = _sessionManager.DetectExistingSession();
         if (existingId is null) {
             return;
@@ -242,19 +240,6 @@ public partial class MainWindow : FluentWindow
         if (path is not null) {
             GamePathTextBox.Text = path;
             TrySaveSettings(showError: true);
-        }
-    }
-
-    private void BrowseMaaNopProjectButton_Click(object sender, RoutedEventArgs e)
-    {
-        var path = BrowseProjectDirectory(
-            MaaNopProjectDirectoryTextBox.Text,
-            "选择直接包含 interface.json 的 MaaNOP Project Directory");
-        if (path is not null) {
-            MaaNopProjectDirectoryTextBox.Text = path;
-            if (TrySaveSettings(showError: true)) {
-                TryLoadProject(showError: true);
-            }
         }
     }
 
@@ -699,21 +684,11 @@ public partial class MainWindow : FluentWindow
     {
         _settings.GameExecutablePath = GamePathTextBox.Text.Trim();
         _settings.GameArguments = GameArgumentsTextBox.Text.Trim();
-        _settings.MaaNopProjectDirectory = MaaNopProjectDirectoryTextBox.Text.Trim();
         _settingsStore.Save(_settings);
-        MaaNopProjectDirectoryTextBox.Text = _settings.MaaNopProjectDirectory;
     }
 
     private void PathsTextBox_LostKeyboardFocus(object sender, System.Windows.Input.KeyboardFocusChangedEventArgs e) =>
         TrySaveSettings(showError: true);
-
-    private void MaaNopProjectDirectoryTextBox_LostKeyboardFocus(
-        object sender, System.Windows.Input.KeyboardFocusChangedEventArgs e)
-    {
-        if (TrySaveSettings(showError: true)) {
-            TryLoadProject(showError: true);
-        }
-    }
 
     private bool TrySaveSettings(bool showError)
     {
@@ -733,12 +708,7 @@ public partial class MainWindow : FluentWindow
 
     private void LoadProject()
     {
-        var projectDirectory = MaaNopProjectDirectoryTextBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(projectDirectory)) {
-            throw new InvalidOperationException("请选择 MaaNOP Project Directory。 ");
-        }
-
-        var project = ProjectPlanModule.Open(projectDirectory, _settingsStore.MaaNopConfigPath);
+        var project = ProjectPlanModule.Open(AppContext.BaseDirectory, _settingsStore.MaaNopConfigPath);
         _projectPlan = project;
         _pendingStartAttempt = null;
         TaskListBox.ItemsSource = project.Tasks;
@@ -756,33 +726,23 @@ public partial class MainWindow : FluentWindow
 
     private bool TryLoadProject(bool showError)
     {
-        if (string.IsNullOrWhiteSpace(MaaNopProjectDirectoryTextBox.Text)) {
-            ShowProjectUnavailableState(
-                "配置项目后显示参数摘要",
-                "尚未配置 MaaNOP 项目",
-                "请先在设置中选择直接包含 interface.json 的 MaaNOP 项目目录。");
-            ProjectValidationText.Text = string.Empty;
-            ProjectValidationBorder.Visibility = Visibility.Collapsed;
-            UpdateCommandAvailability();
-            return false;
-        }
-
         try {
             LoadProject();
             return true;
         } catch (Exception exception) {
+            _logger.Warn(
+                $"加载 MaaNOP Project Interface 失败。AppContext.BaseDirectory={AppContext.BaseDirectory}", exception);
             ShowProjectUnavailableState(
-                "修正项目后显示参数摘要",
+                "修正安装目录后显示参数摘要",
                 "MaaNOP 项目无法加载",
-                "请检查项目目录和 interface.json，然后重试。");
+                "请使用完整的 MaaNOP 发布包，确保 NarutoAutoGUI.exe 同级目录直接包含 interface.json。");
             ShowProjectValidationError(exception);
-            _logger.Warn("加载 MaaNOP Project Interface 失败。", exception);
             UpdateCommandAvailability();
             if (showError) {
                 ShowActionableError(
                     "加载 MaaNOP 项目失败",
                     exception,
-                    "请选择直接包含真实 interface.json、agent 和 resource 的 MaaNOP Project Directory。",
+                    "请使用完整的 MaaNOP 发布包，确保安装目录下直接包含 interface.json。",
                     offerLogDirectory: true);
             }
             return false;
@@ -826,15 +786,6 @@ public partial class MainWindow : FluentWindow
         }
 
         return dialog.ShowDialog() == true ? dialog.FileName : null;
-    }
-
-    private static string? BrowseProjectDirectory(string currentPath, string title)
-    {
-        var dialog = new WpfOpenFolderDialog { Title = title, Multiselect = false };
-        if (!string.IsNullOrWhiteSpace(currentPath) && Directory.Exists(currentPath)) {
-            dialog.InitialDirectory = Path.GetFullPath(currentPath);
-        }
-        return dialog.ShowDialog() == true ? dialog.FolderName : null;
     }
 
     internal static bool IsUserFacingRunLog(WorkerLogEntry entry) =>
@@ -1275,8 +1226,6 @@ public partial class MainWindow : FluentWindow
         var canEditProject = canStartCommand
             && (_workerSnapshot.Observation is WorkerObservation.WorkerNotStarted or WorkerObservation.ChildSessionEnded
                 || workerIdleFresh);
-        MaaNopProjectDirectoryTextBox.IsEnabled = canEditProject;
-        BrowseMaaNopProjectButton.IsEnabled = canEditProject;
         TaskListBox.IsEnabled = canEditProject && projectReady;
         OptionEditorPanel.IsEnabled = canEditProject && projectReady;
 
@@ -1304,11 +1253,11 @@ public partial class MainWindow : FluentWindow
                 ? "任务正在运行，可随时停止。"
                 : hasActiveRun
                     ? "任务状态正在切换，请稍候。"
-                    : !projectReady
-                        ? "请先在“设置”中选择 MaaNOP 项目目录。"
-                        : readyToStart
-                            ? "运行环境已就绪，可以开始任务。"
-                            : "准备桌面分身、Worker 和游戏后即可开始任务。";
+            : !projectReady
+                ? "MaaNOP 项目尚未加载，请确认安装目录包含 interface.json。"
+                : readyToStart
+                    ? "运行环境已就绪，可以开始任务。"
+                    : "准备桌面分身、Worker 和游戏后即可开始任务。";
         UpdateDashboardPresentation(readyToStart);
     }
 

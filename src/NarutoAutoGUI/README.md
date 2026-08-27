@@ -17,27 +17,27 @@ Windows x64 / .NET 8 WPF 程序。需要管理员权限和交互式桌面。
 
 ## 运行时文件
 
-- 路径配置：`<程序目录>\config\settings.json`
+- MaaNOP 用户配置：`<程序目录>\config\maanop-config.json`
 - 滚动日志：`<程序目录>\logs\NarutoAutoGUI-yyyyMMdd[.序号].log`
 
-配置包含游戏 exe、启动参数与 MaaNOP exe 路径。日志按天和 10 MB 滚动，保留 14 天，可从主窗口直接打开当前日志目录。若程序目录不可写，日志会回退到 LocalAppData 或临时目录并记录 WARN。
+MaaNOP 项目根目录固定为应用程序目录，`interface.json` 直接从 `NarutoAutoGUI.exe` 同级目录读取。游戏启动器固定从当前用户的 `%APPDATA%\Tencent\QQMicroGameBox\Launch.exe` 推导，AppId 和启动参数不由用户配置。日志按天和 10 MB 滚动，保留 14 天，可从主窗口直接打开当前日志目录。若程序目录不可写，日志会回退到 LocalAppData 或临时目录并记录 WARN。
 
-火影忍者 Online 默认配置：
+火影忍者 Online 固定启动配置：
 
 ```text
-程序：C:\Users\17321\AppData\Roaming\Tencent\QQMicroGameBox\Launch.exe
+程序：%APPDATA%\Tencent\QQMicroGameBox\Launch.exe
 参数：-/appid:1103286479
 ```
 
 正式 GUI 不使用 `QQGameLauncher.exe` 作为该游戏的直接入口。
-工作目录不提供配置字段，启动时自动使用所选 exe 的所在目录；对默认入口即为 `QQMicroGameBox`。旧版配置缺少参数时，仅当游戏入口为空或为 `QQGameLauncher.exe` 才自动迁移；其他自定义 exe 不会被覆盖。
+工作目录不提供配置字段，启动时自动使用固定启动器的所在目录。启动器缺失时，GUI 会提示先通过 QQ 游戏平台安装或启动一次火影忍者 Online。
 
 ## 操作语义
 
-- “创建 / 恢复”和“显示子桌面”会确保 RDP ActiveX 已连接。
+- 首页“准备运行环境”和“打开完整桌面”会确保 RDP ActiveX 已连接。
 - 隐藏子桌面或点击其 X 不会断开 RDP。
 - Worker 与任务配置就绪后，无论子桌面当前显示或隐藏，均可从主窗口开始任务。
-- 游戏启动会把界面配置的参数和由 exe 自动推导的工作目录传给 Task Scheduler COM；一键启动会依次确保 Session、显示子桌面、启动游戏、启动 MaaNOP，并保持显示；单个程序失败时仍尝试另一个。
+- “准备运行环境”会依次确保 Session、显示子桌面、使用固定 profile 启动游戏并启动 Worker；启动参数与工作目录均由程序确定。
 - 启动前按 exe 文件名与 `childSessionId` 检查，已运行则跳过。
 - 主窗口 X 只隐藏到托盘。
 - “结束桌面分身”和退出程序会注销 Child Session；退出前会确认。

@@ -4,7 +4,7 @@
 
 1. WPF 主窗口、托盘和统一日志。
 2. Child Session 创建/恢复、显示/隐藏、状态展示和安全注销。
-3. 配置并分别启动游戏/MaaNOP，以及幂等的一键启动挂机环境。
+3. 使用固定游戏启动 profile 与 bundled MaaNOP Project Interface，幂等准备完整运行环境。
 4. 已完成正式 GUI 的真实 Windows 桌面 Child Session 交互式回归。
 
 ## 下一步：补齐剩余实机边界

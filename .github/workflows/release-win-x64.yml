@@ -1,6 +1,6 @@
 name: release-win-x64
 
-# workflow_dispatch: build + publish + validate + zip + sha256 + artifact, then STOP.
+# workflow_dispatch: build + publish + validate + zip + artifact, then STOP.
 # push tag v*: additionally create a GitHub Release (never auto-creates a tag).
 on:
   workflow_dispatch:
@@ -137,7 +137,8 @@ jobs:
           $zip = (Get-ChildItem dist -Filter *.zip)[0].FullName
           $releaseArgs = @(
             'release', 'create', $tag, $zip, '--verify-tag', '--repo', $env:GITHUB_REPOSITORY,
-            '--title', "NarutoAutoGUI $tag", '--notes', "Windows x64 package for $tag."
+            '--title', "NarutoAutoGUI $tag", '--generate-notes',
+            '--notes', 'NarutoAutoGUI 是 MaaNOP 的 Windows GUI，通过独立 Windows Session 运行火影忍者 Online 自动化。'
           )
           if ($prerelease -eq 'True') { $releaseArgs += '--prerelease' }
           Write-Host "Creating release for tag $tag (prerelease=$prerelease)"

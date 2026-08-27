@@ -14,7 +14,7 @@ NarutoAutoGUI/
    ├─ NarutoAutoWorker/              # Child Session Worker 与固定 runtime
    └─ NarutoAutoGUI/                 # 正式 .NET 8 WPF GUI
       ├─ App.xaml(.cs)               # 单实例、应用操作门、退出、托盘、全局异常
-      ├─ Views/MainWindow.xaml(.cs)  # 状态、路径、启动按钮、MaaNOP focus 运行日志
+      ├─ Views/MainWindow.xaml(.cs)  # 首页、任务、设置与 MaaNOP focus 运行日志
       ├─ Models/                     # 配置和日志模型
       ├─ Infrastructure/             # 配置、滚动日志、自动自检
       ├─ ChildSession/               # RDP/WTS/COM 实现、状态模型、生命周期与程序启动编排

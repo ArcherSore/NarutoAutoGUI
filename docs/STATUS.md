@@ -41,8 +41,8 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
   self-test 的 test seam，production 调用点传入 `AppContext.BaseDirectory`。缺失 `interface.json` 时
   ProjectInterfaceLoader 抛出“安装目录缺少 interface.json，请确认使用完整的 MaaNOP 发布包。”并附带
   `AppContext.BaseDirectory` 到 diagnostic log；不再提示“前往设置选择项目路径”。Settings 页面只保留游戏启动
-  与应用行为，未留空占位。GameExecutablePath、GameArguments、Child Session、Worker、IPC、Preview、Tasks
-  页面与发布打包行为未改。`MainWindow.xaml`、`MainWindow.xaml.cs`、`AppSettings.cs`、`AppSettingsStore.cs`、
+  与应用行为，未留空占位。当时既有的游戏启动配置、Child Session、Worker、IPC、Preview、Tasks 页面与发布打包
+  行为未改。`MainWindow.xaml`、`MainWindow.xaml.cs`、`AppSettings.cs`、`AppSettingsStore.cs`、
   `ProjectInterfaceLoader.cs`、`SelfTestRunner.cs` XML 解析、Release build 与 build-output `--self-test`
   通过，0 警告、0 错误；新增 `interface.json` 缺失错误信息与 v3 schema 未知字段拒绝自检覆盖。
 
@@ -204,7 +204,13 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - 2026-08-19：首个 Worker/IPC 切片完成 Debug/Release build、self-contained GUI + Worker publish 和发布后 `--self-test`；编译 0 错误，仅有环境中既有的 `NU1900` 漏洞元数据警告。
 - 2026-08-19：首片显式 option 扩展完成 Debug/Release build、自包含 `win-x64-options-v1` GUI + Worker publish 与发布后 `--self-test`；覆盖真实形状的 `ServerRange=978` input、task switch/select、递归 active graph、Dormant Intent 保留/恢复、非法 input 不落盘、恢复项目默认、resolved pipeline override 和 planDigest 变化。另以本机 MaaNOP v1.3.0 真实 `interface.json` 和隔离临时 Config 验证 `AccountTraining + ServerRange=978 + ClaimLevelExp=No`，正式 Resolver 生成 `ParseServer` 参数 `978` 与 `ClaimLevelEntry.enabled=false`，未修改 MaaNOP/MFAAvalonia 配置。构建为 0 错误，仅有既有 `NU1900` 漏洞元数据网络警告；交互式 Success/Cancellation 统一验收仍待完成。
 - 2026-08-19：首片验收期间发现新增 option 区使默认窗口无法访问下方内容；先增加临时整页滚动并固定日志区高度，不在验收前重做布局。`win-x64-options-v2-scroll` 完成 Release GUI + Worker publish 和发布后 `--self-test`，旧版非凭据 settings/MaaNOP Config 已复制到新包；正式 UI 重设计延后到首片统一验收之后。
-- 2026-08-20：完成 WPF-UI 4.3.0 Fluent Shell 与五页面重构后，`App.xaml`、`MainWindow.xaml`、`DesignSystem.xaml` XML 解析通过，最终 NarutoAutoGUI Release `win-x64` build 通过（0 警告、0 错误）。以独立目录 `artifacts\NarutoAutoGUI\win-x64-fluent-shell` 完成 GUI self-contained publish，并对该产物运行 `src/NarutoAutoGUI/scripts/test-automated.ps1`，覆盖 settings v2/旧版迁移、PI default/explicit resolver、nested dormant intent、MaaNOP Config v1、RunPlan digest、IPC framing 和 DEBUG+ 文件日志，结果通过。另以 HEAD 旧 XAML 为基线自动比对，35 个原有 `x:Name`（含模板内命名元素）和 17 个 Click/SelectionChanged/LostKeyboardFocus 事件绑定均保留；日志 ScrollChanged 的既有 `AddHandler` 代码保持不变。
+- 2026-08-20：完成当时的 WPF-UI 4.3.0 Fluent Shell 初版后，`App.xaml`、`MainWindow.xaml`、
+  `DesignSystem.xaml` XML 解析通过，最终 NarutoAutoGUI Release `win-x64` build 通过（0 警告、0 错误）。以独立目录
+  `artifacts\NarutoAutoGUI\win-x64-fluent-shell` 完成 GUI self-contained publish，并对该产物运行
+  `src/NarutoAutoGUI/scripts/test-automated.ps1`，覆盖 settings v2/旧版迁移、PI default/explicit resolver、nested
+  dormant intent、MaaNOP Config v1、RunPlan digest、IPC framing 和 DEBUG+ 文件日志，结果通过。另以 HEAD 旧 XAML
+  为基线自动比对，35 个原有 `x:Name`（含模板内命名元素）和 17 个 Click/SelectionChanged/LostKeyboardFocus 事件绑定
+  均保留；日志 ScrollChanged 的既有 `AddHandler` 代码保持不变。当前导航结构见上方“本轮已实现”。
 - 2026-08-20：当时环境仅安装 .NET 8 SDK，完整发布脚本在恢复面向 .NET 9 的 `NarutoAutoWorker` 时未完成；未修改 Worker，也未将该工具链失败描述为 GUI 编译失败。NarutoAutoGUI 本身的 Release build、GUI publish 和发布后自动自检均已实际通过。随后已安装 .NET 9 SDK，并在后续完整发布验证中覆盖 GUI + Worker。
 - 2026-08-20：修复任务操作入口在 Fluent UI 中被状态隐藏且未出现在任务页的问题后，`MainWindow.xaml` XML 解析、NarutoAutoGUI Release `win-x64` build 和直接 `--self-test` 通过；构建 0 错误，仅有 NuGet 漏洞元数据源不可达产生的既有 `NU1900` 警告。任务页与首页的固定按钮、禁用原因提示和键盘访问仍待下一次真实桌面回归。
 - 2026-08-20：根据一次 Worker `RunEx` 提交后 60 秒内没有 PID/admission 的实机失败，增加 Worker 专用进程启动验证、Task Scheduler 状态诊断及 admission 超时回滚。NarutoAutoGUI Release `win-x64`、NarutoAutoWorker Release `win-x64` 和冻结 `ChildSessionDemo` Release `win-x64` 均构建通过；GUI 直接 `--self-test` 通过。使用已安装的 .NET 9.0.315 SDK 在独立目录 `artifacts\NarutoAutoGUI\win-x64-worker-launch-fix` 完成 self-contained GUI + Worker 发布，发布后自检通过，并复制既有不含凭据的 settings/MaaNOP Config 供实机复验；构建 0 错误，仅有既有 `NU1900` 警告。新的 Worker 启动诊断与失败回滚仍待真实 Child Session 交互式回归。
@@ -294,7 +300,7 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 以下项目需要管理员权限、可见桌面或真实外部程序，自动验证不能替代手动回归。Child Session 真实桌面交互式回归已完成；游戏/MaaNOP 跨 Session 启动、异常断开后重建连接、创建/启动过程中并发退出等外部程序或故障场景仍需按后续目标单独记录。
 
-2026-08-20 五页面（已收缩为首页 / 任务 / 设置三页）Fluent UI 的部分真实 Windows 桌面人工回归仍待补齐：默认与最小窗口尺寸下的三页导航、键盘 Tab/访问键、页面独立滚动、日志暂停/恢复跟随和状态驱动按钮切换（含首页 Show / Hide / Terminate Session 按钮的 visibility/enabled）。100%、150%、200% 缩放下的布局与文字可读性已由用户实机检查，未观察到明显裁切、重叠或可读性问题；结合真实 Child Session 的 RDP 显示/隐藏/结束流程已在 2026-08-22 完成回归。
+当前首页 / 任务 / 设置三页 Fluent UI 的部分真实 Windows 桌面人工回归仍待补齐：默认与最小窗口尺寸下的三页导航、键盘 Tab/访问键、页面独立滚动、日志暂停/恢复跟随和状态驱动按钮切换（含首页 Show / Hide / Terminate Session 按钮的 visibility/enabled）。100%、150%、200% 缩放下的布局与文字可读性已由用户实机检查，未观察到明显裁切、重叠或可读性问题；结合真实 Child Session 的 RDP 显示/隐藏/结束流程已在 2026-08-22 完成回归。
 
 ## 本轮交互式回归
 
@@ -304,7 +310,7 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
   处理到 1012（31/31），文件日志记录 `maanop.run` 至 Worker sequence 288，最终自然终结为 Succeeded。验收后
   Child Session 31 已正常注销。此次不额外声明断线补取、Worker Instance replacement 或其他 Fluent UI 交互项通过。
 - 2026-08-20：Fluent UI 完整包首次在 Child Session 20 提交 Worker 后未在 60 秒内完成 admission + fresh Snapshot，Admission Record 中没有 Worker PID；结束/重建环境后再次启动成功。该结果证明问题具有偶发性，也暴露出原实现缺少 `RunEx` 后 PID 验证与超时回滚；对应强化修复已进入 `win-x64-worker-launch-fix`，等待复验。
-- 2026-08-20：用户在真实 Windows 桌面检查五页面 Fluent UI 的 100%、150%、200% 缩放，三档均未观察到明显布局或文字可读性问题。
+- 2026-08-20：用户在真实 Windows 桌面检查当时 Fluent UI 的 100%、150%、200% 缩放，三档均未观察到明显布局或文字可读性问题。
 - 2026-08-20：在 GUI-only 的 `win-x64-fluent-shell` 产物点击“准备运行环境”时，MaaNOP v1.3.0 已成功加载且 Child Session 21 已连接，随后因产物中缺少 `worker\NarutoAutoWorker.exe` 明确失败。该结果属于不完整测试产物的发布问题，不是 Worker 启动、Named Pipe、RDP 或 MaaNOP 运行时失败；完整 GUI + Worker 发布仍待具备 .NET 9 SDK 后通过正式脚本重新生成。
 - 2026-08-19：`win-x64-lifecycle-fixes-v2` 已实机验证创建 Child Session、从托盘结束桌面分身、随后从托盘退出主程序，流程正常。
 - 2026-08-19：`win-x64-lifecycle-fixes-v2` 已实机验证同一 Windows Session 启动第二个正式 GUI 时会明确拦截，第二实例不进入主窗口，第一实例及其 Child Session 不受影响。

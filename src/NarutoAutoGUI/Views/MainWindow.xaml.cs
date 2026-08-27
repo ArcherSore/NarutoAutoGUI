@@ -20,7 +20,6 @@ using WpfComboBox = System.Windows.Controls.ComboBox;
 using WpfMessageBox = System.Windows.MessageBox;
 using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using WpfOpenFolderDialog = Microsoft.Win32.OpenFolderDialog;
-using WpfSystemColors = System.Windows.SystemColors;
 using WpfTextBox = System.Windows.Controls.TextBox;
 using FluentWindow = Wpf.Ui.Controls.FluentWindow;
 using WpfNavigationViewItem = Wpf.Ui.Controls.NavigationViewItem;
@@ -178,9 +177,6 @@ public partial class MainWindow : FluentWindow
     private void ViewLogsButton_Click(object sender, RoutedEventArgs e) =>
         SwitchSection(MainSection.Logs);
 
-    private void OpenSettingsButton_Click(object sender, RoutedEventArgs e) =>
-        SwitchSection(MainSection.Settings);
-
     private void SwitchSection(MainSection section)
     {
         HomeView.Visibility = section == MainSection.Home
@@ -319,20 +315,6 @@ public partial class MainWindow : FluentWindow
             });
     }
 
-    private async void PrepareWorkerButton_Click(object sender, RoutedEventArgs e)
-    {
-        await RunOperationAsync(
-            "正在准备 Child Session Worker...",
-            async () =>
-            {
-                SaveSettings();
-                LoadProject();
-                var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
-                await _workerCoordinator.PrepareWorkerAsync(
-                    sessionId, _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"));
-            });
-    }
-
     private async void StartRunButton_Click(object sender, RoutedEventArgs e)
     {
         await RunOperationAsync(
@@ -386,9 +368,9 @@ public partial class MainWindow : FluentWindow
         UpdatePreviewPolling();
     }
 
-    private void MaaNopTaskComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void TaskListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_updatingTaskSelection || MaaNopTaskComboBox.SelectedItem is not ProjectTaskChoice task) {
+        if (_updatingTaskSelection || TaskListBox.SelectedItem is not ProjectTaskChoice task) {
             return;
         }
         try {
@@ -396,10 +378,13 @@ public partial class MainWindow : FluentWindow
                 .SelectTask(task.Name);
             _pendingStartAttempt = null;
             RenderOptionEditors();
+            UpdateTaskDescription();
             _logger.Info($"已保存 MaaNOP Config：SelectedTasks=[{task.Name}]。 ");
             UpdateCommandAvailability();
         } catch (Exception exception) {
+            RestoreTaskSelection();
             HandleOperationError("保存 MaaNOP task 选择失败", exception);
+            ShowProjectValidationError(exception);
         }
     }
 
@@ -421,6 +406,7 @@ public partial class MainWindow : FluentWindow
         } catch (Exception exception) {
             HandleOperationError("保存 MaaNOP input option 失败", exception);
             TryRenderOptionEditors();
+            ShowProjectValidationError(exception);
         }
     }
 
@@ -444,6 +430,7 @@ public partial class MainWindow : FluentWindow
         } catch (Exception exception) {
             HandleOperationError("保存 MaaNOP select/switch option 失败", exception);
             TryRenderOptionEditors();
+            ShowProjectValidationError(exception);
         }
     }
 
@@ -463,6 +450,7 @@ public partial class MainWindow : FluentWindow
         } catch (Exception exception) {
             HandleOperationError("恢复 MaaNOP option 默认值失败", exception);
             TryRenderOptionEditors();
+            ShowProjectValidationError(exception);
         }
     }
 
@@ -472,7 +460,7 @@ public partial class MainWindow : FluentWindow
             RenderOptionEditors();
         } catch (Exception exception) {
             _projectConfigurationValid = false;
-            ProjectValidationText.Text = exception.GetBaseException().Message;
+            ShowProjectValidationError(exception);
             _logger.Warn("刷新 MaaNOP option 编辑器失败。", exception);
             UpdateCommandAvailability();
         }
@@ -493,20 +481,48 @@ public partial class MainWindow : FluentWindow
                     Text = project.SelectedTaskName is null
                         ? "请先选择任务。"
                         : "当前任务没有可编辑参数。",
-                    Foreground = WpfSystemColors.GrayTextBrush
+                    Style = (Style)FindResource("MutedTextStyle")
                 });
             }
 
             var allOptions = EnumerateOptions(configuration).ToArray();
             var explicitCount = allOptions.Count(option => option.IsExplicit);
-            OptionSummaryText.Text =
+            HomeOptionSummaryText.Text =
                 $"{allOptions.Length} 个启用参数 · {explicitCount} 个显式设置";
-            ProjectValidationText.Text =
-                "当前配置已通过校验；任务将使用当前显式值与其余项目默认值。";
+            ProjectValidationText.Text = string.Empty;
+            ProjectValidationBorder.Visibility = Visibility.Collapsed;
             _projectConfigurationValid = true;
         } finally {
             _updatingOptionEditors = false;
         }
+    }
+
+    private void RestoreTaskSelection()
+    {
+        _updatingTaskSelection = true;
+        try {
+            TaskListBox.SelectedItem = _projectPlan?.SelectedTaskName is null
+                ? null
+                : _projectPlan.Tasks.Single(task => task.Name == _projectPlan.SelectedTaskName);
+        } finally {
+            _updatingTaskSelection = false;
+        }
+        UpdateTaskDescription();
+    }
+
+    private void UpdateTaskDescription()
+    {
+        var description = (TaskListBox.SelectedItem as ProjectTaskChoice)?.Description;
+        TaskDescriptionText.Text = description ?? string.Empty;
+        TaskDescriptionPanel.Visibility = string.IsNullOrWhiteSpace(description)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
+    private void ShowProjectValidationError(Exception exception)
+    {
+        ProjectValidationText.Text = exception.GetBaseException().Message;
+        ProjectValidationBorder.Visibility = Visibility.Visible;
     }
 
     private void AddOptionSection(string title, IReadOnlyList<ProjectOptionEditor> options)
@@ -514,11 +530,13 @@ public partial class MainWindow : FluentWindow
         if (options.Count == 0) {
             return;
         }
-        OptionEditorPanel.Children.Add(new TextBlock {
+        var sectionTitle = new TextBlock {
             Text = title,
             FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, OptionEditorPanel.Children.Count == 0 ? 0 : 10, 0, 4)
-        });
+            Margin = new Thickness(0, OptionEditorPanel.Children.Count == 0 ? 0 : 12, 0, 8),
+            Style = (Style)FindResource("MutedTextStyle")
+        };
+        OptionEditorPanel.Children.Add(sectionTitle);
         foreach (var option in options) {
             AddOptionEditor(option, depth: 0);
         }
@@ -526,69 +544,81 @@ public partial class MainWindow : FluentWindow
 
     private void AddOptionEditor(ProjectOptionEditor option, int depth)
     {
-        var panel = new StackPanel { Margin = new Thickness(depth * 18, 4, 0, 4) };
-        var header = new Grid();
-        header.ColumnDefinitions.Add(new ColumnDefinition());
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var row = new Border {
+            Style = (Style)FindResource("ParameterRowStyle"),
+            Margin = new Thickness(Math.Min(depth, 3) * 12, 0, 0, 8)
+        };
+        var content = new Grid();
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5, GridUnitType.Star) });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(7, GridUnitType.Star) });
+
+        var information = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         var title = new TextBlock {
             Text = string.IsNullOrWhiteSpace(option.Label) ? option.Name : option.Label,
             FontWeight = FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
             ToolTip = option.Description
         };
-        header.Children.Add(title);
-        var followDefault = new WpfButton {
-            Content = option.IsExplicit ? "恢复默认" : "跟随默认",
-            IsEnabled = option.IsExplicit,
-            Tag = new OptionDefaultTag(option.Name),
-            Margin = new Thickness(8, 0, 0, 0),
-            Padding = new Thickness(8, 2, 8, 2),
-            ToolTip = "删除该 option 的显式值并重新跟随 Project Interface 默认值"
-        };
-        followDefault.Click += FollowProjectDefaultButton_Click;
-        Grid.SetColumn(followDefault, 1);
-        header.Children.Add(followDefault);
-        panel.Children.Add(header);
-
-        if (!string.IsNullOrWhiteSpace(option.Description)) {
-            panel.Children.Add(new TextBlock {
-                Text = option.Description,
+        information.Children.Add(title);
+        var description = option.Description;
+        if (string.IsNullOrWhiteSpace(description) && option.Inputs.Count == 1) {
+            description = option.Inputs[0].Description;
+        }
+        if (!string.IsNullOrWhiteSpace(description)) {
+            information.Children.Add(new TextBlock {
+                Text = description,
                 TextWrapping = TextWrapping.Wrap,
-                Foreground = WpfSystemColors.GrayTextBrush,
-                Margin = new Thickness(0, 2, 0, 4)
+                Margin = new Thickness(0, 3, 0, 0),
+                Style = (Style)FindResource("SecondaryTextStyle")
             });
         }
+        content.Children.Add(information);
+
+        var editorPanel = new StackPanel {
+            MaxWidth = 400,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Center
+        };
 
         if (option.Kind == ProjectOptionKind.Input) {
-            foreach (var input in option.Inputs) {
-                var row = new Grid { Margin = new Thickness(0, 2, 0, 2) };
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
-                row.ColumnDefinitions.Add(new ColumnDefinition());
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                var label = new TextBlock {
-                    Text = string.IsNullOrWhiteSpace(input.Label) ? input.Name : input.Label,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    ToolTip = input.Description
+            if (option.Inputs.Count == 0) {
+                editorPanel.Children.Add(new TextBlock {
+                    Text = "没有可编辑输入",
+                    Style = (Style)FindResource("MutedTextStyle")
+                });
+            }
+            for (var index = 0; index < option.Inputs.Count; index++) {
+                var input = option.Inputs[index];
+                var inputPanel = new StackPanel {
+                    Margin = new Thickness(0, index == 0 ? 0 : 10, 0, 0)
                 };
-                row.Children.Add(label);
+                if (option.Inputs.Count > 1) {
+                    inputPanel.Children.Add(new TextBlock {
+                        Text = string.IsNullOrWhiteSpace(input.Label) ? input.Name : input.Label,
+                        FontWeight = FontWeights.SemiBold,
+                        TextWrapping = TextWrapping.Wrap,
+                        ToolTip = input.Description
+                    });
+                    if (!string.IsNullOrWhiteSpace(input.Description)) {
+                        inputPanel.Children.Add(new TextBlock {
+                            Text = input.Description,
+                            Margin = new Thickness(0, 2, 0, 5),
+                            Style = (Style)FindResource("MutedTextStyle")
+                        });
+                    }
+                }
                 var editor = new WpfTextBox {
                     Text = input.Value,
                     Tag = new OptionInputTag(option.Name, input.Name),
-                    MinWidth = 180,
+                    MinWidth = 0,
+                    MaxWidth = 400,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
                     ToolTip = input.PatternMessage ?? input.Description
                 };
                 editor.LostKeyboardFocus += OptionInputTextBox_LostKeyboardFocus;
-                Grid.SetColumn(editor, 1);
-                row.Children.Add(editor);
-                var defaultText = new TextBlock {
-                    Text = input.IsExplicit ? "显式" : $"默认 {input.DefaultValue}",
-                    Foreground = WpfSystemColors.GrayTextBrush,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(8, 0, 0, 0)
-                };
-                Grid.SetColumn(defaultText, 2);
-                row.Children.Add(defaultText);
-                panel.Children.Add(row);
+                inputPanel.Children.Add(editor);
+                editorPanel.Children.Add(inputPanel);
             }
         } else {
             var selector = new WpfComboBox {
@@ -596,17 +626,36 @@ public partial class MainWindow : FluentWindow
                 DisplayMemberPath = nameof(ProjectCaseEditor.Label),
                 SelectedItem = option.Cases.Single(item => item.Name == option.SelectedCase),
                 Tag = new OptionCaseTag(option.Name),
-                MinWidth = 180,
-                HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+                MinWidth = 0,
+                MaxWidth = 400,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
                 ToolTip = option.IsExplicit
                     ? "当前值由用户显式设置"
                     : $"当前跟随项目默认：{option.DefaultCase}"
             };
             selector.SelectionChanged += OptionCaseComboBox_SelectionChanged;
-            panel.Children.Add(selector);
+            editorPanel.Children.Add(selector);
         }
 
-        OptionEditorPanel.Children.Add(panel);
+        if (option.IsExplicit) {
+            var followDefault = new WpfButton {
+                Content = "恢复项目默认",
+                Tag = new OptionDefaultTag(option.Name),
+                Margin = new Thickness(0, 4, 0, 0),
+                MinHeight = 28,
+                Padding = new Thickness(6, 2, 6, 2),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+                Style = (Style)FindResource("SubtleButtonStyle"),
+                ToolTip = "删除该 option 的显式值并重新跟随 Project Interface 默认值"
+            };
+            followDefault.Click += FollowProjectDefaultButton_Click;
+            editorPanel.Children.Add(followDefault);
+        }
+
+        Grid.SetColumn(editorPanel, 2);
+        content.Children.Add(editorPanel);
+        row.Child = content;
+        OptionEditorPanel.Children.Add(row);
         foreach (var child in option.ActiveChildren) {
             AddOptionEditor(child, depth + 1);
         }
@@ -714,18 +763,11 @@ public partial class MainWindow : FluentWindow
         var project = ProjectPlanModule.Open(projectDirectory, _settingsStore.MaaNopConfigPath);
         _projectPlan = project;
         _pendingStartAttempt = null;
-        _updatingTaskSelection = true;
-        try {
-            MaaNopTaskComboBox.ItemsSource = project.Tasks;
-            MaaNopTaskComboBox.SelectedItem = project.SelectedTaskName is null
-                ? null
-                : project.Tasks.Single(task => task.Name == project.SelectedTaskName);
-        } finally {
-            _updatingTaskSelection = false;
-        }
+        TaskListBox.ItemsSource = project.Tasks;
+        RestoreTaskSelection();
+        ProjectEmptyStatePanel.Visibility = Visibility.Collapsed;
+        TaskWorkspacePanel.Visibility = Visibility.Visible;
 
-        ProjectStatusText.Text =
-            $"{project.ProjectName} {project.ProjectVersion} · {project.Tasks.Count} 个任务";
         RenderOptionEditors(project.GetConfiguration());
         _logger.Info(
             $"已加载 MaaNOP Project Interface：{project.ProjectName} {project.ProjectVersion}；"
@@ -736,18 +778,26 @@ public partial class MainWindow : FluentWindow
 
     private bool TryLoadProject(bool showError)
     {
+        if (string.IsNullOrWhiteSpace(MaaNopProjectDirectoryTextBox.Text)) {
+            ShowProjectUnavailableState(
+                "配置项目后显示参数摘要",
+                "尚未配置 MaaNOP 项目",
+                "请先在设置中选择直接包含 interface.json 的 MaaNOP 项目目录。");
+            ProjectValidationText.Text = string.Empty;
+            ProjectValidationBorder.Visibility = Visibility.Collapsed;
+            UpdateCommandAvailability();
+            return false;
+        }
+
         try {
             LoadProject();
             return true;
         } catch (Exception exception) {
-            _projectPlan = null;
-            _pendingStartAttempt = null;
-            _projectConfigurationValid = false;
-            MaaNopTaskComboBox.ItemsSource = null;
-            OptionEditorPanel.Children.Clear();
-            OptionSummaryText.Text = "选择任务后显示参数摘要";
-            ProjectStatusText.Text = "MaaNOP 项目未就绪";
-            ProjectValidationText.Text = exception.GetBaseException().Message;
+            ShowProjectUnavailableState(
+                "修正项目后显示参数摘要",
+                "MaaNOP 项目无法加载",
+                "请检查项目目录和 interface.json，然后重试。");
+            ShowProjectValidationError(exception);
             _logger.Warn("加载 MaaNOP Project Interface 失败。", exception);
             UpdateCommandAvailability();
             if (showError) {
@@ -759,6 +809,24 @@ public partial class MainWindow : FluentWindow
             }
             return false;
         }
+    }
+
+    private void ShowProjectUnavailableState(
+        string optionSummary,
+        string emptyStateTitle,
+        string emptyStateDetail)
+    {
+        _projectPlan = null;
+        _pendingStartAttempt = null;
+        _projectConfigurationValid = false;
+        TaskListBox.ItemsSource = null;
+        OptionEditorPanel.Children.Clear();
+        HomeOptionSummaryText.Text = optionSummary;
+        ProjectEmptyStateTitleText.Text = emptyStateTitle;
+        ProjectEmptyStateDetailText.Text = emptyStateDetail;
+        TaskWorkspacePanel.Visibility = Visibility.Collapsed;
+        ProjectEmptyStatePanel.Visibility = Visibility.Visible;
+        UpdateTaskDescription();
     }
 
     private static string? BrowseExecutable(string currentPath, string title)
@@ -1030,52 +1098,20 @@ public partial class MainWindow : FluentWindow
 
     private void UpdateWorkerPresentation(WorkerCoordinatorSnapshot snapshot)
     {
-        WorkerObservationText.Text = GetWorkerObservationText(snapshot.Observation);
         HomeWorkerSummaryText.Text = GetHomeWorkerSummary(snapshot);
-        WorkerDetailText.Text = snapshot.Detail;
         var worker = snapshot.WorkerSnapshot;
         if (worker is null) {
-            WorkerStateText.Text = "Worker — · Snapshot stale";
-            DependencyStatusText.Text = "依赖尚未探测";
-            RunStatusText.Text = "Run — · Plan Item —";
             HomeRunSummaryText.Text = "尚未运行";
             return;
         }
-
-        WorkerStateText.Text =
-            $"Worker {worker.WorkerState} · PID {worker.WorkerPid} · Snapshot r{worker.StateRevision} "
-            + (snapshot.SnapshotFresh ? "fresh" : "stale");
-        var dependencies = worker.DependencyStatus;
-        DependencyStatusText.Text =
-            $"Maa.Binding {dependencies.MaaFrameworkBindingVersion} · "
-            + $"Maa.Runtime {dependencies.MaaFrameworkRuntimeVersion} · "
-            + $"Python {(dependencies.Python.Success ? "Ready" : "Failed")}: "
-            + $"{dependencies.Python.Value ?? dependencies.Python.Error}";
 
         var run = worker.ActiveRun ?? worker.LastRun;
         if (run is null) {
-            RunStatusText.Text = "Run Idle · activeRun=null · lastRun=null";
             HomeRunSummaryText.Text = "尚未运行";
             return;
         }
-        var item = run.Items.SingleOrDefault();
-        var slot = worker.ActiveRun is null ? "lastRun" : "activeRun";
-        RunStatusText.Text =
-            $"{slot} {run.State} · {item?.TaskLabel ?? "—"} = {item?.State.ToString() ?? "—"} · "
-            + $"runId={run.RunId:D}";
         HomeRunSummaryText.Text = GetHomeRunSummary(run);
     }
-
-    private static string GetWorkerObservationText(WorkerObservation observation) => observation switch {
-        WorkerObservation.WorkerNotStarted => "Worker 尚未启动",
-        WorkerObservation.WorkerStarting => "Worker 正在启动",
-        WorkerObservation.Connected => "Worker 已连接",
-        WorkerObservation.IpcDisconnected => "Worker 连接已断开",
-        WorkerObservation.WorkerExited => "Worker 已退出",
-        WorkerObservation.WorkerRecoveryConflict => "Worker 恢复冲突",
-        WorkerObservation.ChildSessionEnded => "桌面分身已结束",
-        _ => "Worker 状态未知"
-    };
 
     private static string GetHomeWorkerSummary(WorkerCoordinatorSnapshot snapshot)
     {
@@ -1282,22 +1318,18 @@ public partial class MainWindow : FluentWindow
         LaunchGameButton.IsEnabled = canStartCommand;
         MaaNopProjectDirectoryTextBox.IsEnabled = canEditProject;
         BrowseMaaNopProjectButton.IsEnabled = canEditProject;
-        MaaNopTaskComboBox.IsEnabled = canEditProject && projectReady;
+        TaskListBox.IsEnabled = canEditProject && projectReady;
         OptionEditorPanel.IsEnabled = canEditProject && projectReady;
-        PrepareWorkerButton.IsEnabled = canStartCommand && projectReady
-            && _workerSnapshot.Observation is WorkerObservation.WorkerNotStarted or WorkerObservation.ChildSessionEnded;
 
         var selectedTaskValid = _projectPlan?.SelectedTaskName is not null && _projectConfigurationValid;
         StartRunButton.IsEnabled = canStartCommand
             && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden)
             && workerIdleFresh && worker!.WorkerState == WorkerState.Ready && projectReady
             && selectedTaskValid && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
-        TaskStartRunButton.IsEnabled = StartRunButton.IsEnabled;
         var active = worker?.ActiveRun;
         StopRunButton.IsEnabled = canStartCommand && _workerSnapshot.Observation == WorkerObservation.Connected
             && _workerSnapshot.SnapshotFresh && active?.State == RunState.Running
             && active.Items.Count == 1 && active.Items[0].State == PlanItemState.Running;
-        TaskStopRunButton.IsEnabled = StopRunButton.IsEnabled;
 
         var environmentReady = workerIdleFresh && worker!.WorkerState == WorkerState.Ready && projectReady
             && selectedTaskValid && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
@@ -1306,7 +1338,6 @@ public partial class MainWindow : FluentWindow
         var readyToStart = !hasActiveRun && environmentReady
             && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
         PrepareEnvironmentButton.IsEnabled = canStartCommand && projectReady && !hasActiveRun && !environmentReady;
-        TaskPrepareEnvironmentButton.IsEnabled = PrepareEnvironmentButton.IsEnabled;
 
         HomeNextStepText.Text = _busy
             ? "当前操作正在进行，请稍候。"

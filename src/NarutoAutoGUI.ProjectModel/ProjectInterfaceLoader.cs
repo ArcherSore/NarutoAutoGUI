@@ -180,6 +180,7 @@ internal static class ProjectInterfaceLoader
             }
             tasks.Add(new TaskDefinition(
                 name, OptionalString(obj, "label") ?? name,
+                ReadOptionalDescription(obj, "description") ?? string.Empty,
                 RequireString(obj, "entry", path),
                 ReadStringArray(obj, "option", required: false, path),
                 ReadObjectOrEmpty(obj, "pipeline_override", path)));
@@ -475,6 +476,17 @@ internal static class ProjectInterfaceLoader
         }
         if (value.ValueKind != JsonValueKind.String) {
             throw new InvalidDataException($"{name} 必须是 string。 ");
+        }
+        return value.GetString();
+    }
+
+    private static string? ReadOptionalDescription(JsonElement obj, string name)
+    {
+        if (!obj.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null) {
+            return null;
+        }
+        if (value.ValueKind != JsonValueKind.String) {
+            throw new InvalidDataException($"{name} 必须是 string 或 null。 ");
         }
         return value.GetString();
     }

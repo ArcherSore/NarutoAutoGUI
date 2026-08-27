@@ -124,13 +124,14 @@
                                         <TextBlock Margin="0,6,0,0" Style="{StaticResource StatusPrimaryTextStyle}">
                                             <TextBlock.Text>
                                                 <Binding Path="SelectedItem.Label"
-                                                         ElementName="MaaNopTaskComboBox"
+                                                         ElementName="TaskListBox"
                                                          TargetNullValue="尚未选择任务"
                                                          FallbackValue="尚未选择任务" />
                                             </TextBlock.Text>
                                         </TextBlock>
-                                        <TextBlock Margin="0,4,0,0"
-                                                   Text="{Binding Text, ElementName=OptionSummaryText}"
+                                        <TextBlock x:Name="HomeOptionSummaryText"
+                                                   Margin="0,4,0,0"
+                                                   Text="选择任务后显示参数摘要"
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
 
@@ -430,177 +431,145 @@
                         </Grid>
                     </ScrollViewer>
 
-                    <ScrollViewer x:Name="TasksView"
-                                  Visibility="Collapsed"
-                                  HorizontalContentAlignment="Stretch"
-                                  HorizontalScrollBarVisibility="Disabled"
-                                  VerticalScrollBarVisibility="Auto">
-                        <Grid Margin="24">
+                    <Grid x:Name="TasksView"
+                          Margin="24"
+                          MaxWidth="1120"
+                          HorizontalAlignment="Stretch"
+                          Visibility="Collapsed">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
 
-                            <StackPanel Grid.Row="0">
-                                <TextBlock Text="任务" Style="{StaticResource WindowTitleTextStyle}" />
-                                <TextBlock Margin="0,4,0,0"
-                                           Text="选择任务并调整 MaaNOP 参数；修改会自动保存"
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                            </StackPanel>
+                            <TextBlock Grid.Row="0"
+                                       Text="任务"
+                                       Style="{StaticResource WindowTitleTextStyle}" />
 
-                            <Grid Grid.Row="1" Margin="0,20,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock Text="MaaNOP 项目" Style="{StaticResource SectionTitleTextStyle}" />
-                                    <TextBlock x:Name="ProjectStatusText"
-                                               Margin="0,4,0,0"
-                                               Text="MaaNOP 项目未就绪"
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                </StackPanel>
-                                <Button Grid.Column="1"
-                                        Margin="12,0,0,0"
-                                        VerticalAlignment="Center"
-                                        Content="前往设置"
-                                        Style="{StaticResource SubtleButtonStyle}"
-                                        Click="OpenSettingsButton_Click" />
-                            </Grid>
-
-                            <StackPanel Grid.Row="2" Margin="0,20,0,0">
-                                <Label Content="任务(_T)" Target="{Binding ElementName=MaaNopTaskComboBox}" />
-                                <ComboBox x:Name="MaaNopTaskComboBox"
-                                          Margin="0,6,0,0"
-                                          DisplayMemberPath="Label"
-                                          SelectionChanged="MaaNopTaskComboBox_SelectionChanged"
-                                          AutomationProperties.HelpText="按项目声明顺序选择一个任务" />
-                            </StackPanel>
-
-                            <Border Grid.Row="3"
+                            <Border x:Name="ProjectValidationBorder"
+                                    Grid.Row="1"
                                     Margin="0,12,0,0"
                                     Padding="12,8"
-                                    Background="{StaticResource Brush.Info.Surface}"
-                                    BorderBrush="{StaticResource Brush.Primary.Border}"
+                                    Background="{StaticResource Brush.Error.Surface}"
+                                    BorderBrush="{StaticResource Brush.Error.Border}"
                                     BorderThickness="1"
-                                    CornerRadius="{StaticResource Radius.Control}">
+                                    CornerRadius="{StaticResource Radius.Control}"
+                                    Visibility="Collapsed">
                                 <TextBlock x:Name="ProjectValidationText"
-                                           Text="选择项目后将校验当前任务配置。"
                                            TextWrapping="Wrap"
+                                           Foreground="{StaticResource Brush.Error.Foreground}"
                                            Style="{StaticResource SecondaryTextStyle}"
                                            AutomationProperties.Name="任务配置校验结果"
                                            AutomationProperties.LiveSetting="Polite" />
                             </Border>
 
-                            <Border Grid.Row="4" Margin="0,16,0,0" Style="{StaticResource StatusPanelStyle}">
-                                <StackPanel>
-                                    <TextBlock Text="任务控制" Style="{StaticResource SectionTitleTextStyle}" />
-                                    <TextBlock Margin="0,6,0,0"
-                                               Text="先准备运行环境并完成游戏登录，然后开始任务。运行中可以停止本次任务。"
+                            <Border x:Name="ProjectEmptyStatePanel"
+                                    Grid.Row="2"
+                                    Margin="0,16,0,0"
+                                    Style="{StaticResource SettingsSectionPanelStyle}">
+                                <StackPanel MaxWidth="460"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center">
+                                    <TextBlock x:Name="ProjectEmptyStateTitleText"
+                                               HorizontalAlignment="Center"
+                                               Text="尚未配置 MaaNOP 项目"
+                                               TextAlignment="Center"
+                                               Style="{StaticResource SectionTitleTextStyle}" />
+                                    <TextBlock x:Name="ProjectEmptyStateDetailText"
+                                               Margin="0,8,0,0"
+                                               HorizontalAlignment="Center"
+                                               Text="请先在设置中选择直接包含 interface.json 的 MaaNOP 项目目录。"
+                                               TextAlignment="Center"
                                                TextWrapping="Wrap"
                                                Style="{StaticResource SecondaryTextStyle}" />
-                                    <WrapPanel Margin="0,16,0,0">
-                                        <Button x:Name="TaskPrepareEnvironmentButton"
-                                                Margin="0,0,8,8"
-                                                Content="准备运行环境(_O)"
-                                                Style="{StaticResource PrimaryButtonStyle}"
-                                                ToolTip="{Binding Text, ElementName=HomeNextStepText}"
-                                                Click="PrepareEnvironmentButton_Click">
-                                            <AutomationProperties.HelpText>
-                                                <Binding Path="Text" ElementName="HomeNextStepText" />
-                                            </AutomationProperties.HelpText>
-                                        </Button>
-                                        <Button x:Name="TaskStartRunButton"
-                                                Margin="0,0,8,8"
-                                                Content="开始任务(_U)"
-                                                Style="{StaticResource PrimaryButtonStyle}"
-                                                ToolTip="{Binding Text, ElementName=HomeNextStepText}"
-                                                Click="StartRunButton_Click">
-                                            <AutomationProperties.HelpText>
-                                                <Binding Path="Text" ElementName="HomeNextStepText" />
-                                            </AutomationProperties.HelpText>
-                                        </Button>
-                                        <Button x:Name="TaskStopRunButton"
-                                                Margin="0,0,8,8"
-                                                Content="停止任务(_X)"
-                                                Style="{StaticResource DestructiveButtonStyle}"
-                                                ToolTip="{Binding Text, ElementName=HomeNextStepText}"
-                                                Click="StopRunButton_Click">
-                                            <AutomationProperties.HelpText>
-                                                <Binding Path="Text" ElementName="HomeNextStepText" />
-                                            </AutomationProperties.HelpText>
-                                        </Button>
-                                    </WrapPanel>
-                                    <TextBlock Margin="0,4,0,0"
-                                               Text="{Binding Text, ElementName=HomeNextStepText}"
-                                               TextWrapping="Wrap"
-                                               Style="{StaticResource SecondaryTextStyle}"
-                                               AutomationProperties.LiveSetting="Polite" />
                                 </StackPanel>
                             </Border>
 
-                            <StackPanel Grid.Row="5" Margin="0,24,0,0">
-                                <DockPanel LastChildFill="True">
-                                    <TextBlock DockPanel.Dock="Left"
-                                               Text="任务参数"
-                                               Style="{StaticResource SectionTitleTextStyle}" />
-                                    <TextBlock x:Name="OptionSummaryText"
-                                               Margin="16,0,0,0"
-                                               HorizontalAlignment="Right"
-                                               Text="选择任务后显示参数摘要"
-                                               TextAlignment="Right"
-                                               Style="{StaticResource MutedTextStyle}" />
-                                </DockPanel>
-                                <Border Height="1"
-                                        Margin="0,10,0,12"
-                                        Background="{StaticResource Brush.Border}"
-                                        SnapsToDevicePixels="True" />
-                                <StackPanel x:Name="OptionEditorPanel" />
-                            </StackPanel>
+                            <Grid x:Name="TaskWorkspacePanel"
+                                  Grid.Row="2"
+                                  Margin="0,16,0,0"
+                                  Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1*" MinWidth="200" MaxWidth="260" />
+                                    <ColumnDefinition Width="16" />
+                                    <ColumnDefinition Width="3*" />
+                                </Grid.ColumnDefinitions>
 
-                            <Expander Grid.Row="6"
-                                      Margin="0,24,0,24"
-                                      Header="运行环境诊断"
-                                      IsExpanded="False"
-                                      AutomationProperties.Name="运行环境诊断">
-                                <StackPanel Margin="0,12,0,0">
-                                    <TextBlock x:Name="WorkerObservationText"
-                                               Text="Worker 尚未启动"
-                                               Style="{StaticResource StatusPrimaryTextStyle}" />
-                                    <TextBlock x:Name="WorkerStateText"
-                                               Margin="0,6,0,0"
-                                               Text="Worker — · Snapshot stale"
-                                               Style="{StaticResource MonospaceMetaTextStyle}" />
-                                    <TextBlock x:Name="DependencyStatusText"
-                                               Margin="0,6,0,0"
-                                               Text="依赖尚未探测"
-                                               TextWrapping="Wrap"
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                    <TextBlock x:Name="RunStatusText"
-                                               Margin="0,6,0,0"
-                                               Text="Run — · Plan Item —"
-                                               TextWrapping="Wrap"
-                                               Style="{StaticResource MonospaceMetaTextStyle}" />
-                                    <TextBlock x:Name="WorkerDetailText"
-                                               Margin="0,6,0,0"
-                                               Text="Worker 尚未启动"
-                                               TextWrapping="Wrap"
-                                               Style="{StaticResource MutedTextStyle}" />
-                                    <Button x:Name="PrepareWorkerButton"
+                                <Border Grid.Column="0" Style="{StaticResource SettingsSectionPanelStyle}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="任务列表"
+                                                   Style="{StaticResource SectionTitleTextStyle}" />
+                                        <ListBox x:Name="TaskListBox"
+                                                 Grid.Row="1"
+                                                 Margin="0,12,0,0"
+                                                 Style="{StaticResource TaskListBoxStyle}"
+                                                 SelectionChanged="TaskListBox_SelectionChanged"
+                                                 AutomationProperties.Name="任务列表"
+                                                 AutomationProperties.HelpText="按项目声明顺序选择一个任务">
+                                            <ListBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Label}"
+                                                               FontWeight="SemiBold"
+                                                               TextWrapping="Wrap" />
+                                                </DataTemplate>
+                                            </ListBox.ItemTemplate>
+                                        </ListBox>
+                                    </Grid>
+                                </Border>
+
+                                <Grid Grid.Column="2">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <Border Grid.Row="0" Style="{StaticResource SettingsSectionPanelStyle}">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+                                            <TextBlock Text="任务参数"
+                                                       Style="{StaticResource SectionTitleTextStyle}" />
+                                            <Border Grid.Row="1"
+                                                    Height="1"
+                                                    Margin="0,10,0,12"
+                                                    Background="{StaticResource Brush.Border}"
+                                                    SnapsToDevicePixels="True" />
+                                            <ScrollViewer Grid.Row="2"
+                                                          HorizontalScrollBarVisibility="Disabled"
+                                                          VerticalScrollBarVisibility="Auto">
+                                                <StackPanel x:Name="OptionEditorPanel" Margin="0,0,4,0" />
+                                            </ScrollViewer>
+                                        </Grid>
+                                    </Border>
+
+                                    <Border x:Name="TaskDescriptionPanel"
+                                            Grid.Row="1"
                                             Margin="0,12,0,0"
-                                            HorizontalAlignment="Left"
-                                            Content="准备 Worker(_W)"
-                                            Style="{StaticResource SecondaryButtonStyle}"
-                                            Click="PrepareWorkerButton_Click" />
-                                </StackPanel>
-                            </Expander>
-                        </Grid>
-                    </ScrollViewer>
+                                            Style="{StaticResource SettingsSectionPanelStyle}"
+                                            Visibility="Collapsed">
+                                        <StackPanel>
+                                            <TextBlock Text="任务描述"
+                                                       Style="{StaticResource SectionTitleTextStyle}" />
+                                            <Border Height="1"
+                                                    Margin="0,10,0,12"
+                                                    Background="{StaticResource Brush.Border}"
+                                                    SnapsToDevicePixels="True" />
+                                            <TextBlock x:Name="TaskDescriptionText"
+                                                       TextWrapping="Wrap"
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Grid>
+
+                    </Grid>
 
                     <ScrollViewer x:Name="DesktopSessionView"
                                   Visibility="Collapsed"

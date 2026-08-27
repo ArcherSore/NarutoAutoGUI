@@ -3,7 +3,7 @@ using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoGUI.ProjectModel;
 
-public sealed record ProjectTaskChoice(string Name, string Label);
+public sealed record ProjectTaskChoice(string Name, string Label, string Description);
 
 public sealed record RunStartAttempt(Guid RunId, DateTime CreatedAtUtc, RunPlan Plan, string PlanDigest);
 
@@ -17,7 +17,7 @@ public sealed class ProjectPlanModule
         _project = project;
         _configStore = configStore;
         Tasks = project.Tasks
-            .Select(task => new ProjectTaskChoice(task.Name, task.Label))
+            .Select(task => new ProjectTaskChoice(task.Name, task.Label, task.Description))
             .ToArray();
 
         var config = configStore.Load();

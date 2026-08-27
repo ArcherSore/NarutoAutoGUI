@@ -34,13 +34,20 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - 主窗口提供访问键和动态状态辅助信息；操作失败给出恢复建议并可打开日志目录；每次程序运行首次关闭到托盘时显示一次通知。
 - 主窗口已应用集中式 WPF 视觉设计系统：统一浅色语义令牌、字体与 4/8 DIP 间距、四级按钮、输入框、状态 Badge、日志层级和交互状态；顶部保留状态卡，其余主功能使用扁平分区、留白与细分隔线，仅日志视口保留容器边框；不改变事件处理器和功能行为。
 - 正式主窗口已使用 WPF-UI 4.3.0 重构为 Windows 11 Fluent Shell：`FluentWindow`、`TitleBar`、左侧 `NavigationView` 和内置 Fluent 图标承载首页、任务、桌面分身、日志、设置五个顶层页面，操作状态与进度条固定在全局底栏。五个页面仍位于同一个 `MainWindow` XAML namescope，通过根容器 `Visibility` 切换；未引入 `Frame`、独立 Page/UserControl、MVVM、NavigationService 或 PageService。页面内输入、按钮、下拉框和日志列表仍为标准 WPF 控件并沿用 `DesignSystem.xaml`。
-- 首页集中呈现当前任务、参数、Session、Worker 和 Run 的用户化摘要；任务页直接承载动态 option editor，将 Worker/PID/Snapshot/runId 等信息收进默认折叠的运行环境诊断；桌面分身操作按钮按实际状态互斥显示。设置表单改为标签在上、输入框在下，日志页取消固定高度并填满剩余页面空间；各配置页独立滚动，日志页没有外层滚动器。
+- 首页集中呈现当前任务、参数、Session、Worker 和 Run 的用户化摘要；任务页只保留标题、左侧任务列表和右侧动态
+  property editor，并在有内容时显示 PI task description；
+  未配置或无法加载项目时使用单一空状态代替空任务列表与空参数面板。Tasks 页面自身固定，只有动态参数区局部
+  纵向滚动；任务描述是参数面板下方的独立同级区域。Tasks 不再提供运行环境诊断；用户化 Worker/Run 状态仍由
+  首页与全局底栏呈现，运行细节保留在日志。桌面分身操作按钮按实际状态互斥显示。设置表单改为标签在上、输入框在下，
+  日志页取消固定高度并填满剩余页面空间；日志页没有外层滚动器。
 - 首页“运行控制台”顶部以单一横向区域呈现当前任务、现有状态投影、当前 Plan Item/下一步和固定的准备/开始/停止入口；
   下方以等宽双列呈现内部 16:9 游戏画面与 `maanop.run` 运行动态。游戏画面在 Active Run 的 Starting/Running 期间通过
   Worker latest-frame cache 固定约 5 FPS 只读显示；Idle、Stopping、终态、断线、Worker replacement、窗口隐藏或离开
   Home 时继续显示原 Placeholder，窗口最小化也停止请求。运行动态图标只按既有日志 Level 映射，底部状态栏只投影已有
   整体、Worker、Session、IPC 连接和操作状态；Home 仍使用禁用横向滚动的外层纵向 overflow fallback。
-- 根据实机可发现性反馈，首页和任务页均固定展示“准备运行环境 / 开始任务 / 停止任务”三个任务控制入口；当前不可执行的操作保留位置并显示禁用态，动态下一步提示同时作为任务页说明、悬浮提示和辅助功能 HelpText。任务页明确说明参数修改自动保存；现有协议仍为停止/取消本次 Run，不声明暂停后恢复能力。
+- 首页固定展示“准备运行环境 / 开始任务 / 停止任务”三个任务控制入口；Tasks 页只负责选择与配置，
+  不再重复运行控制。当前不可执行的首页操作保留位置并显示禁用态，动态下一步提示继续作为首页说明、悬浮提示和
+  辅助功能 HelpText。任务参数仍保持自动保存；现有协议仍为停止/取消本次 Run，不声明暂停后恢复能力。
 - 开始任务只要求 Child Session 已连接、Worker Ready、Snapshot fresh 且任务配置有效；子桌面显示或隐藏均可开始，不再将隐藏预览作为 Run 前置条件。
 - 全局 GUI、后台任务和进程异常记录；预期的启动/RDP/Win32/COM 失败不会直接使 GUI 崩溃。
 - `WTSGetChildSessionId` 将成功返回 `ULONG(-1)` 或本机实测的 `ERROR_NOT_FOUND (1168)` 识别为“无 Child Session”，其他原生调用失败保留错误码并抛出；退出检查无法确认状态时继续取消退出。
@@ -68,6 +75,25 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - Worker 使用专用的 Task Scheduler 强化启动路径：`RunEx` 后等待新的 Worker PID 并验证 Child Session，记录 Task State 与 `LastTaskResult`，再清理临时任务；进程验证成功后 PID 写回 Admission。若进程未生成则 10 秒内失败并清理 Pending Admission；若 admission + fresh Snapshot 在 60 秒内未完成且 Worker PID 缺失或进程已退出，则自动回滚 `worker.json` 与 launch manifest，避免下一次准备环境被陈旧记录阻塞。
 
 ## 本轮自动验证
+
+- 2026-08-27：进一步压缩 Tasks 非核心信息：移除标题副文案、项目/任务/参数概览、所有“前往设置”入口和底部
+  运行环境诊断；对应的 Tasks-only Worker 明细投影与“准备 Worker”事件入口一并清理，Dashboard 的准备环境、
+  Run/Stop、用户化 Worker/Run 摘要、全局状态栏、日志及底层 Worker/IPC 行为未改。`MainWindow.xaml` XML 解析
+  与 Tasks 单滚动区结构检查通过；Release build 0 警告、0 错误，build-output `--self-test` 通过。
+
+- 2026-08-27：根据实机反馈收紧 Tasks 布局：空目录不再显示红色错误条或两块空编辑器；任务描述改为独立面板；
+  页面外层不再滚动，仅参数列表保留纵向滚动。`MainWindow.xaml` XML 解析和结构检查通过（Tasks 根节点为 Grid，
+  仅含一个参数 ScrollViewer）；使用本机 NuGet 缓存完成 Release build，0 警告、0 错误；build-output
+  `--self-test` 通过。按用户要求未再次启动 GUI 或 Worker，固定窗口、长描述和 200% DPI 仍需人工视觉确认。
+
+- 2026-08-27：完成 Tasks 页选择/配置 UI 重构。`MainWindow.xaml` 与 `DesignSystem.xaml` XML 解析通过；
+  NarutoAutoGUI Release `win-x64` build 通过，0 警告、0 错误；GUI build-output `--self-test` 通过，新增覆盖
+  单 task、多 task、长 label、task description 存在/缺失/null/空白、无 task options、selection 自动保存和
+  显式 option intent 切换保留。静态布局 contract 覆盖 920×640、1180×760 和 1500px 宽窗口，参数 editor
+  分别限制在约 240、370 和 400 DIP 内；参数区不产生横向滚动。完整自动化脚本的 GUI 阶段通过；
+  Worker 阶段被本机 Application Control policy 以 `0x800711C7` 阻止载入，按用户要求未继续重试。
+  真实窗口、滚轮、键盘导航和 200% DPI 视觉 E2E 仍待人工确认；未修改 Worker、IPC、Dashboard 状态机或
+  Child Session/RDP baseline。
 
 - 2026-08-26：首个可用 prerelease `v0.1.0-rc.2` 已由 run
   [32982031166](https://github.com/ArcherSore/NarutoAutoGUI/actions/runs/32982031166) 创建。locked build、GUI/Worker

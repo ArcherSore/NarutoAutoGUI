@@ -24,7 +24,7 @@ internal sealed record ProjectDefinition(
     IReadOnlyDictionary<string, OptionDefinition> Options);
 
 internal sealed record TaskDefinition(
-    string Name, string Label, string Entry,
+    string Name, string Label, string Description, string Entry,
     IReadOnlyList<string> Options, JsonElement PipelineOverride);
 
 internal sealed record OptionDefinition(

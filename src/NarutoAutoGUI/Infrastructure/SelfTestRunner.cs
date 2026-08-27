@@ -22,6 +22,7 @@ internal static class SelfTestRunner
             var projectDirectory = CreateProjectFixture(testDirectory);
             VerifySettings(logger, testDirectory, projectDirectory);
             VerifyProjectPlan(testDirectory, projectDirectory);
+            VerifyTaskCatalogVariants(testDirectory, projectDirectory);
             VerifyUnsupportedProjectConstraints(testDirectory, projectDirectory);
             VerifyInvalidProjectInterfaces(testDirectory, projectDirectory);
             VerifyProtocolFrame();
@@ -49,7 +50,8 @@ internal static class SelfTestRunner
                 + "ordered pipeline override; nested dormant intent; "
                 + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
                 + "PI structure/default/graph validation; typed input validation; "
-                + "MaaNOP Config v1; RunPlan digest; IPC framing; preview schema; "
+                + "task catalog/description/selection; MaaNOP Config v1; RunPlan digest; "
+                + "IPC framing; preview schema; "
                 + "log sequence tracking/recovery; Worker Instance replacement; "
                 + "run-log routing; DEBUG+ file logging");
             return 0;
@@ -113,7 +115,10 @@ internal static class SelfTestRunner
     {
         var configPath = Path.Combine(testDirectory, "maanop-config.json");
         var project = ProjectPlanModule.Open(projectDirectory, configPath);
-        if (project.Tasks.Count != 1 || project.Tasks[0].Name != "RealTask" || project.Tasks[0].Label != "Real task") {
+        if (project.Tasks.Count != 1
+            || project.Tasks[0].Name != "RealTask"
+            || project.Tasks[0].Label != "Real task"
+            || !project.Tasks[0].Description.StartsWith("A long task description", StringComparison.Ordinal)) {
             throw new InvalidOperationException("PI task catalog 验证失败。");
         }
 
@@ -241,6 +246,64 @@ internal static class SelfTestRunner
             || resetAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Mode").GetString() != "Default"
             || resetAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Nested").GetString() != "On") {
             throw new InvalidOperationException("PI option 跟随项目默认验证失败。");
+        }
+    }
+
+    private static void VerifyTaskCatalogVariants(string testDirectory, string sourceProjectDirectory)
+    {
+        var sourceInterface = File.ReadAllText(Path.Combine(sourceProjectDirectory, "interface.json"));
+        var root = JsonNode.Parse(sourceInterface)?.AsObject()
+                   ?? throw new InvalidOperationException("PI task catalog fixture 解析失败。");
+        var tasks = root["task"]!.AsArray();
+        tasks.Add(new JsonObject {
+            ["name"] = "LongLabelTask",
+            ["label"] = "A deliberately long task label that must remain available without truncation",
+            ["description"] = null,
+            ["entry"] = "LongLabelEntry",
+            ["option"] = new JsonArray()
+        });
+        tasks.Add(new JsonObject {
+            ["name"] = "MissingDescriptionTask",
+            ["label"] = "Missing description",
+            ["entry"] = "MissingDescriptionEntry",
+            ["option"] = new JsonArray()
+        });
+        tasks.Add(new JsonObject {
+            ["name"] = "WhitespaceDescriptionTask",
+            ["label"] = "Whitespace description",
+            ["description"] = "   ",
+            ["entry"] = "WhitespaceDescriptionEntry",
+            ["option"] = new JsonArray()
+        });
+
+        var projectDirectory = Path.Combine(testDirectory, "task-catalog-variants");
+        Directory.CreateDirectory(projectDirectory);
+        File.WriteAllText(Path.Combine(projectDirectory, "interface.json"), root.ToJsonString());
+        var configPath = Path.Combine(projectDirectory, "maanop-config.json");
+        var project = ProjectPlanModule.Open(projectDirectory, configPath);
+        if (project.Tasks.Count != 4
+            || project.Tasks.Select(task => task.Name).SequenceEqual(
+                ["RealTask", "LongLabelTask", "MissingDescriptionTask", "WhitespaceDescriptionTask"]) is false
+            || project.Tasks[1].Label.Length < 60
+            || project.Tasks[1].Description.Length != 0
+            || project.Tasks[2].Description.Length != 0
+            || !string.IsNullOrWhiteSpace(project.Tasks[3].Description)) {
+            throw new InvalidOperationException("PI task 顺序、长 label 或可选 description 验证失败。");
+        }
+
+        project.SelectTask("RealTask");
+        project.SetSelectedCase("Mode", "Minimal");
+        project.SelectTask("LongLabelTask");
+        if (project.GetConfiguration().TaskOptions.Count != 0) {
+            throw new InvalidOperationException("无 option task 不应生成 task editor。");
+        }
+        project.SelectTask("RealTask");
+        if (project.GetConfiguration().TaskOptions.Single().SelectedCase != "Minimal") {
+            throw new InvalidOperationException("task selection 切换未保留显式 option intent。");
+        }
+        using var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath));
+        if (configDocument.RootElement.GetProperty("SelectedTasks")[0].GetString() != "RealTask") {
+            throw new InvalidOperationException("task selection 自动保存验证失败。");
         }
     }
 
@@ -532,6 +595,7 @@ internal static class SelfTestRunner
               "task": [{
                 "name": "RealTask",
                 "label": "Real task",
+                "description": "A long task description retained for multiline display on the Tasks page.",
                 "entry": "SelfTestEntry",
                 "option": ["Mode"],
                 "pipeline_override": {
@@ -543,6 +607,7 @@ internal static class SelfTestRunner
                 "ServerRange": {
                   "type": "input",
                   "label": "Server range",
+                  "description": "A long option description that wraps beside its editor without horizontal scrolling.",
                   "inputs": [
                     {
                       "name": "server_range",
@@ -582,6 +647,7 @@ internal static class SelfTestRunner
                 },
                 "Mode": {
                   "type": "select",
+                  "description": "Choose how the task should run.",
                   "default_case": "Default",
                   "cases": [
                     {

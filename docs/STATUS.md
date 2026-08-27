@@ -35,7 +35,7 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - 主窗口已应用集中式 WPF 视觉设计系统：统一浅色语义令牌、字体与 4/8 DIP 间距、四级按钮、输入框、状态 Badge、日志层级和交互状态；顶部保留状态卡，其余主功能使用扁平分区、留白与细分隔线，仅日志视口保留容器边框；不改变事件处理器和功能行为。
 - 正式主窗口已使用 WPF-UI 4.3.0 重构为 Windows 11 Fluent Shell：`FluentWindow`、`TitleBar`、左侧 `NavigationView` 和内置 Fluent 图标承载首页、任务、桌面分身、日志、设置五个顶层页面，操作状态与进度条固定在全局底栏。五个页面仍位于同一个 `MainWindow` XAML namescope，通过根容器 `Visibility` 切换；未引入 `Frame`、独立 Page/UserControl、MVVM、NavigationService 或 PageService。页面内输入、按钮、下拉框和日志列表仍为标准 WPF 控件并沿用 `DesignSystem.xaml`。
 - 首页集中呈现当前任务、参数、Session、Worker 和 Run 的用户化摘要；任务页只保留标题、左侧任务列表和右侧动态
-  property editor，并在有内容时显示 PI task description；
+  property editor，并在有内容时显示 PI task description，解析其中的 `<span>`/`<br>` 标记为换行与纯文本；
   未配置或无法加载项目时使用单一空状态代替空任务列表与空参数面板。Tasks 页面自身固定，只有动态参数区局部
   纵向滚动；任务描述是参数面板下方的独立同级区域。Tasks 不再提供运行环境诊断；用户化 Worker/Run 状态仍由
   首页与全局底栏呈现，运行细节保留在日志。桌面分身操作按钮按实际状态互斥显示。设置表单改为标签在上、输入框在下，
@@ -75,6 +75,18 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - Worker 使用专用的 Task Scheduler 强化启动路径：`RunEx` 后等待新的 Worker PID 并验证 Child Session，记录 Task State 与 `LastTaskResult`，再清理临时任务；进程验证成功后 PID 写回 Admission。若进程未生成则 10 秒内失败并清理 Pending Admission；若 admission + fresh Snapshot 在 60 秒内未完成且 Worker PID 缺失或进程已退出，则自动回滚 `worker.json` 与 launch manifest，避免下一次准备环境被陈旧记录阻塞。
 
 ## 本轮自动验证
+
+- 2026-08-27：移除 Tasks 页 option editor 中显式值非默认时出现的“恢复项目默认”按钮及其
+  `FollowProjectDefaultButton_Click` 与 `OptionDefaultTag`。`ProjectPlanModule.FollowProjectDefault`
+  仍为公共 API 并保留自检覆盖；用户仍可在下拉框选择默认 case 或在输入框填回默认值。
+  NarutoAutoGUI Release `win-x64` build 与 build-output `--self-test` 通过，0 警告、0 错误；未修改
+  Worker、IPC、ProjectModel 或 Child Session/RDP baseline。
+
+- 2026-08-27：修复 Tasks 页任务描述将 PI `<span>`/`<br>` 标记原样显示为文本的问题。`MainWindow.RenderDescriptionText`
+  将 `<br>` 转为换行、剥离其余 HTML 标记后赋给 `TaskDescriptionText`；option/input 描述仍为纯文本，未改其渲染。
+  新增 `VerifyTaskDescriptionMarkup` 自检覆盖 span/br、大写、null/空白、无标记纯文本和带 style 的 span。
+  NarutoAutoGUI Release `win-x64` build 与 build-output `--self-test` 通过，0 警告、0 错误；未修改 Worker、IPC、
+  ProjectModel 解析或 Child Session/RDP baseline。
 
 - 2026-08-27：进一步压缩 Tasks 非核心信息：移除标题副文案、项目/任务/参数概览、所有“前往设置”入口和底部
   运行环境诊断；对应的 Tasks-only Worker 明细投影与“准备 Worker”事件入口一并清理，Dashboard 的准备环境、

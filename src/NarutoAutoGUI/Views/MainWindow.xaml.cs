@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -32,6 +33,10 @@ public partial class MainWindow : FluentWindow
     private static readonly TimeSpan PreviewPollingInterval = TimeSpan.FromMilliseconds(
         ProtocolConstants.PreviewIntervalMilliseconds);
     private static readonly TimeSpan PreviewFailureLogInterval = TimeSpan.FromSeconds(30);
+    private static readonly Regex DescriptionLineBreakRegex = new(
+        @"<br\b[^>]*>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+    private static readonly Regex DescriptionTagRegex = new(
+        @"</?[a-zA-Z][^>]*>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
     private enum MainSection
     {
@@ -74,8 +79,6 @@ public partial class MainWindow : FluentWindow
     private sealed record OptionInputTag(string OptionName, string InputName);
 
     private sealed record OptionCaseTag(string OptionName);
-
-    private sealed record OptionDefaultTag(string OptionName);
 
     internal MainWindow(
         AppLogger logger, AppSettingsStore settingsStore, AppSettings settings,
@@ -434,26 +437,6 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void FollowProjectDefaultButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_updatingOptionEditors || sender is not WpfButton { Tag: OptionDefaultTag tag }) {
-            return;
-        }
-
-        try {
-            var configuration = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
-                .FollowProjectDefault(tag.OptionName);
-            _pendingStartAttempt = null;
-            RenderOptionEditors(configuration);
-            _logger.Info($"MaaNOP option 已恢复为跟随项目默认：{tag.OptionName}。 ");
-            UpdateCommandAvailability();
-        } catch (Exception exception) {
-            HandleOperationError("恢复 MaaNOP option 默认值失败", exception);
-            TryRenderOptionEditors();
-            ShowProjectValidationError(exception);
-        }
-    }
-
     private void TryRenderOptionEditors()
     {
         try {
@@ -512,11 +495,20 @@ public partial class MainWindow : FluentWindow
 
     private void UpdateTaskDescription()
     {
-        var description = (TaskListBox.SelectedItem as ProjectTaskChoice)?.Description;
-        TaskDescriptionText.Text = description ?? string.Empty;
-        TaskDescriptionPanel.Visibility = string.IsNullOrWhiteSpace(description)
+        var markup = (TaskListBox.SelectedItem as ProjectTaskChoice)?.Description;
+        TaskDescriptionText.Text = RenderDescriptionText(markup);
+        TaskDescriptionPanel.Visibility = string.IsNullOrWhiteSpace(markup)
             ? Visibility.Collapsed
             : Visibility.Visible;
+    }
+
+    internal static string RenderDescriptionText(string? markup)
+    {
+        if (string.IsNullOrEmpty(markup)) {
+            return string.Empty;
+        }
+        var withBreaks = DescriptionLineBreakRegex.Replace(markup, "\n");
+        return DescriptionTagRegex.Replace(withBreaks, string.Empty);
     }
 
     private void ShowProjectValidationError(Exception exception)
@@ -635,21 +627,6 @@ public partial class MainWindow : FluentWindow
             };
             selector.SelectionChanged += OptionCaseComboBox_SelectionChanged;
             editorPanel.Children.Add(selector);
-        }
-
-        if (option.IsExplicit) {
-            var followDefault = new WpfButton {
-                Content = "恢复项目默认",
-                Tag = new OptionDefaultTag(option.Name),
-                Margin = new Thickness(0, 4, 0, 0),
-                MinHeight = 28,
-                Padding = new Thickness(6, 2, 6, 2),
-                HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
-                Style = (Style)FindResource("SubtleButtonStyle"),
-                ToolTip = "删除该 option 的显式值并重新跟随 Project Interface 默认值"
-            };
-            followDefault.Click += FollowProjectDefaultButton_Click;
-            editorPanel.Children.Add(followDefault);
         }
 
         Grid.SetColumn(editorPanel, 2);

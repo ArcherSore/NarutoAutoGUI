@@ -23,6 +23,7 @@ internal static class SelfTestRunner
             VerifySettings(logger, testDirectory, projectDirectory);
             VerifyProjectPlan(testDirectory, projectDirectory);
             VerifyTaskCatalogVariants(testDirectory, projectDirectory);
+            VerifyTaskDescriptionMarkup();
             VerifyUnsupportedProjectConstraints(testDirectory, projectDirectory);
             VerifyInvalidProjectInterfaces(testDirectory, projectDirectory);
             VerifyProtocolFrame();
@@ -50,7 +51,8 @@ internal static class SelfTestRunner
                 + "ordered pipeline override; nested dormant intent; "
                 + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
                 + "PI structure/default/graph validation; typed input validation; "
-                + "task catalog/description/selection; MaaNOP Config v1; RunPlan digest; "
+                + "task catalog/description/selection; task description span/br markup; "
+                + "MaaNOP Config v1; RunPlan digest; "
                 + "IPC framing; preview schema; "
                 + "log sequence tracking/recovery; Worker Instance replacement; "
                 + "run-log routing; DEBUG+ file logging");
@@ -304,6 +306,22 @@ internal static class SelfTestRunner
         using var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath));
         if (configDocument.RootElement.GetProperty("SelectedTasks")[0].GetString() != "RealTask") {
             throw new InvalidOperationException("task selection 自动保存验证失败。");
+        }
+    }
+
+    private static void VerifyTaskDescriptionMarkup()
+    {
+        var markup = "<span>1. 第一行</span><br><span>2. 第二行</span><br><span>3. 第三行</span>";
+        var rendered = MainWindow.RenderDescriptionText(markup);
+        if (rendered != "1. 第一行\n2. 第二行\n3. 第三行") {
+            throw new InvalidOperationException("PI task description span/br 标记解析验证失败。");
+        }
+        if (MainWindow.RenderDescriptionText(null) != string.Empty
+            || MainWindow.RenderDescriptionText("   ") != "   "
+            || MainWindow.RenderDescriptionText("无标记纯文本") != "无标记纯文本"
+            || MainWindow.RenderDescriptionText("<BR>大写</BR>") != "\n大写"
+            || MainWindow.RenderDescriptionText("<span style=\"color:red\">x</span>") != "x") {
+            throw new InvalidOperationException("PI task description 标记边界验证失败。");
         }
     }
 

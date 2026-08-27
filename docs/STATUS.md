@@ -15,6 +15,11 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-08-27：将 NarutoAutoWorker 使用的 MaaFramework runtime 统一升级到 5.12.3。升级
+  `Maa.Framework` (5.10.0) 与 `Maa.Framework.Runtimes` (5.12.3)，匹配 `WorkerRuntimeExecution` 的
+  `Win32ScreencapMethods` API；更新 `packages.lock.json`；通过 Release build、`test-automated.ps1`
+  与 `validate-package.ps1` 校验。
+
 - 2026-08-27：将全仓库项目统一升级到 .NET 10。NarutoAutoGUI GUI 与 NarutoAutoWorker 统一面向
   `net10.0-windows`，NarutoAutoGUI.Protocol 与 NarutoAutoGUI.ProjectModel 统一面向 `net10.0`；GitHub Actions
   发布工作流与构建环境升级使用 .NET 10 SDK (`10.0.x`)。更新 project lock files (`packages.lock.json`)、清理过时

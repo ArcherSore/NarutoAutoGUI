@@ -68,7 +68,7 @@ internal sealed class WorkerRuntimeExecution
             _log("INFO", "runtime.window", $"目标窗口 HWND=0x{window.Handle.ToInt64():X}，Name={window.Name}。 ");
             _controller = new MaaWin32Controller(
                 window.Handle,
-                ParseEnum<Win32ScreencapMethod>(_manifest.Controller.ScreencapMethod),
+                ParseEnum<Win32ScreencapMethods>(_manifest.Controller.ScreencapMethod),
                 ParseEnum<Win32InputMethod>(_manifest.Controller.MouseMethod),
                 ParseEnum<Win32InputMethod>(_manifest.Controller.KeyboardMethod),
                 LinkOption.Start, CheckStatusOption.ThrowIfNotSucceeded);

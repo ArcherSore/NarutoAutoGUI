@@ -18,7 +18,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NarutoAutoGUI.Protocol\NarutoAutoGUI.Protocol.csproj" />
-    <PackageReference Include="Maa.Framework" Version="5.8.0" />
+    <PackageReference Include="Maa.Framework" Version="5.10.0" />
+    <PackageReference Include="Maa.Framework.Runtimes" Version="5.12.3" />
   </ItemGroup>
 
 </Project>

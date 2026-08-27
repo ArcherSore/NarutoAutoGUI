@@ -12,7 +12,7 @@ NarutoAutoGUI/
    ├─ NarutoAutoGUI.Protocol/        # GUI/Worker 共享 IPC schema 与 framing
    ├─ NarutoAutoGUI.ProjectModel/    # Project Interface、Config 与 Run Plan
    ├─ NarutoAutoWorker/              # Child Session Worker 与固定 runtime
-   └─ NarutoAutoGUI/                 # 正式 .NET 8 WPF GUI
+   └─ NarutoAutoGUI/                 # 正式 .NET 10 WPF GUI
       ├─ App.xaml(.cs)               # 单实例、应用操作门、退出、托盘、全局异常
       ├─ Views/MainWindow.xaml(.cs)  # 首页、任务、设置与 MaaNOP focus 运行日志
       ├─ Models/                     # 配置和日志模型

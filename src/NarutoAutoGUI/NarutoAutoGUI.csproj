@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
@@ -11,7 +11,7 @@
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <!-- SDK 9 can schedule the transitive Protocol reference twice for this mixed
+    <!-- The SDK can schedule the transitive Protocol reference twice for this mixed
          WPF/project graph; serialize project references to keep ordinary builds deterministic. -->
     <BuildInParallel>false</BuildInParallel>
     <ApplicationManifest>app.manifest</ApplicationManifest>

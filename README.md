@@ -52,7 +52,7 @@ NarutoAutoGUI 会从完整发布包中自动读取 `interface.json`，并自动�
 
 ### 开发者本地构建
 
-完整构建需要 Windows x64 和 .NET 9 SDK；GUI 项目面向 .NET 8，Worker 项目面向 .NET 9。在仓库根目录运行：
+完整构建需要 Windows x64 和 .NET 10 SDK。在仓库根目录运行：
 
 ```powershell
 .\src\NarutoAutoGUI\scripts\build.ps1

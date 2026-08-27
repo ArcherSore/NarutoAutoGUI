@@ -138,7 +138,7 @@ internal sealed class RdpActiveXHost : AxHost
         base.CreateSink();
 
         _eventSink = new RdpEventSink(this);
-        _eventCookie = new ConnectionPointCookie(GetOcx(), _eventSink, typeof(IMsTscAxEvents));
+        _eventCookie = new ConnectionPointCookie(GetOcx()!, _eventSink, typeof(IMsTscAxEvents));
     }
 
     protected override void DetachSink()

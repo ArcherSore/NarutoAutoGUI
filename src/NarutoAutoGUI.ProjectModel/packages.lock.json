@@ -1,11 +1,11 @@
 {
   "version": 1,
   "dependencies": {
-    "net8.0": {
+    "net10.0": {
       "narutoautogui.protocol": {
         "type": "Project"
       }
     },
-    "net8.0/win-x64": {}
+    "net10.0/win-x64": {}
   }
 }

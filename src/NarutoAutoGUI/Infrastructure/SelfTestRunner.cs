@@ -94,11 +94,9 @@ internal static class SelfTestRunner
 
         var productionProfile = NarutoGameLaunchProfile.Resolve();
         var productionRoot = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        if (!productionProfile.ExecutablePath.StartsWith(productionRoot, StringComparison.OrdinalIgnoreCase)) {
-            throw new InvalidOperationException("Production launch profile 不应使用 ApplicationData 以外的路径。");
-        }
-        if (productionProfile.ExecutablePath.Contains("17321", StringComparison.Ordinal)) {
-            throw new InvalidOperationException("NarutoGameLaunchProfile 不应硬编码开发机 username。");
+        var expected = Path.Combine(productionRoot, "Tencent", "QQMicroGameBox", "Launch.exe");
+        if (!string.Equals(productionProfile.ExecutablePath, expected, StringComparison.OrdinalIgnoreCase)) {
+            throw new InvalidOperationException("Production launch profile 路径推导与当前用户 ApplicationData 不一致。");
         }
     }
 

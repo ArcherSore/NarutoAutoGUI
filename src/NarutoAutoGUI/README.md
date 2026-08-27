@@ -1,10 +1,10 @@
 # NarutoAutoGUI 正式 GUI
 
-Windows x64 / .NET 8 WPF 程序。需要管理员权限和交互式桌面。
+Windows x64 / .NET 10 WPF 程序。需要管理员权限和交互式桌面。
 
 ## 构建与自动自检
 
-完整发布脚本同时构建面向 .NET 9 的 `NarutoAutoWorker`，因此需要 .NET 9 SDK；GUI 项目本身仍面向 .NET 8。
+完整发布脚本需要 .NET 10 SDK。
 
 在仓库根目录运行：
 

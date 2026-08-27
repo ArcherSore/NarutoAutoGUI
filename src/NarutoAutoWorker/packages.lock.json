@@ -1,7 +1,7 @@
 {
   "version": 1,
   "dependencies": {
-    "net9.0-windows7.0": {
+    "net10.0-windows7.0": {
       "Maa.Framework": {
         "type": "Direct",
         "requested": "[5.8.0, )",
@@ -86,6 +86,6 @@
         "type": "Project"
       }
     },
-    "net9.0-windows7.0/win-x64": {}
+    "net10.0-windows7.0/win-x64": {}
   }
 }

@@ -15,6 +15,11 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-08-27：将全仓库项目统一升级到 .NET 10。NarutoAutoGUI GUI 与 NarutoAutoWorker 统一面向
+  `net10.0-windows`，NarutoAutoGUI.Protocol 与 NarutoAutoGUI.ProjectModel 统一面向 `net10.0`；GitHub Actions
+  发布工作流与构建环境升级使用 .NET 10 SDK (`10.0.x`)。更新 project lock files (`packages.lock.json`)、清理过时
+  .NET 8 / .NET 9 文档描述，保持 Windows x64、self-contained、Maa.Framework 5.8.0 runtime 与现有发布结构不变。
+
 - 2026-08-27：将火影忍者 Online 游戏启动从用户可配置项收口为固定 launch profile。新建
   `NarutoGameLaunchProfile`（AppId=`1103286479`、Arguments=`-/appid:1103286479`、ExecutablePath 从
   `Environment.SpecialFolder.ApplicationData` + `Tencent\QQMicroGameBox\Launch.exe` 推导），不再硬编码 Windows
@@ -46,7 +51,7 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
   `ProjectInterfaceLoader.cs`、`SelfTestRunner.cs` XML 解析、Release build 与 build-output `--self-test`
   通过，0 警告、0 错误；新增 `interface.json` 缺失错误信息与 v3 schema 未知字段拒绝自检覆盖。
 
-- .NET 8 WPF x64 正式主窗口和独立 RDP 子桌面预览。
+- .NET 10 WPF x64 正式主窗口和独立 RDP 子桌面预览。
 - 创建/恢复、显示、隐藏、结束 Child Session；展示连接状态、RDP ConnectedState 和 `childSessionId`。
 - 启动时探测已有 Child Session 并自动恢复 RDP 连接。
 - 固定 `1920×1080 @ 100%`，不提供分辨率或 DPI 配置。
@@ -105,6 +110,11 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - Worker 使用专用的 Task Scheduler 强化启动路径：`RunEx` 后等待新的 Worker PID 并验证 Child Session，记录 Task State 与 `LastTaskResult`，再清理临时任务；进程验证成功后 PID 写回 Admission。若进程未生成则 10 秒内失败并清理 Pending Admission；若 admission + fresh Snapshot 在 60 秒内未完成且 Worker PID 缺失或进程已退出，则自动回滚 `worker.json` 与 launch manifest，避免下一次准备环境被陈旧记录阻塞。
 
 ## 本轮自动验证
+
+- 2026-08-27：.NET 10 升级自动验证。全项目 TargetFramework 升级到 `net10.0` / `net10.0-windows` 后，使用 .NET 10
+  SDK 完成 locked restore、NarutoAutoGUI 与 NarutoAutoWorker Release `win-x64` self-contained build 与 publish，
+  0 警告、0 错误；`test-automated.ps1` 覆盖 GUI 与 Worker 自动自检全部 PASS；`validate-package.ps1` 校验发布包
+  结构与白名单全部 PASS；`dotnet format whitespace --verify-no-changes` 通过，手写代码符合 120 列限制与大括号风格。
 
 - 2026-08-27：Dashboard 操作区收敛。顶部「操作」列的三个独立按钮（准备运行环境 / 开始任务 / 停止任务）合并为单一
   上下文主按钮 `HomePrimaryActionButton`：未准备环境 → 准备运行环境（Secondary），环境 Ready 且无 active Run →

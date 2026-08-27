@@ -57,8 +57,8 @@ NarutoAutoGUI/
 
 ## 配置与日志
 
-- 启动配置：`<程序目录>\config\settings.json`。保存游戏 exe 和参数，不保存账户密码；MaaNOP project payload 与 NarutoAutoGUI 一同打包，Project root 固定为 application base directory，`interface.json` 位于 `NarutoAutoGUI.exe` 同级目录，不再由用户在 Settings 中选择。
-- 火影忍者 Online 默认运行 `C:\Users\17321\AppData\Roaming\Tencent\QQMicroGameBox\Launch.exe -/appid:1103286479`；不使用 `QQGameLauncher.exe`。工作目录不提供配置字段，统一自动使用所选 exe 的父目录。
+- 配置：MaaNOP project payload 与 NarutoAutoGUI 一同打包，Project root 固定为 application base directory，`interface.json` 位于 `NarutoAutoGUI.exe` 同级目录。火影忍者 Online 使用固定 launch profile：`NarutoGameLaunchProfile` 从当前用户 `%APPDATA%\Tencent\QQMicroGameBox\Launch.exe` 推导启动器路径，AppId 固定为 `1103286479`，参数固定为 `-/appid:1103286479`，均不由用户配置；MaaNOP 用户意图保存在 `<程序目录>\config\maanop-config.json`。
+- 工作目录不提供配置字段，统一自动使用启动器所在目录。
 - 文件日志：默认写入 `<程序目录>\logs`，记录 DEBUG+；按日期命名，单文件最大 10 MB，保留 14 天。若程序目录
   不可写，则依次回退到 LocalAppData 和临时目录并记录 WARN。
 - GUI 运行日志：只显示 MaaNOP 通过字符串 `focus` 明确声明的 user-facing Run Log，保留最近 1000 条；

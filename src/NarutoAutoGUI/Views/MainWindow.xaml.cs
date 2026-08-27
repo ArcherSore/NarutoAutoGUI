@@ -8,7 +8,6 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using Microsoft.Win32;
 using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Infrastructure;
 using NarutoAutoGUI.Models;
@@ -19,7 +18,6 @@ using WpfBrush = System.Windows.Media.Brush;
 using WpfButton = System.Windows.Controls.Button;
 using WpfComboBox = System.Windows.Controls.ComboBox;
 using WpfMessageBox = System.Windows.MessageBox;
-using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using WpfTextBox = System.Windows.Controls.TextBox;
 using FluentWindow = Wpf.Ui.Controls.FluentWindow;
 using WpfNavigationViewItem = Wpf.Ui.Controls.NavigationViewItem;
@@ -54,8 +52,6 @@ public partial class MainWindow : FluentWindow
 
     private sealed record PrimaryActionState(PrimaryActionMode Mode, bool CanExecute);
     private readonly AppLogger _logger;
-    private readonly AppSettingsStore _settingsStore;
-    private readonly AppSettings _settings;
     private readonly ChildSessionManager _sessionManager;
     private readonly ChildSessionProgramService _programService;
     private readonly WorkerCoordinator _workerCoordinator;
@@ -87,7 +83,7 @@ public partial class MainWindow : FluentWindow
     private sealed record OptionCaseTag(string OptionName);
 
     internal MainWindow(
-        AppLogger logger, AppSettingsStore settingsStore, AppSettings settings,
+        AppLogger logger,
         ChildSessionManager sessionManager, ChildSessionProgramService programService,
         WorkerCoordinator workerCoordinator, Func<Func<Task>, Task> runApplicationOperationAsync,
         Func<Task> requestExitAsync)
@@ -95,16 +91,12 @@ public partial class MainWindow : FluentWindow
         InitializeComponent();
         DataContext = this;
         _logger = logger;
-        _settingsStore = settingsStore;
-        _settings = settings;
         _sessionManager = sessionManager;
         _programService = programService;
         _workerCoordinator = workerCoordinator;
         _runApplicationOperationAsync = runApplicationOperationAsync;
         _requestExitAsync = requestExitAsync;
         _sessionSnapshot = sessionManager.Snapshot;
-        GamePathTextBox.Text = settings.GameExecutablePath;
-        GameArgumentsTextBox.Text = settings.GameArguments;
         HomeLogListBox.AddHandler(
             ScrollViewer.ScrollChangedEvent,
             new ScrollChangedEventHandler(LogListBox_ScrollChanged));
@@ -165,7 +157,6 @@ public partial class MainWindow : FluentWindow
         }
 
         e.Cancel = true;
-        TrySaveSettings(showError: false);
         Hide();
         _logger.Info("主窗口已隐藏到托盘。");
         HiddenToTray?.Invoke(this, EventArgs.Empty);
@@ -234,15 +225,6 @@ public partial class MainWindow : FluentWindow
             });
     }
 
-    private void BrowseGameButton_Click(object sender, RoutedEventArgs e)
-    {
-        var path = BrowseExecutable(GamePathTextBox.Text, "选择游戏程序");
-        if (path is not null) {
-            GamePathTextBox.Text = path;
-            TrySaveSettings(showError: true);
-        }
-    }
-
     private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
         => TryOpenLogsDirectory(showError: true);
 
@@ -305,12 +287,12 @@ public partial class MainWindow : FluentWindow
             "正在准备运行环境...",
             async () =>
             {
-                SaveSettings();
                 LoadProject();
                 var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
                 await _workerCoordinator.PrepareWorkerAsync(
                     sessionId, _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"));
-                await _programService.LaunchIfNeededAsync(sessionId, GamePathTextBox.Text, GameArgumentsTextBox.Text);
+                var game = NarutoGameLaunchProfile.ResolveExisting(_logger);
+                await _programService.LaunchIfNeededAsync(sessionId, game.ExecutablePath, game.Arguments);
                 _sessionManager.ShowPreview();
                 _logger.Info("真实 E2E 环境已准备；完成游戏登录后即可开始任务。 ");
             });
@@ -680,35 +662,23 @@ public partial class MainWindow : FluentWindow
         ShowActionableError(operation, exception, GetRecoveryGuidance(operation), offerLogDirectory: true);
     }
 
-    private void SaveSettings()
+    private static string GetRecoveryGuidance(string operation)
     {
-        _settings.GameExecutablePath = GamePathTextBox.Text.Trim();
-        _settings.GameArguments = GameArgumentsTextBox.Text.Trim();
-        _settingsStore.Save(_settings);
-    }
-
-    private void PathsTextBox_LostKeyboardFocus(object sender, System.Windows.Input.KeyboardFocusChangedEventArgs e) =>
-        TrySaveSettings(showError: true);
-
-    private bool TrySaveSettings(bool showError)
-    {
-        try {
-            SaveSettings();
-            return true;
-        } catch (Exception exception) {
-            _logger.Error("保存程序路径配置失败。", exception);
-            OperationStatusText.Text = "失败：保存配置";
-            if (showError) {
-                ShowActionableError("保存配置失败", exception, "请确认程序目录可写，或将程序移动到有写入权限的目录后重试。", offerLogDirectory: true);
-            }
-
-            return false;
+        if (operation.Contains("启动", StringComparison.Ordinal)) {
+            return "请检查桌面分身连接状态后重试；若微端启动器缺失，请先通过 QQ 游戏平台安装火影忍者 Online。";
         }
+
+        if (operation.Contains("桌面分身", StringComparison.Ordinal) || operation.Contains("子桌面", StringComparison.Ordinal)) {
+            return "请确认程序以管理员权限运行，并检查桌面分身状态后重试。";
+        }
+
+        return "请检查当前配置和系统状态后重试。";
     }
 
     private void LoadProject()
     {
-        var project = ProjectPlanModule.Open(AppContext.BaseDirectory, _settingsStore.MaaNopConfigPath);
+        var configPath = Path.Combine(AppContext.BaseDirectory, "config", "maanop-config.json");
+        var project = ProjectPlanModule.Open(AppContext.BaseDirectory, configPath);
         _projectPlan = project;
         _pendingStartAttempt = null;
         TaskListBox.ItemsSource = project.Tasks;
@@ -765,27 +735,6 @@ public partial class MainWindow : FluentWindow
         TaskWorkspacePanel.Visibility = Visibility.Collapsed;
         ProjectEmptyStatePanel.Visibility = Visibility.Visible;
         UpdateTaskDescription();
-    }
-
-    private static string? BrowseExecutable(string currentPath, string title)
-    {
-        var dialog = new WpfOpenFileDialog {
-            Title = title,
-            Filter = "Windows 程序 (*.exe)|*.exe",
-            CheckFileExists = true,
-            Multiselect = false
-        };
-
-        if (!string.IsNullOrWhiteSpace(currentPath)) {
-            try {
-                dialog.InitialDirectory = Path.GetDirectoryName(Path.GetFullPath(currentPath));
-                dialog.FileName = Path.GetFileName(currentPath);
-            } catch {
-                // Ignore malformed current text; the dialog remains usable.
-            }
-        }
-
-        return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 
     internal static bool IsUserFacingRunLog(WorkerLogEntry entry) =>
@@ -1422,19 +1371,6 @@ public partial class MainWindow : FluentWindow
         ChildSessionState.Faulted => "连接失败",
         _ => "未知状态"
     };
-
-    private static string GetRecoveryGuidance(string operation)
-    {
-        if (operation.Contains("启动", StringComparison.Ordinal)) {
-            return "请确认程序路径和启动参数正确，并检查桌面分身连接状态后重试。";
-        }
-
-        if (operation.Contains("桌面分身", StringComparison.Ordinal) || operation.Contains("子桌面", StringComparison.Ordinal)) {
-            return "请确认程序以管理员权限运行，并检查桌面分身状态后重试。";
-        }
-
-        return "请检查当前配置和系统状态后重试。";
-    }
 
     private void ShowActionableError(string title, Exception exception, string recovery, bool offerLogDirectory)
     {

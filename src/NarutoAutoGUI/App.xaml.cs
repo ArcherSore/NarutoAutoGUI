@@ -2,7 +2,6 @@ using System.Windows;
 using System.Windows.Threading;
 using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Infrastructure;
-using NarutoAutoGUI.Models;
 using NarutoAutoGUI.Views;
 using NarutoAutoGUI.Worker;
 using Forms = System.Windows.Forms;
@@ -46,44 +45,13 @@ public partial class App : System.Windows.Application
         _logger.Debug($"Process={Environment.ProcessPath}；OS={Environment.OSVersion}；"
                       + $"64BitOS={Environment.Is64BitOperatingSystem}；64BitProcess={Environment.Is64BitProcess}。");
 
-        var settingsStore = new AppSettingsStore(_logger);
-        AppSettings settings;
-        try {
-            settings = settingsStore.Load();
-        } catch (Exception exception) {
-            _logger.Error("Application Settings 无效，正常启动已阻止。", exception);
-            var answer = WpfMessageBox.Show(
-                $"Application Settings 无法读取，原文件尚未修改：\n\n{exception.GetBaseException().Message}"
-                + "\n\n是否明确重置为默认 Application Settings 后继续？",
-                "配置需要处理",
-                MessageBoxButton.YesNo, MessageBoxImage.Error, MessageBoxResult.No);
-            if (answer != MessageBoxResult.Yes) {
-                Shutdown(1);
-                return;
-            }
-
-            settings = new AppSettings();
-            try {
-                settingsStore.Save(settings);
-                _logger.Warn("用户已明确重置 Application Settings。 ");
-            } catch (Exception saveException) {
-                _logger.Critical("重置 Application Settings 失败。", saveException);
-                WpfMessageBox.Show(
-                    $"重置 Application Settings 失败：\n\n{saveException.GetBaseException().Message}",
-                    "NarutoAutoGUI",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-                Shutdown(1);
-                return;
-            }
-        }
         _sessionManager = new ChildSessionManager(_logger);
         _workerCoordinator = new WorkerCoordinator(
             _logger, Path.Combine(AppContext.BaseDirectory, "state"),
             Path.Combine(AppContext.BaseDirectory, "worker", "NarutoAutoWorker.exe"));
         var programService = new ChildSessionProgramService(_logger);
         _mainWindow = new MainWindow(
-            _logger, settingsStore, settings, _sessionManager, programService,
+            _logger, _sessionManager, programService,
             _workerCoordinator, RunApplicationOperationAsync, RequestExitAsync);
         _mainWindow.HiddenToTray += MainWindow_HiddenToTray;
         MainWindow = _mainWindow;

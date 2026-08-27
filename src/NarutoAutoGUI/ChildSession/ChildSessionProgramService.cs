@@ -58,12 +58,12 @@ internal sealed class ChildSessionProgramService
     private static string ValidateExecutablePath(string executablePath)
     {
         if (string.IsNullOrWhiteSpace(executablePath)) {
-            throw new ArgumentException("请先配置 exe 路径。", nameof(executablePath));
+            throw new ArgumentException("executable 路径不能为空。", nameof(executablePath));
         }
 
         var fullPath = Path.GetFullPath(executablePath.Trim());
         if (!File.Exists(fullPath)) {
-            throw new FileNotFoundException("配置的程序不存在。", fullPath);
+            throw new FileNotFoundException("指定的程序不存在。", fullPath);
         }
 
         if (!string.Equals(Path.GetExtension(fullPath), ".exe", StringComparison.OrdinalIgnoreCase)) {

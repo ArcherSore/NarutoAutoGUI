@@ -15,6 +15,23 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-08-27：将火影忍者 Online 游戏启动从用户可配置项收口为固定 launch profile。新建
+  `NarutoGameLaunchProfile`（AppId=`1103286479`、Arguments=`-/appid:1103286479`、ExecutablePath 从
+  `Environment.SpecialFolder.ApplicationData` + `Tencent\QQMicroGameBox\Launch.exe` 推导），不再硬编码 Windows
+  username，不暴露 AppId override，不读 settings.json。删除 `AppSettings`、`AppSettingsStore`、
+  `settings.json` load/save/reset 流程、App 启动时"Application Settings 无效"的整套逻辑、
+  `ApplyLegacyGameSettingsMigration`、Settings 页中的游戏程序 TextBox / 浏览按钮 / 启动参数 TextBox / 说明文案、
+  `BrowseGameButton_Click` / `BrowseExecutable` / `PathsTextBox_LostKeyboardFocus` / `SaveSettings` /
+  `TrySaveSettings`。`PrepareEnvironmentButton_Click` 改用 `NarutoGameLaunchProfile.Resolve(_logger)`；
+  `LoadProject` 直接计算 `AppContext.BaseDirectory\config\maanop-config.json`。
+  `ChildSessionProgramService` 错误文案去除"配置"字样，改用通用"executable 路径不能为空""指定的程序不存在"。
+  启动器缺失时 `NarutoGameLaunchProfile.Resolve(logger)` 抛出面向安装的可行动错误
+  "未检测到火影忍者 Online 微端启动器。请先通过 QQ 游戏平台安装或启动一次火影忍者 Online。"，并在
+  diagnostic log 记录实际路径。Settings 页删除全部可配置项后只保留静态应用行为说明。
+  Release build 与 build-output `--self-test` 通过，0 警告、0 错误；新增 `VerifyGameLaunchProfile` 自检
+  覆盖 ApplicationData 推导、不包含 username、固定 AppId/Arguments、启动器缺失 actionable error 和
+  production default。
+
 - 2026-08-27：将 MaaNOP Project Directory 从用户可配置项收口为打包约定。删除 AppSettings.MaaNopProjectDirectory、
   Settings 页面中的 MaaNOP 项目目录 TextBox / 浏览按钮 / 说明文案、AppSettingsStore 中的
   NormalizeProjectDirectory、ReadLegacyProjectDirectory、`MaaNopExecutablePath` → Project Directory 旧迁移和
@@ -33,9 +50,8 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - 创建/恢复、显示、隐藏、结束 Child Session；展示连接状态、RDP ConnectedState 和 `childSessionId`。
 - 启动时探测已有 Child Session 并自动恢复 RDP 连接。
 - 固定 `1920×1080 @ 100%`，不提供分辨率或 DPI 配置。
-- 游戏 exe 和启动参数配置，保存到程序目录的 `config\settings.json`；MaaNOP project payload 与 NarutoAutoGUI 一同打包，Project root 固定为 application base directory，`interface.json` 位于 `NarutoAutoGUI.exe` 同级目录，不再由用户在 Settings 中选择。
-- 火影忍者 Online 默认通过 `QQMicroGameBox\Launch.exe -/appid:1103286479` 启动；不使用 `QQGameLauncher.exe`。工作目录自动取 exe 所在目录，不提供配置字段。
-- 旧版配置若没有参数且入口为空或为 `QQGameLauncher.exe`，加载时迁移到上述正确入口；其他自定义 exe 不覆盖。
+- 火影忍者 Online 使用固定 launch profile：`NarutoGameLaunchProfile` 从 `%APPDATA%\Tencent\QQMicroGameBox\Launch.exe` 推导启动器路径，AppId 固定 `1103286479`，参数固定 `-/appid:1103286479`，均不由用户配置。MaaNOP project payload 与 NarutoAutoGUI 一同打包，Project root 固定为 application base directory，`interface.json` 位于 `NarutoAutoGUI.exe` 同级目录。工作目录自动取启动器所在目录，不提供配置字段。
+- 启动器缺失时给出面向安装的可行动错误，提示用户通过 QQ 游戏平台安装或启动一次火影忍者 Online。
 - 分别启动游戏/MaaNOP，以及“恢复/创建 → 显示 → 游戏 → MaaNOP → 保持显示”的一键启动。
 - 按进程名和 Session ID 避免在当前 Child Session 中重复启动，并记录 PID/SessionId。
 - 主窗口 X 隐藏到托盘；托盘提供显示主窗口、显示子桌面、结束分身和退出。

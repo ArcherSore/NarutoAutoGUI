@@ -552,51 +552,16 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <StackPanel Grid.Row="0">
                                 <TextBlock Text="设置" Style="{StaticResource WindowTitleTextStyle}" />
                                 <TextBlock Margin="0,4,0,0"
-                                           Text="配置游戏入口和应用行为；MaaNOP 项目随发布包固定在程序目录下。"
+                                           Text="火影忍者 Online 微端与 MaaNOP 项目均随发布包固定，当前没有可配置项。"
                                            Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
 
-                            <StackPanel Grid.Row="1" Margin="0,24,0,0">
-                                <TextBlock Text="游戏启动" Style="{StaticResource SectionTitleTextStyle}" />
-                                <Label Margin="0,14,0,0"
-                                       Content="游戏程序(_P)"
-                                       Target="{Binding ElementName=GamePathTextBox}" />
-                                <Grid Margin="0,6,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="8" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="GamePathTextBox"
-                                             ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
-                                             AutomationProperties.HelpText="游戏 exe 路径"
-                                             LostKeyboardFocus="PathsTextBox_LostKeyboardFocus" />
-                                    <Button Grid.Column="2"
-                                            Content="浏览…(_B)"
-                                            Style="{StaticResource SubtleButtonStyle}"
-                                            Click="BrowseGameButton_Click" />
-                                </Grid>
-
-                                <Label Margin="0,14,0,0"
-                                       Content="启动参数(_A)"
-                                       Target="{Binding ElementName=GameArgumentsTextBox}" />
-                                <TextBox x:Name="GameArgumentsTextBox"
-                                          Margin="0,6,0,0"
-                                          ToolTip="传递给游戏启动程序的命令行参数"
-                                          AutomationProperties.HelpText="火影忍者 Online 使用 -/appid:1103286479"
-                                          LostKeyboardFocus="PathsTextBox_LostKeyboardFocus" />
-                                <TextBlock Margin="0,8,0,0"
-                                           Text="火影忍者 Online 默认通过 QQMicroGameBox\Launch.exe 和 appid 参数启动。"
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                            </StackPanel>
-
-                            <StackPanel Grid.Row="2" Margin="0,24,0,24">
+                            <StackPanel Grid.Row="1" Margin="0,24,0,24">
                                 <Border Height="1"
                                         Margin="0,0,0,24"
                                         Background="{StaticResource Brush.Border}"

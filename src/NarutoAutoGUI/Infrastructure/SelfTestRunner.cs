@@ -20,7 +20,7 @@ internal static class SelfTestRunner
             var logDirectory = Path.Combine(testDirectory, "logs");
             using var logger = new AppLogger(logDirectory);
             var projectDirectory = CreateProjectFixture(testDirectory);
-            VerifySettings(logger, testDirectory, projectDirectory);
+            VerifyGameLaunchProfile(logger, testDirectory);
             VerifyProjectPlan(testDirectory, projectDirectory);
             VerifyTaskCatalogVariants(testDirectory, projectDirectory);
             VerifyTaskDescriptionMarkup();
@@ -47,7 +47,7 @@ internal static class SelfTestRunner
             }
 
             Console.WriteLine(
-                "SELF-TEST PASS: settings v3 (game settings migration only, no MaaNOP project directory); "
+                "SELF-TEST PASS: fixed Naruto game launch profile (AppData-derived launcher, fixed AppId); "
                 + "PI default/explicit resolver; "
                 + "ordered pipeline override; nested dormant intent; "
                 + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
@@ -72,56 +72,33 @@ internal static class SelfTestRunner
         }
     }
 
-    private static void VerifySettings(AppLogger logger, string testDirectory, string projectDirectory)
+    private static void VerifyGameLaunchProfile(AppLogger logger, string testDirectory)
     {
-        var settingsPath = Path.Combine(testDirectory, "settings.json");
-        var store = new AppSettingsStore(logger, settingsPath);
-        File.WriteAllText(
-            settingsPath,
-            JsonSerializer.Serialize(new
-            {
-                GameExecutablePath = Path.Combine(testDirectory, "QQGameLauncher.exe"),
-                MaaNopExecutablePath = Path.Combine(testDirectory, "MFAAvalonia.exe")
-            }));
-        var migrated = store.Load();
-        if (migrated.GameExecutablePath != AppSettings.DefaultGameExecutablePath
-            || migrated.GameArguments != AppSettings.DefaultGameArguments) {
-            throw new InvalidOperationException("旧版 Game Settings 内存迁移验证失败。");
+        var customRoot = Path.Combine(testDirectory, "AppDataRoaming");
+        Directory.CreateDirectory(customRoot);
+        var profile = NarutoGameLaunchProfile.Resolve(customRoot);
+        var expectedPath = Path.Combine(customRoot, "Tencent", "QQMicroGameBox", "Launch.exe");
+        if (profile.AppId != "1103286479"
+            || profile.Arguments != "-/appid:1103286479"
+            || profile.ExecutablePath != expectedPath) {
+            throw new InvalidOperationException("NarutoGameLaunchProfile path/AppId/arguments 解析验证失败。");
         }
 
-        var expected = new AppSettings {
-            GameExecutablePath = @"C:\Test\Game.exe",
-            GameArguments = "--test-game"
-        };
-        store.Save(expected);
-        var savedJson = File.ReadAllText(settingsPath);
-        if (savedJson.Contains("MaaNopExecutablePath", StringComparison.Ordinal)
-            || savedJson.Contains("MaaNopProjectDirectory", StringComparison.Ordinal)
-            || savedJson.Contains("GameWorkingDirectory", StringComparison.Ordinal)
-            || !savedJson.Contains("\"SchemaVersion\": 3", StringComparison.Ordinal)) {
-            throw new InvalidOperationException("Application Settings SchemaVersion 3 序列化验证失败。");
-        }
-
-        var actual = store.Load();
-        if (actual.GameExecutablePath != expected.GameExecutablePath
-            || actual.GameArguments != expected.GameArguments) {
-            throw new InvalidOperationException("Application Settings 持久化往返验证失败。");
-        }
-
-        File.WriteAllText(
-            settingsPath,
-            JsonSerializer.Serialize(new
-            {
-                SchemaVersion = AppSettings.CurrentSchemaVersion,
-                GameExecutablePath = @"C:\Test\Game.exe",
-                GameArguments = "--test-game",
-                MaaNopProjectDirectory = projectDirectory
-            }));
         try {
-            store.Load();
-            throw new InvalidOperationException("Application Settings 未拒绝未知 MaaNopProjectDirectory 字段。");
-        } catch (InvalidDataException) {
-            // Expected: settings schema is strict; legacy fields are not silently accepted.
+            NarutoGameLaunchProfile.ResolveExisting(logger, applicationDataRoot: customRoot);
+            throw new InvalidOperationException("NarutoGameLaunchProfile.ResolveExisting(logger) 未在启动器缺失时报错。");
+        } catch (FileNotFoundException exception) when (
+            exception.Message.Contains("未检测到火影忍者 Online 微端启动器", StringComparison.Ordinal)) {
+            // Expected: actionable error referencing QQ 游戏平台 installation, not user configuration.
+        }
+
+        var productionProfile = NarutoGameLaunchProfile.Resolve();
+        var productionRoot = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        if (!productionProfile.ExecutablePath.StartsWith(productionRoot, StringComparison.OrdinalIgnoreCase)) {
+            throw new InvalidOperationException("Production launch profile 不应使用 ApplicationData 以外的路径。");
+        }
+        if (productionProfile.ExecutablePath.Contains("17321", StringComparison.Ordinal)) {
+            throw new InvalidOperationException("NarutoGameLaunchProfile 不应硬编码开发机 username。");
         }
     }
 

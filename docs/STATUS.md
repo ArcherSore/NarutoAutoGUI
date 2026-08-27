@@ -29,24 +29,24 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - DEBUG/INFO/WARN/ERROR/CRITICAL diagnostic log 写入程序目录滚动文件，可从 GUI 直接打开日志目录；GUI 运行日志
   只显示 MaaNOP 字符串 `focus` 投影出的 `maanop.run`，不显示 GUI/Worker/IPC/RDP 等诊断信息。
 - GUI 按实际 Session 状态启用创建/显示/隐藏/结束命令，并明确区分子桌面可见与已隐藏；异步操作显示进度与等待光标。
-- 桌面分身的创建、显示和隐藏命令统一使用清晰的蓝色描边可用态；不可用命令保持灰色降级态，结束命令保持红色危险态。
+- 首页游戏画面预览底部最多呈现两个桌面操作：单一上下文桌面可见性按钮按 ConnectedVisible / ConnectedHidden 互斥显示「隐藏桌面」或「打开完整桌面」，无 Session 时 Collapsed；「结束桌面分身」按 Session 是否存在显示，使用 destructive 样式且不作为 Primary Action。
 - GUI 日志仅在用户接近底部时自动跟随；向上滚动后暂停，并显示新日志计数与恢复跟随操作。
 - 主窗口提供访问键和动态状态辅助信息；操作失败给出恢复建议并可打开日志目录；每次程序运行首次关闭到托盘时显示一次通知。
 - 主窗口已应用集中式 WPF 视觉设计系统：统一浅色语义令牌、字体与 4/8 DIP 间距、四级按钮、输入框、状态 Badge、日志层级和交互状态；顶部保留状态卡，其余主功能使用扁平分区、留白与细分隔线，仅日志视口保留容器边框；不改变事件处理器和功能行为。
-- 正式主窗口已使用 WPF-UI 4.3.0 重构为 Windows 11 Fluent Shell：`FluentWindow`、`TitleBar`、左侧 `NavigationView` 和内置 Fluent 图标承载首页、任务、桌面分身、日志、设置五个顶层页面，操作状态与进度条固定在全局底栏。五个页面仍位于同一个 `MainWindow` XAML namescope，通过根容器 `Visibility` 切换；未引入 `Frame`、独立 Page/UserControl、MVVM、NavigationService 或 PageService。页面内输入、按钮、下拉框和日志列表仍为标准 WPF 控件并沿用 `DesignSystem.xaml`。
+- 正式主窗口已使用 WPF-UI 4.3.0 重构为 Windows 11 Fluent Shell：`FluentWindow`、`TitleBar`、左侧 `NavigationView` 和内置 Fluent 图标承载首页、任务、设置三个顶层页面，操作状态与进度条固定在全局底栏。三个页面仍位于同一个 `MainWindow` XAML namescope，通过根容器 `Visibility` 切换；未引入 `Frame`、独立 Page/UserControl、MVVM、NavigationService 或 PageService。页面内输入、按钮、下拉框和日志列表仍为标准 WPF 控件并沿用 `DesignSystem.xaml`。独立「桌面分身」与「日志」导航页面已删除；桌面分身的显示 / 隐藏 / 结束操作迁移到首页游戏画面预览底部，「准备运行环境」继续作为创建 / 恢复 Child Session 的主流程；详细诊断保留文件日志，首页「运行动态」继续作为普通用户唯一 GUI 日志视图，首页顶部「打开日志目录」入口保留。
 - 首页集中呈现当前任务、参数、Session、Worker 和 Run 的用户化摘要；任务页只保留标题、左侧任务列表和右侧动态
   property editor，并在有内容时显示 PI task description，解析其中的 `<span>`/`<br>` 标记为换行与纯文本；
   未配置或无法加载项目时使用单一空状态代替空任务列表与空参数面板。Tasks 页面自身固定，只有动态参数区局部
   纵向滚动；任务描述是参数面板下方的独立同级区域。Tasks 不再提供运行环境诊断；用户化 Worker/Run 状态仍由
-  首页与全局底栏呈现，运行细节保留在日志。桌面分身操作按钮按实际状态互斥显示。设置表单改为标签在上、输入框在下，
-  日志页取消固定高度并填满剩余页面空间；日志页没有外层滚动器。
-- 首页“运行控制台”顶部以单一横向区域呈现当前任务、现有状态投影、当前 Plan Item/下一步和固定的准备/开始/停止入口；
+  首页与全局底栏呈现，运行细节保留在日志。设置表单改为标签在上、输入框在下。
+- 首页“运行控制台”顶部以单一横向区域呈现当前任务、现有状态投影、当前 Plan Item/下一步和单一上下文主操作按钮；
   下方以等宽双列呈现内部 16:9 游戏画面与 `maanop.run` 运行动态。游戏画面在 Active Run 的 Starting/Running 期间通过
   Worker latest-frame cache 固定约 5 FPS 只读显示；Idle、Stopping、终态、断线、Worker replacement、窗口隐藏或离开
   Home 时继续显示原 Placeholder，窗口最小化也停止请求。运行动态图标只按既有日志 Level 映射，底部状态栏只投影已有
   整体、Worker、Session、IPC 连接和操作状态；Home 仍使用禁用横向滚动的外层纵向 overflow fallback。
-- 首页固定展示“准备运行环境 / 开始任务 / 停止任务”三个任务控制入口；Tasks 页只负责选择与配置，
-  不再重复运行控制。当前不可执行的首页操作保留位置并显示禁用态，动态下一步提示继续作为首页说明、悬浮提示和
+- 首页顶部「操作」列以单一上下文主按钮呈现当前阶段需要的唯一操作（准备运行环境 / 开始任务 / 停止任务），
+  模式与样式随 Child Session / Worker / Run 状态自动切换；Tasks 页只负责选择与配置，
+  不再重复运行控制。当前不可执行的首页操作显示禁用态，动态下一步提示继续作为首页说明、悬浮提示和
   辅助功能 HelpText。任务参数仍保持自动保存；现有协议仍为停止/取消本次 Run，不声明暂停后恢复能力。
 - 开始任务只要求 Child Session 已连接、Worker Ready、Snapshot fresh 且任务配置有效；子桌面显示或隐藏均可开始，不再将隐藏预览作为 Run 前置条件。
 - 全局 GUI、后台任务和进程异常记录；预期的启动/RDP/Win32/COM 失败不会直接使 GUI 崩溃。
@@ -75,6 +75,38 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - Worker 使用专用的 Task Scheduler 强化启动路径：`RunEx` 后等待新的 Worker PID 并验证 Child Session，记录 Task State 与 `LastTaskResult`，再清理临时任务；进程验证成功后 PID 写回 Admission。若进程未生成则 10 秒内失败并清理 Pending Admission；若 admission + fresh Snapshot 在 60 秒内未完成且 Worker PID 缺失或进程已退出，则自动回滚 `worker.json` 与 launch manifest，避免下一次准备环境被陈旧记录阻塞。
 
 ## 本轮自动验证
+
+- 2026-08-27：Dashboard 操作区收敛。顶部「操作」列的三个独立按钮（准备运行环境 / 开始任务 / 停止任务）合并为单一
+  上下文主按钮 `HomePrimaryActionButton`：未准备环境 → 准备运行环境（Secondary），环境 Ready 且无 active Run →
+  开始任务（Primary），Run Running → 停止任务（Destructive），Starting/Stopping/busy/exit → 保持当前阶段文字
+  但 Disabled。模式由 `DerivePrimaryAction()` 从 `ChildSessionSnapshot` / `WorkerCoordinatorSnapshot` /
+  `RunState` / busy/exit 推导，不新增状态机，不通过 UI 文本反向判断；dispatcher 调用既有
+  `PrepareEnvironmentButton_Click` / `StartRunButton_Click` / `StopRunButton_Click`。预览底部的「打开完整桌面」与
+  「隐藏桌面」合并为单一 `HomeDesktopVisibilityButton`（ConnectedVisible → 隐藏，ConnectedHidden → 打开，
+  无 Session → Collapsed），与 `HomeTerminateSessionButton` 水平居中排列为最多两个按钮。删除「仅启动游戏」快捷入口
+  及只服务它的 `LaunchGameButton_Click` / `LaunchSingleAsync`；Prepare Environment 中的游戏启动逻辑不受影响。
+  NarutoAutoGUI Release `win-x64` build 与 whitespace `--verify-no-changes` 通过，0 警告、0 错误，120 列审计无新增
+  违规；build-output `--self-test` 因本机 Application Control policy `0x800711C7` 阻止载入
+  `NarutoAutoGUI.ProjectModel.dll` 未能完成（与既有记录相同的环境限制，非代码回归）。未修改 Worker、IPC、ProjectModel、
+  Preview 协议或 Child Session/RDP baseline；Primary Action 三种模式、Desktop toggle 两种模式、Terminate 确认、
+  Session 不存在时按钮 Collapse 及跨页 Preview 轮询仍需人工回归。
+
+- 2026-08-27：MainWindow 信息架构收缩。删除独立「日志」和「桌面分身」导航页面与对应导航项，主导航收缩为首页、
+  任务、设置三页。桌面分身的显示 / 隐藏 / 结束操作迁移到首页游戏画面预览底部（复用既有
+  `ShowSessionButton_Click` / `HideSessionButton_Click` / `TerminateSessionButton_Click` handler
+  与确认 MessageBox），「准备运行环境」继续作为创建 / 恢复 Child Session 的主流程，不新增重复入口。
+  「查看全部日志」按钮删除；首页「运行动态」继续作为普通用户唯一 GUI 日志视图，首页顶部「打开日志目录」保留，
+  AppLogger、文件日志、Worker LogReceived、LogLines、MaaNOP focus 过滤和 Home auto-follow 均未改。
+  清理 `MainSection` 枚举、`UpdateSessionPresentation`、`GetStateText` / `GetStateDetail`、
+  `_logScrollViewer`、`ViewLogsButton_Click`、`CreateSessionButton_Click` 及 page-only
+  `StatusBadgeStyle`；保留 `GetStateBadgeText` / `GetBottomSessionText` / `GetSessionStatusBrushKey`
+  服务全局底栏。Preview 生命周期不受影响：`TryGetPreviewTarget` 仍以 `HomeView.Visibility` 为门槛。
+  `MainWindow.xaml` / `MainWindow.xaml.cs` / `DesignSystem.xaml` XML 解析、Release build 与 whitespace
+  `--verify-no-changes` 通过，0 警告、0 错误，120 列审计无新增违规；build-output `--self-test` 因本机
+  Application Control policy `0x800711C7` 阻止载入 `NarutoAutoGUI.ProjectModel.dll` 未能完成（与
+  2026-08-25/26 记录相同的环境限制，非代码回归）。未修改 Worker、IPC、ProjectModel、Preview 协议
+  或 Child Session/RDP baseline；真实 Session 状态切换下的按钮 visibility/enabled、Show / Hide /
+  Terminate 交互和跨页 Preview 轮控行为仍需人工回归。
 
 - 2026-08-27：移除 Tasks 页 option editor 中显式值非默认时出现的“恢复项目默认”按钮及其
   `FollowProjectDefaultButton_Click` 与 `OptionDefaultTag`。`ProjectPlanModule.FollowProjectDefault`
@@ -232,7 +264,7 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 以下项目需要管理员权限、可见桌面或真实外部程序，自动验证不能替代手动回归。Child Session 真实桌面交互式回归已完成；游戏/MaaNOP 跨 Session 启动、异常断开后重建连接、创建/启动过程中并发退出等外部程序或故障场景仍需按后续目标单独记录。
 
-2026-08-20 五页面 Fluent UI 的部分真实 Windows 桌面人工回归仍待补齐：默认与最小窗口尺寸下的五页导航、键盘 Tab/访问键、页面独立滚动、日志暂停/恢复跟随和状态驱动按钮切换。100%、150%、200% 缩放下的布局与文字可读性已由用户实机检查，未观察到明显裁切、重叠或可读性问题；结合真实 Child Session 的 RDP 显示/隐藏/结束流程已在 2026-08-22 完成回归。
+2026-08-20 五页面（已收缩为首页 / 任务 / 设置三页）Fluent UI 的部分真实 Windows 桌面人工回归仍待补齐：默认与最小窗口尺寸下的三页导航、键盘 Tab/访问键、页面独立滚动、日志暂停/恢复跟随和状态驱动按钮切换（含首页 Show / Hide / Terminate Session 按钮的 visibility/enabled）。100%、150%、200% 缩放下的布局与文字可读性已由用户实机检查，未观察到明显裁切、重叠或可读性问题；结合真实 Child Session 的 RDP 显示/隐藏/结束流程已在 2026-08-22 完成回归。
 
 ## 本轮交互式回归
 

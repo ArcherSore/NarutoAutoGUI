@@ -42,10 +42,18 @@ public partial class MainWindow : FluentWindow
     {
         Home,
         Tasks,
-        DesktopSession,
-        Logs,
         Settings
     }
+
+    private enum PrimaryActionMode
+    {
+        Prepare,
+        Start,
+        Stop,
+        Transition
+    }
+
+    private sealed record PrimaryActionState(PrimaryActionMode Mode, bool CanExecute);
     private readonly AppLogger _logger;
     private readonly AppSettingsStore _settingsStore;
     private readonly AppSettings _settings;
@@ -59,7 +67,6 @@ public partial class MainWindow : FluentWindow
     private ProjectPlanModule? _projectPlan;
     private RunStartAttempt? _pendingStartAttempt;
     private ScrollViewer? _homeLogScrollViewer;
-    private ScrollViewer? _logScrollViewer;
     private CancellationTokenSource? _previewPollingCancellation;
     private Task? _previewPollingTask;
     private Guid? _previewWorkerInstanceId;
@@ -103,7 +110,6 @@ public partial class MainWindow : FluentWindow
         HomeLogListBox.AddHandler(
             ScrollViewer.ScrollChangedEvent,
             new ScrollChangedEventHandler(LogListBox_ScrollChanged));
-        LogListBox.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler(LogListBox_ScrollChanged));
         _sessionManager.StateChanged += OnSessionStateChanged;
         _workerCoordinator.StateChanged += OnWorkerStateChanged;
         _workerCoordinator.LogReceived += OnWorkerLogReceived;
@@ -113,7 +119,6 @@ public partial class MainWindow : FluentWindow
         IsVisibleChanged += MainWindow_IsVisibleChanged;
         StateChanged += MainWindow_StateChanged;
         SwitchSection(MainSection.Home);
-        UpdateSessionPresentation(_sessionSnapshot);
         UpdateWorkerPresentation(_workerSnapshot);
         UpdateCommandAvailability();
     }
@@ -134,7 +139,6 @@ public partial class MainWindow : FluentWindow
     {
         Loaded -= MainWindow_Loaded;
         _homeLogScrollViewer = FindVisualChild<ScrollViewer>(HomeLogListBox);
-        _logScrollViewer = FindVisualChild<ScrollViewer>(LogListBox);
         TryLoadProject(showError: !string.IsNullOrWhiteSpace(MaaNopProjectDirectoryTextBox.Text));
         var existingId = _sessionManager.DetectExistingSession();
         if (existingId is null) {
@@ -177,9 +181,6 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void ViewLogsButton_Click(object sender, RoutedEventArgs e) =>
-        SwitchSection(MainSection.Logs);
-
     private void SwitchSection(MainSection section)
     {
         HomeView.Visibility = section == MainSection.Home
@@ -188,28 +189,15 @@ public partial class MainWindow : FluentWindow
         TasksView.Visibility = section == MainSection.Tasks
             ? Visibility.Visible
             : Visibility.Collapsed;
-        DesktopSessionView.Visibility = section == MainSection.DesktopSession
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        LogsView.Visibility = section == MainSection.Logs
-            ? Visibility.Visible
-            : Visibility.Collapsed;
         SettingsView.Visibility = section == MainSection.Settings
             ? Visibility.Visible
             : Visibility.Collapsed;
 
         HomeNavigationItem.IsActive = section == MainSection.Home;
         TasksNavigationItem.IsActive = section == MainSection.Tasks;
-        DesktopSessionNavigationItem.IsActive = section == MainSection.DesktopSession;
-        LogsNavigationItem.IsActive = section == MainSection.Logs;
         SettingsNavigationItem.IsActive = section == MainSection.Settings;
         UpdatePreviewPolling();
     }
-
-    private async void CreateSessionButton_Click(object sender, RoutedEventArgs e) =>
-        await RunOperationAsync(
-            "正在创建或恢复桌面分身...",
-            async () => await _sessionManager.EnsureConnectedAsync(showPreview: true));
 
     private async void ShowSessionButton_Click(object sender, RoutedEventArgs e) =>
         await RunOperationAsync(
@@ -270,9 +258,6 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private async void LaunchGameButton_Click(object sender, RoutedEventArgs e) =>
-        await LaunchSingleAsync("游戏", GamePathTextBox.Text, GameArgumentsTextBox.Text);
-
     private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
         => TryOpenLogsDirectory(showError: true);
 
@@ -298,6 +283,34 @@ public partial class MainWindow : FluentWindow
             }
 
             return false;
+        }
+    }
+
+    private void HomePrimaryActionButton_Click(object sender, RoutedEventArgs e)
+    {
+        var primary = DerivePrimaryAction();
+        if (!primary.CanExecute) {
+            return;
+        }
+        switch (primary.Mode) {
+            case PrimaryActionMode.Stop:
+                StopRunButton_Click(sender, e);
+                break;
+            case PrimaryActionMode.Start:
+                StartRunButton_Click(sender, e);
+                break;
+            default:
+                PrepareEnvironmentButton_Click(sender, e);
+                break;
+        }
+    }
+
+    private void HomeDesktopVisibilityButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_sessionSnapshot.State == ChildSessionState.ConnectedVisible) {
+            HideSessionButton_Click(sender, e);
+        } else if (_sessionSnapshot.State == ChildSessionState.ConnectedHidden) {
+            ShowSessionButton_Click(sender, e);
         }
     }
 
@@ -648,18 +661,6 @@ public partial class MainWindow : FluentWindow
         foreach (var child in option.ActiveChildren.SelectMany(Flatten)) {
             yield return child;
         }
-    }
-
-    private async Task LaunchSingleAsync(string displayName, string path, string arguments = "")
-    {
-        await RunOperationAsync(
-            $"正在启动{displayName}...",
-            async () =>
-            {
-                SaveSettings();
-                var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
-                await _programService.LaunchIfNeededAsync(sessionId, path, arguments);
-            });
     }
 
     private async Task RunOperationAsync(string status, Func<Task> operation)
@@ -1138,12 +1139,8 @@ public partial class MainWindow : FluentWindow
 
     private void LogListBox_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
-        if (e.OriginalSource is ScrollViewer scrollViewer) {
-            if (ReferenceEquals(sender, HomeLogListBox)) {
-                _homeLogScrollViewer = scrollViewer;
-            } else {
-                _logScrollViewer = scrollViewer;
-            }
+        if (e.OriginalSource is ScrollViewer scrollViewer && ReferenceEquals(sender, HomeLogListBox)) {
+            _homeLogScrollViewer = scrollViewer;
         }
 
         if (e.VerticalChange < 0) {
@@ -1172,13 +1169,8 @@ public partial class MainWindow : FluentWindow
 
     private bool IsLogNearBottom()
     {
-        if (HomeView.Visibility == Visibility.Visible) {
-            _homeLogScrollViewer ??= FindVisualChild<ScrollViewer>(HomeLogListBox);
-            return IsScrollViewerNearBottom(_homeLogScrollViewer);
-        }
-
-        _logScrollViewer ??= FindVisualChild<ScrollViewer>(LogListBox);
-        return IsScrollViewerNearBottom(_logScrollViewer);
+        _homeLogScrollViewer ??= FindVisualChild<ScrollViewer>(HomeLogListBox);
+        return IsScrollViewerNearBottom(_homeLogScrollViewer);
     }
 
     private static bool IsScrollViewerNearBottom(ScrollViewer? scrollViewer) =>
@@ -1188,7 +1180,6 @@ public partial class MainWindow : FluentWindow
     {
         if (LogLines.LastOrDefault() is LogEntry lastLine) {
             HomeLogListBox.ScrollIntoView(lastLine);
-            LogListBox.ScrollIntoView(lastLine);
         }
     }
 
@@ -1201,10 +1192,7 @@ public partial class MainWindow : FluentWindow
         var automationName = $"{_newLogCount} 条新日志，继续跟随";
         HomeResumeLogFollowButton.Visibility = visibility;
         HomeResumeLogFollowButton.Content = content;
-        ResumeLogFollowButton.Visibility = visibility;
-        ResumeLogFollowButton.Content = content;
         System.Windows.Automation.AutomationProperties.SetName(HomeResumeLogFollowButton, automationName);
-        System.Windows.Automation.AutomationProperties.SetName(ResumeLogFollowButton, automationName);
     }
 
     private void OnSessionStateChanged(object? sender, ChildSessionSnapshot snapshot)
@@ -1215,35 +1203,7 @@ public partial class MainWindow : FluentWindow
         }
 
         _sessionSnapshot = snapshot;
-        UpdateSessionPresentation(snapshot);
         UpdateCommandAvailability();
-    }
-
-    private void UpdateSessionPresentation(ChildSessionSnapshot snapshot)
-    {
-        SessionStatusText.Text = GetStateText(snapshot.State);
-        SessionDetailText.Text = GetStateDetail(snapshot.State);
-        SessionIdText.Text = snapshot.ChildSessionId is uint id
-            ? $"Session {id}  ·  RDP {snapshot.RdpConnectedState}"
-            : $"Session —  ·  RDP {snapshot.RdpConnectedState}";
-        SessionStatusBadgeText.Text = GetStateBadgeText(snapshot.State);
-
-        var (surfaceKey, borderKey, foregroundKey, indicatorKey) = snapshot.State switch {
-            ChildSessionState.ConnectedVisible => (
-                "Brush.Success.Surface", "Brush.Success.Border", "Brush.Success.Foreground", "Brush.Success"),
-            ChildSessionState.Disconnecting => (
-                "Brush.Warning.Surface", "Brush.Warning.Border", "Brush.Warning.Foreground", "Brush.Warning"),
-            ChildSessionState.Faulted => (
-                "Brush.Error.Surface", "Brush.Error.Border", "Brush.Error.Foreground", "Brush.Error"),
-            ChildSessionState.NotRunning => (
-                "Brush.Surface.Disabled", "Brush.Border", "Brush.Text.Secondary", "Brush.Text.Muted"),
-            _ => ("Brush.Info.Surface", "Brush.Primary.Border", "Brush.Info.Foreground", "Brush.Primary")
-        };
-
-        SessionStatusBadge.Background = (WpfBrush)FindResource(surfaceKey);
-        SessionStatusBadge.BorderBrush = (WpfBrush)FindResource(borderKey);
-        SessionStatusBadgeText.Foreground = (WpfBrush)FindResource(foregroundKey);
-        SessionStatusIndicator.Fill = (WpfBrush)FindResource(indicatorKey);
     }
 
     private void SetBusy(bool busy, string status)
@@ -1255,30 +1215,56 @@ public partial class MainWindow : FluentWindow
         UpdateCommandAvailability();
     }
 
+    private PrimaryActionState DerivePrimaryAction()
+    {
+        var state = _sessionSnapshot.State;
+        var canStartCommand = !_busy && !_exitInProgress
+            && state is not ChildSessionState.Connecting && state is not ChildSessionState.Disconnecting;
+        var projectReady = _projectPlan is not null;
+        var worker = _workerSnapshot.WorkerSnapshot;
+        var workerIdleFresh = _workerSnapshot.Observation == WorkerObservation.Connected && _workerSnapshot.SnapshotFresh
+            && worker is not null && worker.ActiveRun is null && worker.RunState == RunState.Idle;
+        var selectedTaskValid = _projectPlan?.SelectedTaskName is not null && _projectConfigurationValid;
+        var environmentReady = workerIdleFresh && worker!.WorkerState == WorkerState.Ready && projectReady
+            && selectedTaskValid && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
+        var active = worker?.ActiveRun;
+        var hasActiveRun = active is not null;
+        var runningRun = active?.State == RunState.Running && active.Items.Count == 1
+            && active.Items[0].State == PlanItemState.Running;
+        var readyToStart = !hasActiveRun && environmentReady
+            && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
+
+        if (runningRun) {
+            var canStop = canStartCommand && _workerSnapshot.Observation == WorkerObservation.Connected
+                && _workerSnapshot.SnapshotFresh;
+            return new PrimaryActionState(PrimaryActionMode.Stop, canStop);
+        }
+        if (hasActiveRun) {
+            return new PrimaryActionState(PrimaryActionMode.Transition, false);
+        }
+        if (readyToStart) {
+            return new PrimaryActionState(PrimaryActionMode.Start, canStartCommand);
+        }
+        var canPrepare = canStartCommand && projectReady && !environmentReady;
+        return new PrimaryActionState(PrimaryActionMode.Prepare, canPrepare);
+    }
+
     private void UpdateCommandAvailability()
     {
         var state = _sessionSnapshot.State;
         var canStartCommand = !_busy && !_exitInProgress
             && state is not ChildSessionState.Connecting && state is not ChildSessionState.Disconnecting;
 
-        CreateSessionButton.IsEnabled = canStartCommand
-            && state is ChildSessionState.NotRunning or ChildSessionState.Existing or ChildSessionState.Faulted;
-        ShowSessionButton.IsEnabled = canStartCommand && state == ChildSessionState.ConnectedHidden;
-        HideSessionButton.IsEnabled = canStartCommand && state == ChildSessionState.ConnectedVisible;
-        HomeOpenDesktopButton.IsEnabled = canStartCommand
-            && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
-        TerminateSessionButton.IsEnabled = canStartCommand && _sessionSnapshot.ChildSessionId is not null;
-        CreateSessionButton.Visibility = state is ChildSessionState.NotRunning
-            or ChildSessionState.Existing or ChildSessionState.Faulted
-                ? Visibility.Visible
-                : Visibility.Collapsed;
-        ShowSessionButton.Visibility = state == ChildSessionState.ConnectedHidden
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        HideSessionButton.Visibility = state == ChildSessionState.ConnectedVisible
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        TerminateSessionButton.Visibility = _sessionSnapshot.ChildSessionId is not null
+        var sessionConnected = state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
+        HomeDesktopVisibilityButton.Visibility = sessionConnected ? Visibility.Visible : Visibility.Collapsed;
+        if (sessionConnected) {
+            HomeDesktopVisibilityButton.Content = state == ChildSessionState.ConnectedVisible
+                ? "隐藏桌面(_H)"
+                : "打开完整桌面(_S)";
+            HomeDesktopVisibilityButton.IsEnabled = canStartCommand;
+        }
+        HomeTerminateSessionButton.IsEnabled = canStartCommand && _sessionSnapshot.ChildSessionId is not null;
+        HomeTerminateSessionButton.Visibility = _sessionSnapshot.ChildSessionId is not null
             ? Visibility.Visible
             : Visibility.Collapsed;
 
@@ -1289,32 +1275,28 @@ public partial class MainWindow : FluentWindow
         var canEditProject = canStartCommand
             && (_workerSnapshot.Observation is WorkerObservation.WorkerNotStarted or WorkerObservation.ChildSessionEnded
                 || workerIdleFresh);
-
-        // Game launch remains available without a Session because it uses the frozen
-        // EnsureConnectedAsync + Task Scheduler flow.
-        LaunchGameButton.IsEnabled = canStartCommand;
         MaaNopProjectDirectoryTextBox.IsEnabled = canEditProject;
         BrowseMaaNopProjectButton.IsEnabled = canEditProject;
         TaskListBox.IsEnabled = canEditProject && projectReady;
         OptionEditorPanel.IsEnabled = canEditProject && projectReady;
 
-        var selectedTaskValid = _projectPlan?.SelectedTaskName is not null && _projectConfigurationValid;
-        StartRunButton.IsEnabled = canStartCommand
-            && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden)
-            && workerIdleFresh && worker!.WorkerState == WorkerState.Ready && projectReady
-            && selectedTaskValid && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
-        var active = worker?.ActiveRun;
-        StopRunButton.IsEnabled = canStartCommand && _workerSnapshot.Observation == WorkerObservation.Connected
-            && _workerSnapshot.SnapshotFresh && active?.State == RunState.Running
-            && active.Items.Count == 1 && active.Items[0].State == PlanItemState.Running;
+        var primary = DerivePrimaryAction();
+        HomePrimaryActionButton.Content = primary.Mode switch {
+            PrimaryActionMode.Start => "开始任务(_U)",
+            PrimaryActionMode.Stop => "停止任务(_X)",
+            _ => "准备运行环境(_O)"
+        };
+        HomePrimaryActionButton.Style = (Style)FindResource(primary.Mode switch {
+            PrimaryActionMode.Start => "PrimaryButtonStyle",
+            PrimaryActionMode.Stop => "DestructiveButtonStyle",
+            _ => "SecondaryButtonStyle"
+        });
+        HomePrimaryActionButton.IsEnabled = primary.CanExecute;
 
-        var environmentReady = workerIdleFresh && worker!.WorkerState == WorkerState.Ready && projectReady
-            && selectedTaskValid && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
+        var active = worker?.ActiveRun;
         var hasActiveRun = active is not null;
-        var runningRun = active?.State == RunState.Running;
-        var readyToStart = !hasActiveRun && environmentReady
-            && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
-        PrepareEnvironmentButton.IsEnabled = canStartCommand && projectReady && !hasActiveRun && !environmentReady;
+        var runningRun = primary.Mode == PrimaryActionMode.Stop;
+        var readyToStart = primary.Mode == PrimaryActionMode.Start;
 
         HomeNextStepText.Text = _busy
             ? "当前操作正在进行，请稍候。"
@@ -1479,28 +1461,6 @@ public partial class MainWindow : FluentWindow
         ChildSessionState.Disconnecting => "Brush.Warning",
         ChildSessionState.Faulted => "Brush.Error",
         _ => "Brush.Text.Muted"
-    };
-
-    private static string GetStateText(ChildSessionState state) => state switch {
-        ChildSessionState.NotRunning => "桌面分身未运行",
-        ChildSessionState.Existing => "检测到已有桌面分身",
-        ChildSessionState.Connecting => "正在连接桌面分身…",
-        ChildSessionState.ConnectedVisible => "已连接 · 子桌面可见",
-        ChildSessionState.ConnectedHidden => "已连接 · 子桌面已隐藏",
-        ChildSessionState.Disconnecting => "正在结束桌面分身…",
-        ChildSessionState.Faulted => "桌面分身连接失败",
-        _ => state.ToString()
-    };
-
-    private static string GetStateDetail(ChildSessionState state) => state switch {
-        ChildSessionState.NotRunning => "创建或一键启动时将自动建立桌面分身。",
-        ChildSessionState.Existing => "可以恢复已有桌面分身的连接。",
-        ChildSessionState.Connecting => "正在建立 RDP 连接，请稍候。",
-        ChildSessionState.ConnectedVisible => "子桌面窗口可见，连接保持活动。",
-        ChildSessionState.ConnectedHidden => "窗口已隐藏，子桌面中的程序仍在运行。",
-        ChildSessionState.Disconnecting => "正在注销 Session 并清理连接。",
-        ChildSessionState.Faulted => "请检查管理员权限和系统状态后重试；详细信息已写入日志。",
-        _ => string.Empty
     };
 
     private static string GetStateBadgeText(ChildSessionState state) => state switch {

@@ -387,16 +387,6 @@
         <Setter Property="Margin" Value="0,0,0,12" />
     </Style>
 
-    <Style x:Key="StatusBadgeStyle" TargetType="{x:Type Border}">
-        <Setter Property="MinHeight" Value="24" />
-        <Setter Property="Background" Value="{StaticResource Brush.Info.Surface}" />
-        <Setter Property="BorderBrush" Value="{StaticResource Brush.Primary.Border}" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="{StaticResource Radius.Pill}" />
-        <Setter Property="Padding" Value="8,2" />
-        <Setter Property="HorizontalAlignment" Value="Right" />
-    </Style>
-
     <!-- Settings and property editors -->
     <Style x:Key="SettingsSectionPanelStyle" TargetType="{x:Type Border}">
         <Setter Property="Background" Value="{StaticResource Brush.Surface}" />

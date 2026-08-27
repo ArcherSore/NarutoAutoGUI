@@ -52,16 +52,6 @@
                                        Icon="{ui:SymbolIcon ClipboardTask24}"
                                        Tag="Tasks"
                                        Click="NavigationItem_Click" />
-                <ui:NavigationViewItem x:Name="DesktopSessionNavigationItem"
-                                       Content="桌面分身"
-                                       Icon="{ui:SymbolIcon Desktop24}"
-                                       Tag="DesktopSession"
-                                       Click="NavigationItem_Click" />
-                <ui:NavigationViewItem x:Name="LogsNavigationItem"
-                                       Content="日志"
-                                       Icon="{ui:SymbolIcon DocumentBulletList24}"
-                                       Tag="Logs"
-                                       Click="NavigationItem_Click" />
             </ui:NavigationView.MenuItems>
             <ui:NavigationView.FooterMenuItems>
                 <ui:NavigationViewItem x:Name="SettingsNavigationItem"
@@ -73,7 +63,7 @@
 
             <ui:NavigationView.ContentOverlay>
                 <Grid Background="{StaticResource Brush.Canvas}">
-                    <!-- All five views intentionally remain in this single XAML namescope. -->
+                    <!-- Home, Tasks and Settings intentionally remain in this single XAML namescope. -->
                     <ScrollViewer x:Name="HomeView"
                                   HorizontalContentAlignment="Stretch"
                                   HorizontalScrollBarVisibility="Disabled"
@@ -175,32 +165,12 @@
 
                                     <StackPanel Grid.Column="6" Margin="16,0,0,0">
                                         <TextBlock Text="操作" Style="{StaticResource SectionTitleTextStyle}" />
-                                        <Button x:Name="PrepareEnvironmentButton"
+                                        <Button x:Name="HomePrimaryActionButton"
                                                 Margin="0,8,0,0"
                                                 Content="准备运行环境(_O)"
                                                 Style="{StaticResource SecondaryButtonStyle}"
                                                 ToolTip="{Binding Text, ElementName=HomeNextStepText}"
-                                                Click="PrepareEnvironmentButton_Click">
-                                            <AutomationProperties.HelpText>
-                                                <Binding Path="Text" ElementName="HomeNextStepText" />
-                                            </AutomationProperties.HelpText>
-                                        </Button>
-                                        <Button x:Name="StartRunButton"
-                                                Margin="0,8,0,0"
-                                                Content="开始任务(_U)"
-                                                Style="{StaticResource PrimaryButtonStyle}"
-                                                ToolTip="{Binding Text, ElementName=HomeNextStepText}"
-                                                Click="StartRunButton_Click">
-                                            <AutomationProperties.HelpText>
-                                                <Binding Path="Text" ElementName="HomeNextStepText" />
-                                            </AutomationProperties.HelpText>
-                                        </Button>
-                                        <Button x:Name="StopRunButton"
-                                                Margin="0,8,0,0"
-                                                Content="停止任务(_X)"
-                                                Style="{StaticResource DestructiveButtonStyle}"
-                                                ToolTip="{Binding Text, ElementName=HomeNextStepText}"
-                                                Click="StopRunButton_Click">
+                                                Click="HomePrimaryActionButton_Click">
                                             <AutomationProperties.HelpText>
                                                 <Binding Path="Text" ElementName="HomeNextStepText" />
                                             </AutomationProperties.HelpText>
@@ -258,18 +228,25 @@
                                                 </Grid>
                                             </Border>
                                         </Viewbox>
-                                        <WrapPanel Grid.Row="4" HorizontalAlignment="Center">
-                                            <Button x:Name="HomeOpenDesktopButton"
-                                                    Margin="0,0,8,0"
+                                        <Grid Grid.Row="4" HorizontalAlignment="Center">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="16" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button x:Name="HomeDesktopVisibilityButton"
                                                     Content="打开完整桌面(_S)"
                                                     Style="{StaticResource SecondaryButtonStyle}"
-                                                    Click="ShowSessionButton_Click"
-                                                    AutomationProperties.HelpText="显示独立的完整子桌面窗口" />
-                                            <Button x:Name="LaunchGameButton"
-                                                    Content="仅启动游戏(_G)"
-                                                    Style="{StaticResource SubtleButtonStyle}"
-                                                    Click="LaunchGameButton_Click" />
-                                        </WrapPanel>
+                                                    Visibility="Collapsed"
+                                                    Click="HomeDesktopVisibilityButton_Click" />
+                                            <Button x:Name="HomeTerminateSessionButton"
+                                                    Grid.Column="2"
+                                                    Content="结束桌面分身(_E)"
+                                                    Style="{StaticResource DestructiveButtonStyle}"
+                                                    Visibility="Collapsed"
+                                                    Click="TerminateSessionButton_Click"
+                                                    AutomationProperties.HelpText="注销桌面分身并结束其中运行的程序" />
+                                        </Grid>
                                     </Grid>
                                 </Border>
 
@@ -420,11 +397,6 @@
                                                     AutomationProperties.LiveSetting="Polite"
                                                     Click="ResumeLogFollowButton_Click" />
                                         </Grid>
-                                        <Button Grid.Row="4"
-                                                HorizontalAlignment="Right"
-                                                Content="查看全部日志"
-                                                Style="{StaticResource SubtleButtonStyle}"
-                                                Click="ViewLogsButton_Click" />
                                     </Grid>
                                 </Border>
                             </Grid>
@@ -569,249 +541,6 @@
                                 </Grid>
                             </Grid>
 
-                    </Grid>
-
-                    <ScrollViewer x:Name="DesktopSessionView"
-                                  Visibility="Collapsed"
-                                  HorizontalContentAlignment="Stretch"
-                                  HorizontalScrollBarVisibility="Disabled"
-                                  VerticalScrollBarVisibility="Auto">
-                        <Grid Margin="24">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-
-                            <StackPanel Grid.Row="0">
-                                <TextBlock Text="桌面分身" Style="{StaticResource WindowTitleTextStyle}" />
-                                <TextBlock Margin="0,4,0,0"
-                                           Text="管理用于运行游戏和自动化任务的独立 Windows Session"
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                            </StackPanel>
-
-                            <Border Grid.Row="1" Margin="0,20,0,0" Style="{StaticResource StatusPanelStyle}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="3" />
-                                        <ColumnDefinition Width="16" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="24" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <Border Grid.Column="0"
-                                            Background="{StaticResource Brush.BrandAccent}"
-                                            CornerRadius="2" />
-
-                                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                        <TextBlock x:Name="SessionStatusText"
-                                                   Text="正在检测桌面分身…"
-                                                   Style="{StaticResource StatusPrimaryTextStyle}"
-                                                   AutomationProperties.Name="桌面分身状态"
-                                                   AutomationProperties.LiveSetting="Polite" />
-                                        <TextBlock x:Name="SessionDetailText"
-                                                   Margin="0,6,0,0"
-                                                   Text="正在检查是否存在可恢复的桌面分身。"
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                        <TextBlock x:Name="SessionIdText"
-                                                   Margin="0,6,0,0"
-                                                   Text="Session —  ·  RDP —"
-                                                   Style="{StaticResource MonospaceMetaTextStyle}" />
-                                    </StackPanel>
-
-                                    <StackPanel Grid.Column="4" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                        <Border x:Name="SessionStatusBadge" Style="{StaticResource StatusBadgeStyle}">
-                                            <StackPanel Orientation="Horizontal">
-                                                <Ellipse x:Name="SessionStatusIndicator"
-                                                         Width="6"
-                                                         Height="6"
-                                                         Margin="0,0,6,0"
-                                                         VerticalAlignment="Center"
-                                                         Fill="{StaticResource Brush.Info.Foreground}" />
-                                                <TextBlock x:Name="SessionStatusBadgeText"
-                                                           Text="检测中"
-                                                           Foreground="{StaticResource Brush.Info.Foreground}"
-                                                           FontSize="{StaticResource FontSize.Label}"
-                                                           FontWeight="SemiBold"
-                                                           VerticalAlignment="Center" />
-                                            </StackPanel>
-                                        </Border>
-                                        <TextBlock Margin="0,10,0,0"
-                                                   HorizontalAlignment="Right"
-                                                   Text="1920 × 1080  ·  100%"
-                                                   Style="{StaticResource MonospaceMetaTextStyle}" />
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-
-                            <WrapPanel Grid.Row="2" Margin="0,12,0,24">
-                                <Button x:Name="CreateSessionButton"
-                                        Margin="0,0,8,8"
-                                        Content="创建 / 恢复(_C)"
-                                        Style="{StaticResource PrimaryButtonStyle}"
-                                        Click="CreateSessionButton_Click"
-                                        AutomationProperties.HelpText="创建新的桌面分身，或恢复已有桌面分身的连接" />
-                                <Button x:Name="ShowSessionButton"
-                                        Margin="0,0,8,8"
-                                        Content="显示子桌面(_S)"
-                                        Style="{StaticResource PrimaryButtonStyle}"
-                                        Visibility="Collapsed"
-                                        Click="ShowSessionButton_Click"
-                                        AutomationProperties.HelpText="显示已连接但当前隐藏的子桌面" />
-                                <Button x:Name="HideSessionButton"
-                                        Margin="0,0,8,8"
-                                        Content="隐藏子桌面(_H)"
-                                        Style="{StaticResource PrimaryButtonStyle}"
-                                        Visibility="Collapsed"
-                                        Click="HideSessionButton_Click"
-                                        AutomationProperties.HelpText="隐藏子桌面窗口，同时保持连接和其中的程序运行" />
-                                <Button x:Name="TerminateSessionButton"
-                                        Margin="16,0,0,8"
-                                        Content="结束桌面分身(_E)"
-                                        Style="{StaticResource DestructiveButtonStyle}"
-                                        Visibility="Collapsed"
-                                        Click="TerminateSessionButton_Click"
-                                        AutomationProperties.HelpText="注销桌面分身并结束其中运行的程序" />
-                            </WrapPanel>
-                        </Grid>
-                    </ScrollViewer>
-
-                    <Grid x:Name="LogsView" Margin="24" Visibility="Collapsed">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="16" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
-
-                        <Grid Grid.Row="0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="运行日志" Style="{StaticResource WindowTitleTextStyle}" />
-                                    <TextBlock Margin="10,4,0,0"
-                                               Text="MaaNOP"
-                                               Style="{StaticResource MonospaceMetaTextStyle}" />
-                                </StackPanel>
-                                <TextBlock Margin="0,4,0,0"
-                                           Text="显示最近 1000 条 MaaNOP 任务日志；诊断信息请查看日志文件"
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                            </StackPanel>
-                            <Button Grid.Column="1"
-                                    Margin="16,0,0,0"
-                                    VerticalAlignment="Center"
-                                    Content="打开日志目录(_L)"
-                                    Style="{StaticResource SubtleButtonStyle}"
-                                    Click="OpenLogsButton_Click" />
-                        </Grid>
-
-                        <Grid Grid.Row="2">
-                            <ListBox x:Name="LogListBox"
-                                     ItemsSource="{Binding LogLines}"
-                                     Style="{StaticResource LogListBoxStyle}"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                     AutomationProperties.Name="运行日志"
-                                     AutomationProperties.HelpText="显示最近一千条 MaaNOP focus 任务日志">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border MinHeight="22" Padding="4,2">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="2" />
-                                                    <ColumnDefinition Width="8" />
-                                                    <ColumnDefinition Width="88" />
-                                                    <ColumnDefinition Width="56" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <Border x:Name="SeverityMarker"
-                                                        Grid.Column="0"
-                                                        Background="{StaticResource Brush.Transparent}"
-                                                        CornerRadius="1" />
-                                                <TextBlock Grid.Column="2"
-                                                           Text="{Binding Timestamp, StringFormat={}{0:HH:mm:ss.fff}}"
-                                                           Foreground="{StaticResource Brush.Text.Muted}"
-                                                           FontFamily="{StaticResource FontFamily.Monospace}"
-                                                           FontSize="{StaticResource FontSize.Meta}"
-                                                           VerticalAlignment="Center" />
-                                                <TextBlock x:Name="LogLevelText"
-                                                           Grid.Column="3"
-                                                           Text="{Binding DisplayLevel}"
-                                                           Foreground="{StaticResource Brush.Primary}"
-                                                           FontFamily="{StaticResource FontFamily.Monospace}"
-                                                           FontSize="{StaticResource FontSize.Meta}"
-                                                           FontWeight="SemiBold"
-                                                           VerticalAlignment="Center" />
-                                                <TextBlock Grid.Column="4"
-                                                           Text="{Binding Message}"
-                                                           Foreground="{StaticResource Brush.Text.Body}"
-                                                           FontFamily="{StaticResource FontFamily.Monospace}"
-                                                           FontSize="{StaticResource FontSize.Meta}"
-                                                           VerticalAlignment="Center" />
-                                            </Grid>
-                                        </Border>
-                                        <DataTemplate.Triggers>
-                                            <DataTrigger Binding="{Binding DisplayLevel}" Value="WARN">
-                                                <Setter TargetName="SeverityMarker"
-                                                        Property="Background"
-                                                        Value="{StaticResource Brush.Warning}" />
-                                                <Setter TargetName="LogLevelText"
-                                                        Property="Foreground"
-                                                        Value="{StaticResource Brush.Warning.Foreground}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding DisplayLevel}" Value="ERROR">
-                                                <Setter TargetName="SeverityMarker"
-                                                        Property="Background"
-                                                        Value="{StaticResource Brush.Error}" />
-                                                <Setter TargetName="LogLevelText"
-                                                        Property="Foreground"
-                                                        Value="{StaticResource Brush.Error.Foreground}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding DisplayLevel}" Value="CRITICAL">
-                                                <Setter TargetName="SeverityMarker"
-                                                        Property="Background"
-                                                        Value="{StaticResource Brush.Error}" />
-                                                <Setter TargetName="LogLevelText"
-                                                        Property="Foreground"
-                                                        Value="{StaticResource Brush.Error.Foreground}" />
-                                            </DataTrigger>
-                                        </DataTemplate.Triggers>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-
-                            <TextBlock Text="暂无运行日志"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       IsHitTestVisible="False">
-                                <TextBlock.Style>
-                                    <Style TargetType="{x:Type TextBlock}"
-                                           BasedOn="{StaticResource SecondaryTextStyle}">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding HasItems, ElementName=LogListBox}"
-                                                         Value="False">
-                                                <Setter Property="Visibility" Value="Visible" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-
-                            <Button x:Name="ResumeLogFollowButton"
-                                    Margin="0,0,16,16"
-                                    HorizontalAlignment="Right"
-                                    VerticalAlignment="Bottom"
-                                    Panel.ZIndex="2"
-                                    Content="有新日志，继续跟随(_F)"
-                                    Style="{StaticResource NewLogsButtonStyle}"
-                                    Visibility="Collapsed"
-                                    AutomationProperties.LiveSetting="Polite"
-                                    Click="ResumeLogFollowButton_Click" />
-                        </Grid>
                     </Grid>
 
                     <ScrollViewer x:Name="SettingsView"

@@ -18,8 +18,9 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - 2026-08-27：修复 Windows 10 下 RDP ActiveX 初始化失败 `0x80040111 (CLASS_E_CLASSNOTAVAILABLE)`。
   将 `RdpActiveXHost.RdpClientClsid` 从 Win11 专用的 MsRdpClient11 CLSID 修正为 Windows 10 与 Windows 11 全面兼容的标准
   MsRdpClient10 CLSID (`8B918B82-7985-4C24-89DF-C33AD2BBFBCD`)；在 `ChildSessionManager.EnsureConnectedAsync`
-  中为 `0x80040111` 异常增加针对 RDP ActiveX 控件与显卡驱动的明确可行动报错提示；在 `SelfTestRunner` 中新增
-  `VerifyRdpClientClsid` 回归自检，防止 CLSID 被误改。Release build 与 `test-automated.ps1` 全部 PASS。
+  中为 `0x80040111` 异常增加针对 RDP ActiveX 控件与显卡驱动的明确可行动报错提示；将 Worker 进程验证超时放宽至 30 秒以
+  自适应虚拟机冷启动登录延迟；在 `SelfTestRunner` 中新增 `VerifyRdpClientClsid` 回归自检，防止 CLSID 被误改。Release
+  build 与 `test-automated.ps1` 全部 PASS。
 
 
 - 2026-08-27：支持 Agent 可执行文件相对路径解析（如 `./python/python.exe`）。

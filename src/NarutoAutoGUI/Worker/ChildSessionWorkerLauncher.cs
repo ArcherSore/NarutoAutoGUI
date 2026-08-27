@@ -7,7 +7,7 @@ internal sealed record WorkerProcessLaunchResult(uint ProcessId, uint SessionId,
 
 internal sealed class ChildSessionWorkerLauncher
 {
-    private static readonly TimeSpan ProcessVerificationTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ProcessVerificationTimeout = TimeSpan.FromSeconds(30);
     private readonly AppLogger _logger;
 
     internal ChildSessionWorkerLauncher(AppLogger logger)

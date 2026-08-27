@@ -56,7 +56,7 @@ internal static class ChildSessionProcessLauncher
         var workDir = string.IsNullOrWhiteSpace(workingDirectory)
             ? (Path.GetDirectoryName(fullPath) ?? AppContext.BaseDirectory)
             : workingDirectory;
-        var timeout = verificationTimeout ?? TimeSpan.FromSeconds(10);
+        var timeout = verificationTimeout ?? TimeSpan.FromSeconds(30);
         if (timeout <= TimeSpan.Zero) {
             throw new ArgumentOutOfRangeException(nameof(verificationTimeout), "进程启动验证超时必须大于零。");
         }

@@ -22,11 +22,8 @@ public sealed class ProjectPlanModule
 
         var config = configStore.Load();
         ValidateConfigShape(config);
-        SelectedTaskName = config.SelectedTasks.SingleOrDefault();
-        if (SelectedTaskName is not null && !project.Tasks.Any(task => task.Name == SelectedTaskName)) {
-            throw new InvalidDataException(
-                $"MaaNOP Config 选择的 task 不再存在：{SelectedTaskName}。 ");
-        }
+        ValidateSelectedTasks(config);
+        SelectedTaskNames = config.SelectedTasks.ToArray();
     }
 
     public string ProjectDirectory => _project.ProjectRoot;
@@ -35,7 +32,8 @@ public sealed class ProjectPlanModule
     public string RuntimeProfileDigest => _project.RuntimeProfileDigest;
     public string SourceInterfaceDigest => _project.Provenance.SourceInterfaceDigest;
     public IReadOnlyList<ProjectTaskChoice> Tasks { get; }
-    public string? SelectedTaskName { get; private set; }
+    public IReadOnlyList<string> SelectedTaskNames { get; private set; }
+    public string? SelectedTaskName => SelectedTaskNames.Count == 1 ? SelectedTaskNames[0] : null;
 
     public static ProjectPlanModule Open(string projectDirectory, string configPath)
     {
@@ -54,7 +52,62 @@ public sealed class ProjectPlanModule
         };
         _ = ProjectOptionResolver.Resolve(_project, FindTask(taskName), updated);
         _configStore.Save(updated);
-        SelectedTaskName = taskName;
+        SelectedTaskNames = [taskName];
+    }
+
+    public bool AddTask(string taskName)
+    {
+        _ = FindTask(taskName);
+        var config = LoadConfig();
+        if (config.SelectedTasks.Contains(taskName, StringComparer.Ordinal)) {
+            return false;
+        }
+
+        var updated = config with { SelectedTasks = config.SelectedTasks.Append(taskName).ToArray() };
+        ValidateActiveConfiguration(updated);
+        _configStore.Save(updated);
+        SelectedTaskNames = updated.SelectedTasks;
+        return true;
+    }
+
+    public bool RemoveTask(string taskName)
+    {
+        var config = LoadConfig();
+        if (!config.SelectedTasks.Contains(taskName, StringComparer.Ordinal)) {
+            return false;
+        }
+
+        var updated = config with {
+            SelectedTasks = config.SelectedTasks.Where(name => name != taskName).ToArray()
+        };
+        ValidateActiveConfiguration(updated);
+        _configStore.Save(updated);
+        SelectedTaskNames = updated.SelectedTasks;
+        return true;
+    }
+
+    public bool MoveTask(string taskName, int targetIndex)
+    {
+        var config = LoadConfig();
+        var currentIndex = config.SelectedTasks.ToList().IndexOf(taskName);
+        if (currentIndex < 0) {
+            throw new ArgumentException($"执行计划中不存在 task：{taskName}。", nameof(taskName));
+        }
+        if (targetIndex < 0 || targetIndex >= config.SelectedTasks.Count) {
+            throw new ArgumentOutOfRangeException(nameof(targetIndex));
+        }
+        if (currentIndex == targetIndex) {
+            return false;
+        }
+
+        var selected = config.SelectedTasks.ToList();
+        selected.RemoveAt(currentIndex);
+        selected.Insert(targetIndex, taskName);
+        var updated = config with { SelectedTasks = selected };
+        ValidateActiveConfiguration(updated);
+        _configStore.Save(updated);
+        SelectedTaskNames = updated.SelectedTasks;
+        return true;
     }
 
     public ProjectConfigurationView GetConfiguration()
@@ -62,6 +115,17 @@ public sealed class ProjectPlanModule
         var config = LoadConfig();
         ValidateActiveConfiguration(config);
         return BuildConfiguration(config);
+    }
+
+    public ProjectConfigurationView GetConfiguration(string taskName)
+    {
+        _ = FindTask(taskName);
+        var config = LoadConfig();
+        if (!config.SelectedTasks.Contains(taskName, StringComparer.Ordinal)) {
+            throw new InvalidOperationException($"task {taskName} 不在当前执行计划中。 ");
+        }
+        ValidateActiveConfiguration(config);
+        return BuildConfiguration(config, taskName);
     }
 
     public ProjectConfigurationView SetInputValue(string optionName, string inputName, string value)
@@ -127,19 +191,22 @@ public sealed class ProjectPlanModule
     public RunStartAttempt CreateRunStartAttempt()
     {
         var config = LoadConfig();
-        var taskName = config.SelectedTasks.SingleOrDefault()
-                       ?? throw new InvalidOperationException("请先选择一个 MaaNOP task。 ");
-        var task = _project.Tasks.SingleOrDefault(candidate => candidate.Name == taskName)
-                   ?? throw new InvalidDataException($"MaaNOP Config 选择的 task 不再存在：{taskName}。 ");
-        var resolved = ProjectOptionResolver.Resolve(_project, task, config);
+        if (config.SelectedTasks.Count == 0) {
+            throw new InvalidOperationException("请先向执行计划添加 MaaNOP task。 ");
+        }
+
+        var resolvedItems = config.SelectedTasks.Select(taskName => {
+            var task = FindTask(taskName);
+            return (Task: task, Resolved: ProjectOptionResolver.Resolve(_project, task, config));
+        }).ToArray();
         var createdAtUtc = DateTime.UtcNow;
-        var item = new RunPlanItem(
-            Guid.NewGuid(), task.Name, task.Label, task.Entry,
-            resolved.ResolvedTaskOptions, resolved.PipelineOverride);
+        var items = resolvedItems.Select(item => new RunPlanItem(
+            Guid.NewGuid(), item.Task.Name, item.Task.Label, item.Task.Entry,
+            item.Resolved.ResolvedTaskOptions, item.Resolved.PipelineOverride)).ToArray();
         var plan = new RunPlan(
             ProtocolConstants.PlanVersion, createdAtUtc,
             _project.Provenance, _project.RuntimeProfileDigest,
-            resolved.ResolvedGlobalOptions, [item]);
+            resolvedItems[0].Resolved.ResolvedGlobalOptions, items);
         var serializedBytes = JsonSerializer.SerializeToUtf8Bytes(plan, ProtocolJson.Options);
         if (serializedBytes.Length > ProtocolConstants.MaximumRunPlanBytes) {
             throw new InvalidDataException(
@@ -155,8 +222,8 @@ public sealed class ProjectPlanModule
             throw new InvalidDataException(
                 $"首片只接受 SchemaVersion {MaaNopConfig.CurrentSchemaVersion} MaaNOP Config。 ");
         }
-        if (config.SelectedTasks.Count > 1) {
-            throw new InvalidDataException("首片临时 UI 只允许选择一个 top-level task。 ");
+        if (config.SelectedTasks.Count != config.SelectedTasks.Distinct(StringComparer.Ordinal).Count()) {
+            throw new InvalidDataException("SelectedTasks 不能包含重复 task；当前不支持同一 Task 多实例。 ");
         }
         foreach (var (optionName, value) in config.ExplicitOptions) {
             if (string.IsNullOrWhiteSpace(optionName) || value.ValueKind != JsonValueKind.Object) {
@@ -169,32 +236,40 @@ public sealed class ProjectPlanModule
     {
         var config = _configStore.Load();
         ValidateConfigShape(config);
-        var selected = config.SelectedTasks.SingleOrDefault();
-        if (selected is not null && !_project.Tasks.Any(task => task.Name == selected)) {
-            throw new InvalidDataException($"MaaNOP Config 选择的 task 不再存在：{selected}。 ");
-        }
+        ValidateSelectedTasks(config);
         return config;
     }
 
     private void ValidateActiveConfiguration(MaaNopConfig config)
     {
-        var taskName = config.SelectedTasks.SingleOrDefault();
-        if (taskName is not null) {
+        foreach (var taskName in config.SelectedTasks) {
             _ = ProjectOptionResolver.Resolve(_project, FindTask(taskName), config);
-            return;
         }
-
         ProjectOptionResolver.ValidateScope(_project, _project.GlobalOptions, config, "global_option");
     }
 
     private ProjectConfigurationView BuildConfiguration(MaaNopConfig config)
     {
+        var taskName = config.SelectedTasks.FirstOrDefault();
+        return BuildConfiguration(config, taskName);
+    }
+
+    private ProjectConfigurationView BuildConfiguration(MaaNopConfig config, string? taskName)
+    {
         var global = BuildEditors(_project.GlobalOptions, config);
-        var taskName = config.SelectedTasks.SingleOrDefault();
         var task = taskName is null
             ? []
             : BuildEditors(FindTask(taskName).Options, config);
         return new ProjectConfigurationView(global, task);
+    }
+
+    private void ValidateSelectedTasks(MaaNopConfig config)
+    {
+        foreach (var taskName in config.SelectedTasks) {
+            if (!_project.Tasks.Any(task => task.Name == taskName)) {
+                throw new InvalidDataException($"MaaNOP Config 选择的 task 不再存在：{taskName}。 ");
+            }
+        }
     }
 
     private IReadOnlyList<ProjectOptionEditor> BuildEditors(IReadOnlyList<string> names, MaaNopConfig config) =>

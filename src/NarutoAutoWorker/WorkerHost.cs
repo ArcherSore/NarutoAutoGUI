@@ -163,7 +163,8 @@ internal sealed class WorkerHost
 
         try {
             return request.Operation switch {
-                ProtocolOperations.Ping => WireEnvelope.Response(request.Operation, requestId, new PingMessage(DateTime.UtcNow)),
+                ProtocolOperations.Ping => WireEnvelope.Response(
+                    request.Operation, requestId, new PingMessage(DateTime.UtcNow)),
                 ProtocolOperations.WorkerGetSnapshot => WireEnvelope.Response(
                     request.Operation, requestId, new GetSnapshotResponse(GetSnapshot())),
                 ProtocolOperations.RunStart => WireEnvelope.Response(
@@ -182,7 +183,8 @@ internal sealed class WorkerHost
                 _ => throw new WorkerRequestException("invalid_request", $"未知 operation：{request.Operation}。 ")
             };
         } catch (WorkerRequestException exception) {
-            return WireEnvelope.Failure(request.Operation, requestId, exception.Code, exception.Message, exception.Retriable);
+            return WireEnvelope.Failure(
+                request.Operation, requestId, exception.Code, exception.Message, exception.Retriable);
         } catch (Exception exception) when (exception is JsonException or InvalidDataException or ArgumentException) {
             return WireEnvelope.Failure(
                 request.Operation, requestId, "invalid_request",
@@ -229,30 +231,29 @@ internal sealed class WorkerHost
             ValidateRunPlan(request);
 
             var item = request.Plan.Items[0];
-            var itemSnapshot = new PlanItemSnapshot(
-                item.PlanItemId, item.TaskName, item.TaskLabel, item.Entry,
-                item.ResolvedOptions, item.PipelineOverride, PlanItemState.Starting,
-                DateTime.UtcNow, null, null, null, null);
+            var startedAtUtc = DateTime.UtcNow;
+            var itemSnapshots = request.Plan.Items.Select((candidate, index) => new PlanItemSnapshot(
+                candidate.PlanItemId, candidate.TaskName, candidate.TaskLabel, candidate.Entry,
+                candidate.ResolvedOptions, candidate.PipelineOverride,
+                index == 0 ? PlanItemState.Starting : PlanItemState.Pending,
+                index == 0 ? startedAtUtc : null, null, null, null, null)).ToArray();
             run = new RunSnapshot(
                 request.RunId, request.PlanDigest, RunState.Starting, request.Plan.CreatedAtUtc,
-                DateTime.UtcNow, null, null, item.PlanItemId, 0,
-                request.Plan, [itemSnapshot], null, null);
+                startedAtUtc, null, null, item.PlanItemId, 0,
+                request.Plan, itemSnapshots, null, null);
             _lastRun = null;
             _activeRun = run;
             _runState = RunState.Starting;
             _ledger.Add(request.RunId, (request.PlanDigest, null));
-            execution = new WorkerRuntimeExecution(
-                _manifest, request.RunId, item,
-                checked((uint)Process.GetCurrentProcess().SessionId),
-                (level, source, message) => Log(
-                    level, source, message, request.RunId, item.PlanItemId, item.TaskName),
-                () => MarkRunRunning(request.RunId));
+            execution = CreateExecution(request.RunId, item);
             _execution = execution;
             snapshot = CommitLocked();
         }
 
         PublishState(ProtocolOperations.RunStateChanged, snapshot);
-        Log("INFO", "run.lifecycle", $"Run 已接受：{request.RunId}，task={run.Items[0].TaskName}。 ", request.RunId);
+        Log(
+            "INFO", "run.lifecycle",
+            $"Run 已接受：{request.RunId}，items={run.Items.Count}，first={run.Items[0].TaskName}。 ", request.RunId);
         _ = Task.Run(() => ExecuteRunAsync(request.RunId, execution, _shutdown.Token));
         return new RunStartResponse("accepted", run);
     }
@@ -304,7 +305,8 @@ internal sealed class WorkerHost
         return new RunStopResponse("stop_requested", RunState.Stopping);
     }
 
-    private async Task BeginDeferredStopAsync(DeferredStop deferred, ProtocolConnection connection, CancellationToken cancellationToken)
+    private async Task BeginDeferredStopAsync(
+        DeferredStop deferred, ProtocolConnection connection, CancellationToken cancellationToken)
     {
         // The stop ACK has already been written on this connection. Send the complete Stopping
         // snapshot before MaaFramework Stop can finish so the acceptance state is observable.
@@ -331,83 +333,151 @@ internal sealed class WorkerHost
         }
     }
 
-    private async Task ExecuteRunAsync(Guid runId, WorkerRuntimeExecution execution, CancellationToken cancellationToken)
+    private async Task ExecuteRunAsync(
+        Guid runId, WorkerRuntimeExecution execution, CancellationToken cancellationToken)
     {
-        var result = await execution.ExecuteAsync(cancellationToken);
-        WorkerSnapshot snapshot;
-        lock (_stateGate) {
-            if (_activeRun?.RunId != runId || !ReferenceEquals(_execution, execution)) {
+        while (true) {
+            var result = await execution.ExecuteAsync(cancellationToken);
+            WorkerRuntimeExecution? nextExecution = null;
+            WorkerSnapshot snapshot;
+            lock (_stateGate) {
+                if (_activeRun?.RunId != runId || !ReferenceEquals(_execution, execution)) {
+                    return;
+                }
+
+                var now = DateTime.UtcNow;
+                if (result.Outcome == RuntimeExecutionOutcome.StopTimedOut) {
+                    _workerState = WorkerState.Faulted;
+                    _workerReason = result.Error;
+                    _runState = RunState.Stopping;
+                    snapshot = CommitLocked();
+                } else {
+                    var currentIndex = _activeRun.CurrentPlanItemIndex
+                                       ?? throw new InvalidOperationException("active Run 缺少 current item index。 ");
+                    var wasStopping = _activeRun.State == RunState.Stopping;
+                    if (result.Outcome == RuntimeExecutionOutcome.Succeeded
+                        && !wasStopping && currentIndex + 1 < _activeRun.Items.Count) {
+                        var items = _activeRun.Items.ToArray();
+                        items[currentIndex] = items[currentIndex] with {
+                            State = PlanItemState.Succeeded,
+                            EndedAtUtc = now,
+                            Result = result.Result
+                        };
+                        var nextIndex = currentIndex + 1;
+                        items[nextIndex] = items[nextIndex] with {
+                            State = PlanItemState.Starting,
+                            StartedAtUtc = now
+                        };
+                        var nextItem = _activeRun.Plan.Items[nextIndex];
+                        _activeRun = _activeRun with {
+                            State = RunState.Running,
+                            CurrentPlanItemId = nextItem.PlanItemId,
+                            CurrentPlanItemIndex = nextIndex,
+                            Items = items
+                        };
+                        _runState = RunState.Running;
+                        nextExecution = CreateExecution(runId, nextItem);
+                        _execution = nextExecution;
+                        snapshot = CommitLocked();
+                    } else {
+                        snapshot = CompleteRunLocked(runId, currentIndex, result, wasStopping, now);
+                    }
+                }
+            }
+
+            PublishState(ProtocolOperations.RunStateChanged, snapshot);
+            if (nextExecution is null) {
+                Log(
+                    result.Outcome is RuntimeExecutionOutcome.Succeeded or RuntimeExecutionOutcome.Cancelled
+                        ? "INFO"
+                        : "ERROR",
+                    "run.lifecycle", $"Run 终结：{runId}，outcome={result.Outcome}。 ", runId);
                 return;
             }
 
-            var now = DateTime.UtcNow;
-            if (result.Outcome == RuntimeExecutionOutcome.StopTimedOut) {
-                _workerState = WorkerState.Faulted;
-                _workerReason = result.Error;
-                _runState = RunState.Stopping;
-                snapshot = CommitLocked();
-            } else {
-                var wasStopping = _activeRun.State == RunState.Stopping;
-                var finalRunState = result.Outcome switch {
-                    RuntimeExecutionOutcome.Succeeded => RunState.Succeeded,
-                    RuntimeExecutionOutcome.Cancelled => RunState.Cancelled,
-                    RuntimeExecutionOutcome.CleanupFailed when wasStopping => RunState.Cancelled,
-                    _ => RunState.Failed
-                };
-                var finalItemState = finalRunState switch {
-                    RunState.Succeeded => PlanItemState.Succeeded,
-                    RunState.Cancelled => PlanItemState.Cancelled,
-                    _ => PlanItemState.Failed
-                };
-                var item = _activeRun.Items[0] with {
-                    State = finalItemState,
+            Log("INFO", "run.lifecycle", $"开始执行下一 Plan Item：{runId}。 ", runId);
+            execution = nextExecution;
+        }
+    }
+
+    private WorkerSnapshot CompleteRunLocked(
+        Guid runId, int currentIndex, RuntimeExecutionResult result, bool wasStopping, DateTime now)
+    {
+        var finalRunState = result.Outcome switch {
+            RuntimeExecutionOutcome.Succeeded => RunState.Succeeded,
+            RuntimeExecutionOutcome.Cancelled => RunState.Cancelled,
+            RuntimeExecutionOutcome.CleanupFailed when wasStopping => RunState.Cancelled,
+            _ => RunState.Failed
+        };
+        var finalItemState = finalRunState switch {
+            RunState.Succeeded => PlanItemState.Succeeded,
+            RunState.Cancelled => PlanItemState.Cancelled,
+            _ => PlanItemState.Failed
+        };
+        var items = _activeRun!.Items.ToArray();
+        items[currentIndex] = items[currentIndex] with {
+            State = finalItemState,
+            EndedAtUtc = now,
+            Reason = finalRunState == RunState.Cancelled ? "user_requested" : null,
+            Result = result.Result,
+            Error = finalRunState == RunState.Failed ? result.Error : null
+        };
+        var pendingReason = finalRunState == RunState.Cancelled ? "user_requested" : "prior_item_failed";
+        for (var index = currentIndex + 1; index < items.Length; index++) {
+            if (items[index].State == PlanItemState.Pending) {
+                items[index] = items[index] with {
+                    State = PlanItemState.Cancelled,
                     EndedAtUtc = now,
-                    Reason = finalRunState == RunState.Cancelled ? "user_requested" : null,
-                    Result = result.Result,
-                    Error = finalRunState == RunState.Failed ? result.Error : null
+                    Reason = pendingReason
                 };
-                var terminal = _activeRun with {
-                    State = finalRunState,
-                    EndedAtUtc = now,
-                    CurrentPlanItemId = null,
-                    CurrentPlanItemIndex = null,
-                    Items = [item],
-                    Result = result.Result,
-                    Error = finalRunState == RunState.Failed ? result.Error : null
-                };
-                _activeRun = null;
-                _lastRun = terminal;
-                _runState = RunState.Idle;
-                _execution = null;
-                _ledger[runId] = (_ledger[runId].Digest, terminal);
-                if (result.Outcome == RuntimeExecutionOutcome.CleanupFailed) {
-                    _workerState = WorkerState.Faulted;
-                    _workerReason = result.Error;
-                } else {
-                    _workerState = WorkerState.Ready;
-                    _workerReason = null;
-                }
-                snapshot = CommitLocked();
             }
         }
 
-        PublishState(ProtocolOperations.RunStateChanged, snapshot);
-        Log(
-            result.Outcome is RuntimeExecutionOutcome.Succeeded or RuntimeExecutionOutcome.Cancelled ? "INFO" : "ERROR",
-            "run.lifecycle",
-            $"Run 终结：{runId}，outcome={result.Outcome}。 ",
-            runId);
+        var terminal = _activeRun with {
+            State = finalRunState,
+            EndedAtUtc = now,
+            CurrentPlanItemId = null,
+            CurrentPlanItemIndex = null,
+            Items = items,
+            Result = result.Result,
+            Error = finalRunState == RunState.Failed ? result.Error : null
+        };
+        _activeRun = null;
+        _lastRun = terminal;
+        _runState = RunState.Idle;
+        _execution = null;
+        _ledger[runId] = (_ledger[runId].Digest, terminal);
+        if (result.Outcome == RuntimeExecutionOutcome.CleanupFailed) {
+            _workerState = WorkerState.Faulted;
+            _workerReason = result.Error;
+        } else {
+            _workerState = WorkerState.Ready;
+            _workerReason = null;
+        }
+        return CommitLocked();
     }
 
-    private void MarkRunRunning(Guid runId)
+    private WorkerRuntimeExecution CreateExecution(Guid runId, RunPlanItem item) => new(
+        _manifest, runId, item, checked((uint)Process.GetCurrentProcess().SessionId),
+        (level, source, message) => Log(level, source, message, runId, item.PlanItemId, item.TaskName),
+        () => MarkRunRunning(runId, item.PlanItemId));
+
+    private void MarkRunRunning(Guid runId, Guid planItemId)
     {
         WorkerSnapshot snapshot;
         lock (_stateGate) {
-            if (_activeRun?.RunId != runId || _activeRun.State != RunState.Starting) {
+            if (_activeRun?.RunId != runId || _activeRun.CurrentPlanItemId != planItemId
+                || _activeRun.State == RunState.Stopping) {
                 return;
             }
-            var item = _activeRun.Items[0] with { State = PlanItemState.Running };
-            _activeRun = _activeRun with { State = RunState.Running, Items = [item] };
+            var currentIndex = _activeRun.CurrentPlanItemIndex
+                               ?? throw new InvalidOperationException("active Run 缺少 current item index。 ");
+            var items = _activeRun.Items.ToArray();
+            if (items[currentIndex].State != PlanItemState.Starting) {
+                return;
+            }
+            items[currentIndex] = items[currentIndex] with { State = PlanItemState.Running };
+            _activeRun = _activeRun with { State = RunState.Running, Items = items };
             _runState = RunState.Running;
             snapshot = CommitLocked();
         }
@@ -496,10 +566,10 @@ internal sealed class WorkerHost
         if (request.Plan.PlanVersion != ProtocolConstants.PlanVersion) {
             throw new WorkerRequestException("invalid_run_plan", "不支持 planVersion。 ");
         }
-        if (request.Plan.Items.Count != 1) {
-            throw new WorkerRequestException("invalid_run_plan", "首片 Run Plan 必须恰好包含一个 Plan Item。 ");
+        if (request.Plan.Items.Count == 0) {
+            throw new WorkerRequestException("invalid_run_plan", "Run Plan 必须至少包含一个 Plan Item。 ");
         }
-        if (request.Plan.Items.Select(item => item.PlanItemId).Distinct().Count() != 1) {
+        if (request.Plan.Items.Select(item => item.PlanItemId).Distinct().Count() != request.Plan.Items.Count) {
             throw new WorkerRequestException("invalid_run_plan", "Plan Item ID 不唯一。 ");
         }
         if (request.Plan.RuntimeProfileDigest != _manifest.RuntimeProfileDigest) {

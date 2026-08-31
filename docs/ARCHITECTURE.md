@@ -57,7 +57,12 @@ NarutoAutoGUI/
 
 ## 配置与日志
 
-- 配置：MaaNOP project payload 与 NarutoAutoGUI 一同打包，Project root 固定为 application base directory，`interface.json` 位于 `NarutoAutoGUI.exe` 同级目录。火影忍者 Online 使用固定 launch profile：`NarutoGameLaunchProfile` 从当前用户 `%APPDATA%\Tencent\QQMicroGameBox\Launch.exe` 推导启动器路径，AppId 固定为 `1103286479`，参数固定为 `-/appid:1103286479`，均不由用户配置；MaaNOP 用户意图保存在 `<程序目录>\config\maanop-config.json`。
+- 配置：MaaNOP project payload 与 NarutoAutoGUI 一同打包，Project root 固定为 application base directory，
+  `interface.json` 位于 `NarutoAutoGUI.exe` 同级目录。火影忍者 Online 使用固定 launch profile：
+  `NarutoGameLaunchProfile` 从当前用户 `%APPDATA%\Tencent\QQMicroGameBox\Launch.exe` 推导启动器路径，AppId
+  固定为 `1103286479`，参数固定为 `-/appid:1103286479`，均不由用户配置；MaaNOP 用户意图保存在
+  `<程序目录>\config\maanop-config.json`。`SelectedTasks` 保存不重复 task name 的实际执行顺序，Worker 按同序逐项执行；
+  `ExplicitOptions` 继续按 option name 保存，不引入 TaskInstanceId 或每实例 option 存储。
 - 工作目录不提供配置字段，统一自动使用启动器所在目录。
 - 文件日志：默认写入 `<程序目录>\logs`，记录 DEBUG+；按日期命名，单文件最大 10 MB，保留 14 天。若程序目录
   不可写，则依次回退到 LocalAppData 和临时目录并记录 WARN。
@@ -78,6 +83,7 @@ NarutoAutoGUI/
 
 ## 明确边界
 
-当前只包含一个 top-level task、一个 Plan Item 的最小 Worker/IPC + MaaFramework 闭环，以及 Active Run 期间固定约 5 FPS
-的只读 latest-frame Preview。不包含多任务调度、自动登录/扫码、自动隐藏子桌面、自动开始 MaaNOP 任务、Worker
+当前执行计划支持把 PI 中不重复的 top-level task 按 `SelectedTasks` 顺序组成多个 Plan Item，并由同一 Worker 逐项执行；
+当前项失败或用户停止时不再启动后续项。仍不支持同一 Task 多实例独立参数、DAG、依赖、条件或并行调度。Active Run 期间
+继续提供固定约 5 FPS 的只读 latest-frame Preview。不包含自动登录/扫码、自动隐藏子桌面、自动开始 MaaNOP 任务、Worker
 replacement UI、可调 Preview FPS、截图历史、录制、保存截图、画面点击控制或可调分辨率/DPI。

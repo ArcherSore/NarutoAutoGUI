@@ -26,6 +26,8 @@ internal static class SelfTestRunner
             VerifyProjectPlan(testDirectory, projectDirectory);
             VerifyTaskCatalogVariants(testDirectory, projectDirectory);
             VerifyTaskDescriptionMarkup();
+            VerifyTaskPlanPresentationState();
+            VerifyResponsiveOptionLayout();
             VerifyUnsupportedProjectConstraints(testDirectory, projectDirectory);
             VerifyInvalidProjectInterfaces(testDirectory, projectDirectory);
             VerifyProtocolFrame();
@@ -39,7 +41,8 @@ internal static class SelfTestRunner
             logger.Debug("self-test-debug");
             logger.Info("self-test-info");
             logger.Dispose();
-            var logText = string.Join(Environment.NewLine, Directory.EnumerateFiles(logDirectory, "*.log").Select(File.ReadAllText));
+            var logText = string.Join(
+                Environment.NewLine, Directory.EnumerateFiles(logDirectory, "*.log").Select(File.ReadAllText));
             if (!logText.Contains("[DEBUG] self-test-debug", StringComparison.Ordinal)
                 || !logText.Contains("[INFO] self-test-info", StringComparison.Ordinal)
                 || !logText.Contains("[maanop.run] 用户日志", StringComparison.Ordinal)
@@ -55,7 +58,7 @@ internal static class SelfTestRunner
                 + "ordered pipeline override; nested dormant intent; "
                 + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
                 + "PI structure/default/graph validation; typed input validation; "
-                + "task catalog/description/selection; task description span/br markup; "
+                + "task catalog/description; ordered task plan persistence; responsive option layout; "
                 + "MaaNOP Config v1; RunPlan digest; "
                 + "IPC framing; preview schema; "
                 + "log sequence tracking/recovery; Worker Instance replacement; "
@@ -312,9 +315,42 @@ internal static class SelfTestRunner
         if (project.GetConfiguration().TaskOptions.Single().SelectedCase != "Minimal") {
             throw new InvalidOperationException("task selection 切换未保留显式 option intent。");
         }
+
+        if (!project.AddTask("LongLabelTask")
+            || !project.AddTask("MissingDescriptionTask")
+            || !project.AddTask("WhitespaceDescriptionTask")
+            || project.AddTask("RealTask")) {
+            throw new InvalidOperationException("执行计划添加或重复任务约束验证失败。");
+        }
+        _ = project.MoveTask("WhitespaceDescriptionTask", 0);
+        _ = project.MoveTask("MissingDescriptionTask", 1);
+        var expected = new[] {
+            "WhitespaceDescriptionTask", "MissingDescriptionTask", "RealTask", "LongLabelTask"
+        };
+        if (!project.SelectedTaskNames.SequenceEqual(expected)) {
+            throw new InvalidOperationException("执行计划 reorder 结果验证失败。");
+        }
+        var attempt = project.CreateRunStartAttempt();
+        if (!attempt.Plan.Items.Select(item => item.TaskName).SequenceEqual(expected)) {
+            throw new InvalidOperationException("Run Plan 未保持 SelectedTasks 执行顺序。");
+        }
+
+        var restored = ProjectPlanModule.Open(projectDirectory, configPath);
+        if (!restored.SelectedTaskNames.SequenceEqual(expected)
+            || restored.GetConfiguration("LongLabelTask").TaskOptions.Count != 0) {
+            throw new InvalidOperationException("执行计划保存/恢复顺序验证失败。");
+        }
+        if (!restored.RemoveTask("MissingDescriptionTask")
+            || restored.RemoveTask("MissingDescriptionTask")
+            || !restored.SelectedTaskNames.SequenceEqual(
+                ["WhitespaceDescriptionTask", "RealTask", "LongLabelTask"])) {
+            throw new InvalidOperationException("执行计划删除与顺序保持验证失败。");
+        }
         using var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath));
-        if (configDocument.RootElement.GetProperty("SelectedTasks")[0].GetString() != "RealTask") {
-            throw new InvalidOperationException("task selection 自动保存验证失败。");
+        var persisted = configDocument.RootElement.GetProperty("SelectedTasks")
+            .EnumerateArray().Select(item => item.GetString()).ToArray();
+        if (!persisted.SequenceEqual(new[] { "WhitespaceDescriptionTask", "RealTask", "LongLabelTask" })) {
+            throw new InvalidOperationException("SelectedTasks 持久化顺序验证失败。");
         }
     }
 
@@ -331,6 +367,46 @@ internal static class SelfTestRunner
             || MainWindow.RenderDescriptionText("<BR>大写</BR>") != "\n大写"
             || MainWindow.RenderDescriptionText("<span style=\"color:red\">x</span>") != "x") {
             throw new InvalidOperationException("PI task description 标记边界验证失败。");
+        }
+    }
+
+    private static void VerifyResponsiveOptionLayout()
+    {
+        if (ResponsiveWrapPanel.CalculateColumnCount(450, 220, 12, 3) != 1
+            || ResponsiveWrapPanel.CalculateColumnCount(600, 220, 12, 3) != 2
+            || ResponsiveWrapPanel.CalculateColumnCount(900, 220, 12, 3) != 3) {
+            throw new InvalidOperationException("响应式 option 一至三列退化规则验证失败。");
+        }
+    }
+
+    private static void VerifyTaskPlanPresentationState()
+    {
+        var state = new TaskPlanPresentationState();
+        state.Expand("A");
+        if (state.ExpandedTaskName != "A") {
+            throw new InvalidOperationException("Plan item 展开状态验证失败。");
+        }
+
+        state.Toggle("B");
+        if (state.ExpandedTaskName != "B") {
+            throw new InvalidOperationException("Plan item 单项 accordion 切换验证失败。");
+        }
+
+        state.Toggle("B");
+        if (state.ExpandedTaskName is not null) {
+            throw new InvalidOperationException("Plan item 折叠验证失败。");
+        }
+
+        state.Expand("A");
+        state.Remove("A");
+        if (state.ExpandedTaskName is not null) {
+            throw new InvalidOperationException("删除展开 Plan item 后的状态验证失败。");
+        }
+
+        state.Expand("A");
+        state.Collapse();
+        if (state.ExpandedTaskName is not null) {
+            throw new InvalidOperationException("拖拽前统一折叠状态验证失败。");
         }
     }
 
@@ -496,7 +572,8 @@ internal static class SelfTestRunner
         var emptyProjectDirectory = Path.Combine(testDirectory, "missing-interface");
         Directory.CreateDirectory(emptyProjectDirectory);
         try {
-            _ = ProjectPlanModule.Open(emptyProjectDirectory, Path.Combine(emptyProjectDirectory, "maanop-config.json"));
+            _ = ProjectPlanModule.Open(
+                emptyProjectDirectory, Path.Combine(emptyProjectDirectory, "maanop-config.json"));
             throw new InvalidOperationException("PI 未拒绝缺失 interface.json 的项目目录。");
         } catch (FileNotFoundException exception) when (
             exception.Message.Contains("安装目录缺少 interface.json", StringComparison.Ordinal)) {

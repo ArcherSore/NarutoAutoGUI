@@ -15,6 +15,19 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-08-31：完成 Tasks V2 UI/UX 重构。Tasks 页面改为上方可折叠 Task Shelf 与下方有序执行计划；PI task 以
+  text-first command chip 自动换行呈现，不显示 task icon、summary 或 description。Plan Item 使用单开 accordion，
+  参数编辑器随 item 移动；新增通用一至三列 `ResponsiveWrapPanel`，按控件实际期望宽度将明显宽项退化为整行。
+  option/input description 只通过 label 旁可聚焦 info tooltip 显示。task description 继续使用既有安全纯文本渲染，
+  改由右侧 overlay drawer 显示，支持关闭按钮、Esc 和点击外部关闭，主内容不 reflow。drag handle 是唯一鼠标拖动入口，
+  使用绿色 drop indicator，拖动前折叠，drop 后保持折叠；另提供 `Alt+↑/↓` 键盘排序。删除无需确认。
+  `SelectedTasks` 现保存不重复 task 的实际执行顺序，ProjectModel 生成同序多项 Run Plan，Worker 在不改变协议 schema 的
+  前提下逐项执行；当前项失败或停止时取消尚未执行项。`ExplicitOptions` 仍按 option name 共享，不新增 TaskInstanceId。
+  NarutoAutoGUI 与 NarutoAutoWorker Release `win-x64` build 和两组 build-output `--self-test` 均通过，0 警告、
+  0 错误；正式加载 `D:\MaaNOP\assets\interface.json` 通过，识别 2 个 task 并生成同序 2 项 Run Plan。XAML XML、
+  overlay/layout 静态契约、whitespace format、120 列与 diff 检查通过。真实鼠标 drag、tooltip、drawer、多 DPI 视觉回归及
+  MaaFramework 多项连续实跑仍需人工确认。
+
 - 2026-08-27：修复 Windows 10 下 RDP ActiveX 初始化失败 `0x80040111 (CLASS_E_CLASSNOTAVAILABLE)`。
   将 `RdpActiveXHost.RdpClientClsid` 从 Win11 专用的 MsRdpClient11 CLSID 修正为 Windows 10 与 Windows 11 全面兼容的标准
   MsRdpClient10 CLSID (`8B918B82-7985-4C24-89DF-C33AD2BBFBCD`)；在 `ChildSessionManager.EnsureConnectedAsync`
@@ -88,11 +101,10 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - 主窗口提供访问键和动态状态辅助信息；操作失败给出恢复建议并可打开日志目录；每次程序运行首次关闭到托盘时显示一次通知。
 - 主窗口已应用集中式 WPF 视觉设计系统：统一浅色语义令牌、字体与 4/8 DIP 间距、四级按钮、输入框、状态 Badge、日志层级和交互状态；顶部保留状态卡，其余主功能使用扁平分区、留白与细分隔线，仅日志视口保留容器边框；不改变事件处理器和功能行为。
 - 正式主窗口已使用 WPF-UI 4.3.0 重构为 Windows 11 Fluent Shell：`FluentWindow`、`TitleBar`、左侧 `NavigationView` 和内置 Fluent 图标承载首页、任务、设置三个顶层页面，操作状态与进度条固定在全局底栏。三个页面仍位于同一个 `MainWindow` XAML namescope，通过根容器 `Visibility` 切换；未引入 `Frame`、独立 Page/UserControl、MVVM、NavigationService 或 PageService。页面内输入、按钮、下拉框和日志列表仍为标准 WPF 控件并沿用 `DesignSystem.xaml`。独立「桌面分身」与「日志」导航页面已删除；桌面分身的显示 / 隐藏 / 结束操作迁移到首页游戏画面预览底部，「准备运行环境」继续作为创建 / 恢复 Child Session 的主流程；详细诊断保留文件日志，首页「运行动态」继续作为普通用户唯一 GUI 日志视图，首页顶部「打开日志目录」入口保留。
-- 首页集中呈现当前任务、参数、Session、Worker 和 Run 的用户化摘要；任务页只保留标题、左侧任务列表和右侧动态
-  property editor，并在有内容时显示 PI task description，解析其中的 `<span>`/`<br>` 标记为换行与纯文本；
-  未配置或无法加载项目时使用单一空状态代替空任务列表与空参数面板。Tasks 页面自身固定，只有动态参数区局部
-  纵向滚动；任务描述是参数面板下方的独立同级区域。Tasks 不再提供运行环境诊断；用户化 Worker/Run 状态仍由
-  首页与全局底栏呈现，运行细节保留在日志。设置表单改为标签在上、输入框在下。
+- 首页集中呈现当前任务、参数、Session、Worker 和 Run 的用户化摘要；任务页采用可折叠 Task Shelf + 有序执行计划，
+  Plan Item 内联承载动态 property editor，task description 由右侧 overlay drawer 显示并解析 `<span>`/`<br>` 为换行与
+  纯文本；未配置或无法加载项目时继续使用单一空状态。Tasks 不提供运行环境诊断；用户化 Worker/Run 状态仍由首页与
+  全局底栏呈现，运行细节保留在日志。设置表单保持标签在上、输入框在下。
 - 首页“运行控制台”顶部以单一横向区域呈现当前任务、现有状态投影、当前 Plan Item/下一步和单一上下文主操作按钮；
   下方以等宽双列呈现内部 16:9 游戏画面与 `maanop.run` 运行动态。游戏画面在 Active Run 的 Starting/Running 期间通过
   Worker latest-frame cache 固定约 5 FPS 只读显示；Idle、Stopping、终态、断线、Worker replacement、窗口隐藏或离开
@@ -112,7 +124,9 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - Worker 以 `MaaTasker.Callback` 为唯一 MaaNOP 运行日志接入点，只将与 Callback message 精确匹配的字符串
   `focus` 投影为既有 WorkerLogEntry；GUI 按 `source=maanop.run` 精确过滤。日志 cursor 按 Worker Instance 隔离，
   实时 sequence gap 不再越过缺口，而由 `log.getSince` 单飞补取；原有协议 schema 保持不变。
-- 正式 GUI 从真实 PI 通用生成 global 与当前 task 的 input、switch、select、递归 active option 编辑器；显式值写入 SchemaVersion 1 `maanop-config.json`，可恢复为跟随项目默认，未激活子分支的合法显式值作为 Dormant Intent 保留。首片仍只允许一个 top-level task 和一个 Plan Item，不包含硬编码 `ServerRange`、task entry 或 pipeline override。
+- 正式 GUI 从真实 PI 通用生成 global 与各计划 task 的 input、switch、select、递归 active option 编辑器；显式值写入
+  SchemaVersion 1 `maanop-config.json`，可恢复为跟随项目默认，未激活子分支的合法显式值作为 Dormant Intent 保留。
+  `SelectedTasks` 按执行顺序保存且拒绝重复 task；不包含硬编码 `ServerRange`、task entry 或 pipeline override。
 - 当前固定单 Win32 controller、单 resource 的 PI 子集明确拒绝尚未实现的非空 `controller.option`、`resource.option`，以及 `resource.controller`、`task.controller/resource` 和 `option.controller/resource` 约束字段，不再接受后静默忽略；本机 MaaNOP v1.3.0 真实 `interface.json` 未使用这些字段。
 - ProjectModel 保持 `ProjectPlanModule` 外部 interface 不变，将内部 definitions、Project Interface Loader 和 option Resolver 拆分到独立文件；Loader 在返回 `ProjectDefinition` 前统一校验 option 类型结构、所有 input 默认值/正则/`pipeline_type`、全部 option 引用和包含未激活 case 的完整递归图，Resolver 与配置编辑器只消费已验证的 PI 模型。
 - ProjectOptionResolver 按当前受支持 PI 子集输出有序 `pipeline_override` 数组：task 自身 override 先进入数组，再依次追加 global 与 task option，active nested option 紧随父 case；不再在 GUI 侧递归深合并多个 fragment。Loader 同时拒绝 select/switch 顶层 `pipeline_override`，要求其 override 位于具体 case。

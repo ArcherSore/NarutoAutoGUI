@@ -111,14 +111,10 @@
 
                                     <StackPanel Grid.Column="0" Margin="0,0,16,0">
                                         <TextBlock Text="当前任务" Style="{StaticResource SectionTitleTextStyle}" />
-                                        <TextBlock Margin="0,6,0,0" Style="{StaticResource StatusPrimaryTextStyle}">
-                                            <TextBlock.Text>
-                                                <Binding Path="SelectedItem.Label"
-                                                         ElementName="TaskListBox"
-                                                         TargetNullValue="尚未选择任务"
-                                                         FallbackValue="尚未选择任务" />
-                                            </TextBlock.Text>
-                                        </TextBlock>
+                                        <TextBlock x:Name="HomeSelectedTaskText"
+                                                   Margin="0,6,0,0"
+                                                   Text="尚未选择任务"
+                                                   Style="{StaticResource StatusPrimaryTextStyle}" />
                                         <TextBlock x:Name="HomeOptionSummaryText"
                                                    Margin="0,4,0,0"
                                                    Text="选择任务后显示参数摘要"
@@ -403,144 +399,113 @@
                         </Grid>
                     </ScrollViewer>
 
-                    <Grid x:Name="TasksView"
-                          Margin="24"
-                          MaxWidth="1120"
-                          HorizontalAlignment="Stretch"
-                          Visibility="Collapsed">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
+                    <Grid x:Name="TasksView" Margin="24" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0"
-                                       Text="任务"
-                                       Style="{StaticResource WindowTitleTextStyle}" />
+                        <TextBlock Grid.Row="0" Text="任务" Style="{StaticResource WindowTitleTextStyle}" />
 
-                            <Border x:Name="ProjectValidationBorder"
-                                    Grid.Row="1"
-                                    Margin="0,12,0,0"
-                                    Padding="12,8"
-                                    Background="{StaticResource Brush.Error.Surface}"
-                                    BorderBrush="{StaticResource Brush.Error.Border}"
-                                    BorderThickness="1"
-                                    CornerRadius="{StaticResource Radius.Control}"
-                                    Visibility="Collapsed">
-                                <TextBlock x:Name="ProjectValidationText"
+                        <Border x:Name="ProjectValidationBorder"
+                                Grid.Row="1"
+                                Margin="0,12,0,0"
+                                Padding="12,8"
+                                Background="{StaticResource Brush.Error.Surface}"
+                                BorderBrush="{StaticResource Brush.Error.Border}"
+                                BorderThickness="1"
+                                CornerRadius="{StaticResource Radius.Control}"
+                                Visibility="Collapsed">
+                            <TextBlock x:Name="ProjectValidationText"
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource Brush.Error.Foreground}"
+                                       Style="{StaticResource SecondaryTextStyle}"
+                                       AutomationProperties.Name="任务配置校验结果"
+                                       AutomationProperties.LiveSetting="Polite" />
+                        </Border>
+
+                        <Border x:Name="ProjectEmptyStatePanel"
+                                Grid.Row="2"
+                                Margin="0,16,0,0"
+                                Style="{StaticResource SettingsSectionPanelStyle}">
+                            <StackPanel MaxWidth="460"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                <TextBlock x:Name="ProjectEmptyStateTitleText"
+                                           HorizontalAlignment="Center"
+                                           Text="MaaNOP 项目无法加载"
+                                           TextAlignment="Center"
+                                           Style="{StaticResource SectionTitleTextStyle}" />
+                                <TextBlock x:Name="ProjectEmptyStateDetailText"
+                                           Margin="0,8,0,0"
+                                           HorizontalAlignment="Center"
+                                           Text="请使用完整的 MaaNOP 发布包，确保安装目录下直接包含 interface.json。"
+                                           TextAlignment="Center"
                                            TextWrapping="Wrap"
-                                           Foreground="{StaticResource Brush.Error.Foreground}"
-                                           Style="{StaticResource SecondaryTextStyle}"
-                                           AutomationProperties.Name="任务配置校验结果"
-                                           AutomationProperties.LiveSetting="Polite" />
-                            </Border>
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                            </StackPanel>
+                        </Border>
 
-                            <Border x:Name="ProjectEmptyStatePanel"
-                                    Grid.Row="2"
-                                    Margin="0,16,0,0"
-                                    Style="{StaticResource SettingsSectionPanelStyle}">
-                                <StackPanel MaxWidth="460"
-                                            HorizontalAlignment="Center"
-                                            VerticalAlignment="Center">
-                                    <TextBlock x:Name="ProjectEmptyStateTitleText"
-                                               HorizontalAlignment="Center"
-                                               Text="MaaNOP 项目无法加载"
-                                               TextAlignment="Center"
-                                               Style="{StaticResource SectionTitleTextStyle}" />
-                                    <TextBlock x:Name="ProjectEmptyStateDetailText"
-                                               Margin="0,8,0,0"
-                                               HorizontalAlignment="Center"
-                                               Text="请使用完整的 MaaNOP 发布包，确保安装目录下直接包含 interface.json。"
-                                               TextAlignment="Center"
-                                               TextWrapping="Wrap"
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                </StackPanel>
-                            </Border>
-
-                            <Grid x:Name="TaskWorkspacePanel"
-                                  Grid.Row="2"
-                                  Margin="0,16,0,0"
-                                  Visibility="Collapsed">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="1*" MinWidth="200" MaxWidth="260" />
-                                    <ColumnDefinition Width="16" />
-                                    <ColumnDefinition Width="3*" />
-                                </Grid.ColumnDefinitions>
-
-                                <Border Grid.Column="0" Style="{StaticResource SettingsSectionPanelStyle}">
+                        <ScrollViewer x:Name="TaskWorkspacePanel"
+                                      Grid.Row="2"
+                                      Margin="0,12,0,0"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto"
+                                      Visibility="Collapsed">
+                            <StackPanel Margin="0,0,8,24">
+                                <Button x:Name="TaskShelfHeaderButton"
+                                        Style="{StaticResource TaskShelfHeaderButtonStyle}"
+                                        AutomationProperties.Name="展开或收起可用任务"
+                                        Click="TaskShelfHeaderButton_Click">
                                     <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="*" />
-                                        </Grid.RowDefinitions>
-                                        <TextBlock Text="任务列表"
-                                                   Style="{StaticResource SectionTitleTextStyle}" />
-                                        <ListBox x:Name="TaskListBox"
-                                                 Grid.Row="1"
-                                                 Margin="0,12,0,0"
-                                                 Style="{StaticResource TaskListBoxStyle}"
-                                                 SelectionChanged="TaskListBox_SelectionChanged"
-                                                 AutomationProperties.Name="任务列表"
-                                                 AutomationProperties.HelpText="按项目声明顺序选择一个任务">
-                                            <ListBox.ItemTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding Label}"
-                                                               FontWeight="SemiBold"
-                                                               TextWrapping="Wrap" />
-                                                </DataTemplate>
-                                            </ListBox.ItemTemplate>
-                                        </ListBox>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="可用任务" Style="{StaticResource SectionTitleTextStyle}" />
+                                        <TextBlock x:Name="AvailableTaskCountText"
+                                                   Grid.Column="1"
+                                                   Margin="8,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Style="{StaticResource MutedTextStyle}" />
+                                        <ui:SymbolIcon x:Name="TaskShelfChevronIcon"
+                                                       Grid.Column="2"
+                                                       Width="16"
+                                                       Height="16"
+                                                       Symbol="ChevronUp16" />
                                     </Grid>
+                                </Button>
+
+                                <Border x:Name="TaskShelfContent"
+                                        Margin="0,6,0,0"
+                                        Padding="12"
+                                        Style="{StaticResource TaskShelfSurfaceStyle}">
+                                    <WrapPanel x:Name="AvailableTasksPanel" Orientation="Horizontal" />
                                 </Border>
 
-                                <Grid Grid.Column="2">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="*" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
+                                <Border Height="1"
+                                        Margin="0,18,0,16"
+                                        Background="{StaticResource Brush.Border}"
+                                        SnapsToDevicePixels="True" />
 
-                                    <Border Grid.Row="0" Style="{StaticResource SettingsSectionPanelStyle}">
-                                        <Grid>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="*" />
-                                            </Grid.RowDefinitions>
-                                            <TextBlock Text="任务参数"
-                                                       Style="{StaticResource SectionTitleTextStyle}" />
-                                            <Border Grid.Row="1"
-                                                    Height="1"
-                                                    Margin="0,10,0,12"
-                                                    Background="{StaticResource Brush.Border}"
-                                                    SnapsToDevicePixels="True" />
-                                            <ScrollViewer Grid.Row="2"
-                                                          HorizontalScrollBarVisibility="Disabled"
-                                                          VerticalScrollBarVisibility="Auto">
-                                                <StackPanel x:Name="OptionEditorPanel" Margin="0,0,4,0" />
-                                            </ScrollViewer>
-                                        </Grid>
-                                    </Border>
+                                <TextBlock Text="执行计划" Style="{StaticResource SectionTitleTextStyle}" />
+                                <StackPanel x:Name="PlanItemsPanel"
+                                            Margin="0,10,0,0"
+                                            AllowDrop="True"
+                                            DragLeave="PlanItemsPanel_DragLeave"
+                                            DragOver="PlanItemsPanel_DragOver"
+                                            Drop="PlanItemsPanel_Drop" />
 
-                                    <Border x:Name="TaskDescriptionPanel"
-                                            Grid.Row="1"
-                                            Margin="0,12,0,0"
-                                            Style="{StaticResource SettingsSectionPanelStyle}"
-                                            Visibility="Collapsed">
-                                        <StackPanel>
-                                            <TextBlock Text="任务描述"
-                                                       Style="{StaticResource SectionTitleTextStyle}" />
-                                            <Border Height="1"
-                                                    Margin="0,10,0,12"
-                                                    Background="{StaticResource Brush.Border}"
-                                                    SnapsToDevicePixels="True" />
-                                            <TextBlock x:Name="TaskDescriptionText"
-                                                       TextWrapping="Wrap"
-                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
-                                    </Border>
-                                </Grid>
-                            </Grid>
-
+                                <StackPanel x:Name="EmptyPlanPanel" Margin="0,16,0,0">
+                                    <TextBlock Text="执行计划为空" FontWeight="SemiBold" />
+                                    <TextBlock Margin="0,4,0,0"
+                                               Text="从上方可用任务中点击 + 添加任务"
+                                               Style="{StaticResource SecondaryTextStyle}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
                     </Grid>
 
                     <ScrollViewer x:Name="SettingsView"
@@ -573,6 +538,58 @@
                             </StackPanel>
                         </Grid>
                     </ScrollViewer>
+
+                    <Grid x:Name="TaskDescriptionOverlay"
+                          Panel.ZIndex="100"
+                          Visibility="Collapsed"
+                          AutomationProperties.Name="任务描述">
+                        <Button Background="#40000000"
+                                BorderThickness="0"
+                                Focusable="False"
+                                Click="TaskDescriptionScrim_Click" />
+                        <Border Width="420"
+                                MaxWidth="420"
+                                HorizontalAlignment="Right"
+                                Style="{StaticResource TaskDescriptionDrawerStyle}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="TaskDescriptionDrawerTitle"
+                                               VerticalAlignment="Center"
+                                               TextWrapping="Wrap"
+                                               Style="{StaticResource StatusPrimaryTextStyle}" />
+                                    <Button x:Name="TaskDescriptionCloseButton"
+                                            Grid.Column="1"
+                                            Margin="12,0,0,0"
+                                            Style="{StaticResource CompactIconButtonStyle}"
+                                            AutomationProperties.Name="关闭任务描述"
+                                            Click="TaskDescriptionCloseButton_Click">
+                                        <ui:SymbolIcon Width="16" Height="16" Symbol="Dismiss16" />
+                                    </Button>
+                                </Grid>
+                                <Border Grid.Row="1"
+                                        Height="1"
+                                        Margin="0,16,0,16"
+                                        Background="{StaticResource Brush.Border}" />
+                                <ScrollViewer Grid.Row="2"
+                                              HorizontalScrollBarVisibility="Disabled"
+                                              VerticalScrollBarVisibility="Auto">
+                                    <TextBlock x:Name="TaskDescriptionDrawerText"
+                                               Margin="0,0,8,0"
+                                               TextWrapping="Wrap"
+                                               Style="{StaticResource SecondaryTextStyle}" />
+                                </ScrollViewer>
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </Grid>
             </ui:NavigationView.ContentOverlay>
         </ui:NavigationView>

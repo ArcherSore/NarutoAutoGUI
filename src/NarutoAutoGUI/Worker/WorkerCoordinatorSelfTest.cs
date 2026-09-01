@@ -200,7 +200,7 @@ internal static class WorkerCoordinatorSelfTest
         await pipe.WriteAsync(
             WireEnvelope.Failure(
                 ProtocolOperations.LogGetSince, firstRequest.RequestId!.Value,
-                "transient_failure", "scripted transient failure", retriable: true),
+                "transient_failure", "scripted transient failure"),
             cancellationToken);
 
         var retryRequest = await ReadRequestAsync(pipe, ProtocolOperations.LogGetSince, cancellationToken);
@@ -309,8 +309,7 @@ internal static class WorkerCoordinatorSelfTest
                 WireEnvelope.Request(
                     ProtocolOperations.ConnectionOpen, requestId,
                     new ConnectionOpenRequest(
-                        record.WorkerInstanceId, record.LaunchToken, "self-test",
-                        record.RuntimeProfileDigest)),
+                        record.WorkerInstanceId, record.LaunchToken, record.RuntimeProfileDigest)),
                 cancellationToken);
             var openResponse = await connection.ReadAsync(cancellationToken)
                                ?? throw new EndOfStreamException("Coordinator 未返回 connection.open。 ");

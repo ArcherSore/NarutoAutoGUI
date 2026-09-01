@@ -1,10 +1,10 @@
 # Run 幂等覆盖整个 Worker 生命周期，日志使用可检测断档的有界序列
 
-`run.start` 以 runId 作为业务幂等键，requestId 只关联一次请求和响应。Worker 对每个正式接受的 Run 记录 runId、planDigest 和已有的 terminal summary，形成仅存在于该 Worker 进程内的 accepted-run ledger。相同 runId 和相同 planDigest 的请求无论命中 activeRun、lastRun 或 ledger 历史，都返回已有 Run、终态或摘要而不重新执行；相同 runId 配不同 planDigest 返回 `run_id_conflict`。preflight 失败发生在正式接受之前，不写入 ledger，修复后可以用原 runId 重试。新 Run 被接受时可以清除完整 lastRun，但 ledger 中的旧 runId 仍不可复用。Worker 重启后 ledger 不恢复。
+`run.start` 以 runId 作为业务幂等键，requestId 只关联一次请求和响应。Worker 对每个正式接受的 Run 记录 runId、planDigest 和已有的 terminal summary，形成仅存在于该 Worker 进程内的 accepted-run ledger。相同 runId 和相同 planDigest 的请求无论命中 activeRun、lastRun 或 ledger 历史，都返回 `disposition=already_accepted` 而不重新执行；权威 Run 状态继续由 event 和 Snapshot 提供。相同 runId 配不同 planDigest 返回 `run_id_conflict`。preflight 失败发生在正式接受之前，不写入 ledger，修复后可以用原 runId 重试。新 Run 被接受时可以清除完整 lastRun，但 ledger 中的旧 runId 仍不可复用。Worker 重启后 ledger 不恢复。
 
-存在 activeRun 时，不同 runId 的 `run.start` 返回 `worker_busy`。`run.stop` 命中 activeRun 时发起停止，重复请求返回当前状态；命中相同 runId 的 terminal Run 时正常成功、不改写终态，并返回 `disposition=already_terminal`；没有匹配 Run 时返回 `run_id_mismatch`。`worker.getSnapshot` 和 `log.getSince` 均无副作用。
+存在 activeRun 时，不同 runId 的 `run.start` 返回 `worker_busy`。`run.stop` 命中 activeRun 时发起停止，重复请求按当前状态返回相应 disposition；命中相同 runId 的 terminal Run 时正常成功、不改写终态，并返回 `disposition=already_terminal`；没有匹配 Run 时返回 `run_id_mismatch`。`worker.getSnapshot` 和 `log.getSince` 均无副作用。
 
-首版业务错误码固定为 `invalid_request`、`protocol_version_mismatch`、`worker_identity_rejected`、`worker_already_registered`、`worker_not_ready`、`worker_faulted`、`worker_busy`、`invalid_run_plan`、`run_id_conflict`、`run_id_mismatch`、`operation_not_allowed`、`internal_error`。错误对象统一包含 code、message、可空的结构化 details 和 retriable。Pipe 断开与请求超时属于 GUI Observation 或 transport failure，不伪装成 Worker 业务错误。
+首版业务错误码固定为 `invalid_request`、`protocol_version_mismatch`、`worker_identity_rejected`、`worker_already_registered`、`worker_not_ready`、`worker_faulted`、`worker_busy`、`invalid_run_plan`、`run_id_conflict`、`run_id_mismatch`、`operation_not_allowed`、`internal_error`。错误对象统一包含 code 和 human-readable message；Pipe 断开与请求超时属于 GUI Observation 或 transport failure，不伪装成 Worker 业务错误。
 
 每个 Worker instance 维护从 1 开始、跨 Run 和 IPC 重连单调递增的日志 sequence。LogEntry 包含 sequence、timestampUtc、level、source、message、truncated、可选 originalByteLength，以及按上下文可空的 runId、planItemId、taskName。message 最多 64 KiB UTF-8 bytes，截断必须停在合法字符边界并设置 truncated，整个 LogEntry 仍须满足 frame/response budget。Worker 先将日志写入有界缓冲，再发送 `log.entry`。缓冲固定最多 5000 条或约 8 MiB，以先达到者为准，字节统计按实际保存的 UTF-8 序列化或统一估算字节，而非 .NET 字符数；Worker 的 `connection.open` 与 Snapshot 都提供 workerInstanceId，变化时 GUI 清空旧游标。
 

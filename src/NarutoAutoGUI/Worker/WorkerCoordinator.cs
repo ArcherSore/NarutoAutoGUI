@@ -425,7 +425,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         await connection.WriteAsync(
             WireEnvelope.Response(
                 ProtocolOperations.ConnectionOpen, requestId,
-                new ConnectionOpenResponse(true, admission.WorkerInstanceId, clientPid, admission.ChildSessionId)),
+                new { }),
             cancellationToken);
 
         int logRecoveryGeneration;

@@ -111,7 +111,6 @@ internal sealed class WorkerHost
                 new ConnectionOpenRequest(
                     _manifest.WorkerInstanceId,
                     _arguments.LaunchToken,
-                    GetWorkerVersion(),
                     _manifest.RuntimeProfileDigest)),
             cancellationToken);
         var openResponse = await connection.ReadAsync(cancellationToken)
@@ -121,7 +120,6 @@ internal sealed class WorkerHost
             throw new UnauthorizedAccessException(
                 $"Worker admission 被拒绝：{openResponse.Error?.Code} - {openResponse.Error?.Message}");
         }
-        _ = ProtocolJson.Deserialize<ConnectionOpenResponse>(openResponse.Data);
         Log("INFO", "ipc.lifecycle", "Worker admission 成功。 ");
 
         await using var events = new WorkerEventSender(connection);
@@ -180,8 +178,7 @@ internal sealed class WorkerHost
                 _ => throw new WorkerRequestException("invalid_request", $"未知 operation：{request.Operation}。 ")
             };
         } catch (WorkerRequestException exception) {
-            return WireEnvelope.Failure(
-                request.Operation, requestId, exception.Code, exception.Message, exception.Retriable);
+            return WireEnvelope.Failure(request.Operation, requestId, exception.Code, exception.Message);
         } catch (Exception exception) when (exception is JsonException or InvalidDataException or ArgumentException) {
             return WireEnvelope.Failure(
                 request.Operation, requestId, "invalid_request",
@@ -190,7 +187,7 @@ internal sealed class WorkerHost
             Log("ERROR", "ipc.request", $"处理 {request.Operation} 失败：{exception}");
             return WireEnvelope.Failure(
                 request.Operation, requestId, "internal_error",
-                exception.GetBaseException().Message, retriable: false);
+                exception.GetBaseException().Message);
         }
     }
 
@@ -210,7 +207,7 @@ internal sealed class WorkerHost
                         ? _lastRun
                         : existing.Terminal;
                 if (existingRun is not null) {
-                    return new RunStartResponse("already_accepted", existingRun);
+                    return new RunStartResponse("already_accepted");
                 }
             }
             if (_workerState == WorkerState.NotReady) {
@@ -223,7 +220,7 @@ internal sealed class WorkerHost
                 throw new WorkerRequestException("operation_not_allowed", $"Worker state={_workerState}。 ");
             }
             if (_activeRun is not null) {
-                throw new WorkerRequestException("worker_busy", "Worker 已有 active Run。 ", retriable: true);
+                throw new WorkerRequestException("worker_busy", "Worker 已有 active Run。 ");
             }
             ValidateRunPlan(request);
 
@@ -252,7 +249,7 @@ internal sealed class WorkerHost
             "INFO", "run.lifecycle",
             $"Run 已接受：{request.RunId}，items={run.Items.Count}，first={run.Items[0].TaskName}。 ", request.RunId);
         _ = Task.Run(() => ExecuteRunAsync(request.RunId, execution, _shutdown.Token));
-        return new RunStartResponse("accepted", run);
+        return new RunStartResponse("accepted");
     }
 
     private RunStopResponse AcceptStop(RunStopRequest request, out DeferredStop? deferredStop)
@@ -263,7 +260,7 @@ internal sealed class WorkerHost
         lock (_stateGate) {
             if (_activeRun is null) {
                 if (_lastRun?.RunId == request.RunId) {
-                    return new RunStopResponse("already_terminal", _lastRun.State);
+                    return new RunStopResponse("already_terminal");
                 }
                 throw new WorkerRequestException("run_id_mismatch", "没有匹配的 active Run。 ");
             }
@@ -271,7 +268,7 @@ internal sealed class WorkerHost
                 throw new WorkerRequestException("run_id_mismatch", "runId 与 active Run 不一致。 ");
             }
             if (_activeRun.State == RunState.Stopping) {
-                return new RunStopResponse("already_stopping", RunState.Stopping);
+                return new RunStopResponse("already_stopping");
             }
             if (_activeRun.State is not (RunState.Starting or RunState.Running)) {
                 throw new WorkerRequestException("operation_not_allowed", $"Run state={_activeRun.State}。 ");
@@ -299,7 +296,7 @@ internal sealed class WorkerHost
 
         execution.RequestStop();
         deferredStop = new DeferredStop(request.RunId, execution, snapshot);
-        return new RunStopResponse("stop_requested", RunState.Stopping);
+        return new RunStopResponse("stop_requested");
     }
 
     private async Task BeginDeferredStopAsync(
@@ -652,13 +649,11 @@ internal sealed class WorkerHost
 
 internal sealed class WorkerRequestException : Exception
 {
-    internal WorkerRequestException(string code, string message, bool retriable = false)
+    internal WorkerRequestException(string code, string message)
         : base(message)
     {
         Code = code;
-        Retriable = retriable;
     }
 
     internal string Code { get; }
-    internal bool Retriable { get; }
 }

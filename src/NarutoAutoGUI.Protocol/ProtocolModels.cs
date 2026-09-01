@@ -98,14 +98,13 @@ public sealed record WireEnvelope
     };
 
     public static WireEnvelope Failure(
-        string operation, Guid requestId, string code, string message,
-        bool retriable = false, JsonElement? details = null) => new() {
+        string operation, Guid requestId, string code, string message) => new() {
             ProtocolVersion = ProtocolConstants.ProtocolVersion,
             MessageType = ProtocolMessageTypes.Response,
             Operation = operation,
             RequestId = requestId,
             Success = false,
-            Error = new ProtocolError(code, message, retriable, details),
+            Error = new ProtocolError(code, message),
             Data = ProtocolJson.ToElement(new { })
         };
 
@@ -117,7 +116,7 @@ public sealed record WireEnvelope
     };
 }
 
-public sealed record ProtocolError(string Code, string Message, bool Retriable, JsonElement? Details = null);
+public sealed record ProtocolError(string Code, string Message);
 
 public sealed record ProjectProvenance(string Name, string Version, int InterfaceVersion, string SourceInterfaceDigest);
 
@@ -182,20 +181,17 @@ public sealed record WorkerLogEntry(
     long Sequence, DateTime TimestampUtc, string Level, string Source, string Message,
     bool Truncated, int? OriginalByteLength, Guid? RunId, Guid? PlanItemId, string? TaskName);
 
-public sealed record ConnectionOpenRequest(
-    Guid WorkerInstanceId, string LaunchToken, string WorkerVersion, string RuntimeProfileDigest);
-
-public sealed record ConnectionOpenResponse(bool Accepted, Guid WorkerInstanceId, int WorkerPid, uint ChildSessionId);
+public sealed record ConnectionOpenRequest(Guid WorkerInstanceId, string LaunchToken, string RuntimeProfileDigest);
 
 public sealed record GetSnapshotResponse(WorkerSnapshot Snapshot);
 
 public sealed record RunStartRequest(Guid RunId, string PlanDigest, RunPlan Plan);
 
-public sealed record RunStartResponse(string Disposition, RunSnapshot Run);
+public sealed record RunStartResponse(string Disposition);
 
 public sealed record RunStopRequest(Guid RunId);
 
-public sealed record RunStopResponse(string Disposition, RunState State);
+public sealed record RunStopResponse(string Disposition);
 
 public sealed record LogGetSinceRequest(long AfterSequence, int Limit);
 

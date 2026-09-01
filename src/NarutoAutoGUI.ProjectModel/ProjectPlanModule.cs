@@ -243,7 +243,9 @@ public sealed class ProjectPlanModule
         foreach (var taskName in config.SelectedTasks) {
             _ = ProjectOptionResolver.Resolve(_project, FindTask(taskName), config);
         }
-        ProjectOptionResolver.ValidateScope(_project, _project.GlobalOptions, config, "global_option");
+        if (config.SelectedTasks.Count == 0) {
+            ProjectOptionResolver.ValidateScope(_project, _project.GlobalOptions, config, "global_option");
+        }
     }
 
     private ProjectConfigurationView BuildConfiguration(MaaNopConfig config)

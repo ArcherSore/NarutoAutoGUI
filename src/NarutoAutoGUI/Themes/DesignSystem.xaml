@@ -5,11 +5,9 @@
 
     <!-- Primitive colors -->
     <Color x:Key="Color.Neutral.0">#FFFFFF</Color>
-    <Color x:Key="Color.Neutral.25">#FCFDFE</Color>
     <Color x:Key="Color.Neutral.50">#F6F8FB</Color>
     <Color x:Key="Color.Neutral.100">#EEF2F6</Color>
     <Color x:Key="Color.Neutral.200">#D6DEE8</Color>
-    <Color x:Key="Color.Neutral.300">#B7C2CF</Color>
     <Color x:Key="Color.Neutral.500">#5F6E80</Color>
     <Color x:Key="Color.Neutral.600">#465467</Color>
     <Color x:Key="Color.Neutral.800">#26313F</Color>
@@ -20,19 +18,12 @@
     <Color x:Key="Color.Indigo.600">#3156A3</Color>
     <Color x:Key="Color.Indigo.700">#284A91</Color>
     <Color x:Key="Color.Indigo.800">#203F7E</Color>
-    <Color x:Key="Color.Orange.50">#FFF1EA</Color>
-    <Color x:Key="Color.Orange.600">#B84D26</Color>
 
     <!-- Semantic colors -->
-    <Color x:Key="Color.Info.Surface">#EBF1FC</Color>
-    <Color x:Key="Color.Info.Foreground">#244C92</Color>
     <Color x:Key="Color.Success.Strong">#26734D</Color>
     <Color x:Key="Color.Success.Surface">#E7F5EC</Color>
     <Color x:Key="Color.Success.Border">#A9D7BF</Color>
-    <Color x:Key="Color.Success.Foreground">#17633E</Color>
     <Color x:Key="Color.Warning.Strong">#8A5400</Color>
-    <Color x:Key="Color.Warning.Surface">#FFF3D6</Color>
-    <Color x:Key="Color.Warning.Border">#E8C572</Color>
     <Color x:Key="Color.Warning.Foreground">#7A4700</Color>
     <Color x:Key="Color.Error.Strong">#B4232F</Color>
     <Color x:Key="Color.Error.Surface">#FDEBED</Color>
@@ -58,15 +49,7 @@
     <SolidColorBrush x:Key="Brush.Primary.Surface" Color="{StaticResource Color.Indigo.50}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Primary.SurfaceHover" Color="{StaticResource Color.Indigo.100}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Primary.Border" Color="{StaticResource Color.Indigo.200}" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.BrandAccent" Color="{StaticResource Color.Orange.600}" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.Info.Surface" Color="{StaticResource Color.Info.Surface}" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.Info.Foreground" Color="{StaticResource Color.Info.Foreground}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Success" Color="{StaticResource Color.Success.Strong}" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.Success.Surface" Color="{StaticResource Color.Success.Surface}" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.Success.Border" Color="{StaticResource Color.Success.Border}" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.Success.Foreground"
-                     Color="{StaticResource Color.Success.Foreground}"
-                     po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.TasksAccent" Color="{StaticResource Color.Success.Strong}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.TasksAccent.Surface"
                      Color="{StaticResource Color.Success.Surface}"
@@ -75,8 +58,6 @@
                      Color="{StaticResource Color.Success.Border}"
                      po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Warning" Color="{StaticResource Color.Warning.Strong}" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.Warning.Surface" Color="{StaticResource Color.Warning.Surface}" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.Warning.Border" Color="{StaticResource Color.Warning.Border}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Warning.Foreground"
                      Color="{StaticResource Color.Warning.Foreground}"
                      po:Freeze="True" />
@@ -95,13 +76,11 @@
     <sys:Double x:Key="FontSize.Body">13</sys:Double>
     <sys:Double x:Key="FontSize.Label">12</sys:Double>
     <sys:Double x:Key="FontSize.Meta">12</sys:Double>
-    <Thickness x:Key="Thickness.Window">24</Thickness>
     <Thickness x:Key="Thickness.Section">16</Thickness>
     <Thickness x:Key="Thickness.Control">12,6</Thickness>
     <Thickness x:Key="Thickness.ControlPrimary">16,6</Thickness>
     <CornerRadius x:Key="Radius.Control">6</CornerRadius>
     <CornerRadius x:Key="Radius.Section">8</CornerRadius>
-    <CornerRadius x:Key="Radius.Pill">8</CornerRadius>
 
     <Style x:Key="ControlFocusVisualStyle">
         <Setter Property="Control.Template">

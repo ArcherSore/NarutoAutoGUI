@@ -15,6 +15,13 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-09-01：修复多项 Run 在停止已接受后仍可能终结为 `Succeeded` 或 `Failed` 的状态竞争。
+  `WorkerHost.CompleteRunLocked` 现在优先应用 ADR 0012 的停止获胜语义，将已进入 `Stopping` 的 Run 统一终结为
+  `Cancelled`；`StopTimedOut` 仍沿既有分支保持 `Stopping` 并将 Worker 置为 `Faulted`，`CleanupFailed` 仍使 Worker
+  进入 `Faulted`。新增 Worker 自检覆盖停止与 `Succeeded`、`Failed`、`Cancelled`、`CleanupFailed` 终态竞争，
+  同时保护未停止 Run 的既有映射。NarutoAutoWorker Release `win-x64` build 与 build-output `--self-test` 均通过，
+  0 警告、0 错误。
+
 - 2026-08-31：完成 Tasks V2 UI/UX 重构。Tasks 页面改为上方可折叠 Task Shelf 与下方有序执行计划；PI task 以
   text-first command chip 自动换行呈现，不显示 task icon、summary 或 description。Plan Item 使用单开 accordion，
   参数编辑器随 item 移动；新增通用一至三列 `ResponsiveWrapPanel`，按控件实际期望宽度将明显宽项退化为整行。

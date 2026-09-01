@@ -16,10 +16,12 @@ internal static class WorkerSelfTestRunner
             VerifyPreviewResponseBudgetRejection();
             VerifyTransportWriteBeforeSendGuard();
             VerifyAgentExecutableResolution();
+            VerifyAcceptedStopWinsTerminalRace();
             Console.WriteLine(
                 "WORKER SELF-TEST PASS: MaaNOP string focus projection; Callback adapter; "
                 + "log response budget; latest-frame preview; preview response budget; "
-                + "budget rejection; transport write guard; agent executable resolution");
+                + "budget rejection; transport write guard; agent executable resolution; "
+                + "accepted stop wins terminal race");
             return 0;
         } catch (Exception exception) {
             Console.Error.WriteLine($"WORKER SELF-TEST FAIL: {exception}");
@@ -307,6 +309,29 @@ internal static class WorkerSelfTestRunner
             if (Directory.Exists(tempDirectory)) {
                 Directory.Delete(tempDirectory, recursive: true);
             }
+        }
+    }
+
+    private static void VerifyAcceptedStopWinsTerminalRace()
+    {
+        var terminalOutcomes = new[] {
+            RuntimeExecutionOutcome.Succeeded,
+            RuntimeExecutionOutcome.Failed,
+            RuntimeExecutionOutcome.Cancelled,
+            RuntimeExecutionOutcome.CleanupFailed
+        };
+        if (terminalOutcomes.Any(outcome => WorkerHost.ResolveFinalRunState(outcome, wasStopping: true)
+                                            != RunState.Cancelled)) {
+            throw new InvalidOperationException("停止已接受后，Run 终态必须由停止语义决定为 Cancelled。 ");
+        }
+        if (WorkerHost.ResolveFinalRunState(RuntimeExecutionOutcome.Succeeded, wasStopping: false)
+            != RunState.Succeeded
+            || WorkerHost.ResolveFinalRunState(RuntimeExecutionOutcome.Failed, wasStopping: false) != RunState.Failed
+            || WorkerHost.ResolveFinalRunState(RuntimeExecutionOutcome.Cancelled, wasStopping: false)
+            != RunState.Cancelled
+            || WorkerHost.ResolveFinalRunState(RuntimeExecutionOutcome.CleanupFailed, wasStopping: false)
+            != RunState.Failed) {
+            throw new InvalidOperationException("未停止 Run 的既有终态映射发生变化。 ");
         }
     }
 

@@ -403,12 +403,7 @@ internal sealed class WorkerHost
     private WorkerSnapshot CompleteRunLocked(
         Guid runId, int currentIndex, RuntimeExecutionResult result, bool wasStopping, DateTime now)
     {
-        var finalRunState = result.Outcome switch {
-            RuntimeExecutionOutcome.Succeeded => RunState.Succeeded,
-            RuntimeExecutionOutcome.Cancelled => RunState.Cancelled,
-            RuntimeExecutionOutcome.CleanupFailed when wasStopping => RunState.Cancelled,
-            _ => RunState.Failed
-        };
+        var finalRunState = ResolveFinalRunState(result.Outcome, wasStopping);
         var finalItemState = finalRunState switch {
             RunState.Succeeded => PlanItemState.Succeeded,
             RunState.Cancelled => PlanItemState.Cancelled,
@@ -455,6 +450,18 @@ internal sealed class WorkerHost
             _workerReason = null;
         }
         return CommitLocked();
+    }
+
+    internal static RunState ResolveFinalRunState(RuntimeExecutionOutcome outcome, bool wasStopping)
+    {
+        if (wasStopping) {
+            return RunState.Cancelled;
+        }
+        return outcome switch {
+            RuntimeExecutionOutcome.Succeeded => RunState.Succeeded,
+            RuntimeExecutionOutcome.Cancelled => RunState.Cancelled,
+            _ => RunState.Failed
+        };
     }
 
     private WorkerRuntimeExecution CreateExecution(Guid runId, RunPlanItem item) => new(

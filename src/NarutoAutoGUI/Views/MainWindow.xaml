@@ -24,12 +24,12 @@
             <RowDefinition Height="44" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar x:Name="AppTitleBar"
+        <ui:TitleBar
                      Grid.Row="0"
                      Title="NarutoAutoGUI"
                      Background="{StaticResource Brush.Canvas}" />
 
-        <ui:NavigationView x:Name="RootNavigationView"
+        <ui:NavigationView
                            Grid.Row="1"
                            PaneDisplayMode="Left"
                            OpenPaneLength="168"

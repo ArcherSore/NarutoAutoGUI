@@ -9,7 +9,6 @@ public static class ProtocolConstants
     public const int SnapshotVersion = 1;
     public const int LaunchContextVersion = 1;
     public const int PlanVersion = 1;
-    public const int CanonicalDigestVersion = 1;
     public const int MaximumFramePayloadBytes = 4 * 1024 * 1024;
     public const int MaximumLaunchManifestBytes = 256 * 1024;
     public const int MaximumRunPlanBytes = 1024 * 1024;

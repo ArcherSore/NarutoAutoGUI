@@ -11,15 +11,14 @@ internal sealed record WorkerAdmissionRecord(
 
 internal sealed class WorkerAdmissionStore
 {
-    private readonly string _stateDirectory;
     private readonly string _launchDirectory;
     private readonly string _recordPath;
 
     internal WorkerAdmissionStore(string stateDirectory)
     {
-        _stateDirectory = Path.GetFullPath(stateDirectory);
-        _launchDirectory = Path.Combine(_stateDirectory, "launch");
-        _recordPath = Path.Combine(_stateDirectory, "worker.json");
+        var fullStateDirectory = Path.GetFullPath(stateDirectory);
+        _launchDirectory = Path.Combine(fullStateDirectory, "launch");
+        _recordPath = Path.Combine(fullStateDirectory, "worker.json");
     }
 
     internal string GetManifestPath(Guid workerInstanceId) =>

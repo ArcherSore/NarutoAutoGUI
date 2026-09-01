@@ -151,7 +151,18 @@ public partial class MainWindow : FluentWindow
     {
         Loaded -= MainWindow_Loaded;
         _homeLogScrollViewer = FindVisualChild<ScrollViewer>(HomeLogListBox);
-        TryLoadProject(showError: false);
+        try {
+            LoadProject();
+        } catch (Exception exception) {
+            _logger.Warn(
+                $"加载 MaaNOP Project Interface 失败。AppContext.BaseDirectory={AppContext.BaseDirectory}", exception);
+            ShowProjectUnavailableState(
+                "修正安装目录后显示参数摘要",
+                "MaaNOP 项目无法加载",
+                "请使用完整的 MaaNOP 发布包，确保 NarutoAutoGUI.exe 同级目录直接包含 interface.json。");
+            ShowProjectValidationError(exception);
+            UpdateCommandAvailability();
+        }
         var existingId = _sessionManager.DetectExistingSession();
         if (existingId is null) {
             return;
@@ -169,7 +180,7 @@ public partial class MainWindow : FluentWindow
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
         if (_allowClose) {
-            StopPreviewPolling(clearImage: true);
+            StopPreviewPolling();
             _sessionManager.StateChanged -= OnSessionStateChanged;
             _workerCoordinator.StateChanged -= OnWorkerStateChanged;
             _workerCoordinator.LogReceived -= OnWorkerLogReceived;
@@ -251,9 +262,9 @@ public partial class MainWindow : FluentWindow
     }
 
     private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
-        => TryOpenLogsDirectory(showError: true);
+        => TryOpenLogsDirectory();
 
-    private bool TryOpenLogsDirectory(bool showError)
+    private void TryOpenLogsDirectory()
     {
         try {
             Directory.CreateDirectory(_logger.LogDirectory);
@@ -262,19 +273,14 @@ public partial class MainWindow : FluentWindow
                 Arguments = $"\"{_logger.LogDirectory}\"",
                 UseShellExecute = true
             });
-            return true;
         } catch (Exception exception) {
             _logger.Error("打开日志目录失败。", exception);
             OperationStatusText.Text = "失败：无法打开日志目录";
-            if (showError) {
-                ShowActionableError(
-                    "打开日志目录失败",
-                    exception,
-                    "请确认 Windows 资源管理器可用，并检查日志目录访问权限后重试。",
-                    offerLogDirectory: false);
-            }
-
-            return false;
+            ShowActionableError(
+                "打开日志目录失败",
+                exception,
+                "请确认 Windows 资源管理器可用，并检查日志目录访问权限后重试。",
+                offerLogDirectory: false);
         }
     }
 
@@ -353,7 +359,7 @@ public partial class MainWindow : FluentWindow
 
     private async void StopRunButton_Click(object sender, RoutedEventArgs e)
     {
-        StopPreviewPolling(clearImage: true);
+        StopPreviewPolling();
         await RunOperationAsync(
             "正在停止任务...",
             async () =>
@@ -1065,31 +1071,6 @@ public partial class MainWindow : FluentWindow
         UpdateCommandAvailability();
     }
 
-    private bool TryLoadProject(bool showError)
-    {
-        try {
-            LoadProject();
-            return true;
-        } catch (Exception exception) {
-            _logger.Warn(
-                $"加载 MaaNOP Project Interface 失败。AppContext.BaseDirectory={AppContext.BaseDirectory}", exception);
-            ShowProjectUnavailableState(
-                "修正安装目录后显示参数摘要",
-                "MaaNOP 项目无法加载",
-                "请使用完整的 MaaNOP 发布包，确保 NarutoAutoGUI.exe 同级目录直接包含 interface.json。");
-            ShowProjectValidationError(exception);
-            UpdateCommandAvailability();
-            if (showError) {
-                ShowActionableError(
-                    "加载 MaaNOP 项目失败",
-                    exception,
-                    "请使用完整的 MaaNOP 发布包，确保安装目录下直接包含 interface.json。",
-                    offerLogDirectory: true);
-            }
-            return false;
-        }
-    }
-
     private void ShowProjectUnavailableState(
         string optionSummary,
         string emptyStateTitle,
@@ -1198,7 +1179,7 @@ public partial class MainWindow : FluentWindow
     private void UpdatePreviewPolling()
     {
         if (!TryGetPreviewTarget(out var workerInstanceId, out var runId)) {
-            StopPreviewPolling(clearImage: true);
+            StopPreviewPolling();
             return;
         }
         if (_previewWorkerInstanceId == workerInstanceId && _previewRunId == runId
@@ -1206,7 +1187,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        StopPreviewPolling(clearImage: true);
+        StopPreviewPolling();
         _previewWorkerInstanceId = workerInstanceId;
         _previewRunId = runId;
         _previewRevision = 0;
@@ -1275,7 +1256,7 @@ public partial class MainWindow : FluentWindow
         && _previewRunId == runId && TryGetPreviewTarget(out var currentWorkerInstanceId, out var currentRunId)
         && currentWorkerInstanceId == workerInstanceId && currentRunId == runId;
 
-    private void StopPreviewPolling(bool clearImage)
+    private void StopPreviewPolling()
     {
         _previewPollingGeneration++;
         var cancellation = _previewPollingCancellation;
@@ -1290,9 +1271,7 @@ public partial class MainWindow : FluentWindow
         } catch (Exception exception) {
             LogPreviewFailure("停止 Preview 轮询失败。", exception);
         }
-        if (clearImage) {
-            ShowPreviewPlaceholder();
-        }
+        ShowPreviewPlaceholder();
     }
 
     private void DisplayPreviewFrame(PreviewGetLatestResponse response)
@@ -1768,7 +1747,7 @@ public partial class MainWindow : FluentWindow
             MessageBoxImage.Error,
             MessageBoxResult.No);
         if (answer == MessageBoxResult.Yes) {
-            TryOpenLogsDirectory(showError: true);
+            TryOpenLogsDirectory();
         }
     }
 

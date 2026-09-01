@@ -17,7 +17,7 @@ internal enum RuntimeExecutionOutcome
 }
 
 internal sealed record RuntimeExecutionResult(
-    RuntimeExecutionOutcome Outcome, JsonElement? Result, StructuredReason? Error, bool ForcedAgentTermination);
+    RuntimeExecutionOutcome Outcome, JsonElement? Result, StructuredReason? Error);
 
 internal sealed class WorkerRuntimeExecution
 {
@@ -111,19 +111,18 @@ internal sealed class WorkerRuntimeExecution
                     _preserveContext = true;
                     return new RuntimeExecutionResult(
                         RuntimeExecutionOutcome.StopTimedOut, null,
-                        new StructuredReason("StopTimeout", exception.GetBaseException().Message), false);
+                        new StructuredReason("StopTimeout", exception.GetBaseException().Message));
                 }
 
                 var cleanup = await CleanupAsync(cancellationToken);
                 return cleanup.Success
                     ? new RuntimeExecutionResult(
                         RuntimeExecutionOutcome.Cancelled,
-                        ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }), null,
-                        cleanup.ForcedAgentTermination)
+                        ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }), null)
                     : new RuntimeExecutionResult(
                         RuntimeExecutionOutcome.CleanupFailed,
                         ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }),
-                        new StructuredReason("AgentCleanupFailed", cleanup.Error!), cleanup.ForcedAgentTermination);
+                        new StructuredReason("AgentCleanupFailed", cleanup.Error!));
             }
 
             var normalCleanup = await CleanupAsync(cancellationToken);
@@ -131,24 +130,22 @@ internal sealed class WorkerRuntimeExecution
                 return new RuntimeExecutionResult(
                     RuntimeExecutionOutcome.CleanupFailed,
                     ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }),
-                    new StructuredReason("AgentCleanupFailed", normalCleanup.Error!), normalCleanup.ForcedAgentTermination);
+                    new StructuredReason("AgentCleanupFailed", normalCleanup.Error!));
             }
             if (status.IsSucceeded()) {
                 return new RuntimeExecutionResult(
                     RuntimeExecutionOutcome.Succeeded,
-                    ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }), null,
-                    normalCleanup.ForcedAgentTermination);
+                    ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }), null);
             }
             return new RuntimeExecutionResult(
                 RuntimeExecutionOutcome.Failed, ProtocolJson.ToElement(new { maaJobStatus = status.ToString() }),
-                new StructuredReason("MaaTaskFailed", $"MaaFramework task 终态为 {status}。 "),
-                normalCleanup.ForcedAgentTermination);
+                new StructuredReason("MaaTaskFailed", $"MaaFramework task 终态为 {status}。 "));
         } catch (Exception exception) {
             _taskerReady.TrySetException(exception);
             if (_preserveContext) {
                 return new RuntimeExecutionResult(
                     RuntimeExecutionOutcome.StopTimedOut, null,
-                    new StructuredReason("StopTimeout", exception.GetBaseException().Message), false);
+                    new StructuredReason("StopTimeout", exception.GetBaseException().Message));
             }
 
             var cleanup = await CleanupAsync(CancellationToken.None);
@@ -158,7 +155,7 @@ internal sealed class WorkerRuntimeExecution
                     "AgentCleanupFailed", $"{exception.GetBaseException().Message}；清理失败：{cleanup.Error}");
             return new RuntimeExecutionResult(
                 cleanup.Success ? RuntimeExecutionOutcome.Failed : RuntimeExecutionOutcome.CleanupFailed,
-                null, reason, cleanup.ForcedAgentTermination);
+                null, reason);
         }
     }
 
@@ -284,16 +281,15 @@ internal sealed class WorkerRuntimeExecution
         return process;
     }
 
-    private async Task<(bool Success, bool ForcedAgentTermination, string? Error)> CleanupAsync(
+    private async Task<(bool Success, string? Error)> CleanupAsync(
         CancellationToken cancellationToken)
     {
         if (_preserveContext) {
-            return (false, false, "Stop 未确认，保留 execution context 供诊断。 ");
+            return (false, "Stop 未确认，保留 execution context 供诊断。 ");
         }
 
         await StopPreviewProducerAsync();
 
-        var forced = false;
         var errors = new List<string>();
         try {
             if (_agentClient is not null && !_agentClient.LinkStop()) {
@@ -311,7 +307,6 @@ internal sealed class WorkerRuntimeExecution
                     try {
                         await agentProcess.WaitForExitAsync(grace.Token);
                     } catch (OperationCanceledException) {
-                        forced = true;
                         agentProcess.Kill(entireProcessTree: true);
                         await agentProcess.WaitForExitAsync(CancellationToken.None);
                     }
@@ -352,7 +347,7 @@ internal sealed class WorkerRuntimeExecution
             _previewProducerTask = null;
         }
 
-        return (errors.Count == 0, forced, errors.Count == 0 ? null : string.Join("；", errors));
+        return (errors.Count == 0, errors.Count == 0 ? null : string.Join("；", errors));
     }
 
     private void OnTaskerCallback(object? sender, MaaCallbackEventArgs args)

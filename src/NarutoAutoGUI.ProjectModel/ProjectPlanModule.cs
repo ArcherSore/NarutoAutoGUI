@@ -5,7 +5,7 @@ namespace NarutoAutoGUI.ProjectModel;
 
 public sealed record ProjectTaskChoice(string Name, string Label, string Description);
 
-public sealed record RunStartAttempt(Guid RunId, DateTime CreatedAtUtc, RunPlan Plan, string PlanDigest);
+public sealed record RunStartAttempt(Guid RunId, RunPlan Plan, string PlanDigest);
 
 public sealed class ProjectPlanModule
 {
@@ -26,14 +26,12 @@ public sealed class ProjectPlanModule
         SelectedTaskNames = config.SelectedTasks.ToArray();
     }
 
-    public string ProjectDirectory => _project.ProjectRoot;
     public string ProjectName => _project.Provenance.Name;
     public string ProjectVersion => _project.Provenance.Version;
     public string RuntimeProfileDigest => _project.RuntimeProfileDigest;
     public string SourceInterfaceDigest => _project.Provenance.SourceInterfaceDigest;
     public IReadOnlyList<ProjectTaskChoice> Tasks { get; }
     public IReadOnlyList<string> SelectedTaskNames { get; private set; }
-    public string? SelectedTaskName => SelectedTaskNames.Count == 1 ? SelectedTaskNames[0] : null;
 
     public static ProjectPlanModule Open(string projectDirectory, string configPath)
     {
@@ -213,7 +211,7 @@ public sealed class ProjectPlanModule
                 $"Run Plan 超过 {ProtocolConstants.MaximumRunPlanBytes} bytes：{serializedBytes.Length}。 ");
         }
 
-        return new RunStartAttempt(Guid.NewGuid(), createdAtUtc, plan, CanonicalDigest.ComputePlanDigestV1(plan));
+        return new RunStartAttempt(Guid.NewGuid(), plan, CanonicalDigest.ComputePlanDigestV1(plan));
     }
 
     private static void ValidateConfigShape(MaaNopConfig config)

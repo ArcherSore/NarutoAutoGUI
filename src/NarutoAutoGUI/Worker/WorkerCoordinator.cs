@@ -783,8 +783,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             var response = await completion.Task.WaitAsync(RequestTimeout, cancellationToken);
             if (response.Success != true) {
                 throw new WorkerProtocolErrorException(
-                    response.Error?.Code ?? "internal_error", response.Error?.Message ?? "Worker 返回未知错误。 ",
-                    response.Error?.Retriable ?? false);
+                    response.Error?.Code ?? "internal_error", response.Error?.Message ?? "Worker 返回未知错误。 ");
             }
             return ProtocolJson.Deserialize<TResponse>(response.Data);
         } catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
@@ -955,13 +954,8 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
 
 internal sealed class WorkerProtocolErrorException : Exception
 {
-    internal WorkerProtocolErrorException(string code, string message, bool retriable)
+    internal WorkerProtocolErrorException(string code, string message)
         : base($"{code}: {message}")
     {
-        Code = code;
-        Retriable = retriable;
     }
-
-    internal string Code { get; }
-    internal bool Retriable { get; }
 }

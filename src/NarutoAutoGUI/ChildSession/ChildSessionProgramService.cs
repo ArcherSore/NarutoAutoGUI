@@ -2,8 +2,6 @@ using NarutoAutoGUI.Infrastructure;
 
 namespace NarutoAutoGUI.ChildSession;
 
-internal sealed record ProgramLaunchResult(bool Launched, uint ProcessId, string ProcessName);
-
 internal sealed class ChildSessionProgramService
 {
     private static readonly TimeSpan VerificationTimeout = TimeSpan.FromSeconds(10);
@@ -14,7 +12,7 @@ internal sealed class ChildSessionProgramService
         _logger = logger;
     }
 
-    internal async Task<ProgramLaunchResult> LaunchIfNeededAsync(
+    internal async Task LaunchIfNeededAsync(
         uint childSessionId, string executablePath, string arguments = "",
         CancellationToken cancellationToken = default)
     {
@@ -24,7 +22,7 @@ internal sealed class ChildSessionProgramService
 
         if (ChildSessionNativeMethods.TryFindProcessInSession(processName, childSessionId, out var existingPid)) {
             _logger.Info($"跳过重复启动：{processName} 已在 Child Session {childSessionId} 中运行，PID={existingPid}。");
-            return new ProgramLaunchResult(false, existingPid, processName);
+            return;
         }
 
         _logger.Info($"正在 Child Session {childSessionId} 中启动：{fullPath}");
@@ -42,7 +40,7 @@ internal sealed class ChildSessionProgramService
             cancellationToken.ThrowIfCancellationRequested();
             if (ChildSessionNativeMethods.TryFindProcessInSession(processName, childSessionId, out var pid)) {
                 _logger.Info($"程序启动验证成功：{processName}，PID={pid}，SessionId={childSessionId}。");
-                return new ProgramLaunchResult(true, pid, processName);
+                return;
             }
 
             await Task.Delay(500, cancellationToken);

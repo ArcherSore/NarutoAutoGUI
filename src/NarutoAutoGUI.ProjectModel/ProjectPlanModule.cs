@@ -39,20 +39,6 @@ public sealed class ProjectPlanModule
         return new ProjectPlanModule(project, new MaaNopConfigStore(configPath));
     }
 
-    public void SelectTask(string taskName)
-    {
-        _ = Tasks.SingleOrDefault(candidate => candidate.Name == taskName)
-            ?? throw new ArgumentException($"PI 中不存在 task：{taskName}。", nameof(taskName));
-
-        var current = LoadConfig();
-        var updated = current with {
-            SelectedTasks = [taskName]
-        };
-        _ = ProjectOptionResolver.Resolve(_project, FindTask(taskName), updated);
-        _configStore.Save(updated);
-        SelectedTaskNames = [taskName];
-    }
-
     public bool AddTask(string taskName)
     {
         _ = FindTask(taskName);
@@ -108,13 +94,6 @@ public sealed class ProjectPlanModule
         return true;
     }
 
-    public ProjectConfigurationView GetConfiguration()
-    {
-        var config = LoadConfig();
-        ValidateActiveConfiguration(config);
-        return BuildConfiguration(config);
-    }
-
     public ProjectConfigurationView GetConfiguration(string taskName)
     {
         _ = FindTask(taskName);
@@ -164,18 +143,6 @@ public sealed class ProjectPlanModule
 
         var config = LoadConfig();
         var updated = ReplaceExplicit(config, optionName, ExplicitOptionIntent.CreateSelectedCase(selectedCase));
-        ValidateActiveConfiguration(updated);
-        _configStore.Save(updated);
-        return BuildConfiguration(updated);
-    }
-
-    public ProjectConfigurationView FollowProjectDefault(string optionName)
-    {
-        _ = FindOption(optionName);
-        var config = LoadConfig();
-        var values = config.ExplicitOptions.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-        values.Remove(optionName);
-        var updated = config with { ExplicitOptions = values };
         ValidateActiveConfiguration(updated);
         _configStore.Save(updated);
         return BuildConfiguration(updated);

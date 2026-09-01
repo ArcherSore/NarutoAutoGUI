@@ -135,7 +135,7 @@ internal static class SelfTestRunner
             throw new InvalidOperationException("PI task catalog 验证失败。");
         }
 
-        project.SelectTask("RealTask");
+        _ = project.AddTask("RealTask");
         using (var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath))) {
             var root = configDocument.RootElement;
             if (root.GetProperty("SchemaVersion").GetInt32() != MaaNopConfig.CurrentSchemaVersion
@@ -146,7 +146,7 @@ internal static class SelfTestRunner
             }
         }
 
-        var defaultConfiguration = project.GetConfiguration();
+        var defaultConfiguration = project.GetConfiguration("RealTask");
         var defaultServer = defaultConfiguration.GlobalOptions.Single();
         var defaultMode = defaultConfiguration.TaskOptions.Single();
         if (defaultServer.Inputs.Single(input => input.Name == "server_range").Value != "978-1012"
@@ -210,7 +210,7 @@ internal static class SelfTestRunner
         }
 
         project.SetSelectedCase("Mode", "Minimal");
-        var dormantConfiguration = project.GetConfiguration();
+        var dormantConfiguration = project.GetConfiguration("RealTask");
         if (dormantConfiguration.TaskOptions.Single().ActiveChildren.Count != 0) {
             throw new InvalidOperationException("PI nested option active graph 验证失败。");
         }
@@ -242,7 +242,7 @@ internal static class SelfTestRunner
         }
         VerifyRejectedInputEdit(project, "retry_count", "3.5");
         VerifyRejectedInputEdit(project, "enabled", "not-a-bool");
-        var retainedInputs = project.GetConfiguration().GlobalOptions.Single().Inputs
+        var retainedInputs = project.GetConfiguration("RealTask").GlobalOptions.Single().Inputs
             .ToDictionary(input => input.Name, input => input.Value, StringComparer.Ordinal);
         if (retainedInputs["server_range"] != "978"
             || retainedInputs["retry_count"] != "3"
@@ -250,10 +250,10 @@ internal static class SelfTestRunner
             throw new InvalidOperationException("非法显式值不应覆盖最后一次合法配置。");
         }
 
-        project.FollowProjectDefault("ServerRange");
-        project.FollowProjectDefault("Nested");
-        project.FollowProjectDefault("Mode");
-        var resetAttempt = project.CreateRunStartAttempt();
+        var resetProject = ProjectPlanModule.Open(
+            projectDirectory, Path.Combine(testDirectory, "default-maanop-config.json"));
+        _ = resetProject.AddTask("RealTask");
+        var resetAttempt = resetProject.CreateRunStartAttempt();
         if (resetAttempt.Plan.ResolvedGlobalOptions.GetProperty("ServerRange")
                 .GetProperty("server_range").GetString() != "978-1012"
             || resetAttempt.Plan.Items[0].ResolvedOptions.GetProperty("Mode").GetString() != "Default"
@@ -304,14 +304,16 @@ internal static class SelfTestRunner
             throw new InvalidOperationException("PI task 顺序、长 label 或可选 description 验证失败。");
         }
 
-        project.SelectTask("RealTask");
+        _ = project.AddTask("RealTask");
         project.SetSelectedCase("Mode", "Minimal");
-        project.SelectTask("LongLabelTask");
-        if (project.GetConfiguration().TaskOptions.Count != 0) {
+        _ = project.RemoveTask("RealTask");
+        _ = project.AddTask("LongLabelTask");
+        if (project.GetConfiguration("LongLabelTask").TaskOptions.Count != 0) {
             throw new InvalidOperationException("无 option task 不应生成 task editor。");
         }
-        project.SelectTask("RealTask");
-        if (project.GetConfiguration().TaskOptions.Single().SelectedCase != "Minimal") {
+        _ = project.RemoveTask("LongLabelTask");
+        _ = project.AddTask("RealTask");
+        if (project.GetConfiguration("RealTask").TaskOptions.Single().SelectedCase != "Minimal") {
             throw new InvalidOperationException("task selection 切换未保留显式 option intent。");
         }
 

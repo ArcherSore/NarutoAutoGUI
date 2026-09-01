@@ -6,6 +6,7 @@ using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text.Json;
+using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Infrastructure;
 using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
@@ -240,7 +241,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         }
     }
 
-    private void RecordVerifiedWorkerProcess(Guid workerInstanceId, WorkerProcessLaunchResult launch)
+    private void RecordVerifiedWorkerProcess(Guid workerInstanceId, VerifiedChildSessionProcessLaunch launch)
     {
         var workerPid = checked((int)launch.ProcessId);
         WorkerAdmissionRecord? recordToPersist = null;

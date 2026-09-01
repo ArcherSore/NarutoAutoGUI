@@ -3,8 +3,6 @@ using NarutoAutoGUI.Infrastructure;
 
 namespace NarutoAutoGUI.Worker;
 
-internal sealed record WorkerProcessLaunchResult(uint ProcessId, uint SessionId, int? TaskState, int? LastTaskResult);
-
 internal sealed class ChildSessionWorkerLauncher
 {
     private static readonly TimeSpan ProcessVerificationTimeout = TimeSpan.FromSeconds(30);
@@ -15,7 +13,7 @@ internal sealed class ChildSessionWorkerLauncher
         _logger = logger;
     }
 
-    internal async Task<WorkerProcessLaunchResult> LaunchAsync(
+    internal async Task<VerifiedChildSessionProcessLaunch> LaunchAsync(
         uint childSessionId, string workerExecutablePath, Guid workerInstanceId,
         string launchToken, string manifestPath, CancellationToken cancellationToken = default)
     {
@@ -34,8 +32,7 @@ internal sealed class ChildSessionWorkerLauncher
                 $"Worker 启动验证成功：PID={result.ProcessId}，SessionId={result.SessionId}，"
                 + $"TaskState={FormatDiagnostic(result.TaskState)}，"
                 + $"LastTaskResult={FormatDiagnostic(result.LastTaskResult)}。 ");
-            return new WorkerProcessLaunchResult(
-                result.ProcessId, result.SessionId, result.TaskState, result.LastTaskResult);
+            return result;
         } catch (Exception exception) {
             _logger.Error(
                 $"Worker Task Scheduler 启动或进程验证失败：Child Session={childSessionId}，"

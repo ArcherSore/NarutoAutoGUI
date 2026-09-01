@@ -91,7 +91,7 @@ public partial class MainWindow : FluentWindow
     private bool _projectConfigurationValid;
     private bool _updatingOptionEditors;
     private bool _taskShelfExpanded = true;
-    private readonly TaskPlanPresentationState _taskPlanState = new();
+    private string? _expandedTaskName;
     private string? _dragTaskName;
     private WpfPoint _dragStartPoint;
     private IInputElement? _descriptionDrawerPreviousFocus;
@@ -396,7 +396,7 @@ public partial class MainWindow : FluentWindow
             if (!project.AddTask(task.Name)) {
                 return;
             }
-            _taskPlanState.Expand(task.Name);
+            _expandedTaskName = task.Name;
             _pendingStartAttempt = null;
             RenderTaskPlan();
             _logger.Info($"已添加执行计划任务：{task.Name}。 ");
@@ -411,7 +411,7 @@ public partial class MainWindow : FluentWindow
         if (sender is not WpfButton { Tag: ProjectTaskChoice task }) {
             return;
         }
-        _taskPlanState.Toggle(task.Name);
+        _expandedTaskName = _expandedTaskName == task.Name ? null : task.Name;
         RenderTaskPlan();
     }
 
@@ -425,7 +425,9 @@ public partial class MainWindow : FluentWindow
             if (!project.RemoveTask(task.Name)) {
                 return;
             }
-            _taskPlanState.Remove(task.Name);
+            if (_expandedTaskName == task.Name) {
+                _expandedTaskName = null;
+            }
             CloseTaskDescriptionDrawer();
             _pendingStartAttempt = null;
             RenderTaskPlan();
@@ -587,7 +589,7 @@ public partial class MainWindow : FluentWindow
         foreach (var taskName in project.SelectedTaskNames) {
             AddDropIndicator();
             var task = project.Tasks.Single(candidate => candidate.Name == taskName);
-            var expanded = _taskPlanState.ExpandedTaskName == task.Name;
+            var expanded = _expandedTaskName == task.Name;
             var container = CreatePlanItem(task, expanded);
             _planItemContainers.Add(task.Name, container);
             PlanItemsPanel.Children.Add(container);
@@ -842,7 +844,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        _taskPlanState.Collapse();
+        _expandedTaskName = null;
         RenderTaskPlan();
         if (_planItemContainers.TryGetValue(task.Name, out var container)) {
             container.Effect = (Effect)FindResource("Effect.Surface.Drag");
@@ -871,7 +873,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
         try {
-            _taskPlanState.Collapse();
+            _expandedTaskName = null;
             _ = project.MoveTask(task.Name, targetIndex);
             _pendingStartAttempt = null;
             RenderTaskPlan();
@@ -908,7 +910,7 @@ public partial class MainWindow : FluentWindow
             var boundary = CalculateDropBoundary(e.GetPosition(PlanItemsPanel).Y);
             var targetIndex = boundary > currentIndex ? boundary - 1 : boundary;
             targetIndex = Math.Clamp(targetIndex, 0, project.SelectedTaskNames.Count - 1);
-            _taskPlanState.Collapse();
+            _expandedTaskName = null;
             if (project.MoveTask(taskName, targetIndex)) {
                 _pendingStartAttempt = null;
                 _logger.Info($"已调整执行计划顺序：{taskName} -> {targetIndex}。 ");
@@ -1050,7 +1052,7 @@ public partial class MainWindow : FluentWindow
         var project = ProjectPlanModule.Open(AppContext.BaseDirectory, configPath);
         _projectPlan = project;
         _pendingStartAttempt = null;
-        _taskPlanState.Collapse();
+        _expandedTaskName = null;
         CloseTaskDescriptionDrawer();
         ProjectEmptyStatePanel.Visibility = Visibility.Collapsed;
         TaskWorkspacePanel.Visibility = Visibility.Visible;
@@ -1096,7 +1098,7 @@ public partial class MainWindow : FluentWindow
         _projectPlan = null;
         _pendingStartAttempt = null;
         _projectConfigurationValid = false;
-        _taskPlanState.Collapse();
+        _expandedTaskName = null;
         AvailableTasksPanel.Children.Clear();
         PlanItemsPanel.Children.Clear();
         CloseTaskDescriptionDrawer();

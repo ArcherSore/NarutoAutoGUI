@@ -26,7 +26,6 @@ internal static class SelfTestRunner
             VerifyProjectPlan(testDirectory, projectDirectory);
             VerifyTaskCatalogVariants(testDirectory, projectDirectory);
             VerifyTaskDescriptionMarkup();
-            VerifyTaskPlanPresentationState();
             VerifyResponsiveOptionLayout();
             VerifyUnsupportedProjectConstraints(testDirectory, projectDirectory);
             VerifyInvalidProjectInterfaces(testDirectory, projectDirectory);
@@ -376,37 +375,6 @@ internal static class SelfTestRunner
             || ResponsiveWrapPanel.CalculateColumnCount(600, 220, 12, 3) != 2
             || ResponsiveWrapPanel.CalculateColumnCount(900, 220, 12, 3) != 3) {
             throw new InvalidOperationException("响应式 option 一至三列退化规则验证失败。");
-        }
-    }
-
-    private static void VerifyTaskPlanPresentationState()
-    {
-        var state = new TaskPlanPresentationState();
-        state.Expand("A");
-        if (state.ExpandedTaskName != "A") {
-            throw new InvalidOperationException("Plan item 展开状态验证失败。");
-        }
-
-        state.Toggle("B");
-        if (state.ExpandedTaskName != "B") {
-            throw new InvalidOperationException("Plan item 单项 accordion 切换验证失败。");
-        }
-
-        state.Toggle("B");
-        if (state.ExpandedTaskName is not null) {
-            throw new InvalidOperationException("Plan item 折叠验证失败。");
-        }
-
-        state.Expand("A");
-        state.Remove("A");
-        if (state.ExpandedTaskName is not null) {
-            throw new InvalidOperationException("删除展开 Plan item 后的状态验证失败。");
-        }
-
-        state.Expand("A");
-        state.Collapse();
-        if (state.ExpandedTaskName is not null) {
-            throw new InvalidOperationException("拖拽前统一折叠状态验证失败。");
         }
     }
 

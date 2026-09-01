@@ -22,7 +22,6 @@ internal sealed class WorkerHost
     private WorkerState _workerState = WorkerState.Starting;
     private StructuredReason? _workerReason;
     private DependencyStatus _dependencyStatus;
-    private RunState _runState = RunState.Idle;
     private RunSnapshot? _activeRun;
     private RunSnapshot? _lastRun;
     private WorkerRuntimeExecution? _execution;
@@ -237,7 +236,6 @@ internal sealed class WorkerHost
                 request.Plan, itemSnapshots, null, null);
             _lastRun = null;
             _activeRun = run;
-            _runState = RunState.Starting;
             _ledger.Add(request.RunId, (request.PlanDigest, null));
             execution = CreateExecution(request.RunId, item);
             _execution = execution;
@@ -288,7 +286,6 @@ internal sealed class WorkerHost
                 StopRequestedAtUtc = now,
                 Items = items
             };
-            _runState = RunState.Stopping;
             execution = _execution
                         ?? throw new WorkerRequestException("internal_error", "active Run 缺少 execution context。 ");
             snapshot = CommitLocked();
@@ -343,7 +340,6 @@ internal sealed class WorkerHost
                 if (result.Outcome == RuntimeExecutionOutcome.StopTimedOut) {
                     _workerState = WorkerState.Faulted;
                     _workerReason = result.Error;
-                    _runState = RunState.Stopping;
                     snapshot = CommitLocked();
                 } else {
                     var currentIndex = _activeRun.CurrentPlanItemIndex
@@ -369,7 +365,6 @@ internal sealed class WorkerHost
                             CurrentPlanItemIndex = nextIndex,
                             Items = items
                         };
-                        _runState = RunState.Running;
                         nextExecution = CreateExecution(runId, nextItem);
                         _execution = nextExecution;
                         snapshot = CommitLocked();
@@ -433,7 +428,6 @@ internal sealed class WorkerHost
         };
         _activeRun = null;
         _lastRun = terminal;
-        _runState = RunState.Idle;
         _execution = null;
         _ledger[runId] = (_ledger[runId].Digest, terminal);
         if (result.Outcome == RuntimeExecutionOutcome.CleanupFailed) {
@@ -479,7 +473,6 @@ internal sealed class WorkerHost
             }
             items[currentIndex] = items[currentIndex] with { State = PlanItemState.Running };
             _activeRun = _activeRun with { State = RunState.Running, Items = items };
-            _runState = RunState.Running;
             snapshot = CommitLocked();
         }
         PublishState(ProtocolOperations.RunStateChanged, snapshot);
@@ -606,7 +599,7 @@ internal sealed class WorkerHost
             ProtocolConstants.SnapshotVersion, DateTime.UtcNow, _stateRevision, _manifest.WorkerInstanceId,
             Environment.ProcessId, checked((uint)Process.GetCurrentProcess().SessionId), GetWorkerVersion(),
             ProtocolConstants.ProtocolVersion, _manifest.RuntimeProfileDigest, _manifest.Project,
-            _workerState, _workerReason, _dependencyStatus, _runState,
+            _workerState, _workerReason, _dependencyStatus, _activeRun?.State ?? RunState.Idle,
             _activeRun, _lastRun, firstLog, lastLog);
     }
 

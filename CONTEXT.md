@@ -153,11 +153,11 @@ _Avoid_: 主 Session PATH 探测、自动安装、正式 Agent 生命周期
 _Avoid_: Worker Instance Token、Run ID、interface 中的显式 identifier
 
 **Worker Replacement**:
-没有 activeRun 时，因 MaaNOP 项目根目录或其他 Runtime Profile 字段显式变化而通过 `worker.shutdown` 结束旧 Worker，并以新的 Worker Instance ID、Launch Token 和 Worker Launch Context 启动新 Worker。它不是热加载；旧 Worker 的 lastRun、accepted-run ledger 和日志随进程退出失效。
+当前正式 GUI 未提供 Runtime Profile replacement UI 或进程内 reinitialize；Worker Launch Context 在单个 Worker instance 生命周期内保持不变。Worker process 退出后，旧 Worker 的 lastRun、accepted-run ledger 和日志随进程退出失效。
 _Avoid_: IPC 重连、活动 Run 中重启、进程内 runtime 热切换
 
 **Worker State**:
-由 NarutoAutoWorker 维护并通过 Run Snapshot 报告的进程内部健康与执行就绪状态：Starting、Ready、NotReady、Faulted、Stopping。Ready 与 Run 是否正在执行正交；NotReady 表示进程和 IPC 健康但依赖或项目环境不满足执行条件，并携带结构化原因；Faulted 只表示仍存活的 Worker 已进入不可继续工作的内部故障。
+由 NarutoAutoWorker 维护并通过 Run Snapshot 报告的进程内部健康与执行就绪状态：Starting、Ready、NotReady、Faulted。Ready 与 Run 是否正在执行正交；NotReady 表示进程和 IPC 健康但依赖或项目环境不满足执行条件，并携带结构化原因；Faulted 只表示仍存活的 Worker 已进入不可继续工作的内部故障。
 _Avoid_: GUI Observation、Run State、IPC 断开、Worker 退出
 
 **Run State**:
@@ -245,7 +245,7 @@ _Avoid_: GUI 缓存、推测状态
 _Avoid_: 仅计算 Run Plan 字符串、贴近 4 MiB 发送、无界诊断
 
 **IPC Operation**:
-NarutoAutoGUI 首版 Named Pipe 协议中固定的请求/响应操作集合：`connection.open`、`ping`、`worker.getSnapshot`、`worker.shutdown`、`run.start`、`run.stop`、`log.getSince`。
+NarutoAutoGUI 当前 Named Pipe 协议中固定的请求/响应操作集合：`connection.open`、`worker.getSnapshot`、`run.start`、`run.stop`、`log.getSince`、`preview.getLatest`。
 _Avoid_: 通用 RPC、pause/resume、任务队列操作
 
 **IPC Frame**:

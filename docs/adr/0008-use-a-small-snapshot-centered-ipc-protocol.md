@@ -4,9 +4,7 @@ NarutoAutoGUI 与 NarutoAutoWorker 通过带长度前缀的本机 Named Pipe JSO
 
 payloadLength 为 0、超过 4 MiB、frame 截断或 UTF-8 非法属于 framing/protocol corruption，关闭当前 Pipe。JSON 可解析但业务 schema 非法时，能安全取得 requestId 才返回 `invalid_request`，否则关闭连接。首版不实现压缩、通用 fragmentation、binary payload、截图/frame streaming 或 per-user IPC size tuning。
 
-首版只提供七个请求/响应 operation：Worker 用 `connection.open` 完成首次登记和重连握手；双方使用 `ping` 检测连接活性；GUI 用 `worker.getSnapshot` 取得完整权威状态；用 `worker.shutdown` 在没有 activeRun 时优雅退出 Worker；用 `run.start` 提交完整不可变 Run Plan；用 `run.stop` 停止匹配 runId 的活动 Run；用 `log.getSince` 按递增日志序号补取有界缓冲。首版不提供 pause/resume、队列、单独跳过 Plan Item、动态修改 Run Plan、通用远程调用或单独的 task 操作。
-
-`worker.shutdown` 仅在 activeRun 为 null 时允许，否则返回 `operation_not_allowed`。接受后 Worker 进入 Stopping，停止接受新请求，flush 必要日志、关闭 IPC 并正常退出。GUI 等待旧 PID 在固定 timeout 内退出；超时后只可针对已验证 PID 强制结束。确认旧 PID 退出后才能删除旧 Admission Record 并启动新 Worker。
+当前提供六个请求/响应 operation：Worker 用 `connection.open` 完成首次登记和重连握手；GUI 用 `worker.getSnapshot` 取得完整权威状态；用 `run.start` 提交完整不可变 Run Plan；用 `run.stop` 停止匹配 runId 的活动 Run；用 `log.getSince` 按递增日志序号补取有界缓冲；用 `preview.getLatest` 读取当前 Run 的 latest frame。当前不提供 ping、Worker IPC shutdown、pause/resume、队列、单独跳过 Plan Item、动态修改 Run Plan、通用远程调用或单独的 task 操作。
 
 Worker 只发送 `worker.stateChanged`、`run.stateChanged` 和 `log.entry` 三类 Event。`run.stateChanged` 同时覆盖 Run 与 Plan Item 的状态变化，不再增加 task.started、task.completed 等重复事件。`log.entry` 同时承载 Worker 初始化、依赖检查、NotReady/Faulted 诊断、IPC 生命周期和 Run 执行日志，其 runId、planItemId、taskName 按上下文允许为空。Event 只用于降低实时显示延迟，允许因断线丢失；Snapshot 始终是 Worker/Run 状态的权威来源。GUI 重连后必须重新调用 `worker.getSnapshot`，不能依赖补齐所有 Event 重建状态；日志则通过 `log.getSince` 独立补取。
 

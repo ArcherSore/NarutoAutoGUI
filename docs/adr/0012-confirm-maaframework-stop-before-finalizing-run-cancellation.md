@@ -8,4 +8,4 @@ Cancelled 是 NarutoAutoGUI 的 Run 层语义，不是 MaaJobStatus 的直接映
 
 MaaFramework 停止确认后，Worker 调用 MaaAgentClient.LinkStop，给 AgentServer 固定短暂 grace period 自行退出，然后才进入 Dispose/强制兜底。Agent 正常退出时正常释放对象；仍未退出时记录 WARN 和 `result.forcedAgentTermination=true`，再通过 Dispose 或显式终止进程树。只要最终确认清理完成，Run 仍为 Cancelled，activeRun 清空、完整终态进入 lastRun，Worker 保持 Ready。
 
-若 MaaFramework 已确认停止但 Agent 进程树最终无法确认清理，Run 仍可终态为 Cancelled，activeRun 清空并进入 lastRun，但 Worker 进入 `Faulted / AgentCleanupFailed`，拒绝新 Run。Faulted Worker 继续响应 ping、worker.getSnapshot、log.getSince，以及与当前或最近 Run 对应的重复 run.stop，以保留诊断能力；它拒绝 run.start 和任何需要创建新 execution context 的操作。
+若 MaaFramework 已确认停止但 Agent 进程树最终无法确认清理，Run 仍可终态为 Cancelled，activeRun 清空并进入 lastRun，但 Worker 进入 `Faulted / AgentCleanupFailed`，拒绝新 Run。Faulted Worker 继续响应 worker.getSnapshot、log.getSince，以及与当前或最近 Run 对应的重复 run.stop，以保留诊断能力；它拒绝 run.start 和任何需要创建新 execution context 的操作。

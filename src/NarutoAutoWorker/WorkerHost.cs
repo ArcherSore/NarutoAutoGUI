@@ -163,8 +163,6 @@ internal sealed class WorkerHost
 
         try {
             return request.Operation switch {
-                ProtocolOperations.Ping => WireEnvelope.Response(
-                    request.Operation, requestId, new PingMessage(DateTime.UtcNow)),
                 ProtocolOperations.WorkerGetSnapshot => WireEnvelope.Response(
                     request.Operation, requestId, new GetSnapshotResponse(GetSnapshot())),
                 ProtocolOperations.RunStart => WireEnvelope.Response(
@@ -179,7 +177,6 @@ internal sealed class WorkerHost
                 ProtocolOperations.PreviewGetLatest => HandlePreviewGetLatest(
                     request.Operation, requestId,
                     ProtocolJson.Deserialize<PreviewGetLatestRequest>(request.Data)),
-                ProtocolOperations.WorkerShutdown => HandleShutdown(request.Operation, requestId),
                 _ => throw new WorkerRequestException("invalid_request", $"未知 operation：{request.Operation}。 ")
             };
         } catch (WorkerRequestException exception) {
@@ -489,25 +486,6 @@ internal sealed class WorkerHost
             snapshot = CommitLocked();
         }
         PublishState(ProtocolOperations.RunStateChanged, snapshot);
-    }
-
-    private WireEnvelope HandleShutdown(string operation, Guid requestId)
-    {
-        WorkerSnapshot snapshot;
-        lock (_stateGate) {
-            if (_activeRun is not null) {
-                throw new WorkerRequestException("operation_not_allowed", "activeRun 非空时不能 shutdown Worker。 ");
-            }
-            _workerState = WorkerState.Stopping;
-            snapshot = CommitLocked();
-        }
-        PublishState(ProtocolOperations.WorkerStateChanged, snapshot);
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(200);
-            _shutdown.Cancel();
-        });
-        return WireEnvelope.Response(operation, requestId, new { disposition = "shutting_down" });
     }
 
     private LogGetSinceResponse GetLogs(LogGetSinceRequest request)

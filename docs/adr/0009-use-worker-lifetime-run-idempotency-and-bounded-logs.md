@@ -2,7 +2,7 @@
 
 `run.start` 以 runId 作为业务幂等键，requestId 只关联一次请求和响应。Worker 对每个正式接受的 Run 记录 runId、planDigest 和已有的 terminal summary，形成仅存在于该 Worker 进程内的 accepted-run ledger。相同 runId 和相同 planDigest 的请求无论命中 activeRun、lastRun 或 ledger 历史，都返回已有 Run、终态或摘要而不重新执行；相同 runId 配不同 planDigest 返回 `run_id_conflict`。preflight 失败发生在正式接受之前，不写入 ledger，修复后可以用原 runId 重试。新 Run 被接受时可以清除完整 lastRun，但 ledger 中的旧 runId 仍不可复用。Worker 重启后 ledger 不恢复。
 
-存在 activeRun 时，不同 runId 的 `run.start` 返回 `worker_busy`。`run.stop` 命中 activeRun 时发起停止，重复请求返回当前状态；命中相同 runId 的 terminal Run 时正常成功、不改写终态，并返回 `disposition=already_terminal`；没有匹配 Run 时返回 `run_id_mismatch`。`ping`、`worker.getSnapshot` 和 `log.getSince` 均无副作用。
+存在 activeRun 时，不同 runId 的 `run.start` 返回 `worker_busy`。`run.stop` 命中 activeRun 时发起停止，重复请求返回当前状态；命中相同 runId 的 terminal Run 时正常成功、不改写终态，并返回 `disposition=already_terminal`；没有匹配 Run 时返回 `run_id_mismatch`。`worker.getSnapshot` 和 `log.getSince` 均无副作用。
 
 首版业务错误码固定为 `invalid_request`、`protocol_version_mismatch`、`worker_identity_rejected`、`worker_already_registered`、`worker_not_ready`、`worker_faulted`、`worker_busy`、`invalid_run_plan`、`run_id_conflict`、`run_id_mismatch`、`operation_not_allowed`、`internal_error`。错误对象统一包含 code、message、可空的结构化 details 和 retriable。Pipe 断开与请求超时属于 GUI Observation 或 transport failure，不伪装成 Worker 业务错误。
 

@@ -1369,7 +1369,6 @@ public partial class MainWindow : FluentWindow
             WorkerState.Ready => "已就绪",
             WorkerState.NotReady => "尚未就绪",
             WorkerState.Faulted => "运行异常",
-            WorkerState.Stopping => "正在停止",
             _ => "已连接"
         };
     }
@@ -1611,9 +1610,6 @@ public partial class MainWindow : FluentWindow
         }
 
         var worker = snapshot.WorkerSnapshot;
-        if (worker?.WorkerState == WorkerState.Stopping) {
-            return ("正在停止", "Brush.Warning");
-        }
 
         if (worker?.WorkerState == WorkerState.Starting) {
             return ("正在启动", "Brush.Primary");
@@ -1690,7 +1686,7 @@ public partial class MainWindow : FluentWindow
             return snapshot.WorkerSnapshot?.WorkerState switch {
                 WorkerState.Ready => "Brush.Success",
                 WorkerState.Starting => "Brush.Primary",
-                WorkerState.Stopping or WorkerState.NotReady => "Brush.Warning",
+                WorkerState.NotReady => "Brush.Warning",
                 WorkerState.Faulted => "Brush.Error",
                 _ => "Brush.Primary"
             };

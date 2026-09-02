@@ -621,6 +621,20 @@ public partial class MainWindow : FluentWindow
         var layout = new Grid();
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        if (expanded) {
+            var accentLine = new Border {
+                Width = 3,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+                VerticalAlignment = System.Windows.VerticalAlignment.Stretch,
+                Margin = new Thickness(1, 6, 0, 6),
+                CornerRadius = new CornerRadius(1.5),
+                Background = (WpfBrush)FindResource("Brush.TasksAccent")
+            };
+            Grid.SetRowSpan(accentLine, 2);
+            layout.Children.Add(accentLine);
+        }
+
         layout.Children.Add(CreatePlanItemHeader(task, expanded));
 
         if (expanded) {
@@ -628,9 +642,9 @@ public partial class MainWindow : FluentWindow
                 (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 "))
                 .GetConfiguration(task.Name));
             var editorBorder = new Border {
-                Margin = new Thickness(12, 0, 12, 12),
-                Padding = new Thickness(0, 10, 0, 0),
-                BorderBrush = (WpfBrush)FindResource("Brush.Border"),
+                Margin = new Thickness(12, 0, 12, 10),
+                Padding = new Thickness(0, 8, 0, 0),
+                BorderBrush = (WpfBrush)FindResource("Brush.Border.Subtle"),
                 BorderThickness = new Thickness(0, 1, 0, 0),
                 Child = editor
             };
@@ -643,7 +657,10 @@ public partial class MainWindow : FluentWindow
 
     private Grid CreatePlanItemHeader(ProjectTaskChoice task, bool expanded)
     {
-        var header = new Grid { MinHeight = 46 };
+        var header = new Grid {
+            MinHeight = 44,
+            Margin = new Thickness(expanded ? 6 : 4, 0, 4, 0)
+        };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -719,7 +736,7 @@ public partial class MainWindow : FluentWindow
         var content = new StackPanel();
         content.Children.Add(CreateParameterLabel(label, description));
         var editor = new WpfTextBox {
-            Margin = new Thickness(0, 6, 0, 0),
+            Margin = new Thickness(0, 5, 0, 0),
             Text = input.Value,
             Tag = new OptionInputTag(option.Name, input.Name),
             HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
@@ -740,7 +757,7 @@ public partial class MainWindow : FluentWindow
         var content = new StackPanel();
         content.Children.Add(CreateParameterLabel(label, option.Description));
         var selector = new WpfComboBox {
-            Margin = new Thickness(0, 6, 0, 0),
+            Margin = new Thickness(0, 5, 0, 0),
             ItemsSource = option.Cases,
             DisplayMemberPath = nameof(ProjectCaseEditor.Label),
             SelectedItem = option.Cases.Single(item => item.Name == option.SelectedCase),
@@ -767,6 +784,8 @@ public partial class MainWindow : FluentWindow
         header.Children.Add(new TextBlock {
             Text = label,
             FontWeight = FontWeights.SemiBold,
+            FontSize = (double)FindResource("FontSize.Label"),
+            Foreground = (WpfBrush)FindResource("Brush.Text.Primary"),
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center
         });
@@ -783,9 +802,9 @@ public partial class MainWindow : FluentWindow
     {
         var toolTip = new WpfToolTip { Content = description, MaxWidth = 320 };
         var button = CreateIconButton(WpfSymbolRegular.Info12, accessibleName);
-        button.MinWidth = 24;
-        button.MinHeight = 24;
-        button.Padding = new Thickness(4);
+        button.MinWidth = 20;
+        button.MinHeight = 20;
+        button.Padding = new Thickness(2);
         button.ToolTip = toolTip;
         ToolTipService.SetInitialShowDelay(button, 250);
         button.GotKeyboardFocus += (_, _) => toolTip.IsOpen = true;

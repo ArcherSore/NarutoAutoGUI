@@ -479,14 +479,14 @@
                                 </Button>
 
                                 <Border x:Name="TaskShelfContent"
-                                        Margin="0,6,0,0"
-                                        Padding="12"
+                                        Margin="0,4,0,0"
+                                        Padding="0,2,0,0"
                                         Style="{StaticResource TaskShelfSurfaceStyle}">
                                     <WrapPanel x:Name="AvailableTasksPanel" Orientation="Horizontal" />
                                 </Border>
 
                                 <Border Height="1"
-                                        Margin="0,18,0,16"
+                                        Margin="0,10,0,14"
                                         Background="{StaticResource Brush.Border}"
                                         SnapsToDevicePixels="True" />
 
@@ -543,7 +543,7 @@
                           Panel.ZIndex="100"
                           Visibility="Collapsed"
                           AutomationProperties.Name="任务描述">
-                        <Button Background="#40000000"
+                        <Button Background="{StaticResource Brush.Overlay.Dim}"
                                 BorderThickness="0"
                                 Focusable="False"
                                 Click="TaskDescriptionScrim_Click" />
@@ -577,7 +577,7 @@
                                 </Grid>
                                 <Border Grid.Row="1"
                                         Height="1"
-                                        Margin="0,16,0,16"
+                                        Margin="0,14,0,14"
                                         Background="{StaticResource Brush.Border}" />
                                 <ScrollViewer Grid.Row="2"
                                               HorizontalScrollBarVisibility="Disabled"

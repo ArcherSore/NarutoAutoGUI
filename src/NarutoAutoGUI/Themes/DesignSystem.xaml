@@ -20,6 +20,7 @@
     <Color x:Key="Color.Indigo.800">#203F7E</Color>
 
     <!-- Semantic colors -->
+    <Color x:Key="Color.Neutral.150">#E4EAF0</Color>
     <Color x:Key="Color.Success.Strong">#26734D</Color>
     <Color x:Key="Color.Success.Surface">#E7F5EC</Color>
     <Color x:Key="Color.Success.Border">#A9D7BF</Color>
@@ -34,9 +35,12 @@
     <SolidColorBrush x:Key="Brush.Canvas" Color="{StaticResource Color.Neutral.50}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Surface" Color="{StaticResource Color.Neutral.0}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Surface.Subdued" Color="{StaticResource Color.Neutral.50}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Surface.Option" Color="#F8FAFD" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Surface.Disabled" Color="{StaticResource Color.Neutral.100}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Neutral.200}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Border.Subtle" Color="{StaticResource Color.Neutral.150}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Border.Strong" Color="#7B899B" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Overlay.Dim" Color="#20000000" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Text.Primary" Color="{StaticResource Color.Neutral.900}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Text.Body" Color="{StaticResource Color.Neutral.800}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Text.Secondary" Color="{StaticResource Color.Neutral.600}" po:Freeze="True" />
@@ -120,6 +124,11 @@
                       Direction="270"
                       Opacity="0.14"
                       ShadowDepth="2" />
+    <DropShadowEffect x:Key="Effect.Surface.Drawer"
+                      BlurRadius="16"
+                      Direction="180"
+                      Opacity="0.10"
+                      ShadowDepth="3" />
 
     <Style TargetType="{x:Type Window}">
         <Setter Property="Background" Value="{StaticResource Brush.Canvas}" />
@@ -410,25 +419,24 @@
     <Style x:Key="TaskShelfHeaderButtonStyle"
            TargetType="{x:Type Button}"
            BasedOn="{StaticResource SubtleButtonStyle}">
-        <Setter Property="MinHeight" Value="36" />
-        <Setter Property="Padding" Value="4,6" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="Padding" Value="2,4" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="FocusVisualStyle" Value="{StaticResource TasksFocusVisualStyle}" />
     </Style>
 
     <Style x:Key="TaskShelfSurfaceStyle" TargetType="{x:Type Border}">
-        <Setter Property="Background" Value="{StaticResource Brush.Surface.Subdued}" />
-        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+        <Setter Property="Background" Value="{StaticResource Brush.Transparent}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Transparent}" />
+        <Setter Property="BorderThickness" Value="0" />
     </Style>
 
     <Style x:Key="TaskChipButtonStyle"
            TargetType="{x:Type Button}"
            BasedOn="{StaticResource BaseButtonStyle}">
-        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="MinHeight" Value="38" />
         <Setter Property="Margin" Value="0,0,8,8" />
-        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="Padding" Value="12,6" />
         <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
         <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -484,26 +492,26 @@
     <Style x:Key="PlanItemExpandedStyle"
            TargetType="{x:Type Border}"
            BasedOn="{StaticResource PlanItemStyle}">
-        <Setter Property="BorderBrush" Value="{StaticResource Brush.TasksAccent.Border}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
         <Setter Property="Effect" Value="{StaticResource Effect.Surface.Light}" />
     </Style>
 
     <Style x:Key="OptionTileStyle" TargetType="{x:Type Border}">
         <Setter Property="MinWidth" Value="220" />
-        <Setter Property="Padding" Value="10" />
-        <Setter Property="Background" Value="{StaticResource Brush.Surface.Subdued}" />
-        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+        <Setter Property="Padding" Value="8,7,8,8" />
+        <Setter Property="Background" Value="{StaticResource Brush.Surface.Option}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Subtle}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
     </Style>
 
     <Style x:Key="TaskDescriptionDrawerStyle" TargetType="{x:Type Border}">
-        <Setter Property="Padding" Value="20" />
+        <Setter Property="Padding" Value="20,18" />
         <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
         <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
         <Setter Property="BorderThickness" Value="1,0,0,0" />
         <Setter Property="CornerRadius" Value="8,0,0,8" />
-        <Setter Property="Effect" Value="{StaticResource Effect.Surface.Drag}" />
+        <Setter Property="Effect" Value="{StaticResource Effect.Surface.Drawer}" />
     </Style>
 
     <!-- Logs -->

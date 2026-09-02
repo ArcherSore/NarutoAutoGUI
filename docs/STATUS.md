@@ -15,6 +15,12 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-09-02：完成 Tasks V2 纯视觉 Polish。弱化 Task Shelf 外层边框嵌套感，透明化外层容器以突出 Command Chip 主体；
+  Plan Item 展开态改为中性边框、轻量浮层阴影与左侧 3px 绿色 accent line 局部强调，去除整圈粗绿边框；
+  Option Editor 容器采用更轻量表面色 `Brush.Surface.Option` 与弱边框 `Brush.Border.Subtle`，紧凑化 padding 与 margin；
+  Task Description Drawer 遮罩调整为轻量 dim `Brush.Overlay.Dim`（#20000000），增加专用左向投影 `Effect.Surface.Drawer`；
+  规范 Tasks 页面垂直节奏与间距；Release build 与自动化自检全数 PASS。
+
 - 2026-09-02：重构 Windows x64 正式发布链路，实现 clean distribution staging 与 GUI 依赖 `libs/` 收纳。
   NarutoAutoGUI 引入 `nulastudio.NetBeauty` 并在 publish 阶段将运行时与托管依赖迁移至 `libs/`；
   package root 仅保留 `NarutoAutoGUI.exe`、`NarutoAutoGUI.dll`、`NarutoAutoGUI.deps.json`、

@@ -15,6 +15,25 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-09-02：重构 Windows x64 正式发布链路，实现 clean distribution staging 与 GUI 依赖 `libs/` 收纳。
+  NarutoAutoGUI 引入 `nulastudio.NetBeauty` 并在 publish 阶段将运行时与托管依赖迁移至 `libs/`；
+  package root 仅保留 `NarutoAutoGUI.exe`、`NarutoAutoGUI.dll`、`NarutoAutoGUI.deps.json`、
+  `NarutoAutoGUI.runtimeconfig.json`、`hostfxr.dll`、`hostpolicy.dll` 以及 `libs/` 与 `worker/`；
+  Worker 保持自包含与 `worker/runtimes/win-x64/native/` MaaFramework 原生依赖不变；
+  重构 `build.ps1` 实现独立 clean package staging，严格过滤 `*.pdb` 与 `*.bak`，保证每次确定性组装；
+  强化 `validate-package.ps1` 校验根目录运行时 DLL 污染、`libs/` 关键依赖收纳、Worker 原生契约与禁用文件；
+  更新 `release-win-x64.yml` 与 `test-automated.ps1`。
+
+- 2026-09-02：修复 locked restore 与发布包运行时验证。Protocol/ProjectModel 的
+  `packages.lock.json` 缺少 `net10.0/win-x64` RID 段，导致 `dotnet restore -r win-x64
+  --locked-mode` 以 exit 1 失败；通过 `--force-evaluate` 重新生成含 RID 的 lock 文件修复。
+  `test-automated.ps1` 移除了误加的 UTF-8 BOM 并补回结尾换行。CI workflow 新增
+  "Published package runtime check" 步骤：在 validate-package 之后、ZIP 之前，从 `pkg/`
+  目录运行 `dotnet NarutoAutoGUI.dll --self-test` 与 `dotnet worker/NarutoAutoWorker.dll
+  --self-test`，验证 libs/ 重定位在实际发布布局下的运行时探测。该验证通过证明 NetBeauty
+  self-contained + WPF + `additionalProbingPaths=./libs` + `SubdirectoriesToProbe=libs` +
+  `libloader` startup hook 在运行时可正确加载 248 个重定位依赖。
+
 - 2026-09-01：修复多项 Run 在停止已接受后仍可能终结为 `Succeeded` 或 `Failed` 的状态竞争。
   `WorkerHost.CompleteRunLocked` 现在优先应用 ADR 0012 的停止获胜语义，将已进入 `Stopping` 的 Run 统一终结为
   `Cancelled`；`StopTimedOut` 仍沿既有分支保持 `Stopping` 并将 Worker 置为 `Faulted`，`CleanupFailed` 仍使 Worker

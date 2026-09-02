@@ -21,9 +21,17 @@
     <Company>NarutoAutoGUI</Company>
     <Product>NarutoAutoGUI</Product>
     <Description>NarutoAutoGUI Windows frontend for MaaNOP.</Description>
+    <BeautyLibsDir>./libs</BeautyLibsDir>
+    <BeautyOnPublishOnly>True</BeautyOnPublishOnly>
+    <BeautyUsePatch>True</BeautyUsePatch>
   </PropertyGroup>
 
   <ItemGroup>
+    <RuntimeHostConfigurationOption Include="SubdirectoriesToProbe" Value="libs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="nulastudio.NetBeauty" Version="2.1.5" />
     <PackageReference Include="System.Management" Version="8.0.0" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />
   </ItemGroup>

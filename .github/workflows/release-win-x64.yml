@@ -71,11 +71,21 @@ jobs:
 
       - name: Automated self-tests (test-automated.ps1)
         run: |
-          ./src/NarutoAutoGUI/scripts/test-automated.ps1 -PublishedDirectory '${{ github.workspace }}/pkg'
+          ./src/NarutoAutoGUI/scripts/test-automated.ps1
 
       - name: Package layout validation (validate-package.ps1)
         run: |
           ./src/NarutoAutoGUI/scripts/validate-package.ps1 -PackageDirectory '${{ github.workspace }}/pkg'
+
+      - name: Published package runtime check (libs/ probing)
+        run: |
+          Push-Location '${{ github.workspace }}/pkg'
+          try {
+            dotnet NarutoAutoGUI.dll --self-test
+            if ($LASTEXITCODE -ne 0) { throw "Published GUI self-test failed, exit $LASTEXITCODE" }
+            dotnet worker/NarutoAutoWorker.dll --self-test
+            if ($LASTEXITCODE -ne 0) { throw "Published Worker self-test failed, exit $LASTEXITCODE" }
+          } finally { Pop-Location }
 
       - name: Create ZIP
         id: zip

@@ -2,6 +2,12 @@
   "version": 1,
   "dependencies": {
     "net10.0-windows7.0": {
+      "nulastudio.NetBeauty": {
+        "type": "Direct",
+        "requested": "[2.1.5, )",
+        "resolved": "2.1.5",
+        "contentHash": "+88sEKa7vRNC5aYvyajGkzFHcXrwshM921i4/J/GMtJdCw7I0LFvmmgoaDDgTOPJE9zCi1yzBOUVZPSGfYFjkA=="
+      },
       "System.Management": {
         "type": "Direct",
         "requested": "[8.0.0, )",

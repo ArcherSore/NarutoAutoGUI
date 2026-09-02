@@ -4,6 +4,10 @@
     <!-- Keep packages.lock.json for every project in the restore graph. Release CI enforces
          the committed resolution when build.ps1 is invoked with -Locked. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Pin win-x64 for all projects so packages.lock.json always includes the RID section,
+         regardless of whether -r is passed on the command line. Protocol/ProjectModel are pure
+         managed libraries; the net10.0/win-x64 section stays empty and pulls no extra packages. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
 
 </Project>

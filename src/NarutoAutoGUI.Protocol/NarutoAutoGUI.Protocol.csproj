@@ -7,6 +7,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>NarutoAutoGUI.Protocol</AssemblyName>
     <RootNamespace>NarutoAutoGUI.Protocol</RootNamespace>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>
 
 </Project>

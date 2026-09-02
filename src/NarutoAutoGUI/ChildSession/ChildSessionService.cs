@@ -8,6 +8,8 @@ using DrawingSize = System.Drawing.Size;
 namespace NarutoAutoGUI.ChildSession;
 
 // Adapted (heavily trimmed) from BetterGI 0.63.0 ChildSessionService.cs.
+// The original BetterGI code is licensed under GPL-3.0; see THIRD_PARTY_NOTICES.md.
+// This file has been modified and is distributed as part of NarutoAutoGUI (GPL-3.0-only).
 // Dropped: DI/logging/DispatcherTimer/retry-reconnect/InstanceService/Config/WPF window.
 // Kept: the connect->await LoginCompleted(timeout 60s)->report failure flow, and the
 // enable / query / logoff surface (delegated to ChildSessionNativeMethods).

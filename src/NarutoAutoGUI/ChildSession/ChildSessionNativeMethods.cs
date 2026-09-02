@@ -8,6 +8,8 @@ using Microsoft.Win32;
 namespace NarutoAutoGUI.ChildSession;
 
 // Native helpers adapted (trimmed) from BetterGI 0.63.0 ChildSessionNativeMethods.cs.
+// The original BetterGI code is licensed under GPL-3.0; see THIRD_PARTY_NOTICES.md.
+// This file has been modified and is distributed as part of NarutoAutoGUI (GPL-3.0-only).
 // Edition-agnostic surface only: enable / query / logoff Child Session + cross-session
 // process lookup for verification. Per MS Child Sessions docs, Child Session is a special
 // LOOPBACK Remote Desktop session supported on Windows 8+ (excluded only: Windows RT,

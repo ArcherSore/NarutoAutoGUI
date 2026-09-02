@@ -9,6 +9,8 @@ using DrawingSize = System.Drawing.Size;
 namespace NarutoAutoGUI.ChildSession;
 
 // Adapted (trimmed) from BetterGI 0.63.0 RdpActiveXHost.cs.
+// The original BetterGI code is licensed under GPL-3.0; see THIRD_PARTY_NOTICES.md.
+// This file has been modified and is distributed as part of NarutoAutoGUI (GPL-3.0-only).
 // Trimmed: dropped IMsRdpClientNonScriptable / SendKeys / Win+D / Win+Tab / SmartSizing toggle UI /
 // reconnect state machine. Kept: MsRdpClient10 hosting, ConnectToChildSession setup, the 4 events we
 // need (LoginComplete/Disconnected/FatalError/LogonError), and the diagnostic helpers.

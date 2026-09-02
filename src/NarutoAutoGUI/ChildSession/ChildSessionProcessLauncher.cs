@@ -10,6 +10,8 @@ internal sealed record VerifiedChildSessionProcessLaunch(
     uint ProcessId, uint SessionId, int? TaskState, int? LastTaskResult);
 
 // Adapted from BetterGI 0.63.0 ChildSessionProcessLauncher.cs.
+// The original BetterGI code is licensed under GPL-3.0; see THIRD_PARTY_NOTICES.md.
+// This file has been modified and is distributed as part of NarutoAutoGUI (GPL-3.0-only).
 // Reuses the verified approach: Windows Task Scheduler COM (Schedule.Service) with a temporary
 // task, RunEx(flags = TASK_RUN_USE_SESSION_ID, sessionId = childSessionId) to start the process
 // inside the Child Session, then delete the temporary task.

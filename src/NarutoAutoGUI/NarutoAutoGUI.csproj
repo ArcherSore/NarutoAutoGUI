@@ -21,6 +21,7 @@
     <Company>NarutoAutoGUI</Company>
     <Product>NarutoAutoGUI</Product>
     <Description>NarutoAutoGUI Windows frontend for MaaNOP.</Description>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <BeautyLibsDir>./libs</BeautyLibsDir>
     <BeautyOnPublishOnly>True</BeautyOnPublishOnly>
     <BeautyUsePatch>True</BeautyUsePatch>

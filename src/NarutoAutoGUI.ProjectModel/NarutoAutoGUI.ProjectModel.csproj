@@ -7,6 +7,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>NarutoAutoGUI.ProjectModel</AssemblyName>
     <RootNamespace>NarutoAutoGUI.ProjectModel</RootNamespace>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>

@@ -69,16 +69,8 @@
                                   HorizontalScrollBarVisibility="Disabled"
                                   VerticalContentAlignment="Stretch"
                                   VerticalScrollBarVisibility="Auto">
-                        <Grid Margin="24">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="20" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="16" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-
-                            <Grid Grid.Row="0">
+                        <StackPanel Margin="24" MaxWidth="1240" HorizontalAlignment="Stretch">
+                            <Grid Margin="0,0,0,16">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
@@ -92,94 +84,52 @@
                                 <Button Grid.Column="1"
                                         Margin="16,0,0,0"
                                         VerticalAlignment="Center"
-                                        Content="打开日志目录(_L)"
                                         Style="{StaticResource SubtleButtonStyle}"
-                                        Click="OpenLogsButton_Click" />
+                                        Click="OpenLogsButton_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Margin="0,0,6,0"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{StaticResource Brush.Text.Secondary}"
+                                                       Symbol="Folder20" />
+                                        <TextBlock VerticalAlignment="Center" Text="打开日志目录(_L)" />
+                                    </StackPanel>
+                                </Button>
                             </Grid>
 
-                            <Border Grid.Row="2" Margin="0" Style="{StaticResource StatusPanelStyle}">
+                            <Border Style="{StaticResource RunContextPanelStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="2.8*" />
-                                        <ColumnDefinition Width="1" />
-                                        <ColumnDefinition Width="2*" />
-                                        <ColumnDefinition Width="1" />
-                                        <ColumnDefinition Width="3*" />
-                                        <ColumnDefinition Width="1" />
-                                        <ColumnDefinition Width="200" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
 
-                                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
-                                        <TextBlock Text="当前任务" Style="{StaticResource SectionTitleTextStyle}" />
-                                        <TextBlock x:Name="HomeSelectedTaskText"
-                                                   Margin="0,6,0,0"
-                                                   Text="尚未选择任务"
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock x:Name="HomeRunContextTitleText"
+                                                   FontSize="15"
+                                                   Text="执行计划为空"
                                                    Style="{StaticResource StatusPrimaryTextStyle}" />
-                                        <TextBlock x:Name="HomeOptionSummaryText"
-                                                   Margin="0,4,0,0"
-                                                   Text="选择任务后显示参数摘要"
+                                        <TextBlock x:Name="HomeRunContextSubText"
+                                                   Margin="0,3,0,0"
+                                                   Text="请先配置需要执行的任务"
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
 
-                                    <Border Grid.Column="1" Background="{StaticResource Brush.Border}" />
-
-                                    <StackPanel Grid.Column="2" Margin="16,0">
-                                        <TextBlock Text="当前状态" Style="{StaticResource SectionTitleTextStyle}" />
-                                        <StackPanel Margin="0,6,0,0" Orientation="Horizontal">
-                                            <Ellipse x:Name="HomeStatusIndicator"
-                                                     Width="8"
-                                                     Height="8"
-                                                     Margin="0,0,8,0"
-                                                     VerticalAlignment="Center"
-                                                     Fill="{StaticResource Brush.Text.Muted}" />
-                                            <TextBlock x:Name="HomeRunSummaryText"
-                                                       Text="尚未就绪"
-                                                       Style="{StaticResource StatusPrimaryTextStyle}"
-                                                       AutomationProperties.LiveSetting="Polite" />
-                                        </StackPanel>
-                                        <TextBlock x:Name="HomeWorkerSummaryText"
-                                                   Margin="0,4,0,0"
-                                                   Text="Worker 尚未启动"
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
-
-                                    <Border Grid.Column="3" Background="{StaticResource Brush.Border}" />
-
-                                    <StackPanel Grid.Column="4" Margin="16,0">
-                                        <TextBlock Text="当前步骤" Style="{StaticResource SectionTitleTextStyle}" />
-                                        <TextBlock x:Name="HomeCurrentStepText"
-                                                   Margin="0,6,0,0"
-                                                   Text="等待下一步"
-                                                   Style="{StaticResource StatusPrimaryTextStyle}" />
-                                        <TextBlock x:Name="HomeNextStepText"
-                                                   Margin="0,4,0,0"
-                                                   Text="请先准备运行环境。"
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
-
-                                    <Border Grid.Column="5" Background="{StaticResource Brush.Border}" />
-
-                                    <StackPanel Grid.Column="6" Margin="16,0,0,0">
-                                        <TextBlock Text="操作" Style="{StaticResource SectionTitleTextStyle}" />
-                                        <Button x:Name="HomePrimaryActionButton"
-                                                Margin="0,8,0,0"
-                                                Content="准备运行环境(_O)"
-                                                Style="{StaticResource SecondaryButtonStyle}"
-                                                ToolTip="{Binding Text, ElementName=HomeNextStepText}"
-                                                Click="HomePrimaryActionButton_Click">
-                                            <AutomationProperties.HelpText>
-                                                <Binding Path="Text" ElementName="HomeNextStepText" />
-                                            </AutomationProperties.HelpText>
-                                        </Button>
-                                    </StackPanel>
+                                    <Button x:Name="HomePrimaryActionButton"
+                                            Grid.Column="1"
+                                            MinWidth="120"
+                                            Margin="16,0,0,0"
+                                            VerticalAlignment="Center"
+                                            Content="前往任务"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Click="HomePrimaryActionButton_Click" />
                                 </Grid>
                             </Border>
 
-                            <Grid Grid.Row="4" Height="352">
+                            <Grid Height="420">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="4.2*" />
                                     <ColumnDefinition Width="16" />
-                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="5.8*" />
                                 </Grid.ColumnDefinitions>
 
                                 <Border Grid.Column="0"
@@ -196,13 +146,41 @@
                                             <RowDefinition Height="12" />
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
-                                        <TextBlock Text="游戏画面预览" Style="{StaticResource SectionTitleTextStyle}" />
-                                        <Viewbox Grid.Row="2" Stretch="Uniform">
+
+                                        <Grid Grid.Row="0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="游戏画面预览"
+                                                       Style="{StaticResource SectionTitleTextStyle}" />
+                                            <StackPanel x:Name="HomeSessionStatusPanel"
+                                                        Grid.Column="1"
+                                                        Orientation="Horizontal"
+                                                        VerticalAlignment="Center"
+                                                        Visibility="Collapsed">
+                                                <Ellipse x:Name="HomeSessionStatusIndicator"
+                                                         Width="6"
+                                                         Height="6"
+                                                         Margin="0,0,6,0"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{StaticResource Brush.Success}" />
+                                                <TextBlock x:Name="HomeSessionStatusText"
+                                                           Foreground="{StaticResource Brush.Text.Secondary}"
+                                                           Style="{StaticResource MonospaceMetaTextStyle}"
+                                                           Text="Session" />
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <Viewbox Grid.Row="2"
+                                                 MaxHeight="360"
+                                                 Stretch="Uniform">
                                             <Border Width="640"
                                                     Height="360"
                                                     Background="{StaticResource Brush.Surface.Subdued}"
                                                     BorderBrush="{StaticResource Brush.Border}"
                                                     BorderThickness="1"
+                                                    ClipToBounds="True"
                                                     CornerRadius="{StaticResource Radius.Control}">
                                                 <Grid>
                                                     <Image x:Name="HomePreviewImage"
@@ -211,38 +189,73 @@
                                                     <StackPanel x:Name="HomePreviewPlaceholder"
                                                                 HorizontalAlignment="Center"
                                                                 VerticalAlignment="Center">
-                                                        <ui:SymbolIcon FontSize="64"
-                                                                       Foreground="{StaticResource Brush.Text.Muted}"
-                                                                       Symbol="Desktop48" />
-                                                        <TextBlock Margin="0,16,0,0"
+                                                        <ui:SymbolIcon FontSize="32"
+                                                                       Foreground="{StaticResource Brush.Text.Disabled}"
+                                                                       Symbol="Desktop28" />
+                                                        <TextBlock Margin="0,8,0,0"
                                                                    HorizontalAlignment="Center"
-                                                                   FontSize="28"
-                                                                   FontWeight="SemiBold"
-                                                                   Foreground="{StaticResource Brush.Text.Secondary}"
+                                                                   FontSize="{StaticResource FontSize.Body}"
+                                                                   Foreground="{StaticResource Brush.Text.Muted}"
                                                                    Text="暂无游戏画面" />
                                                     </StackPanel>
                                                 </Grid>
                                             </Border>
                                         </Viewbox>
-                                        <Grid Grid.Row="4" HorizontalAlignment="Center">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="16" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <Button x:Name="HomeDesktopVisibilityButton"
-                                                    Content="打开完整桌面(_S)"
-                                                    Style="{StaticResource SecondaryButtonStyle}"
-                                                    Visibility="Collapsed"
-                                                    Click="HomeDesktopVisibilityButton_Click" />
-                                            <Button x:Name="HomeTerminateSessionButton"
-                                                    Grid.Column="2"
-                                                    Content="结束桌面分身(_E)"
-                                                    Style="{StaticResource DestructiveButtonStyle}"
-                                                    Visibility="Collapsed"
-                                                    Click="TerminateSessionButton_Click"
-                                                    AutomationProperties.HelpText="注销桌面分身并结束其中运行的程序" />
-                                        </Grid>
+
+                                        <StackPanel Grid.Row="4"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Bottom">
+                                            <StackPanel Orientation="Horizontal"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Center">
+                                                <Button x:Name="HomeDesktopVisibilityButton"
+                                                        Margin="0,0,8,0"
+                                                        IsEnabled="False"
+                                                        Style="{StaticResource NeutralSecondaryButtonStyle}"
+                                                        Click="HomeDesktopVisibilityButton_Click">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <ui:SymbolIcon Symbol="Desktop20"
+                                                                       FontSize="16"
+                                                                       Margin="0,0,6,0"
+                                                                       VerticalAlignment="Center" />
+                                                        <AccessText x:Name="HomeDesktopVisibilityText"
+                                                                    Text="打开完整桌面(_S)"
+                                                                    VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button x:Name="HomeSessionMoreButton"
+                                                        IsEnabled="False"
+                                                        Style="{StaticResource NeutralIconButtonStyle}"
+                                                        ToolTip="更多桌面分身操作"
+                                                        AutomationProperties.Name="更多桌面分身操作"
+                                                        Click="HomeSessionMoreButton_Click">
+                                                    <ui:SymbolIcon FontSize="16"
+                                                                   Symbol="MoreHorizontal20"
+                                                                   VerticalAlignment="Center"
+                                                                   HorizontalAlignment="Center" />
+                                                    <Button.ContextMenu>
+                                                        <ContextMenu x:Name="HomeSessionContextMenu"
+                                                                     Style="{StaticResource FloatingContextMenuStyle}">
+                                                            <MenuItem x:Name="HomeTerminateSessionMenuItem"
+                                                                      Header="结束桌面分身(_E)"
+                                                                      Style="{StaticResource DestructiveMenuItemStyle}"
+                                                                      Click="TerminateSessionButton_Click">
+                                                                <MenuItem.Icon>
+                                                                    <ui:SymbolIcon FontSize="16"
+                                                                                   Symbol="DismissCircle16" />
+                                                                </MenuItem.Icon>
+                                                            </MenuItem>
+                                                        </ContextMenu>
+                                                    </Button.ContextMenu>
+                                                </Button>
+                                            </StackPanel>
+                                            <TextBlock x:Name="HomeSessionHintText"
+                                                       Margin="0,4,0,0"
+                                                       HorizontalAlignment="Right"
+                                                       FontSize="{StaticResource FontSize.Meta}"
+                                                       Foreground="{StaticResource Brush.Text.Muted}"
+                                                       Text="需先准备运行环境" />
+                                        </StackPanel>
                                     </Grid>
                                 </Border>
 
@@ -257,15 +270,14 @@
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="12" />
                                             <RowDefinition Height="*" />
-                                            <RowDefinition Height="12" />
-                                            <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
-                                        <Grid>
+                                        <Grid Grid.Row="0">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="运行动态" Style="{StaticResource SectionTitleTextStyle}" />
+                                            <TextBlock Text="运行动态"
+                                                       Style="{StaticResource SectionTitleTextStyle}" />
                                             <TextBlock Grid.Column="1"
                                                        Text="MaaNOP"
                                                        Style="{StaticResource MonospaceMetaTextStyle}" />
@@ -396,7 +408,7 @@
                                     </Grid>
                                 </Border>
                             </Grid>
-                        </Grid>
+                        </StackPanel>
                     </ScrollViewer>
 
                     <Grid x:Name="TasksView" Margin="24" Visibility="Collapsed">

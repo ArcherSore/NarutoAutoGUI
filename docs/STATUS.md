@@ -15,30 +15,29 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-09-02：完成 Preview 卡片与 Child Session 操作区常驻与 UI/UX Polish。
+  Preview 画面容器优化为更饱满的媒体层（Media Surface），最大化占满卡片可用宽度并保留 16:9 比例与最大尺寸限制；
+  弱化空状态占位，采用淡雅 Desktop 图标与中性字号文本；
+  底部桌面控制收口为统一靠右的 Action Cluster（间距 8px）；
+  底部 Child Session 按钮始终常驻占位，无 Session 时 disabled，有 Session 后按状态启用并切换文案；
+  无 Session 时在操作按钮下方靠右展示精炼提示说明「需先准备运行环境」，有 Session 后自动隐藏；
+  升级显隐桌面按钮为 Neutral Secondary 按钮并内嵌 Desktop 图标与 AccessKey 快捷键（`_H`/`_S`）；
+  升级溢出按钮为 34×34 方形 Fluent `MoreHorizontal` 图标按钮；
+  Overflow Menu 采用紧贴右对齐定位（与按钮右边缘对齐、紧贴下方 2px）并应用 Destructive 浅红 tint 样式；
+  Release build、`build.ps1` 与 `test-automated.ps1` 自动化自检全数 PASS。
+
+- 2026-09-02：完成 Home / Dashboard V2 UI/UX 重构。明确 Home 作为 Runtime Console 的产品定位；
+  采用 top-flow 布局（主内容容器 MaxWidth=1240 居顶流式排列）；删除原四栏 Dashboard，改为轻量 Run Context 状态卡片；
+  收口 Primary CTA 为单一大按钮（支持前往任务、准备环境、开始任务、停止任务、过渡中状态切换，开始任务采用绿色 TasksAccent 强调色）；
+  日志目录按钮改为右上角 Subtle 按钮带 Folder 图标；主体调整为 16:9 游戏画面预览（42%）与运行日志（58%）双栏；
+  Child Session 状态在预览 Header 展示，底部收口为高频桌面显隐按钮与低频危险操作溢出菜单（`[⋯]` 承载结束桌面分身）；
+  增加运行中 $X / N$ 与已运行时间（`HH:mm:ss`）动态计算和刷新，未运行时不显示 `0 / N`；Release build 与自动化自检全数 PASS。
+
 - 2026-09-02：完成 Tasks V2 纯视觉 Polish。弱化 Task Shelf 外层边框嵌套感，透明化外层容器以突出 Command Chip 主体；
   Plan Item 展开态改为中性边框、轻量浮层阴影与左侧 3px 绿色 accent line 局部强调，去除整圈粗绿边框；
   Option Editor 容器采用更轻量表面色 `Brush.Surface.Option` 与弱边框 `Brush.Border.Subtle`，紧凑化 padding 与 margin；
   Task Description Drawer 遮罩调整为轻量 dim `Brush.Overlay.Dim`（#20000000），增加专用左向投影 `Effect.Surface.Drawer`；
   规范 Tasks 页面垂直节奏与间距；Release build 与自动化自检全数 PASS。
-
-- 2026-09-02：重构 Windows x64 正式发布链路，实现 clean distribution staging 与 GUI 依赖 `libs/` 收纳。
-  NarutoAutoGUI 引入 `nulastudio.NetBeauty` 并在 publish 阶段将运行时与托管依赖迁移至 `libs/`；
-  package root 仅保留 `NarutoAutoGUI.exe`、`NarutoAutoGUI.dll`、`NarutoAutoGUI.deps.json`、
-  `NarutoAutoGUI.runtimeconfig.json`、`hostfxr.dll`、`hostpolicy.dll` 以及 `libs/` 与 `worker/`；
-  Worker 保持自包含与 `worker/runtimes/win-x64/native/` MaaFramework 原生依赖不变；
-  重构 `build.ps1` 实现独立 clean package staging，严格过滤 `*.pdb` 与 `*.bak`，保证每次确定性组装；
-  强化 `validate-package.ps1` 校验根目录运行时 DLL 污染、`libs/` 关键依赖收纳、Worker 原生契约与禁用文件；
-  更新 `release-win-x64.yml` 与 `test-automated.ps1`。
-
-- 2026-09-02：修复 locked restore 与发布包运行时验证。Protocol/ProjectModel 的
-  `packages.lock.json` 缺少 `net10.0/win-x64` RID 段，导致 `dotnet restore -r win-x64
-  --locked-mode` 以 exit 1 失败；通过 `--force-evaluate` 重新生成含 RID 的 lock 文件修复。
-  `test-automated.ps1` 移除了误加的 UTF-8 BOM 并补回结尾换行。CI workflow 新增
-  "Published package runtime check" 步骤：在 validate-package 之后、ZIP 之前，从 `pkg/`
-  目录运行 `dotnet NarutoAutoGUI.dll --self-test` 与 `dotnet worker/NarutoAutoWorker.dll
-  --self-test`，验证 libs/ 重定位在实际发布布局下的运行时探测。该验证通过证明 NetBeauty
-  self-contained + WPF + `additionalProbingPaths=./libs` + `SubdirectoriesToProbe=libs` +
-  `libloader` startup hook 在运行时可正确加载 248 个重定位依赖。
 
 - 2026-09-01：修复多项 Run 在停止已接受后仍可能终结为 `Succeeded` 或 `Failed` 的状态竞争。
   `WorkerHost.CompleteRunLocked` 现在优先应用 ADR 0012 的停止获胜语义，将已进入 `Stopping` 的 Run 统一终结为

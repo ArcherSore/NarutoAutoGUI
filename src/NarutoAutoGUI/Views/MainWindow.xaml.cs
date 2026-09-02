@@ -28,6 +28,7 @@ using WpfKeyEventArgs = System.Windows.Input.KeyEventArgs;
 using WpfMessageBox = System.Windows.MessageBox;
 using WpfMouseEventArgs = System.Windows.Input.MouseEventArgs;
 using WpfPoint = System.Windows.Point;
+using WpfSize = System.Windows.Size;
 using WpfTextBox = System.Windows.Controls.TextBox;
 using WpfToolTip = System.Windows.Controls.ToolTip;
 using FluentWindow = Wpf.Ui.Controls.FluentWindow;
@@ -59,6 +60,7 @@ public partial class MainWindow : FluentWindow
 
     private enum PrimaryActionMode
     {
+        NavigateToTasks,
         Prepare,
         Start,
         Stop,
@@ -72,6 +74,7 @@ public partial class MainWindow : FluentWindow
     private readonly WorkerCoordinator _workerCoordinator;
     private readonly Func<Func<Task>, Task> _runApplicationOperationAsync;
     private readonly Func<Task> _requestExitAsync;
+    private readonly DispatcherTimer _elapsedTimer;
     private ChildSessionSnapshot _sessionSnapshot = ChildSessionSnapshot.Empty;
     private WorkerCoordinatorSnapshot _workerSnapshot = WorkerCoordinatorSnapshot.Empty;
     private ProjectPlanModule? _projectPlan;
@@ -118,6 +121,10 @@ public partial class MainWindow : FluentWindow
         _runApplicationOperationAsync = runApplicationOperationAsync;
         _requestExitAsync = requestExitAsync;
         _sessionSnapshot = sessionManager.Snapshot;
+        _elapsedTimer = new DispatcherTimer(DispatcherPriority.Normal) {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+        _elapsedTimer.Tick += ElapsedTimer_Tick;
         HomeLogListBox.AddHandler(
             ScrollViewer.ScrollChangedEvent,
             new ScrollChangedEventHandler(LogListBox_ScrollChanged));
@@ -157,7 +164,6 @@ public partial class MainWindow : FluentWindow
             _logger.Warn(
                 $"加载 MaaNOP Project Interface 失败。AppContext.BaseDirectory={AppContext.BaseDirectory}", exception);
             ShowProjectUnavailableState(
-                "修正安装目录后显示参数摘要",
                 "MaaNOP 项目无法加载",
                 "请使用完整的 MaaNOP 发布包，确保 NarutoAutoGUI.exe 同级目录直接包含 interface.json。");
             ShowProjectValidationError(exception);
@@ -180,6 +186,7 @@ public partial class MainWindow : FluentWindow
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
         if (_allowClose) {
+            _elapsedTimer.Stop();
             StopPreviewPolling();
             _sessionManager.StateChanged -= OnSessionStateChanged;
             _workerCoordinator.StateChanged -= OnWorkerStateChanged;
@@ -291,16 +298,36 @@ public partial class MainWindow : FluentWindow
             return;
         }
         switch (primary.Mode) {
+            case PrimaryActionMode.NavigateToTasks:
+                SwitchSection(MainSection.Tasks);
+                break;
             case PrimaryActionMode.Stop:
                 StopRunButton_Click(sender, e);
                 break;
             case PrimaryActionMode.Start:
                 StartRunButton_Click(sender, e);
                 break;
-            default:
+            case PrimaryActionMode.Prepare:
                 PrepareEnvironmentButton_Click(sender, e);
                 break;
         }
+    }
+
+    private void HomeSessionMoreButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is WpfButton button && button.ContextMenu is not null) {
+            button.ContextMenu.PlacementTarget = button;
+            button.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Custom;
+            button.ContextMenu.CustomPopupPlacementCallback = PlaceSessionMenu;
+            button.ContextMenu.IsOpen = true;
+        }
+    }
+
+    private static System.Windows.Controls.Primitives.CustomPopupPlacement[] PlaceSessionMenu(
+        WpfSize popupSize, WpfSize targetSize, WpfPoint offset)
+    {
+        var point = new WpfPoint(targetSize.Width - popupSize.Width, targetSize.Height + 2);
+        return [new(point, System.Windows.Controls.Primitives.PopupPrimaryAxis.Horizontal)];
     }
 
     private void HomeDesktopVisibilityButton_Click(object sender, RoutedEventArgs e)
@@ -980,25 +1007,7 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void UpdatePlanSummary(ProjectPlanModule project)
-    {
-        var selectedTasks = project.SelectedTaskNames
-            .Select(name => project.Tasks.Single(task => task.Name == name))
-            .ToArray();
-        HomeSelectedTaskText.Text = selectedTasks.Length == 0
-            ? "尚未选择任务"
-            : string.Join("、", selectedTasks.Select(task => task.Label));
-        if (selectedTasks.Length == 0) {
-            HomeOptionSummaryText.Text = "从任务页添加执行计划";
-            return;
-        }
-
-        var options = selectedTasks.SelectMany(task => EnumerateOptions(project.GetConfiguration(task.Name)))
-            .GroupBy(option => option.Name, StringComparer.Ordinal)
-            .Select(group => group.First())
-            .ToArray();
-        HomeOptionSummaryText.Text = $"{selectedTasks.Length} 个任务 · {options.Length} 个启用参数";
-    }
+    private void UpdatePlanSummary(ProjectPlanModule project) => UpdateCommandAvailability();
 
     private void HandleProjectEditError(string operation, Exception exception)
     {
@@ -1091,7 +1100,6 @@ public partial class MainWindow : FluentWindow
     }
 
     private void ShowProjectUnavailableState(
-        string optionSummary,
         string emptyStateTitle,
         string emptyStateDetail)
     {
@@ -1102,8 +1110,6 @@ public partial class MainWindow : FluentWindow
         AvailableTasksPanel.Children.Clear();
         PlanItemsPanel.Children.Clear();
         CloseTaskDescriptionDrawer();
-        HomeOptionSummaryText.Text = optionSummary;
-        HomeSelectedTaskText.Text = "尚未选择任务";
         ProjectEmptyStateTitleText.Text = emptyStateTitle;
         ProjectEmptyStateDetailText.Text = emptyStateDetail;
         TaskWorkspacePanel.Visibility = Visibility.Collapsed;
@@ -1350,19 +1356,7 @@ public partial class MainWindow : FluentWindow
 
     private void UpdateWorkerPresentation(WorkerCoordinatorSnapshot snapshot)
     {
-        HomeWorkerSummaryText.Text = GetHomeWorkerSummary(snapshot);
-        var worker = snapshot.WorkerSnapshot;
-        if (worker is null) {
-            HomeRunSummaryText.Text = "尚未运行";
-            return;
-        }
-
-        var run = worker.ActiveRun ?? worker.LastRun;
-        if (run is null) {
-            HomeRunSummaryText.Text = "尚未运行";
-            return;
-        }
-        HomeRunSummaryText.Text = GetHomeRunSummary(run);
+        UpdateCommandAvailability();
     }
 
     private static string GetHomeWorkerSummary(WorkerCoordinatorSnapshot snapshot)
@@ -1390,28 +1384,6 @@ public partial class MainWindow : FluentWindow
             WorkerState.Faulted => "运行异常",
             _ => "已连接"
         };
-    }
-
-    private static string GetHomeRunSummary(RunSnapshot run)
-    {
-        var taskLabel = GetCurrentPlanItem(run)?.TaskLabel;
-        if (string.IsNullOrWhiteSpace(taskLabel) && run.Items.Count == 1) {
-            taskLabel = run.Items[0].TaskLabel;
-        }
-        var stateText = run.State switch {
-            RunState.Idle => "尚未运行",
-            RunState.Starting => "正在启动",
-            RunState.Running => "正在运行",
-            RunState.Stopping => "正在停止",
-            RunState.Succeeded => "已完成",
-            RunState.Failed => "运行失败",
-            RunState.Cancelled => "已停止",
-            _ => "状态未知"
-        };
-        if (!string.IsNullOrWhiteSpace(taskLabel)) {
-            return $"{taskLabel} · {stateText}";
-        }
-        return run.Items.Count > 1 ? $"{run.Items.Count} 个任务 · {stateText}" : stateText;
     }
 
     private void LogListBox_ScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -1498,11 +1470,17 @@ public partial class MainWindow : FluentWindow
         var canStartCommand = !_busy && !_exitInProgress
             && state is not ChildSessionState.Connecting && state is not ChildSessionState.Disconnecting;
         var projectReady = _projectPlan is not null;
+        var taskCount = _projectPlan?.SelectedTaskNames.Count ?? 0;
+
+        if (!projectReady || taskCount == 0) {
+            return new PrimaryActionState(PrimaryActionMode.NavigateToTasks, canStartCommand);
+        }
+
         var worker = _workerSnapshot.WorkerSnapshot;
         var workerIdleFresh = _workerSnapshot.Observation == WorkerObservation.Connected
             && _workerSnapshot.SnapshotFresh
             && worker is not null && worker.ActiveRun is null && worker.RunState == RunState.Idle;
-        var selectedTaskValid = _projectPlan?.SelectedTaskNames.Count > 0 && _projectConfigurationValid;
+        var selectedTaskValid = _projectConfigurationValid;
         var environmentReady = workerIdleFresh && worker!.WorkerState == WorkerState.Ready && projectReady
             && selectedTaskValid && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
         var active = worker?.ActiveRun;
@@ -1534,17 +1512,37 @@ public partial class MainWindow : FluentWindow
             && state is not ChildSessionState.Connecting && state is not ChildSessionState.Disconnecting;
 
         var sessionConnected = state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
-        HomeDesktopVisibilityButton.Visibility = sessionConnected ? Visibility.Visible : Visibility.Collapsed;
+        var hasSession = _sessionSnapshot.ChildSessionId is not null;
+
+        HomeDesktopVisibilityButton.Visibility = Visibility.Visible;
         if (sessionConnected) {
-            HomeDesktopVisibilityButton.Content = state == ChildSessionState.ConnectedVisible
+            HomeDesktopVisibilityText.Text = state == ChildSessionState.ConnectedVisible
                 ? "隐藏桌面(_H)"
                 : "打开完整桌面(_S)";
             HomeDesktopVisibilityButton.IsEnabled = canStartCommand;
+        } else {
+            HomeDesktopVisibilityText.Text = "打开完整桌面(_S)";
+            HomeDesktopVisibilityButton.IsEnabled = false;
         }
-        HomeTerminateSessionButton.IsEnabled = canStartCommand && _sessionSnapshot.ChildSessionId is not null;
-        HomeTerminateSessionButton.Visibility = _sessionSnapshot.ChildSessionId is not null
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+
+        HomeSessionMoreButton.Visibility = Visibility.Visible;
+        HomeSessionMoreButton.IsEnabled = canStartCommand && hasSession;
+        HomeTerminateSessionMenuItem.IsEnabled = canStartCommand && hasSession;
+
+        HomeSessionHintText.Visibility = hasSession ? Visibility.Collapsed : Visibility.Visible;
+
+        if (hasSession && sessionConnected) {
+            HomeSessionStatusPanel.Visibility = Visibility.Visible;
+            HomeSessionStatusText.Text = $"Session {_sessionSnapshot.ChildSessionId}";
+            HomeSessionStatusIndicator.Fill = (WpfBrush)FindResource("Brush.Success");
+        } else if (_sessionSnapshot.State is ChildSessionState.Connecting or ChildSessionState.Existing
+            or ChildSessionState.Disconnecting or ChildSessionState.Faulted) {
+            HomeSessionStatusPanel.Visibility = Visibility.Visible;
+            HomeSessionStatusText.Text = GetStateBadgeText(_sessionSnapshot.State);
+            HomeSessionStatusIndicator.Fill = (WpfBrush)FindResource(GetSessionStatusBrushKey(_sessionSnapshot.State));
+        } else {
+            HomeSessionStatusPanel.Visibility = Visibility.Collapsed;
+        }
 
         var projectReady = _projectPlan is not null;
         var worker = _workerSnapshot.WorkerSnapshot;
@@ -1552,64 +1550,150 @@ public partial class MainWindow : FluentWindow
             && _workerSnapshot.SnapshotFresh
             && worker is not null && worker.ActiveRun is null && worker.RunState == RunState.Idle;
         var canEditProject = canStartCommand
-            && (_workerSnapshot.Observation is WorkerObservation.WorkerNotStarted or WorkerObservation.ChildSessionEnded
-                || workerIdleFresh);
+            && (_workerSnapshot.Observation is WorkerObservation.WorkerNotStarted
+                or WorkerObservation.ChildSessionEnded || workerIdleFresh);
         TaskWorkspacePanel.IsEnabled = canEditProject && projectReady;
 
         var primary = DerivePrimaryAction();
+        var isStarting = worker?.ActiveRun?.State == RunState.Starting;
+        var isStopping = worker?.ActiveRun?.State == RunState.Stopping;
         HomePrimaryActionButton.Content = primary.Mode switch {
+            PrimaryActionMode.NavigateToTasks => "前往任务",
             PrimaryActionMode.Start => "开始任务(_U)",
             PrimaryActionMode.Stop => "停止任务(_X)",
+            PrimaryActionMode.Transition => isStarting ? "正在启动…" : (isStopping ? "正在停止…" : "请稍候…"),
             _ => "准备运行环境(_O)"
         };
         HomePrimaryActionButton.Style = (Style)FindResource(primary.Mode switch {
-            PrimaryActionMode.Start => "PrimaryButtonStyle",
+            PrimaryActionMode.Start => "TasksAccentButtonStyle",
             PrimaryActionMode.Stop => "DestructiveButtonStyle",
-            _ => "SecondaryButtonStyle"
+            _ => primary.Mode == PrimaryActionMode.Prepare ? "PrimaryButtonStyle" : "SecondaryButtonStyle"
         });
         HomePrimaryActionButton.IsEnabled = primary.CanExecute;
 
         var active = worker?.ActiveRun;
-        var hasActiveRun = active is not null;
-        var runningRun = primary.Mode == PrimaryActionMode.Stop;
-        var readyToStart = primary.Mode == PrimaryActionMode.Start;
-
-        HomeNextStepText.Text = _busy
-            ? "当前操作正在进行，请稍候。"
-            : runningRun
-                ? "任务正在运行，可随时停止。"
-                : hasActiveRun
-                    ? "任务状态正在切换，请稍候。"
-            : !projectReady
-                ? "MaaNOP 项目尚未加载，请确认安装目录包含 interface.json。"
-                : readyToStart
-                    ? "运行环境已就绪，可以开始任务。"
-                    : "准备桌面分身、Worker 和游戏后即可开始任务。";
-        UpdateDashboardPresentation(readyToStart);
-    }
-
-    private void UpdateDashboardPresentation(bool readyToStart)
-    {
-        var (statusText, statusBrushKey) = GetDashboardStatusPresentation(_workerSnapshot, readyToStart);
-        var statusBrush = (WpfBrush)FindResource(statusBrushKey);
-        HomeRunSummaryText.Text = statusText;
-        HomeStatusIndicator.Fill = statusBrush;
-
-        var worker = _workerSnapshot.WorkerSnapshot;
-        var activeRun = _workerSnapshot.SnapshotFresh ? worker?.ActiveRun : null;
-        var lastRun = _workerSnapshot.SnapshotFresh ? worker?.LastRun : null;
-        if (activeRun is not null) {
-            var item = GetCurrentPlanItem(activeRun);
-            HomeCurrentStepText.Text = item is null
-                ? GetHomeRunSummary(activeRun)
-                : $"{item.TaskLabel} · {GetPlanItemStateText(item.State)}";
-        } else if (lastRun is not null) {
-            HomeCurrentStepText.Text = GetHomeRunSummary(lastRun);
+        var isRunning = active?.State is RunState.Starting or RunState.Running;
+        if (isRunning) {
+            if (!_elapsedTimer.IsEnabled) {
+                _elapsedTimer.Start();
+            }
         } else {
-            HomeCurrentStepText.Text = "等待下一步";
+            if (_elapsedTimer.IsEnabled) {
+                _elapsedTimer.Stop();
+            }
         }
 
+        UpdateRunContextPresentation();
+    }
+
+    private void ElapsedTimer_Tick(object? sender, EventArgs e) => UpdateRunContextPresentation();
+
+    private void UpdateRunContextPresentation()
+    {
+        var primary = DerivePrimaryAction();
+        var taskCount = _projectPlan?.SelectedTaskNames.Count ?? 0;
+        var projectReady = _projectPlan is not null;
+        var worker = _workerSnapshot.WorkerSnapshot;
+        var activeRun = worker?.ActiveRun;
+
+        if (_busy) {
+            HomeRunContextSubText.Text = "当前操作正在进行，请稍候。";
+            var ready = primary.Mode == PrimaryActionMode.Start;
+            var (busyStatusText, busyStatusBrushKey) = GetDashboardStatusPresentation(_workerSnapshot, ready);
+            UpdateBottomStatusBar(busyStatusText, (WpfBrush)FindResource(busyStatusBrushKey));
+            return;
+        }
+
+        switch (primary.Mode) {
+            case PrimaryActionMode.NavigateToTasks:
+                HomeRunContextTitleText.Text = "执行计划为空";
+                HomeRunContextSubText.Text = !projectReady
+                    ? "MaaNOP 项目尚未加载，请确认安装目录包含 interface.json。"
+                    : "请先配置需要执行的任务";
+                break;
+
+            case PrimaryActionMode.Prepare:
+                HomeRunContextTitleText.Text = $"执行计划已配置 · {taskCount} 个任务";
+                HomeRunContextSubText.Text = "请先准备运行环境。";
+                break;
+
+            case PrimaryActionMode.Start:
+                HomeRunContextTitleText.Text = "运行环境已就绪";
+                HomeRunContextSubText.Text = "请登录游戏后开始任务";
+                break;
+
+            case PrimaryActionMode.Stop:
+                if (activeRun is not null) {
+                    var (curIdx, total, label) = GetCurrentRunProgress(activeRun, _projectPlan);
+                    var elapsed = GetRunElapsedTime(activeRun);
+                    HomeRunContextTitleText.Text = $"正在执行 {curIdx} / {total}";
+                    HomeRunContextSubText.Text = $"{label} · 已运行 {FormatElapsedTime(elapsed)}";
+                } else {
+                    HomeRunContextTitleText.Text = "任务正在运行";
+                    HomeRunContextSubText.Text = "可随时停止任务。";
+                }
+                break;
+
+            case PrimaryActionMode.Transition:
+                if (activeRun?.State == RunState.Starting) {
+                    HomeRunContextTitleText.Text = "正在启动任务…";
+                    HomeRunContextSubText.Text = "正在初始化运行环境与 Python 代理。";
+                } else if (activeRun?.State == RunState.Stopping) {
+                    HomeRunContextTitleText.Text = "正在停止任务…";
+                    HomeRunContextSubText.Text = "正在等待 Worker 清理与确认。";
+                } else {
+                    HomeRunContextTitleText.Text = "任务状态切换中";
+                    HomeRunContextSubText.Text = "请稍候。";
+                }
+                break;
+        }
+
+        var readyToStart = primary.Mode == PrimaryActionMode.Start;
+        var (statusText, statusBrushKey) = GetDashboardStatusPresentation(_workerSnapshot, readyToStart);
+        var statusBrush = (WpfBrush)FindResource(statusBrushKey);
         UpdateBottomStatusBar(statusText, statusBrush);
+    }
+
+    internal static (int CurrentIndex, int TotalCount, string TaskLabel) GetCurrentRunProgress(
+        RunSnapshot run, ProjectPlanModule? projectPlan)
+    {
+        var total = run.Items.Count > 0 ? run.Items.Count : (projectPlan?.SelectedTaskNames.Count ?? 1);
+        var item = GetCurrentPlanItem(run);
+        var currentIndex = 1;
+        if (item is not null) {
+            var index = run.Items.ToList().IndexOf(item);
+            if (index >= 0) {
+                currentIndex = index + 1;
+            } else if (run.CurrentPlanItemIndex is int idx && idx >= 0) {
+                currentIndex = idx + 1;
+            }
+        } else if (run.CurrentPlanItemIndex is int idx && idx >= 0) {
+            currentIndex = idx + 1;
+        }
+
+        currentIndex = Math.Clamp(currentIndex, 1, Math.Max(1, total));
+        var label = item?.TaskLabel;
+        if (string.IsNullOrWhiteSpace(label)) {
+            var taskName = item?.TaskName ?? projectPlan?.SelectedTaskNames.ElementAtOrDefault(currentIndex - 1);
+            if (taskName is not null) {
+                label = projectPlan?.Tasks.FirstOrDefault(t => t.Name == taskName)?.Label ?? taskName;
+            }
+        }
+        label = string.IsNullOrWhiteSpace(label) ? "当前任务" : label;
+        return (currentIndex, total, label);
+    }
+
+    internal static string FormatElapsedTime(TimeSpan elapsed) =>
+        $"{(int)elapsed.TotalHours:D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
+
+    private static TimeSpan GetRunElapsedTime(RunSnapshot? run)
+    {
+        if (run is null) {
+            return TimeSpan.Zero;
+        }
+        var startedAt = run.StartedAtUtc ?? run.CreatedAtUtc;
+        var now = DateTime.UtcNow;
+        return now > startedAt ? now - startedAt : TimeSpan.Zero;
     }
 
     private static (string Text, string BrushKey) GetDashboardStatusPresentation(

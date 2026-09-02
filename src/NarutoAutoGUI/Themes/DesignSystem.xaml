@@ -304,11 +304,42 @@
         </Style.Triggers>
     </Style>
 
-    <Style x:Key="DestructiveButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButtonStyle}">
-        <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
-        <Setter Property="BorderBrush" Value="{StaticResource Brush.Error}" />
+    <Style x:Key="TasksAccentButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource BaseButtonStyle}">
+        <Setter Property="Background" Value="{StaticResource Brush.TasksAccent}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.TasksAccent}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Foreground" Value="{StaticResource Brush.Error}" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Inverse}" />
+        <Setter Property="Padding" Value="{StaticResource Thickness.ControlPrimary}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource TasksFocusVisualStyle}" />
+        <Style.Triggers>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsMouseOver" Value="True" />
+                    <Condition Property="IsEnabled" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="#1E5C3E" />
+                <Setter Property="BorderBrush" Value="#1E5C3E" />
+            </MultiTrigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsPressed" Value="True" />
+                    <Condition Property="IsEnabled" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="#174830" />
+                <Setter Property="BorderBrush" Value="#174830" />
+            </MultiTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="DestructiveButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource BaseButtonStyle}">
+        <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Error.Foreground}" />
         <Style.Triggers>
             <MultiTrigger>
                 <MultiTrigger.Conditions>
@@ -316,15 +347,154 @@
                     <Condition Property="IsEnabled" Value="True" />
                 </MultiTrigger.Conditions>
                 <Setter Property="Background" Value="{StaticResource Brush.Error.Surface}" />
+                <Setter Property="BorderBrush" Value="{StaticResource Brush.Error.Border}" />
             </MultiTrigger>
             <MultiTrigger>
                 <MultiTrigger.Conditions>
                     <Condition Property="IsPressed" Value="True" />
                     <Condition Property="IsEnabled" Value="True" />
                 </MultiTrigger.Conditions>
-                <Setter Property="Background" Value="{StaticResource Brush.Error.Border}" />
+                <Setter Property="Background" Value="{StaticResource Brush.Error.Surface}" />
+                <Setter Property="BorderBrush" Value="{StaticResource Brush.Error}" />
             </MultiTrigger>
         </Style.Triggers>
+    </Style>
+
+    <Style x:Key="NeutralSecondaryButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource BaseButtonStyle}">
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="Padding" Value="12,6" />
+        <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource ControlFocusVisualStyle}" />
+        <Style.Triggers>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsMouseOver" Value="True" />
+                    <Condition Property="IsEnabled" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{StaticResource Brush.Surface.Subdued}" />
+                <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Strong}" />
+            </MultiTrigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsPressed" Value="True" />
+                    <Condition Property="IsEnabled" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{StaticResource Brush.Border}" />
+                <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Strong}" />
+            </MultiTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="NeutralIconButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource BaseButtonStyle}">
+        <Setter Property="MinWidth" Value="34" />
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource ControlFocusVisualStyle}" />
+        <Style.Triggers>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsMouseOver" Value="True" />
+                    <Condition Property="IsEnabled" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{StaticResource Brush.Surface.Subdued}" />
+                <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Strong}" />
+                <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+            </MultiTrigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsPressed" Value="True" />
+                    <Condition Property="IsEnabled" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{StaticResource Brush.Border}" />
+                <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Strong}" />
+            </MultiTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="FloatingContextMenuStyle" TargetType="{x:Type ContextMenu}">
+        <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="4" />
+        <Setter Property="HasDropShadow" Value="True" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ContextMenu}">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{StaticResource Radius.Control}"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="DestructiveMenuItemStyle" TargetType="{x:Type MenuItem}">
+        <Setter Property="Foreground" Value="{StaticResource Brush.Error.Foreground}" />
+        <Setter Property="FontFamily" Value="{StaticResource FontFamily.Ui}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type MenuItem}">
+                    <Border x:Name="Border"
+                            Background="Transparent"
+                            BorderBrush="Transparent"
+                            BorderThickness="1"
+                            CornerRadius="{StaticResource Radius.Control}"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Icon" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ContentPresenter x:Name="Icon"
+                                              Grid.Column="0"
+                                              Margin="0,0,8,0"
+                                              VerticalAlignment="Center"
+                                              ContentSource="Icon" />
+                            <ContentPresenter Grid.Column="1"
+                                              VerticalAlignment="Center"
+                                              ContentSource="Header"
+                                              RecognizesAccessKey="True" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Border"
+                                    Property="Background"
+                                    Value="{StaticResource Brush.Error.Surface}" />
+                            <Setter TargetName="Border"
+                                    Property="BorderBrush"
+                                    Value="{StaticResource Brush.Error.Border}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Disabled}" />
+                            <Setter TargetName="Border" Property="Background" Value="Transparent" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style x:Key="NewLogsButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource SubtleButtonStyle}">
@@ -398,13 +568,13 @@
         </Setter>
     </Style>
 
-    <Style x:Key="StatusPanelStyle" TargetType="{x:Type Border}">
-        <Setter Property="Background" Value="{StaticResource Brush.Primary.Surface}" />
-        <Setter Property="BorderBrush" Value="{StaticResource Brush.Primary.Border}" />
+    <Style x:Key="RunContextPanelStyle" TargetType="{x:Type Border}">
+        <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="{StaticResource Radius.Section}" />
-        <Setter Property="Padding" Value="{StaticResource Thickness.Section}" />
-        <Setter Property="Margin" Value="0,0,0,12" />
+        <Setter Property="Padding" Value="16,12" />
+        <Setter Property="Margin" Value="0,0,0,16" />
     </Style>
 
     <!-- Settings and property editors -->

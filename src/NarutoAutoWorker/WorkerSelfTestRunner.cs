@@ -1,3 +1,5 @@
+using MaaFramework.Binding;
+using MaaFramework.Binding.Notification;
 using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoWorker;
@@ -17,11 +19,12 @@ internal static class WorkerSelfTestRunner
             VerifyTransportWriteBeforeSendGuard();
             VerifyAgentExecutableResolution();
             VerifyAcceptedStopWinsTerminalRace();
+            VerifyTaskerTaskCallbackCompletion();
             Console.WriteLine(
                 "WORKER SELF-TEST PASS: MaaNOP string focus projection; Callback adapter; "
                 + "log response budget; latest-frame preview; preview response budget; "
                 + "budget rejection; transport write guard; agent executable resolution; "
-                + "accepted stop wins terminal race");
+                + "accepted stop wins terminal race; Tasker.Task callback completion");
             return 0;
         } catch (Exception exception) {
             Console.Error.WriteLine($"WORKER SELF-TEST FAIL: {exception}");
@@ -332,6 +335,52 @@ internal static class WorkerSelfTestRunner
             || WorkerHost.ResolveFinalRunState(RuntimeExecutionOutcome.CleanupFailed, wasStopping: false)
             != RunState.Failed) {
             throw new InvalidOperationException("未停止 Run 的既有终态映射发生变化。 ");
+        }
+    }
+
+    private static void VerifyTaskerTaskCallbackCompletion()
+    {
+        var manifest = new LaunchManifest(
+            ProtocolConstants.LaunchContextVersion, Guid.NewGuid(), "dummy-digest", "C:\\dummy",
+            new ProjectProvenance("test", "1.0", 1, "dummy"),
+            new Win32ControllerDefinition("test", "class", "window", "Cache", "Send", "Send"),
+            new[] { new ResourceDefinition("test", new[] { "C:\\dummy" }) },
+            new AgentDefinition("python.exe", new[] { "agent.py" }, "C:\\dummy"));
+        var item = new RunPlanItem(
+            Guid.NewGuid(), "TestTask", "Test", "TestEntry", default, default);
+
+        var runningReported = false;
+        var execution = new WorkerRuntimeExecution(
+            manifest, Guid.NewGuid(), item, 0,
+            (_, _, _) => { }, () => runningReported = true);
+
+        execution.OnTaskerCallback(null, new MaaCallbackEventArgs(
+            MaaMsg.Tasker.Task.Starting, "{}", MaaHandleType.Tasker));
+        if (!runningReported) {
+            throw new InvalidOperationException("Tasker.Task.Starting 未触发 ReportRunningOnce。 ");
+        }
+
+        execution.OnTaskerCallback(null, new MaaCallbackEventArgs(
+            MaaMsg.Tasker.Task.Succeeded, "{}", MaaHandleType.Tasker));
+        if (execution.TaskCompletion.Status != TaskStatus.RanToCompletion
+            || !execution.TaskCompletion.Result.IsSucceeded()) {
+            throw new InvalidOperationException("Tasker.Task.Succeeded 未将 _taskCompleted 完成为 Succeeded。 ");
+        }
+
+        var failedExecution = new WorkerRuntimeExecution(
+            manifest, Guid.NewGuid(), item, 0,
+            (_, _, _) => { }, () => { });
+        failedExecution.OnTaskerCallback(null, new MaaCallbackEventArgs(
+            MaaMsg.Tasker.Task.Failed, "{}", MaaHandleType.Tasker));
+        if (failedExecution.TaskCompletion.Status != TaskStatus.RanToCompletion
+            || !failedExecution.TaskCompletion.Result.IsFailed()) {
+            throw new InvalidOperationException("Tasker.Task.Failed 未将 _taskCompleted 完成为 Failed。 ");
+        }
+
+        execution.OnTaskerCallback(null, new MaaCallbackEventArgs(
+            MaaMsg.Tasker.Task.Failed, "{}", MaaHandleType.Tasker));
+        if (!execution.TaskCompletion.Result.IsSucceeded()) {
+            throw new InvalidOperationException("重复 terminal callback 不应覆盖首次终态。 ");
         }
     }
 

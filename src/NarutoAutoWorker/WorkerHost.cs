@@ -192,6 +192,9 @@ internal sealed class WorkerHost
 
     private RunStartResponse AcceptRun(RunStartRequest request)
     {
+        // The cursor belongs to the Run, while each Plan Item owns a separate preview cache.
+        long previewRevision = 0;
+        Func<long> nextPreviewRevision = () => Interlocked.Increment(ref previewRevision);
         WorkerRuntimeExecution execution;
         RunSnapshot run;
         WorkerSnapshot snapshot;
@@ -237,7 +240,7 @@ internal sealed class WorkerHost
             _lastRun = null;
             _activeRun = run;
             _ledger.Add(request.RunId, (request.PlanDigest, null));
-            execution = CreateExecution(request.RunId, item);
+            execution = CreateExecution(request.RunId, item, nextPreviewRevision);
             _execution = execution;
             snapshot = CommitLocked();
         }
@@ -246,7 +249,7 @@ internal sealed class WorkerHost
         Log(
             "INFO", "run.lifecycle",
             $"Run 已接受：{request.RunId}，items={run.Items.Count}，first={run.Items[0].TaskName}。 ", request.RunId);
-        _ = Task.Run(() => ExecuteRunAsync(request.RunId, execution, _shutdown.Token));
+        _ = Task.Run(() => ExecuteRunAsync(request.RunId, execution, nextPreviewRevision, _shutdown.Token));
         return new RunStartResponse("accepted");
     }
 
@@ -325,7 +328,8 @@ internal sealed class WorkerHost
     }
 
     private async Task ExecuteRunAsync(
-        Guid runId, WorkerRuntimeExecution execution, CancellationToken cancellationToken)
+        Guid runId, WorkerRuntimeExecution execution,
+        Func<long> nextPreviewRevision, CancellationToken cancellationToken)
     {
         while (true) {
             var result = await execution.ExecuteAsync(cancellationToken);
@@ -365,7 +369,7 @@ internal sealed class WorkerHost
                             CurrentPlanItemIndex = nextIndex,
                             Items = items
                         };
-                        nextExecution = CreateExecution(runId, nextItem);
+                        nextExecution = CreateExecution(runId, nextItem, nextPreviewRevision);
                         _execution = nextExecution;
                         snapshot = CommitLocked();
                     } else {
@@ -452,10 +456,10 @@ internal sealed class WorkerHost
         };
     }
 
-    private WorkerRuntimeExecution CreateExecution(Guid runId, RunPlanItem item) => new(
+    private WorkerRuntimeExecution CreateExecution(Guid runId, RunPlanItem item, Func<long> nextPreviewRevision) => new(
         _manifest, runId, item, checked((uint)Process.GetCurrentProcess().SessionId),
         (level, source, message) => Log(level, source, message, runId, item.PlanItemId, item.TaskName),
-        () => MarkRunRunning(runId, item.PlanItemId));
+        () => MarkRunRunning(runId, item.PlanItemId), nextPreviewRevision);
 
     private void MarkRunRunning(Guid runId, Guid planItemId)
     {

@@ -15,6 +15,13 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-09-05：修复同一 Run 跨 Plan Item 后 Home Preview 长时间停更的问题。预览 revision 改由
+  `WorkerHost.AcceptRun` 创建的 Run 级计数器分配，后续 execution 共享该计数器；各项仍独立持有和清理
+  Controller 与 latest-frame cache，不修改 GUI、IPC schema 或 Child Session 生命周期。Worker 自检补充上一项
+  缓存清空后下一项首帧继续递增（含相同 PNG）、重复内容去重、新 Run 从 1 开始，以及停止时在途帧不消耗序号。
+  NarutoAutoWorker Release `win-x64` build 与 build-output `--self-test` 通过，0 警告、0 错误；新增/修改代码
+  120 列与 `git diff --check` 检查通过。真实游戏跨 Plan Item 的 Preview 连续刷新仍待交互式复验。
+
 - 2026-09-02：完成 Preview 卡片与 Child Session 操作区常驻与 UI/UX Polish。
   Preview 画面容器优化为更饱满的媒体层（Media Surface），最大化占满卡片可用宽度并保留 16:9 比例与最大尺寸限制；
   弱化空状态占位，采用淡雅 Desktop 图标与中性字号文本；

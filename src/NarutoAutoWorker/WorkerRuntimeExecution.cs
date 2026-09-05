@@ -30,6 +30,7 @@ internal sealed class WorkerRuntimeExecution
     private readonly uint _childSessionId;
     private readonly Action<string, string, string> _log;
     private readonly Action _onRunning;
+    private readonly Func<long> _nextPreviewRevision;
     private readonly MaaRunLogAdapter _runLogAdapter;
     private readonly TaskCompletionSource<MaaTasker> _taskerReady = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
@@ -50,7 +51,7 @@ internal sealed class WorkerRuntimeExecution
 
     internal WorkerRuntimeExecution(
         LaunchManifest manifest, Guid runId, RunPlanItem item, uint childSessionId,
-        Action<string, string, string> log, Action onRunning)
+        Action<string, string, string> log, Action onRunning, Func<long> nextPreviewRevision)
     {
         _manifest = manifest;
         _runId = runId;
@@ -58,6 +59,7 @@ internal sealed class WorkerRuntimeExecution
         _childSessionId = childSessionId;
         _log = log;
         _onRunning = onRunning;
+        _nextPreviewRevision = nextPreviewRevision;
         _runLogAdapter = new MaaRunLogAdapter(log);
     }
 
@@ -72,7 +74,8 @@ internal sealed class WorkerRuntimeExecution
                 ParseEnum<Win32InputMethod>(_manifest.Controller.MouseMethod),
                 ParseEnum<Win32InputMethod>(_manifest.Controller.KeyboardMethod),
                 LinkOption.Start, CheckStatusOption.ThrowIfNotSucceeded);
-            var preview = new LatestFramePreview(_runId, new MaaCachedImageFrameSource(_controller), _log);
+            var preview = new LatestFramePreview(
+                _runId, new MaaCachedImageFrameSource(_controller), _log, _nextPreviewRevision);
             var previewCancellation = new CancellationTokenSource();
             _preview = preview;
             _previewCancellation = previewCancellation;

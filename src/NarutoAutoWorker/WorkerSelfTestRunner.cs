@@ -175,7 +175,9 @@ internal static class WorkerSelfTestRunner
             () => new PreviewImageData(sampledAtUtc.AddMilliseconds(400), 4, 3, [4, 5, 6]),
             () => throw new InvalidOperationException("scripted capture failure"),
             () => new PreviewImageData(sampledAtUtc.AddMilliseconds(800), 0, 3, [7]));
-        var preview = new LatestFramePreview(runId, source, (_, _, message) => failures.Add(message));
+        long revision = 0;
+        Func<long> nextRevision = () => Interlocked.Increment(ref revision);
+        var preview = new LatestFramePreview(runId, source, (_, _, message) => failures.Add(message), nextRevision);
 
         preview.Pump(sampledAtUtc);
         var first = preview.ReadLatest();
@@ -210,6 +212,35 @@ internal static class WorkerSelfTestRunner
         if (preview.ReadLatest() is not null) {
             throw new InvalidOperationException("Preview stop 后未清空缓存，或在途生产者重新发布了画面。 ");
         }
+
+        // The next Plan Item may start with the same image after the previous cache was cleared.
+        var nextSource = new ScriptedPreviewFrameSource(
+            () => new PreviewImageData(sampledAtUtc, 4, 3, [4, 5, 6]),
+            () => new PreviewImageData(sampledAtUtc, 4, 3, [4, 5, 6]));
+        var nextPreview = new LatestFramePreview(runId, nextSource, (_, _, _) => { }, nextRevision);
+        nextPreview.Pump(sampledAtUtc);
+        var nextFrame = nextPreview.ReadLatest();
+        if (nextFrame is null || nextFrame.RunId != runId || nextFrame.Revision != 3
+            || nextFrame.Revision <= second!.Revision) {
+            throw new InvalidOperationException("跨 Plan Item 首帧未超过上一任务的 Preview 游标。 ");
+        }
+        nextPreview.Pump(sampledAtUtc.AddMilliseconds(200));
+        nextPreview.Stop();
+        if (revision != 3 || nextPreview.ReadLatest() is not null) {
+            throw new InvalidOperationException("跨 Plan Item 后内容去重或停止清空验证失败。 ");
+        }
+
+        long newRunRevision = 0;
+        var newRunId = Guid.NewGuid();
+        var newRunSource = new ScriptedPreviewFrameSource(
+            () => new PreviewImageData(sampledAtUtc, 4, 3, [4, 5, 6]));
+        var newRunPreview = new LatestFramePreview(
+            newRunId, newRunSource, (_, _, _) => { }, () => Interlocked.Increment(ref newRunRevision));
+        newRunPreview.Pump(sampledAtUtc);
+        if (newRunPreview.ReadLatest() is not { Revision: 1 } newRunFrame || newRunFrame.RunId != newRunId) {
+            throw new InvalidOperationException("新 Run 的 Preview 游标未独立从 1 开始。 ");
+        }
+        newRunPreview.Stop();
     }
 
     private static void VerifyPreviewResponseBudget()
@@ -263,14 +294,16 @@ internal static class WorkerSelfTestRunner
         using var release = new ManualResetEventSlim();
         var sampledAtUtc = new DateTime(2026, 8, 26, 9, 0, 0, DateTimeKind.Utc);
         var source = new BlockingPreviewFrameSource(entered, release, sampledAtUtc);
-        var preview = new LatestFramePreview(Guid.NewGuid(), source, (_, _, _) => { });
+        long revision = 0;
+        var preview = new LatestFramePreview(
+            Guid.NewGuid(), source, (_, _, _) => { }, () => Interlocked.Increment(ref revision));
         var pump = Task.Run(() => preview.Pump(sampledAtUtc));
         if (!entered.Wait(TimeSpan.FromSeconds(2))) {
             throw new TimeoutException("Preview 在途停止自检未进入 frame source。 ");
         }
         preview.Stop();
         release.Set();
-        if (!pump.Wait(TimeSpan.FromSeconds(2)) || preview.ReadLatest() is not null) {
+        if (!pump.Wait(TimeSpan.FromSeconds(2)) || preview.ReadLatest() is not null || revision != 0) {
             throw new InvalidOperationException("Preview Stop 后发布了已经在途的旧帧。 ");
         }
     }

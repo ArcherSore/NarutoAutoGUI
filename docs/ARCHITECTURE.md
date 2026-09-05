@@ -76,6 +76,7 @@ NarutoAutoGUI/
   隐藏/最小化窗口时立即清空显示并恢复 Placeholder。正常取消后的迟到 Preview response 按 requestId 消费并丢弃，
   不作为无法关联的 envelope 断开 Worker IPC。
 - Preview 使用 `sampledAtUtc` 表示 Worker 复制 cached image 的时间，并以 Worker Instance、Run 和 revision 校验陈旧响应。
+  revision 由 Run 级计数器分配，跨 Plan Item 持续递增；每项独立清理预览缓存，新 Run 重新从 1 开始。
   PNG 为 1400 KiB、完整响应为 2 MiB，仍位于现有 4 MiB Named Pipe JSON frame 内；不增加二进制通道或第二个 Controller。
 - Diagnostic log 不进入 GUI 列表，继续覆盖应用/Session/RDP 生命周期、程序路径、PID、SessionId、异常堆栈
   以及 Child Session 模块返回的 Win32/COM 错误码。Preview 采样、编码、IPC 或 GUI 解码失败也只写限频诊断，不能改变

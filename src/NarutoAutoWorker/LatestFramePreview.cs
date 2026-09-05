@@ -61,17 +61,19 @@ internal sealed class LatestFramePreview
     private readonly Guid _runId;
     private readonly IPreviewFrameSource _source;
     private readonly Action<string, string, string> _log;
+    private readonly Func<long> _nextRevision;
     private DateTime _nextSampleAtUtc = DateTime.MinValue;
     private DateTime _nextFailureLogAtUtc = DateTime.MinValue;
     private LatestPreviewFrame? _latest;
-    private long _revision;
     private bool _stopped;
 
-    internal LatestFramePreview(Guid runId, IPreviewFrameSource source, Action<string, string, string> log)
+    internal LatestFramePreview(
+        Guid runId, IPreviewFrameSource source, Action<string, string, string> log, Func<long> nextRevision)
     {
         _runId = runId;
         _source = source;
         _log = log;
+        _nextRevision = nextRevision;
     }
 
     internal void Pump(DateTime nowUtc)
@@ -104,9 +106,8 @@ internal sealed class LatestFramePreview
                 if (_latest is not null && _latest.PngBytes.AsSpan().SequenceEqual(image.PngBytes)) {
                     return;
                 }
-                _revision++;
                 _latest = new LatestPreviewFrame(
-                    _runId, _revision, image.SampledAtUtc,
+                    _runId, _nextRevision(), image.SampledAtUtc,
                     image.PixelWidth, image.PixelHeight, image.PngBytes);
             }
         } catch (Exception exception) {

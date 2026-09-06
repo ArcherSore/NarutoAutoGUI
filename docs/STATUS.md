@@ -15,6 +15,12 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-09-06：完成 NarutoAutoGUI 程序木叶村风格应用图标设计与系统集成。
+  基于用户满意的火之意志木叶旋涡与圆角黑色底板设计，完成高精度圆角外透明切边与居中平移，
+  导出 512×512 PNG 与多尺寸（256/128/64/48/32/24/16）Windows ICO 图标。
+  集成到可执行文件 PE 元数据（ApplicationIcon）、主窗口 FluentWindow、TitleBar 图标以及系统托盘 NotifyIcon。
+  Release build、自动化自检、120 列与 `git diff --check` 全数通过。
+
 - 2026-09-06：合并 `7badeec` 的顶层 Task callback 终态修复，使用 `Tasker.Task.Starting/Succeeded/Failed`
   驱动运行状态，不再轮询可能已被 runtime 清除的 `job.Status`。同时保留 Stop/cleanup 互斥与 Preview 重复取消保护；
   两者分别覆盖终态来源和迟到停止的资源生命周期竞争。合并两组自检并适配 Run 级 Preview revision 构造参数。

@@ -14,6 +14,7 @@
     <!-- The SDK can schedule the transitive Protocol reference twice for this mixed
          WPF/project graph; serialize project references to keep ordinary builds deterministic. -->
     <BuildInParallel>false</BuildInParallel>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>NarutoAutoGUI</AssemblyName>
     <RootNamespace>NarutoAutoGUI</RootNamespace>
@@ -26,6 +27,11 @@
     <BeautyOnPublishOnly>True</BeautyOnPublishOnly>
     <BeautyUsePatch>True</BeautyUsePatch>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\app.png" />
+  </ItemGroup>
 
   <ItemGroup>
     <RuntimeHostConfigurationOption Include="SubdirectoriesToProbe" Value="libs" />

@@ -174,12 +174,41 @@ public partial class App : System.Windows.Application
             await Dispatcher.InvokeAsync(async () => await RequestExitAsync()).Task.Unwrap());
 
         _trayIcon = new Forms.NotifyIcon {
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = LoadTrayIcon(),
             Text = "NarutoAutoGUI",
             Visible = true,
             ContextMenuStrip = menu
         };
         _trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(ShowMainWindow);
+    }
+
+    private static System.Drawing.Icon LoadTrayIcon()
+    {
+        try {
+            var uri = new Uri("pack://application:,,,/Assets/app.ico", UriKind.Absolute);
+            var info = System.Windows.Application.GetResourceStream(uri);
+            if (info is not null) {
+                using var stream = info.Stream;
+                return new System.Drawing.Icon(stream, 32, 32);
+            }
+        } catch {
+            // Fall back to exe icon or system default if resource stream is unavailable.
+        }
+
+        try {
+            if (!string.IsNullOrEmpty(Environment.ProcessPath) &&
+                !Path.GetFileNameWithoutExtension(Environment.ProcessPath)
+                    .Equals("dotnet", StringComparison.OrdinalIgnoreCase)) {
+                var extracted = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath);
+                if (extracted is not null) {
+                    return extracted;
+                }
+            }
+        } catch {
+            // Fall back to system icon if extraction fails.
+        }
+
+        return System.Drawing.SystemIcons.Application;
     }
 
     private void MainWindow_HiddenToTray(object? sender, EventArgs e)

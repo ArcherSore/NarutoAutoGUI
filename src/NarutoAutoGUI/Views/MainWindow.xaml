@@ -3,6 +3,7 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="NarutoAutoGUI"
+                 Icon="pack://application:,,,/Assets/app.ico"
                  Width="1180"
                  Height="760"
                  MinWidth="920"
@@ -27,7 +28,11 @@
         <ui:TitleBar
                      Grid.Row="0"
                      Title="NarutoAutoGUI"
-                     Background="{StaticResource Brush.Canvas}" />
+                     Background="{StaticResource Brush.Canvas}">
+            <ui:TitleBar.Icon>
+                <ui:ImageIcon Source="pack://application:,,,/Assets/app.png" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
 
         <ui:NavigationView
                            Grid.Row="1"

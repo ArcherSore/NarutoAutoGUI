@@ -12,43 +12,32 @@ Tasks 页面：
 
 <img src="docs/images/taskPage.png" width="80%" alt="Tasks" />
 
-## 主要功能
-
-- 创建并管理独立的 Windows Child Session，让游戏在后台 Session 中持续运行。
-- 在 Dashboard 查看当前任务、运行状态、MaaNOP `focus` 日志和运行中的游戏画面预览。
-- 从 MaaNOP Project Interface 选择任务，并动态编辑任务提供的 input、switch 和 select 参数。
-- 通过 Child Session 中的 NarutoAutoWorker、MaaFramework 和 MaaNOP 执行任务。
-- 使用首页的上下文操作完成运行环境准备、任务开始和任务停止。
-- 从首页打开、隐藏或结束完整的 Child Session 桌面。
-- 关闭主窗口后驻留系统托盘，并从托盘恢复窗口或安全退出。
-- 自动读取与 `NarutoAutoGUI.exe` 同级的 bundled `interface.json`，无需选择 MaaNOP 项目目录。
-- 自动解析当前用户的 QQMicroGameBox 启动器，使用固定的火影忍者 Online AppId `1103286479`，无需填写游戏路径或启动参数。
-
 ## 快速开始
 
 1. 前往 [MaaNOP Releases](https://github.com/ArcherSore/MaaNOP/releases) 下载完整的 Windows x64 ZIP。
 2. 解压整个 ZIP，不要只复制其中的可执行文件。
-3. 确保 QQ 游戏平台已经安装过火影忍者 Online 微端。
+3. 确保已经安装过 **火影忍者 Online 微端**！！！当前仅支持 **微端**！！！QQ游戏大厅、360游戏大厅等均不行！！！
 4. 运行 `NarutoAutoGUI.exe`，并在 Windows 提示时允许管理员权限。
 5. 在首页点击“准备运行环境”。
 6. 在打开的完整桌面中完成必要的游戏登录。
 7. 在“任务”页选择任务并配置参数，然后回到首页开始任务。
 
-NarutoAutoGUI 会从完整发布包中自动读取 `interface.json`，并自动确定 QQMicroGameBox 启动器路径、启动参数和 AppId；这些路径和参数不需要用户配置。
+NarutoAutoGUI 会从完整发布包中自动读取 `interface.json`，并自动确定 QQMicroGameBox 启动器路径、启动参数和 AppId
 
 ## 运行要求
 
-### 使用 Release
 
-- Windows x64，以及可交互的 Windows 桌面。
-- 管理员权限；启动时会显示 UAC 提示。
-- 已通过 QQ 游戏平台安装或至少启动过一次火影忍者 Online 微端。
-- 完整的 MaaNOP Windows x64 发布包，其中应包含 `interface.json`、Agent 和项目资源。
-- 系统中可用的 `python` 命令，以及 MaaNOP Agent 所需的 `maa` Python 模块。
+### 系统与环境
+- **操作系统**：Windows 10 / Windows 11（x64）
+  - **支持版本**：家庭版（Home）、专业版（Pro）、企业版（Enterprise）、教育版（Education）全版本支持。
+  - **权限要求**：管理员权限（启动时需允许 UAC 弹窗提示，用于启用系统 Session 接口）。
+- **游戏客户端**：必须安装并能正常运行 **火影忍者 Online 微端**。
 
-完整发布包中的 NarutoAutoGUI、NarutoAutoWorker、.NET runtime 和 MaaFramework runtime 均为自包含内容。Release 用户不需要安装 .NET SDK，也不需要单独配置 `interface.json`、游戏启动路径、启动参数或 AppId。
-
-本仓库单独生成的 NarutoAutoGUI frontend ZIP 用于 MaaNOP Windows 包组合，包含 GUI、Worker 和固定 MaaFramework runtime，但不包含 MaaNOP 项目资源或 Python runtime；直接运行任务时请使用上述完整 MaaNOP Windows x64 发布包。
+> [!NOTE]
+> **关于 Windows Child Session（桌面分身）支持说明**
+>
+> 很多人常误以为“Windows 家庭版不支持远程桌面”，实际上家庭版仅限制了外部网络的“远程桌面服务端接入”。
+> 本项目所使用的 Child Session（子会话）是微软自 Windows 8 / Server 2012 起内置的**本地回环技术（Loopback Session）**。根据[微软官方文档 (Child Sessions)](https://learn.microsoft.com/en-us/windows/win32/termserv/child-sessions)，子会话无需普通远程桌面的远程交互权限，原生支持包括**家庭版在内的所有 Win10/Win11 桌面版本**。本项目完全调用 Windows 原生 API（`wtsapi32.dll` 与 `MsRdpClient10`），**无需**安装 RDP Wrapper 或修改系统组件。
 
 ### 开发者本地构建
 
@@ -79,3 +68,7 @@ Child Session
 NarutoAutoGUI 留在当前桌面负责配置、预览和控制；Worker、游戏与自动化流程运行在独立 Child Session 中。隐藏完整桌面或主窗口不会结束后台任务。
 
 详细技术设计见 [架构文档](docs/ARCHITECTURE.md)。当前能力与后续方向分别记录在 [STATUS](docs/STATUS.md) 和 [ROADMAP](docs/ROADMAP.md)。正式 GUI 的开发说明见 [src/NarutoAutoGUI/README.md](src/NarutoAutoGUI/README.md)。
+
+## 鸣谢
+
+- [BetterGI (Better Genshin Impact)](https://github.com/babalae/better-genshin-impact)：本项目核心的 Windows Child Session（桌面分身 / 独立后台会话）功能借鉴并参考了 BetterGI `v0.63.0` 版本引入的方案与原生接口实现，在此对原作者及开源社区表示诚挚感谢！

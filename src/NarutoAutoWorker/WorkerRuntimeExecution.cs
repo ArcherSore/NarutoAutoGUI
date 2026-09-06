@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using MaaFramework.Binding;
+using MaaFramework.Binding.Notification;
 using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoWorker;
@@ -36,6 +37,8 @@ internal sealed class WorkerRuntimeExecution
     private readonly TaskCompletionSource<MaaTasker> _taskerReady = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource<bool> _stopConfirmed = new(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<MaaJobStatus> _taskCompleted = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
 
     private MaaWin32Controller? _controller;
@@ -117,13 +120,7 @@ internal sealed class WorkerRuntimeExecution
 
             var job = _tasker.AppendTask(_item.Entry, _item.PipelineOverride.GetRawText());
             _log("INFO", "runtime.task", $"已提交 MaaFramework task：{_item.Entry}，jobId={job.Id}。 ");
-            MaaJobStatus status;
-            while (!(status = job.Status).IsDone()) {
-                if (status.IsRunning()) {
-                    ReportRunningOnce();
-                }
-                await Task.Delay(100, cancellationToken);
-            }
+            var status = await _taskCompleted.Task.WaitAsync(cancellationToken);
 
             if (IsStopRequested()) {
                 try {
@@ -232,6 +229,8 @@ internal sealed class WorkerRuntimeExecution
     }
 
     internal LatestPreviewFrame? ReadLatestPreview() => _preview?.ReadLatest();
+
+    internal Task<MaaJobStatus> TaskCompletion => _taskCompleted.Task;
 
     private DesktopWindowInfo FindTargetWindow()
     {
@@ -397,9 +396,17 @@ internal sealed class WorkerRuntimeExecution
         return (errors.Count == 0, errors.Count == 0 ? null : string.Join("；", errors));
     }
 
-    private void OnTaskerCallback(object? sender, MaaCallbackEventArgs args)
+    internal void OnTaskerCallback(object? sender, MaaCallbackEventArgs args)
     {
         _runLogAdapter.Handle(args.Message, args.Details);
+
+        if (args.Message == MaaMsg.Tasker.Task.Starting) {
+            ReportRunningOnce();
+        } else if (args.Message == MaaMsg.Tasker.Task.Succeeded) {
+            _taskCompleted.TrySetResult(MaaJobStatus.Succeeded);
+        } else if (args.Message == MaaMsg.Tasker.Task.Failed) {
+            _taskCompleted.TrySetResult(MaaJobStatus.Failed);
+        }
     }
 
     private void ReportRunningOnce()

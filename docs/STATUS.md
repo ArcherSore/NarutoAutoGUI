@@ -15,6 +15,12 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-09-06：合并 `7badeec` 的顶层 Task callback 终态修复，使用 `Tasker.Task.Starting/Succeeded/Failed`
+  驱动运行状态，不再轮询可能已被 runtime 清除的 `job.Status`。同时保留 Stop/cleanup 互斥与 Preview 重复取消保护；
+  两者分别覆盖终态来源和迟到停止的资源生命周期竞争。合并两组自检并适配 Run 级 Preview revision 构造参数。
+  Worker Release `win-x64` build（0 警告、0 错误）及包含 callback completion、Stop/cleanup 竞争的自检均通过；
+  120 列与 diff 检查通过。真实 MaaNOP 自然结束、停止及再次运行仍待交互式复验。
+
 - 2026-09-06：修复 Worker 自然结束清理与迟到 `run.stop` 并发时访问已释放 Tasker 的竞争。
   `WorkerRuntimeExecution` 将 Stop 与 cleanup 串行化；清理先进入时，迟到 Stop 等待清理并沿既有 Run 终态流程结束，
   不再使用 `_taskerReady` 中保留的旧 Tasker。Stop 先进入但未确认时继续保留 context，并保持 `StopTimedOut` 语义，

@@ -24,6 +24,7 @@ internal sealed class WorkerRuntimeExecution
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan AgentExitGracePeriod = TimeSpan.FromSeconds(3);
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _stopCleanupGate = new(1, 1);
     private readonly LaunchManifest _manifest;
     private readonly Guid _runId;
     private readonly RunPlanItem _item;
@@ -48,6 +49,7 @@ internal sealed class WorkerRuntimeExecution
     private bool _stopRequested;
     private bool _runningReported;
     private bool _preserveContext;
+    private bool _cleanupStarted;
 
     internal WorkerRuntimeExecution(
         LaunchManifest manifest, Guid runId, RunPlanItem item, uint childSessionId,
@@ -64,6 +66,19 @@ internal sealed class WorkerRuntimeExecution
     }
 
     internal async Task<RuntimeExecutionResult> ExecuteAsync(CancellationToken cancellationToken)
+    {
+        var result = await ExecuteCoreAsync(cancellationToken);
+        // A concurrent Stop failure also wins over natural completion waiting to enter cleanup.
+        return _preserveContext
+            ? new RuntimeExecutionResult(
+                RuntimeExecutionOutcome.StopTimedOut, null,
+                new StructuredReason("StopTimeout",
+                    _stopConfirmed.Task.Exception?.GetBaseException().Message ?? result.Error?.Message
+                    ?? "MaaFramework Stop 未确认。"))
+            : result;
+    }
+
+    private async Task<RuntimeExecutionResult> ExecuteCoreAsync(CancellationToken cancellationToken)
     {
         try {
             var window = FindTargetWindow();
@@ -82,8 +97,11 @@ internal sealed class WorkerRuntimeExecution
             _previewProducerTask = Task.Run(
                 () => RunPreviewProducerAsync(preview, previewCancellation.Token),
                 CancellationToken.None);
-            _resource = new MaaResource(CheckStatusOption.ThrowIfNotSucceeded, _manifest.Resources.SelectMany(resource => resource.Paths));
-            _tasker = new MaaTasker { Controller = _controller, Resource = _resource, DisposeOptions = DisposeOptions.None };
+            _resource = new MaaResource(
+                CheckStatusOption.ThrowIfNotSucceeded, _manifest.Resources.SelectMany(resource => resource.Paths));
+            _tasker = new MaaTasker {
+                Controller = _controller, Resource = _resource, DisposeOptions = DisposeOptions.None
+            };
             _tasker.Callback += OnTaskerCallback;
             if (!_tasker.IsInitialized) {
                 throw new InvalidOperationException("MaaTasker 初始化后 IsInitialized=false。 ");
@@ -166,6 +184,20 @@ internal sealed class WorkerRuntimeExecution
     {
         RequestStop();
 
+        await _stopCleanupGate.WaitAsync(cancellationToken);
+        try {
+            // Cleanup owns finalization once entered; _taskerReady may retain a disposed Tasker.
+            if (_cleanupStarted) {
+                return;
+            }
+            await StopTaskerAsync(cancellationToken);
+        } finally {
+            _stopCleanupGate.Release();
+        }
+    }
+
+    private async Task StopTaskerAsync(CancellationToken cancellationToken)
+    {
         try {
             var tasker = await _taskerReady.Task.WaitAsync(StopTimeout, cancellationToken);
             var stopJob = tasker.Stop();
@@ -182,6 +214,7 @@ internal sealed class WorkerRuntimeExecution
             _stopConfirmed.TrySetResult(true);
             _log("INFO", "runtime.stop", "MaaFramework Stop 已确认。 ");
         } catch (Exception exception) {
+            _preserveContext = true;
             var actual = exception is StopConfirmationException
                 ? exception
                 : new StopConfirmationException($"MaaFramework Stop 在 {StopTimeout.TotalSeconds:0} 秒内未确认。", exception);
@@ -286,6 +319,17 @@ internal sealed class WorkerRuntimeExecution
 
     private async Task<(bool Success, string? Error)> CleanupAsync(
         CancellationToken cancellationToken)
+    {
+        await _stopCleanupGate.WaitAsync(CancellationToken.None);
+        try {
+            _cleanupStarted = true;
+            return await CleanupCoreAsync(cancellationToken);
+        } finally {
+            _stopCleanupGate.Release();
+        }
+    }
+
+    private async Task<(bool Success, string? Error)> CleanupCoreAsync(CancellationToken cancellationToken)
     {
         if (_preserveContext) {
             return (false, "Stop 未确认，保留 execution context 供诊断。 ");
@@ -399,6 +443,8 @@ internal sealed class WorkerRuntimeExecution
         _preview?.Stop();
         try {
             _previewCancellation?.Cancel();
+        } catch (ObjectDisposedException) {
+            // Cleanup may already have disposed the producer cancellation source.
         } catch (Exception exception) {
             LogPreviewFailure("停止 Preview producer 失败。", exception);
         }

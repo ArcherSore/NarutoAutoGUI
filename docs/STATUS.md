@@ -15,6 +15,15 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-09-06：修复 Worker 自然结束清理与迟到 `run.stop` 并发时访问已释放 Tasker 的竞争。
+  `WorkerRuntimeExecution` 将 Stop 与 cleanup 串行化；清理先进入时，迟到 Stop 等待清理并沿既有 Run 终态流程结束，
+  不再使用 `_taskerReady` 中保留的旧 Tasker。Stop 先进入但未确认时继续保留 context，并保持 `StopTimedOut` 语义，
+  不允许普通清理结果覆盖停止失败。Preview 重复取消忽略 `ObjectDisposedException`。未修改 GUI、IPC 或 Child Session。
+  Worker Release `win-x64` build 通过（0 警告、0 错误），build-output `--self-test` 通过；新增自检覆盖清理中停止、
+  清理后重复停止、已释放 Preview 取消、Stop 先进入时阻止清理及停止未确认后的 context 保留与超时结果。
+  受影响 C# 文件 120 列与 `git diff --check` 检查通过。真实游戏自然结束后点击停止的交互式复验仍待完成；
+  本轮未终止或替换当前运行中的 GUI、Worker 或游戏进程。
+
 - 2026-09-05：修复同一 Run 跨 Plan Item 后 Home Preview 长时间停更的问题。预览 revision 改由
   `WorkerHost.AcceptRun` 创建的 Run 级计数器分配，后续 execution 共享该计数器；各项仍独立持有和清理
   Controller 与 latest-frame cache，不修改 GUI、IPC schema 或 Child Session 生命周期。Worker 自检补充上一项

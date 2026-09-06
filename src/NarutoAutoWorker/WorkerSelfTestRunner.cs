@@ -17,11 +17,12 @@ internal static class WorkerSelfTestRunner
             VerifyTransportWriteBeforeSendGuard();
             VerifyAgentExecutableResolution();
             VerifyAcceptedStopWinsTerminalRace();
+            VerifyStopCleanupRaceAsync().GetAwaiter().GetResult();
             Console.WriteLine(
                 "WORKER SELF-TEST PASS: MaaNOP string focus projection; Callback adapter; "
                 + "log response budget; latest-frame preview; preview response budget; "
                 + "budget rejection; transport write guard; agent executable resolution; "
-                + "accepted stop wins terminal race");
+                + "accepted stop wins terminal race; stop/cleanup serialization");
             return 0;
         } catch (Exception exception) {
             Console.Error.WriteLine($"WORKER SELF-TEST FAIL: {exception}");
@@ -250,7 +251,8 @@ internal static class WorkerSelfTestRunner
             "frame", Guid.NewGuid(), Guid.NewGuid(), 1, DateTime.UtcNow,
             640, 360, "image/png", pngBytes, null);
         var envelope = WireEnvelope.Response(ProtocolOperations.PreviewGetLatest, Guid.NewGuid(), response);
-        var serializedBytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(envelope, ProtocolJson.Options).Length;
+        var serializedBytes = System.Text.Json.JsonSerializer
+            .SerializeToUtf8Bytes(envelope, ProtocolJson.Options).Length;
         if (serializedBytes > ProtocolConstants.MaximumPreviewResponseBytes
             || ProtocolConstants.MaximumPreviewResponseBytes >= ProtocolConstants.MaximumFramePayloadBytes) {
             throw new InvalidOperationException("Preview PNG/base64 响应预算验证失败。 ");
@@ -365,6 +367,63 @@ internal static class WorkerSelfTestRunner
             || WorkerHost.ResolveFinalRunState(RuntimeExecutionOutcome.CleanupFailed, wasStopping: false)
             != RunState.Failed) {
             throw new InvalidOperationException("未停止 Run 的既有终态映射发生变化。 ");
+        }
+    }
+
+    private static async Task VerifyStopCleanupRaceAsync()
+    {
+        const System.Reflection.BindingFlags flags =
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        var warnings = new List<string>();
+        var execution = new WorkerRuntimeExecution(
+            null!, Guid.NewGuid(), null!, 0, (_, _, message) => warnings.Add(message), () => { }, () => 1);
+        var producer = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Dispose();
+        typeof(WorkerRuntimeExecution).GetField("_previewCancellation", flags)!.SetValue(execution, cancellation);
+        typeof(WorkerRuntimeExecution).GetField("_previewProducerTask", flags)!.SetValue(execution, producer.Task);
+        var cleanupMethod = typeof(WorkerRuntimeExecution).GetMethod("CleanupAsync", flags)!;
+        var cleanup = (Task<(bool Success, string? Error)>)cleanupMethod.Invoke(
+            execution, [CancellationToken.None])!;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var stop = execution.StopAsync(timeout.Token);
+        try {
+            if (cleanup.IsCompleted || stop.IsCompleted) {
+                throw new InvalidOperationException("在途 Preview 清理完成前，迟到 Stop 必须等待清理。 ");
+            }
+        } finally {
+            producer.TrySetResult();
+        }
+        var result = await cleanup.WaitAsync(timeout.Token);
+        await stop.WaitAsync(timeout.Token);
+        await execution.StopAsync(timeout.Token);
+        if (!result.Success || warnings.Count != 0) {
+            throw new InvalidOperationException("清理后重复 Stop 不应访问 Tasker 或对已释放 Preview 产生告警。 ");
+        }
+
+        // Stop wins first, but readiness fails: cleanup must retain the unconfirmed context.
+        execution = new WorkerRuntimeExecution(
+            null!, Guid.NewGuid(), null!, 0, (_, _, _) => { }, () => { }, () => 1);
+        var ready = (TaskCompletionSource<MaaFramework.Binding.MaaTasker>)typeof(WorkerRuntimeExecution)
+            .GetField("_taskerReady", flags)!.GetValue(execution)!;
+        stop = execution.StopAsync(timeout.Token);
+        cleanup = (Task<(bool Success, string? Error)>)cleanupMethod.Invoke(execution, [CancellationToken.None])!;
+        if (cleanup.IsCompleted) {
+            throw new InvalidOperationException("Stop 确认完成前不得进入清理。 ");
+        }
+        ready.SetException(new InvalidOperationException("scripted readiness failure"));
+        try {
+            await stop;
+            throw new InvalidOperationException("未确认停止时不应返回成功。 ");
+        } catch (StopConfirmationException) {
+        }
+        result = await cleanup.WaitAsync(timeout.Token);
+        if (result.Success) {
+            throw new InvalidOperationException("Stop 未确认时必须保留 execution context。 ");
+        }
+        var executionResult = await execution.ExecuteAsync(timeout.Token);
+        if (executionResult.Outcome != RuntimeExecutionOutcome.StopTimedOut) {
+            throw new InvalidOperationException("Stop 未确认时不得被清理结果覆盖为普通终态。 ");
         }
     }
 

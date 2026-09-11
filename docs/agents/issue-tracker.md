@@ -1,6 +1,10 @@
-# 问题跟踪器：GitHub
+# 问题跟踪器：本地 Issues
 
-本仓库的问题和规格说明统一记录为 GitHub Issues。所有操作均使用 `gh` CLI。
+当前仓库暂时没有远端 GitHub Issues。`docs/issues/` 是本阶段问题、规格和切片工单的权威本地记录；不要运行 `gh issue`，也不要把本地文件描述成已经发布到远端。
+
+如果未来配置了远端 GitHub Issues，需要先把本地文件迁移并补充 Issue 编号/链接，再启用下面的 GitHub 操作约定。
+
+下面的 GitHub 操作约定仅适用于未来启用远端 Issue 的情况。
 
 ## 操作约定
 

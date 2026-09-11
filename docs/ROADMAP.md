@@ -2,6 +2,8 @@
 
 ## 下一步：MaaNOP Updater V1 发布集成与实机验收
 
+- 目标规格与六个切片工单快照位于 [`docs/issues/maanop-updater-v1.md`](issues/maanop-updater-v1.md)；当前实现证据和边界位于
+  [`docs/UPDATER-VALIDATION.md`](UPDATER-VALIDATION.md)。
 - 将包含独立 Updater 的 NarutoAutoGUI baseline 集成到 MaaNOP 完整包，核实 github/version 元数据、
   内置 Python、资产名与 GitHub digest；本轮不自动创建 stable tag/Release。
 - 按既定 Windows 手工 E2E 计划完成 Active Run、Preview、Worker、Child Session、游戏/Agent、

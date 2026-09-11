@@ -45,7 +45,7 @@
 
 ### 问题跟踪器
 
-问题和规格说明统一记录在 `ArcherSore/NarutoAutoGUI` 的 GitHub Issues 中。详见 `docs/agents/issue-tracker.md`。
+当前没有远端 GitHub Issues；问题和规格说明统一记录在本地 `docs/issues/`。若以后启用远端，再按 `docs/agents/issue-tracker.md` 的迁移说明同步。
 
 ### 领域文档
 

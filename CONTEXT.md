@@ -16,6 +16,10 @@ _Avoid_: MaaFramework、Maa
 面向 MaaNOP 的专用 Windows 前端和运行环境协调者，长期承担当前由 MFAAvalonia 提供的用户交互职责。
 _Avoid_: MaaNOP
 
+**MaaNOP Updater**:
+NarutoAutoGUI 面向 MaaNOP Windows x64 完整发布包的更新协作者，负责发现、下载、校验、安装接管和重启；更新单位始终是完整包，不独立更新 GUI、Worker 或 MaaFramework。
+_Avoid_: 独立组件更新、后台自动安装
+
 **MFAAvalonia**:
 开发期间用于人工验证 MaaNOP/MaaFramework 和对照前端行为的诊断后备；它不属于 NarutoAutoGUI 的正常执行链路，不提供或共写运行配置，也不得与正在执行 MaaNOP 的 Child Session Worker 并行控制游戏。
 _Avoid_: MaaFramework、MaaNOP

@@ -80,7 +80,8 @@
                                 <DockPanel>
                                     <Button DockPanel.Dock="Right" Content="查看更新" Click="ViewUpdate_Click"
                                             Style="{StaticResource SubtleButtonStyle}" />
-                                    <TextBlock x:Name="UpdateBannerText" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="UpdateBannerText"
+                                               VerticalAlignment="Center" TextWrapping="Wrap" />
                                 </DockPanel>
                             </Border>
                             <Grid Margin="0,0,0,16">
@@ -607,9 +608,11 @@
                                                 Visibility="Collapsed" Click="CancelDownload_Click"
                                                 Style="{StaticResource SecondaryButtonStyle}" />
                                         <Button x:Name="DownloadUpdateButton" Content="下载更新"
-                                                Click="DownloadUpdate_Click" Style="{StaticResource PrimaryButtonStyle}" />
+                                                Click="DownloadUpdate_Click"
+                                                Style="{StaticResource PrimaryButtonStyle}" />
                                         <Button x:Name="InstallUpdateButton" Content="安装更新" Visibility="Collapsed"
-                                                Click="InstallUpdate_Click" Style="{StaticResource PrimaryButtonStyle}" />
+                                                Click="InstallUpdate_Click"
+                                                Style="{StaticResource PrimaryButtonStyle}" />
                                     </StackPanel>
                                 </StackPanel>
                             </Grid>

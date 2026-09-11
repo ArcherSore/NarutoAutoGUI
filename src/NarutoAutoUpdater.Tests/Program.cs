@@ -10,15 +10,15 @@ Console.WriteLine("UPDATE TEST PASS: SemVer numeric precedence.");
 foreach (var (left, right, expected) in new[] {
     ("v1.0.0", "1.0.0+build.4", 0), ("1.0.0-alpha.9", "1.0.0-alpha.10", -1),
     ("1.0.0-alpha", "1.0.0", -1), ("1.0.0-1", "1.0.0-alpha", -1),
-    ("1.0.0--1", "1.0.0-1", 1), ("4294967294.0.0", "2.0.0", 1)
+    ("1.0.0--1", "1.0.0-1", 1), ("4294967296.0.0", "2.0.0", 1),
+    ("1.0.0-4294967296", "1.0.0-4294967297", -1)
 }) {
     if (Math.Sign(SemanticVersion.Parse(left).CompareTo(SemanticVersion.Parse(right))) != expected) {
         throw new Exception($"SemVer precedence: {left} vs {right}");
     }
 }
 foreach (var invalid in new[] {
-    "2.1", "2.01.0", "2.1.0-01", "2.1.0\n", " 2.1.0",
-    "4294967296.0.0", "1.4294967296.0", "1.0.4294967296", "1.0.0-4294967296"
+    "2.1", "2.01.0", "2.1.0-01", "2.1.0\n", " 2.1.0"
 }) {
     ExpectFailure<InvalidDataException>(() => SemanticVersion.Parse(invalid));
 }

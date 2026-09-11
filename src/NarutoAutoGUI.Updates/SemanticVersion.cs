@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using System.Text.RegularExpressions;
 
 namespace NarutoAutoGUI.Updates;
@@ -9,10 +10,10 @@ public sealed class SemanticVersion : IComparable<SemanticVersion>
         @"^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
         + @"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\z",
         RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
-    private readonly (bool Numeric, uint Number, string Text)[] _prerelease;
+    private readonly (bool Numeric, BigInteger Number, string Text)[] _prerelease;
 
-    private SemanticVersion(uint major, uint minor, uint patch,
-        (bool Numeric, uint Number, string Text)[] prerelease)
+    private SemanticVersion(BigInteger major, BigInteger minor, BigInteger patch,
+        (bool Numeric, BigInteger Number, string Text)[] prerelease)
     {
         Major = major;
         Minor = minor;
@@ -20,9 +21,9 @@ public sealed class SemanticVersion : IComparable<SemanticVersion>
         _prerelease = prerelease;
     }
 
-    public uint Major { get; }
-    public uint Minor { get; }
-    public uint Patch { get; }
+    public BigInteger Major { get; }
+    public BigInteger Minor { get; }
+    public BigInteger Patch { get; }
 
     public static SemanticVersion Parse(string value)
     {
@@ -31,7 +32,7 @@ public sealed class SemanticVersion : IComparable<SemanticVersion>
             throw new InvalidDataException("无效的 MaaNOP 版本。");
         }
         var identifiers = match.Groups[4].Success ? match.Groups[4].Value.Split('.') : [];
-        var prerelease = new (bool Numeric, uint Number, string Text)[identifiers.Length];
+        var prerelease = new (bool Numeric, BigInteger Number, string Text)[identifiers.Length];
         for (var i = 0; i < identifiers.Length; i++) {
             var part = identifiers[i];
             var numeric = part.All(char.IsAsciiDigit);
@@ -71,10 +72,10 @@ public sealed class SemanticVersion : IComparable<SemanticVersion>
         return _prerelease.Length.CompareTo(other._prerelease.Length);
     }
 
-    private static uint ParseNumber(string value)
+    private static BigInteger ParseNumber(string value)
     {
-        if (!uint.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var number)) {
-            throw new InvalidDataException("MaaNOP 版本数字超出支持范围。");
+        if (!BigInteger.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var number)) {
+            throw new InvalidDataException("MaaNOP 版本数字无效。");
         }
         return number;
     }

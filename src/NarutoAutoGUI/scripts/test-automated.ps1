@@ -50,3 +50,7 @@ dotnet $WorkerDll --self-test
 if ($LASTEXITCODE -ne 0) { throw "Worker 自动自检失败，退出码 $LASTEXITCODE" }
 
 Write-Host "自动自检通过。RDP/UAC/托盘等交互流程仍需按文档手动回归。"
+
+dotnet run --project (Join-Path $repositoryRoot 'src\NarutoAutoUpdater.Tests') -c $Configuration `
+    -p:BuildInParallel=false
+if ($LASTEXITCODE -ne 0) { throw "Updater 自动化测试失败，退出码 $LASTEXITCODE" }

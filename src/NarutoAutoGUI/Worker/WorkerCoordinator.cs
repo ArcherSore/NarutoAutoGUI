@@ -101,6 +101,16 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
 
     internal WorkerCoordinatorSnapshot Snapshot { get; private set; }
 
+    internal int? TrackedWorkerPid
+    {
+        get
+        {
+            lock (_gate) {
+                return _admission?.WorkerPid;
+            }
+        }
+    }
+
     internal Task WaitForServerReadyAsync(CancellationToken cancellationToken) =>
         _serverReady.Task.WaitAsync(cancellationToken);
 

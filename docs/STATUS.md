@@ -15,6 +15,29 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-09-11：Updater review 最小修复：版本数字超出 uint 范围时统一报告无效版本；完成记录在版本解析
+  成功后才消费；TEMP Updater 启动成功后，GUI 清理异常仍继续退出，不恢复半释放界面的操作入口。
+  GUI Release build（0 警告、0 错误）及 GUI 自检通过；Updater 自动化通过，新增数字溢出、完成记录解析
+  失败保留及一次性消费回归。完成记录测试使用独立随机缓存目录，需要沙箱外本地缓存写权限。
+  本次测试产物已能运行，不代表真实 Updater EXE、运行态关闭与重启 E2E 已验收；未运行交互式更新。
+
+- 2026-09-11：完成 Updater 双轴审查修复：手动检查明确显示兼容包/摘要错误；安装前 staging 失效时
+  废弃准备状态并恢复下载入口，运行态/TEMP 启动失败仍允许重试安装。规范审查无待修项，规格审查两项已复核修复。
+  GUI Release build 与 GUI/Worker 自检通过；本次 Updater 测试 DLL 被应用控制策略以 `0x800711C7` 拦截，
+  因此不声明本次完整自检通过。用户重启后仍报告无法启动，并要求暂不处理；未继续运行 EXE 或调整系统保护策略。
+  2026-09-10 的 Updater 自动化通过记录保持为历史证据，不能替代当前产物启动或实机 E2E 验收。
+
+- 2026-09-10：实现 MaaNOP Updater V1 的 GUI 检查/下载/校验/安装接管和独立 TEMP Updater 目录事务。
+  只按 Project Interface 的 github/version 检查最新正式完整包，Home Banner/Drawer 与 Settings 呈现更新，
+  流式下载、SHA256、安全 staging、用户 config/logs copy、完整目录 swap/rollback 及单旧备份策略已接入。
+  安装优先 Stop，再复用现有 Child Session 注销清理；只确认已有跟踪进程与文件释放，不增加通用进程身份系统。
+  TEMP Updater 先做启动可用性检查，再停止运行环境；完成提示不承担 health handshake 或备份清理职责。
+  GUI、Worker、Updater 构建及包含单文件 Updater 的 locked baseline publish 通过；GUI/Worker 自检、Updater
+  自动化和 baseline package layout 检查通过。未运行真实 EXE/游戏 E2E：用户报告本机保护策略阻止新 EXE，
+  需重启后按既定 Windows 手工 E2E 计划复验。
+  MaaNOP 完整包消费新 baseline、github/version 元数据、内置 Python 和真实 Release digest 仍需发布集成；
+  不把本仓库 baseline 构建或自动化通过描述为完整产品升级已验收。
+
 - 2026-09-06：完成 NarutoAutoGUI 程序木叶村风格应用图标设计与系统集成。
   基于用户满意的火之意志木叶旋涡与圆角黑色底板设计，完成高精度圆角外透明切边与居中平移，
   导出 512×512 PNG 与多尺寸（256/128/64/48/32/24/16）Windows ICO 图标。

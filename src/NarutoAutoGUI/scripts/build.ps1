@@ -39,6 +39,7 @@ $projectDirectory = Split-Path -Parent $PSScriptRoot
 $repositoryRoot = (Resolve-Path (Join-Path $projectDirectory '..\..')).Path
 $projectPath = Join-Path $projectDirectory 'NarutoAutoGUI.csproj'
 $workerProjectPath = Join-Path $repositoryRoot 'src\NarutoAutoWorker\NarutoAutoWorker.csproj'
+$updaterProjectPath = Join-Path $repositoryRoot 'src\NarutoAutoUpdater\NarutoAutoUpdater.csproj'
 
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $repositoryRoot 'artifacts\NarutoAutoGUI\win-x64'
@@ -56,6 +57,9 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet restore 失败，退出码 $LASTEXITCOD
 dotnet restore $workerProjectPath @restoreArgs
 if ($LASTEXITCODE -ne 0) { throw "Worker dotnet restore 失败，退出码 $LASTEXITCODE" }
 
+dotnet restore $updaterProjectPath @restoreArgs
+if ($LASTEXITCODE -ne 0) { throw "Updater dotnet restore 失败，退出码 $LASTEXITCODE" }
+
 dotnet build $projectPath -c $Configuration -p:Platform=x64 -r $Runtime --no-restore @versionArgs
 if ($LASTEXITCODE -ne 0) { throw "dotnet build 失败，退出码 $LASTEXITCODE" }
 
@@ -66,9 +70,14 @@ if ($LASTEXITCODE -ne 0) { throw "Worker dotnet build 失败，退出码 $LASTEX
 $stagingRoot = Join-Path $repositoryRoot 'artifacts\.staging'
 $guiPublishDir = Join-Path $stagingRoot 'gui'
 $workerPublishDir = Join-Path $stagingRoot 'worker'
+$updaterPublishDir = Join-Path $stagingRoot 'updater'
 $packageStagingDir = Join-Path $stagingRoot 'package'
 
 if (Test-Path -LiteralPath $stagingRoot) {
+    $resolvedStaging = (Resolve-Path -LiteralPath $stagingRoot).Path
+    if ($resolvedStaging -ne (Join-Path $repositoryRoot 'artifacts\.staging')) {
+        throw 'Unexpected staging directory.'
+    }
     Remove-Item -LiteralPath $stagingRoot -Recurse -Force
 }
 New-Item -ItemType Directory -Force -Path $guiPublishDir | Out-Null
@@ -97,12 +106,17 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Worker dotnet publish 失败，退出码 $LASTEXITCODE" }
 
     # Assemble distribution package in package staging.
+    dotnet publish $updaterProjectPath -c $Configuration -r $Runtime --self-contained true `
+        -o $updaterPublishDir --no-restore @versionArgs
+    if ($LASTEXITCODE -ne 0) { throw "Updater publish 失败，退出码 $LASTEXITCODE" }
+
     Copy-CleanTree -Source $guiPublishDir -Destination $packageStagingDir
     Copy-CleanTree -Source $workerPublishDir -Destination (Join-Path $packageStagingDir 'worker')
+    Copy-Item -LiteralPath (Join-Path $updaterPublishDir 'NarutoAutoUpdater.exe') -Destination $packageStagingDir
 
     # Deploy assembled package to target OutputDirectory safely.
     $resolvedOutput = (New-Item -ItemType Directory -Force -Path $OutputDirectory).FullName
-    $artifactsPath = (Join-Path $repositoryRoot 'artifacts')
+    $artifactsPath = (Join-Path $repositoryRoot 'artifacts') + [IO.Path]::DirectorySeparatorChar
     if ($resolvedOutput.StartsWith($artifactsPath, [StringComparison]::OrdinalIgnoreCase) -and
         (Test-Path -LiteralPath $resolvedOutput)) {
         Get-ChildItem -LiteralPath $resolvedOutput -Force | Remove-Item -Recurse -Force

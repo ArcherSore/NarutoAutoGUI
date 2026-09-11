@@ -82,6 +82,14 @@ NarutoAutoGUI/
   以及 Child Session 模块返回的 Win32/COM 错误码。Preview 采样、编码、IPC 或 GUI 解码失败也只写限频诊断，不能改变
   Run、Worker admission、cleanup 或 Child Session 生命周期。
 
+## MaaNOP 完整包更新
+
+`NarutoAutoGUI.Updates` 提供 Release/SemVer、流式下载、SHA256、ZIP 预验证和完整目录事务。
+GUI 使用 Home Banner、右侧 Update Drawer 和 Settings 更新区；检查/下载与运行状态栏分离。
+用户确认安装后，应用操作门阻止新操作，复用 Run Stop 与 Child Session 注销路径确认旧运行环境结束。
+安装目录外的单文件 `NarutoAutoUpdater` 等待 GUI 退出、检查文件释放、复制 config/logs、交换目录并启动新版。
+最多保留一个 `.old`，下次事务前安全清理；不使用健康握手或进程管理框架。
+
 ## 明确边界
 
 当前执行计划支持把 PI 中不重复的 top-level task 按 `SelectedTasks` 顺序组成多个 Plan Item，并由同一 Worker 逐项执行；

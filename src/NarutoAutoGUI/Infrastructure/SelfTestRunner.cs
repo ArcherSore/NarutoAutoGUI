@@ -691,6 +691,7 @@ internal static class SelfTestRunner
               "interface_version": 2,
               "name": "SelfTestProject",
               "version": "1.0.0",
+              "github": "https://github.com/example/fixture",
               "controller": [{
                 "name": "Win32",
                 "type": "Win32",

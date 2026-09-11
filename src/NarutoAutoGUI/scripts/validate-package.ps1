@@ -98,6 +98,8 @@ if (-not (Test-Path -LiteralPath $PackageDirectory -PathType Container)) {
     throw "Package directory not found: $PackageDirectory"
 }
 
+Assert-PackageFile -Name 'NarutoAutoUpdater.exe' -Path (Join-Path $PackageDirectory 'NarutoAutoUpdater.exe')
+
 Write-Host "Validating package layout: $PackageDirectory"
 
 # GUI host and bootstrap metadata at package root.

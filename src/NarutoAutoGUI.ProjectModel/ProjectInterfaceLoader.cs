@@ -8,7 +8,7 @@ internal static class ProjectInterfaceLoader
 {
     private static readonly HashSet<string> AllowedTopLevelProperties = new(StringComparer.Ordinal)
     {
-        "interface_version", "name", "label", "version", "description", "icon",
+        "interface_version", "name", "label", "version", "description", "icon", "github",
         "controller", "resource", "agent", "global_option", "task", "option"
     };
 

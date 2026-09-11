@@ -1,5 +1,12 @@
 # Roadmap
 
+## 下一步：MaaNOP Updater V1 发布集成与实机验收
+
+- 将包含独立 Updater 的 NarutoAutoGUI baseline 集成到 MaaNOP 完整包，核实 github/version 元数据、
+  内置 Python、资产名与 GitHub digest；本轮不自动创建 stable tag/Release。
+- 按既定 Windows 手工 E2E 计划完成 Active Run、Preview、Worker、Child Session、游戏/Agent、
+  TEMP Updater、重启和完成 Banner 的 Windows 手工 E2E。用户报告的新 EXE 保护策略限制需待重启后复验。
+
 ## 已完成：第一轮正式 GUI
 
 1. WPF 主窗口、托盘和统一日志。

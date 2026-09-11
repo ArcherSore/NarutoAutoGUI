@@ -45,6 +45,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NarutoAutoGUI.ProjectModel\NarutoAutoGUI.ProjectModel.csproj" />
+    <ProjectReference Include="..\NarutoAutoGUI.Updates\NarutoAutoGUI.Updates.csproj" />
   </ItemGroup>
 
 </Project>

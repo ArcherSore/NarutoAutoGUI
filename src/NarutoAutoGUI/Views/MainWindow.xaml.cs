@@ -151,6 +151,8 @@ public partial class MainWindow : FluentWindow
     internal void SetExitInProgress(bool exitInProgress)
     {
         _exitInProgress = exitInProgress;
+        UpdateUpdaterControls();
+        UpdatePreviewPolling();
         UpdateCommandAvailability();
     }
 
@@ -169,6 +171,7 @@ public partial class MainWindow : FluentWindow
             ShowProjectValidationError(exception);
             UpdateCommandAvailability();
         }
+        InitializeUpdates();
         var existingId = _sessionManager.DetectExistingSession();
         if (existingId is null) {
             return;
@@ -186,6 +189,7 @@ public partial class MainWindow : FluentWindow
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
         if (_allowClose) {
+            _updateCancellation?.Cancel();
             _elapsedTimer.Stop();
             StopPreviewPolling();
             _sessionManager.StateChanged -= OnSessionStateChanged;
@@ -1263,7 +1267,8 @@ public partial class MainWindow : FluentWindow
     {
         var worker = _workerSnapshot.WorkerSnapshot;
         var activeRun = worker?.ActiveRun;
-        if (IsVisible && WindowState != WindowState.Minimized && HomeView.Visibility == Visibility.Visible
+        if (!_exitInProgress && IsVisible && WindowState != WindowState.Minimized
+            && HomeView.Visibility == Visibility.Visible
             && _workerSnapshot.Observation == WorkerObservation.Connected && _workerSnapshot.SnapshotFresh
             && worker is not null && activeRun?.State is RunState.Starting or RunState.Running) {
             workerInstanceId = worker.WorkerInstanceId;

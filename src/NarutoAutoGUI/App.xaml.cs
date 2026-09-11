@@ -37,6 +37,16 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        try {
+            using var updateLock = Updates.UpdateStorage.AcquireInstallLock(AppContext.BaseDirectory);
+        } catch (IOException exception) when ((exception.HResult & 0xffff) is 32 or 33) {
+            WpfMessageBox.Show("MaaNOP 正在安装更新，请稍候。", "MaaNOP 更新");
+            Shutdown(0);
+            return;
+        } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+            // An unavailable optional update cache must not prevent ordinary application startup.
+        }
+
         Forms.Application.EnableVisualStyles();
         Forms.Application.SetCompatibleTextRenderingDefault(false);
         _logger = new AppLogger();

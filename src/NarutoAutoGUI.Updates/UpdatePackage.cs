@@ -7,7 +7,8 @@ namespace NarutoAutoGUI.Updates;
 public static class UpdatePackage
 {
     public static readonly IReadOnlyList<string> RequiredFiles = Array.AsReadOnly(new[] {
-        "NarutoAutoGUI.exe", "NarutoAutoGUI.dll", "NarutoAutoUpdater.exe",
+        "NarutoAutoGUI.exe", "NarutoAutoGUI.dll", "NarutoAutoUpdater.exe", "NarutoAutoUpdater.dll",
+        "NarutoAutoUpdater.deps.json", "NarutoAutoUpdater.runtimeconfig.json",
         "worker/NarutoAutoWorker.exe", "worker/NarutoAutoWorker.dll",
         "worker/runtimes/win-x64/native/MaaFramework.dll",
         "worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll", "interface.json", "python/python.exe"

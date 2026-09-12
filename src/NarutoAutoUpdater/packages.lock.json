@@ -2,11 +2,11 @@
   "version": 1,
   "dependencies": {
     "net10.0-windows7.0": {
-      "Microsoft.NET.ILLink.Tasks": {
+      "nulastudio.NetBeauty": {
         "type": "Direct",
-        "requested": "[10.0.11, )",
-        "resolved": "10.0.11",
-        "contentHash": "IBf7lbovvjGWVWXZX5cJ/cO0WXbId0Zq4BuSeT94mGZuOAP66oMeH9PTBZ9Jpp3Jb6jtK0qm/NyUbPRo1gC/wQ=="
+        "requested": "[2.1.5, )",
+        "resolved": "2.1.5",
+        "contentHash": "+88sEKa7vRNC5aYvyajGkzFHcXrwshM921i4/J/GMtJdCw7I0LFvmmgoaDDgTOPJE9zCi1yzBOUVZPSGfYFjkA=="
       },
       "narutoautogui.updates": {
         "type": "Project"

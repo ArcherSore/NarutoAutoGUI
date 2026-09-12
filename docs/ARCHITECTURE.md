@@ -87,7 +87,8 @@ NarutoAutoGUI/
 `NarutoAutoGUI.Updates` 提供 Release/SemVer、流式下载、SHA256、ZIP 预验证和完整目录事务。
 GUI 使用 Home Banner、右侧 Update Drawer 和 Settings 更新区；检查/下载与运行状态栏分离。
 用户确认安装后，应用操作门阻止新操作，复用 Run Stop 与 Child Session 注销路径确认旧运行环境结束。
-安装目录外的单文件 `NarutoAutoUpdater` 等待 GUI 退出、检查文件释放、复制 config/logs、交换目录并启动新版。
+安装目录外的非 single-file `NarutoAutoUpdater` 入口等待 GUI 退出；GUI 先复制 Updater 入口、`hostfxr`、
+`hostpolicy`、共享 `libs` 和 Updater bootstrap 文件到 TEMP，再由 Updater 检查文件释放、复制 config/logs、交换目录并启动新版。
 最多保留一个 `.old`，下次事务前安全清理；不使用健康握手或进程管理框架。
 
 ## 明确边界

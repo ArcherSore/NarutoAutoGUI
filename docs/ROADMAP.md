@@ -4,7 +4,7 @@
 
 - 目标规格与六个切片工单快照位于 [`docs/issues/maanop-updater-v1.md`](issues/maanop-updater-v1.md)；当前实现证据和边界位于
   [`docs/UPDATER-VALIDATION.md`](UPDATER-VALIDATION.md)。
-- 将包含独立 Updater 的 NarutoAutoGUI baseline 集成到 MaaNOP 完整包，核实 github/version 元数据、
+- 将包含共享 app-local runtime、非 single-file TEMP Updater 的 NarutoAutoGUI baseline 集成到 MaaNOP 完整包，核实 github/version 元数据、
   内置 Python、资产名与 GitHub digest；本轮不自动创建 stable tag/Release。
 - 按既定 Windows 手工 E2E 计划完成 Active Run、Preview、Worker、Child Session、游戏/Agent、
   TEMP Updater、重启和完成 Banner 的 Windows 手工 E2E。用户报告的新 EXE 保护策略限制需待重启后复验。

@@ -15,8 +15,13 @@ Updater 测试通过更新模块入口使用可控 HTTP 和真实临时目录，
 覆盖 SemVer、Release/asset 选择、下载/SHA256、ZIP 路径与包结构、config/logs 保留及目录 swap/rollback。
 使用 `src/NarutoAutoGUI/scripts/test-automated.ps1` 运行 GUI、Worker 与 Updater 自动化。
 
-Windows x64 baseline 发布脚本同时生成可独立运行的单文件 NarutoAutoUpdater.exe，放在发布根目录。
-该 baseline 仍不是 MaaNOP 完整包；不得用它自身作为 updater 的目标 Release ZIP。
+Windows x64 baseline 发布脚本在发布根目录生成非 single-file 的 `NarutoAutoUpdater.exe`、`.dll`、deps 和
+runtimeconfig 入口文件；它复用根目录 `hostfxr.dll`、`hostpolicy.dll` 与 `libs/` 中的 app-local runtime。
+TEMP 接管时复制这些入口、共享 `libs/` 以及 loader 所需的 bootstrap 文件，因此不依赖即将被替换的安装目录，
+也不要求用户安装 .NET Desktop Runtime。该 baseline 仍不是 MaaNOP 完整包；不得用它自身作为 updater 的目标 Release ZIP。
+
+发布包校验会在安装目录外构造一次性 TEMP 副本，实际运行 `NarutoAutoUpdater.exe --probe`，覆盖入口、host、loader、
+shared `libs/` 的独立启动布局。
 
 ## 完整包集成前置条件
 

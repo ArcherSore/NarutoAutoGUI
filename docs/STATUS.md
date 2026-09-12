@@ -15,6 +15,16 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-09-12：完成 MaaNOP Updater runtime consolidation。Updater 改为非 single-file 入口（EXE/DLL/deps/runtimeconfig），
+  使用 NetBeauty loader + `includedFrameworks` + `SubdirectoriesToProbe=libs` 复用 GUI 的 app-local runtime；发布包只保留
+  一份根 `libs/`，GUI 安装前将 Updater 入口、`hostfxr.dll`、`hostpolicy.dll`、共享 `libs/` 和 bootstrap 文件复制到安装目录外
+  的 TEMP，再按原顺序执行 `--probe`、runtime shutdown 和 InstallTransaction。真实 TEMP 副本 `--probe`、正式 locked build、
+  package validation、published GUI/Worker self-test 及 Updater 自动化均通过；未创建 stable release、未运行真实更新重启 E2E。
+  真实 `D:\MaaNOP-Updater-E2E-v2\MaaNOP` 改造前为 675,407,181 bytes（644.12 MiB），其中单文件 Updater 为 140,025,042 bytes；
+  仓库 baseline 对比包由 479,271,285 bytes / 206,794,374-byte ZIP 降至 339,705,000 bytes / 146,111,232-byte ZIP。
+  新 Updater 入口合计 456,699 bytes，按同一 MaaNOP 完整包内容替换后为 535,838,838 bytes / 237,003,306-byte ZIP，
+  完整包分别减少 139,568,343 bytes 和 60,684,044 bytes；新 Updater 额外体积约 0.44 MiB，低于 10 MB。
+
 - 2026-09-11：按 Updater 规格对照补齐 SemVer 任意长度数字标识符的比较，并增加超出 `uint` 范围的核心版本和预发布版本回归；
   同时修正 Updater UI XAML 的 120 列格式问题。Updater 自动化在进入本机缓存目录权限检查前已通过这些 SemVer 断言；
   完整测试仍受本机 `LocalApplicationData` 缓存目录权限限制。

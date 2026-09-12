@@ -105,14 +105,25 @@ try {
         @versionArgs
     if ($LASTEXITCODE -ne 0) { throw "Worker dotnet publish 失败，退出码 $LASTEXITCODE" }
 
-    # Assemble distribution package in package staging.
+    # The updater is published with the same app-local runtime layout as the GUI, but only
+    # its entry files are copied. The shared runtime comes from the GUI publish below.
     dotnet publish $updaterProjectPath -c $Configuration -r $Runtime --self-contained true `
-        -o $updaterPublishDir --no-restore @versionArgs
+        -p:PublishSingleFile=false -o $updaterPublishDir --no-restore @versionArgs
     if ($LASTEXITCODE -ne 0) { throw "Updater publish 失败，退出码 $LASTEXITCODE" }
 
+    # Assemble distribution package in package staging.
     Copy-CleanTree -Source $guiPublishDir -Destination $packageStagingDir
     Copy-CleanTree -Source $workerPublishDir -Destination (Join-Path $packageStagingDir 'worker')
-    Copy-Item -LiteralPath (Join-Path $updaterPublishDir 'NarutoAutoUpdater.exe') -Destination $packageStagingDir
+    foreach ($fileName in @(
+        'NarutoAutoUpdater.exe', 'NarutoAutoUpdater.dll', 'NarutoAutoUpdater.deps.json',
+        'NarutoAutoUpdater.runtimeconfig.json'
+    )) {
+        $sourceFile = Join-Path $updaterPublishDir $fileName
+        if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) {
+            throw "Updater publish 缺少入口文件：$fileName"
+        }
+        Copy-Item -LiteralPath $sourceFile -Destination $packageStagingDir
+    }
 
     # Deploy assembled package to target OutputDirectory safely.
     $resolvedOutput = (New-Item -ItemType Directory -Force -Path $OutputDirectory).FullName

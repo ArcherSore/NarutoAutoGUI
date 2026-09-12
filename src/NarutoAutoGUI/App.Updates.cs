@@ -7,6 +7,14 @@ namespace NarutoAutoGUI;
 
 public partial class App
 {
+    private static readonly string[] SharedRuntimeBootstrapFiles = new[] {
+        "clrjit.dll", "coreclr.dll", "libloader.dll", "PresentationFramework.dll", "System.Collections.dll",
+        "System.IO.FileSystem.dll", "System.IO.Packaging.dll", "System.Memory.dll", "System.Private.CoreLib.dll",
+        "System.Runtime.dll", "System.Runtime.Extensions.dll", "System.Runtime.InteropServices.dll",
+        "System.Runtime.InteropServices.RuntimeInformation.dll", "System.Runtime.Loader.dll", "System.Xaml.dll",
+        "WindowsBase.dll"
+    };
+
     internal async Task InstallUpdateAsync(PreparedUpdate update)
     {
         if (_isExiting || _mainWindow is null || _sessionManager is null
@@ -31,8 +39,25 @@ public partial class App
             }
             var temporary = Path.Combine(UpdateStorage.DirectoryFor(update.Installation), Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(temporary);
+            foreach (var fileName in new[] {
+                "NarutoAutoUpdater.exe", "NarutoAutoUpdater.dll", "NarutoAutoUpdater.deps.json",
+                "NarutoAutoUpdater.runtimeconfig.json", "hostfxr.dll", "hostpolicy.dll"
+            }) {
+                var source = Path.Combine(AppContext.BaseDirectory, fileName);
+                if (!File.Exists(source)) {
+                    throw new FileNotFoundException($"当前发布包缺少 Updater 运行文件：{fileName}", source);
+                }
+                File.Copy(source, Path.Combine(temporary, fileName));
+            }
+            CopyDirectory(Path.Combine(AppContext.BaseDirectory, "libs"), Path.Combine(temporary, "libs"));
+            foreach (var fileName in SharedRuntimeBootstrapFiles) {
+                var source = Path.Combine(temporary, "libs", fileName);
+                if (!File.Exists(source)) {
+                    throw new FileNotFoundException($"共享 runtime 缺少 Updater bootstrap 文件：{fileName}", source);
+                }
+                File.Copy(source, Path.Combine(temporary, fileName));
+            }
             var executable = Path.Combine(temporary, "NarutoAutoUpdater.exe");
-            File.Copy(updater, executable);
             var probeStart = new ProcessStartInfo {
                 FileName = executable, WorkingDirectory = temporary, UseShellExecute = false
             };
@@ -105,6 +130,20 @@ public partial class App
                 _isExiting = false;
                 _mainWindow.SetExitInProgress(false);
             }
+        }
+    }
+
+    private static void CopyDirectory(string source, string destination)
+    {
+        if (!Directory.Exists(source)) {
+            throw new DirectoryNotFoundException($"当前发布包缺少 Updater 共享 runtime：{source}");
+        }
+        Directory.CreateDirectory(destination);
+        foreach (var file in Directory.EnumerateFiles(source)) {
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)));
+        }
+        foreach (var directory in Directory.EnumerateDirectories(source)) {
+            CopyDirectory(directory, Path.Combine(destination, Path.GetFileName(directory)));
         }
     }
 }

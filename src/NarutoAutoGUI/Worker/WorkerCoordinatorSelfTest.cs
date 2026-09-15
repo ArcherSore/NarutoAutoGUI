@@ -181,6 +181,15 @@ internal static class WorkerCoordinatorSelfTest
         if ((await afterCancellationTask).Disposition != "not_modified") {
             throw new InvalidOperationException("迟到 Preview response 导致 Coordinator IPC 失效。 ");
         }
+        var stop = coordinator.StopRunAsync(activeRun.RunId, cancellationToken);
+        var stopRequest = await ReadRequestAsync(pipe, ProtocolOperations.RunStop, cancellationToken);
+        await pipe.WriteAsync(WireEnvelope.Response(ProtocolOperations.RunStop, stopRequest.RequestId!.Value,
+            new RunStopResponse("accepted")), cancellationToken);
+        await stop;
+        if (coordinator.Snapshot.WorkerSnapshot?.ActiveRun?.RunId != activeRun.RunId
+            || coordinator.TrackedWorkerPid != Environment.ProcessId) {
+            throw new InvalidOperationException("Stop ACK 不得冒充任务终态或 Worker 退出。");
+        }
     }
 
     private static async Task VerifyRecoveryAndRetryAsync(

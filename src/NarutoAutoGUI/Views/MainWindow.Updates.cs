@@ -167,7 +167,8 @@ public partial class MainWindow
     private async void InstallUpdate_Click(object sender, RoutedEventArgs e)
     {
         if (_updateBusy || _exitInProgress || _preparedReference is null) { return; }
-        if (System.Windows.MessageBox.Show("安装更新将重启 MaaNOP。保留 config、logs、debug、cache；\n"
+        if (System.Windows.MessageBox.Show("安装更新将停止任务、关闭桌面分身及其中程序，并重启 MaaNOP。\n"
+            + "保留 config、logs、debug、cache；\n"
             + "其余程序目录内容（包括自行添加的文件）会被替换或删除。是否继续？", "安装 MaaNOP 更新",
             MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) { return; }
         _updateBusy = true;

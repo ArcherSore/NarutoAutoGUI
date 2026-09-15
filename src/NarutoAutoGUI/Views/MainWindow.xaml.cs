@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
@@ -42,6 +43,7 @@ namespace NarutoAutoGUI.Views;
 public partial class MainWindow : FluentWindow
 {
     private const int MaximumGuiLogEntries = 1000;
+    private HwndSource? _previewWindowSource;
     private const string PlanItemDragDataFormat = "NarutoAutoGUI.PlanItem";
     private static readonly TimeSpan PreviewPollingInterval = TimeSpan.FromMilliseconds(
         ProtocolConstants.PreviewIntervalMilliseconds);
@@ -189,7 +191,12 @@ public partial class MainWindow : FluentWindow
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
+        if (!_allowClose && PreviewOverlay.Visibility == Visibility.Visible) {
+            e.Cancel = true;
+            return;
+        }
         if (_allowClose) {
+            RemovePreviewWindowHook();
             _updateCancellation?.Cancel();
             _elapsedTimer.Stop();
             StopPreviewPolling();
@@ -499,6 +506,11 @@ public partial class MainWindow : FluentWindow
 
     private void MainWindow_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
+        if (e.Key == Key.Escape && PreviewOverlay.Visibility == Visibility.Visible) {
+            ClosePreview_Click(sender, e);
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.Escape && TaskDescriptionOverlay.Visibility == Visibility.Visible) {
             CloseTaskDescriptionDrawer();
             e.Handled = true;
@@ -1315,6 +1327,79 @@ public partial class MainWindow : FluentWindow
         ShowPreviewPlaceholder();
     }
 
+    private void ExpandPreview_Click(object sender, RoutedEventArgs e)
+    {
+        PreviewOverlay.Visibility = Visibility.Visible;
+        UpdateExpandedPreviewSize();
+        MainNavigation.IsEnabled = false;
+        if (_previewWindowSource is null && PresentationSource.FromVisual(PreviewOverlay) is HwndSource source) {
+            _previewWindowSource = source;
+            source.AddHook(PreviewWindowHook);
+        }
+        ClosePreviewButton.Focus();
+    }
+
+    private void PreviewOverlay_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateExpandedPreviewSize();
+
+    private void UpdateExpandedPreviewSize()
+    {
+        if (ExpandedPreviewCard is null || PreviewOverlay.Visibility != Visibility.Visible) {
+            return;
+        }
+        // Card chrome: 48px header, 8px image inset on each side, and 1px outer border.
+        var image = HomePreviewImage.Source as BitmapSource;
+        var aspectRatio = image is null ? 16.0 / 9 : (double)image.PixelWidth / image.PixelHeight;
+        var availableWidth = Math.Max(1, PreviewOverlay.ActualWidth - 80 - 18);
+        var availableHeight = Math.Max(1, PreviewOverlay.ActualHeight - 80 - 66);
+        var imageWidth = Math.Min(availableWidth, availableHeight * aspectRatio);
+        ExpandedPreviewCard.Width = imageWidth + 18;
+        ExpandedPreviewCard.Height = imageWidth / aspectRatio + 66;
+    }
+
+    private void ClosePreview_Click(object sender, RoutedEventArgs e)
+    {
+        PreviewOverlay.Visibility = Visibility.Collapsed;
+        RemovePreviewWindowHook();
+        MainNavigation.IsEnabled = true;
+        ExpandPreviewButton.Focus();
+    }
+
+    private void RemovePreviewWindowHook()
+    {
+        _previewWindowSource?.RemoveHook(PreviewWindowHook);
+        _previewWindowSource = null;
+    }
+
+    private nint PreviewWindowHook(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+    {
+        if (PreviewOverlay.Visibility != Visibility.Visible) {
+            return 0;
+        }
+        // WPF-UI caption buttons handle native messages independently of WPF overlay hit testing.
+        const int wmNcHitTest = 0x0084;
+        const int wmNcLeftButtonDown = 0x00A1;
+        const int wmNcLeftButtonUp = 0x00A2;
+        const int wmNcLeftButtonDoubleClick = 0x00A3;
+        const int wmSysCommand = 0x0112;
+        if (message == wmNcHitTest) {
+            handled = true;
+            return 1; // HTCLIENT routes caption-area clicks to the dismiss scrim.
+        }
+        var command = (int)(wParam.ToInt64() & 0xFFF0);
+        if (message is wmNcLeftButtonDown or wmNcLeftButtonUp or wmNcLeftButtonDoubleClick
+            || message == wmSysCommand && command is 0xF020 or 0xF030 or 0xF060 or 0xF120) {
+            handled = true;
+        }
+        return 0;
+    }
+
+    private void TogglePreview_Click(object sender, RoutedEventArgs e)
+    {
+        var expanded = PreviewCardContent.Visibility != Visibility.Visible;
+        PreviewCardContent.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+        PreviewChevron.Symbol = expanded ? WpfSymbolRegular.ChevronUp16 : WpfSymbolRegular.ChevronDown16;
+    }
+
     private void DisplayPreviewFrame(PreviewGetLatestResponse response)
     {
         using var stream = new MemoryStream(response.PngBytes!, writable: false);
@@ -1328,6 +1413,7 @@ public partial class MainWindow : FluentWindow
         }
         image.Freeze();
         HomePreviewImage.Source = image;
+        UpdateExpandedPreviewSize();
         HomePreviewImage.Visibility = Visibility.Visible;
         HomePreviewPlaceholder.Visibility = Visibility.Collapsed;
     }
@@ -1335,6 +1421,7 @@ public partial class MainWindow : FluentWindow
     private void ShowPreviewPlaceholder()
     {
         HomePreviewImage.Source = null;
+        UpdateExpandedPreviewSize();
         HomePreviewImage.Visibility = Visibility.Collapsed;
         HomePreviewPlaceholder.Visibility = Visibility.Visible;
     }
@@ -1533,14 +1620,16 @@ public partial class MainWindow : FluentWindow
         HomeDesktopVisibilityButton.Visibility = sessionConnected ? Visibility.Visible : Visibility.Collapsed;
         if (sessionConnected) {
             HomeDesktopVisibilityText.Text = state == ChildSessionState.ConnectedVisible
-                ? "隐藏桌面(_H)"
-                : "打开完整桌面(_S)";
+                ? "隐藏分身"
+                : "显示分身";
             HomeDesktopVisibilityButton.IsEnabled = canStartCommand;
         } else {
-            HomeDesktopVisibilityText.Text = "打开完整桌面(_S)";
+            HomeDesktopVisibilityText.Text = "显示分身";
             HomeDesktopVisibilityButton.IsEnabled = false;
         }
 
+        HomeDesktopVisibilityButton.ToolTip = HomeDesktopVisibilityText.Text;
+        AutomationProperties.SetName(HomeDesktopVisibilityButton, HomeDesktopVisibilityText.Text);
         HomeTerminateSessionMenuItem.IsEnabled = canStartCommand && hasSession;
 
         HomeSessionHintText.Visibility = hasSession ? Visibility.Collapsed : Visibility.Visible;

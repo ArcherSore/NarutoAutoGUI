@@ -84,6 +84,13 @@ NarutoAutoGUI/
 
 ## MaaNOP 完整包更新
 
+2026-09-15 起，V2 工单 01 的检查入口使用独立 Rust Update Engine。GUI 经 JSONL 进程 seam 提交 check，
+只呈现展示字段并保存 opaque descriptor；Engine 自行读取 PI、比较 SemVer 和选择 Release 资产。
+开发构建由 build-development.ps1 提供，偏好写入 config/update-check.txt；旧完成 Banner 已移除。
+prepare/install 尚待后续工单，当前 GUI 暂不开放下载/安装，避免新 descriptor 进入旧 V1 安装路径。
+
+以下为仍留在仓库、等待后续切片替换的 V1 安装实现与发布布局，不代表当前 GUI 已贯通 V2 安装：
+
 `NarutoAutoGUI.Updates` 提供 Release/SemVer、流式下载、SHA256、ZIP 预验证和完整目录事务。
 GUI 使用 Home Banner、右侧 Update Drawer 和 Settings 更新区；检查/下载与运行状态栏分离。
 用户确认安装后，应用操作门阻止新操作，复用 Run Stop 与 Child Session 注销路径确认旧运行环境结束。

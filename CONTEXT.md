@@ -20,6 +20,32 @@ _Avoid_: MaaNOP
 NarutoAutoGUI 面向 MaaNOP Windows x64 完整发布包的更新协作者，负责发现、下载、校验、安装接管和重启；更新单位始终是完整包，不独立更新 GUI、Worker 或 MaaFramework。
 _Avoid_: 独立组件更新、后台自动安装
 
+**Update Engine**:
+MaaNOP Updater V2 中拥有更新规则与更新执行的角色，涵盖发布发现、包准备、缓存管理、安装和重启。
+正常更新界面与自动化运行环境的关闭由 NarutoAutoGUI 负责；Engine 在独立安装期间提供最小状态与失败提示。
+_Avoid_: 仅安装器、GUI 更新界面
+
+**Update Descriptor**:
+Update Engine 检查得到的一个更新候选的描述，供后续准备该候选使用；GUI 只保存和回传，不解释其内部内容。
+_Avoid_: Prepared Payload、GUI 自建下载计划
+
+**Prepared Payload**:
+Update Engine 已完成下载、完整性校验、安全解压与包验证的新包内容，只供本次更新安装使用，不包含旧用户数据。
+_Avoid_: V1 staging、完整候选安装目录、旧版备份
+
+**旧文件隔离区**:
+MaaNOP 更新期间暂存从安装位置移走的旧程序内容的短命区域，仅服务于先移走旧内容再写入新版的安装过程。
+_Avoid_: rollback 来源、长期备份、可恢复旧版本
+
+**Install Ready**:
+实际安装 Engine 已接管本次安装并完成当时能完成的非破坏性前置检查、允许 GUI 退出的交接结果。
+它不表示程序文件已修改，也不保证后续安装或新版运行成功。
+_Avoid_: 更新完成、新版健康、仅进程启动成功
+
+**更新保留目录**:
+MaaNOP 更新时不由发布包替换的本地内容集合；其中缓存的保留不取消其所有者清理专属内容的权利。
+_Avoid_: 永不清理的数据、旧版备份
+
 **MFAAvalonia**:
 开发期间用于人工验证 MaaNOP/MaaFramework 和对照前端行为的诊断后备；它不属于 NarutoAutoGUI 的正常执行链路，不提供或共写运行配置，也不得与正在执行 MaaNOP 的 Child Session Worker 并行控制游戏。
 _Avoid_: MaaFramework、MaaNOP

@@ -2,6 +2,17 @@
 
 ## 当前阶段
 
+2026-09-15：Updater V2 工单 01 已实现 Rust check、最小工程/JSONL seam、GUI 进程适配和配置内启动检查偏好。
+开发构建与 Rust 8 项测试、Clippy、GUI/Worker 自检及 Updater 自动化通过；真实 Rust 进程读取公开 GitHub Release
+并返回无更新结果通过，未下载更新包。GUI 不再使用 C# Release 检查或完成 Banner；下载/安装入口暂时关闭，
+待 02/03 接入，不能将 Rust descriptor 交给旧 V1 安装链路。正式发布布局仍待 05，未运行 GUI 交互或真实更新 E2E。
+
+2026-09-14（设计阶段记录）：MaaNOP Updater V2 设计已由用户确认定稿，见 [设计记录](issues/maanop-updater-v2.md) 和
+[ADR 0023](adr/0023-centralize-updates-in-a-rust-engine.md)。
+[V2 可执行规格](issues/maanop-updater-v2-spec.md) 已整理并标记 ready-for-agent，保留已确认的测试 seam 和验收要求。
+当时仅更新文档、updater 仍为 V1；后续实现进展以上方记录为准。V2 完整 MaaNOP 包将强制内置 Python，
+这不改变下方已完成阶段使用系统 Python 的历史验证事实。
+
 第一轮正式 GUI 和 ADR 0020 的首个最小 Worker/IPC + MaaFramework 端到端切片已完成并通过交互式实机验收。
 `win-x64-options-v2-scroll` 在同一 Worker 上同时通过 admission、fresh Snapshot、Dependency Readiness、真实自然
 Succeeded Run、真实 Running 后取消、取消后存活和再次执行；GUI 使用正式 PI 显式 option 编辑与最终 MaaNOP

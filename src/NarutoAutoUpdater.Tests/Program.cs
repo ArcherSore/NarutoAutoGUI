@@ -3,6 +3,15 @@ using System.Net;
 using System.Text;
 using System.IO.Compression;
 
+if (args.Contains("--engine-fixture")) {
+    await EngineClientTests.RunFixtureAsync();
+    return;
+}
+await EngineClientTests.RunAsync();
+if (args.Contains("--engine-tests")) {
+    return;
+}
+
 if (SemanticVersion.Parse("v2.10.0").CompareTo(SemanticVersion.Parse("2.9.0")) <= 0) {
     throw new Exception("SemVer numeric precedence failed.");
 }
@@ -22,30 +31,9 @@ foreach (var invalid in new[] {
 }) {
     ExpectFailure<InvalidDataException>(() => SemanticVersion.Parse(invalid));
 }
-const string releaseJson = """
-    {"tag_name":"v2.10.0","draft":false,"prerelease":false,"body":"Release notes","assets":[
-    {"name":"MaaNOP-linux-x86_64-v2.10.0.zip"},
-    {"name":"MaaNOP-win-x86_64-v2.10.0.zip","size":3,
-    "browser_download_url":"https://github.com/owner/repo/releases/download/v2.10.0/pkg.zip",
-    "digest":"sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}]}
-    """;
-var release = UpdateRelease.Parse(releaseJson, "v2.9.0");
-if (release?.Tag != "v2.10.0" || release.Notes != "Release notes") {
-    throw new Exception("Stable Windows x64 asset selection failed.");
-}
-foreach (var json in new[] { releaseJson.Replace("\"draft\":false", "\"draft\":true"),
-    releaseJson.Replace("\"prerelease\":false", "\"prerelease\":true") }) {
-    if (UpdateRelease.Parse(json, "v2.9.0") is not null) {
-        throw new Exception("Non-stable release accepted.");
-    }
-}
-if (UpdateRelease.Parse(releaseJson, "2.10.0+local") is not null
-    || UpdateRelease.Parse(releaseJson, "3.0.0") is not null) {
-    throw new Exception("Equal or older release accepted.");
-}
-ExpectFailure<InvalidDataException>(() => UpdateRelease.Parse(
-    releaseJson.Replace("MaaNOP-win-x86_64-", "MaaNOP-win-arm64-"), "2.9.0"));
-ExpectFailure<InvalidDataException>(() => UpdateRelease.Parse(releaseJson.Replace("sha256:", "sha1:"), "2.9.0"));
+var release = new UpdateRelease("v2.10.0", "Release notes", "MaaNOP-win-x86_64-v2.10.0.zip",
+    new Uri("https://github.com/owner/repo/releases/download/v2.10.0/pkg.zip"), 3,
+    "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 var testRoot = Path.Combine(Path.GetTempPath(), $"NarutoUpdateTest-{Guid.NewGuid():N}");
 Directory.CreateDirectory(testRoot);
 try {
@@ -177,7 +165,7 @@ try {
 } finally {
     Directory.Delete(testRoot, true);
 }
-Console.WriteLine("UPDATE TEST PASS: release selection, download/SHA256, ZIP paths, preservation, swap/rollback.");
+Console.WriteLine("UPDATE TEST PASS: legacy download/SHA256, ZIP paths, preservation, swap/rollback.");
 
 static void CreatePackage(string directory)
 {

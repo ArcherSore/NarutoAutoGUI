@@ -1,6 +1,21 @@
 # Roadmap
 
-## 下一步：MaaNOP Updater V1 发布集成与实机验收
+## 下一步：Updater V2 工单 02
+
+- [01：Rust 检查闭环](issues/maanop-updater-v2-tickets/01-check-update.md) 已实现并完成自动验证。
+- 下一片为 [02：Prepared Payload](issues/maanop-updater-v2-tickets/02-prepare-payload.md)，之后依序推进
+  03 无运行环境安装、04 运行环境关闭接管和 05 正式发布布局/真实验收。
+- 当前开发 GUI 只开放 V2 检查，不开放下载/安装；旧发布布局不能视为 V2 完整产品升级已验收。
+
+## 已完成：MaaNOP Updater V2 设计定稿
+
+- [V2 设计讨论](issues/maanop-updater-v2.md) 已逐轮明确文件所有权、失败语义、GUI → Engine handoff seam、
+  cache 生命周期与 Rust Update Engine 职责，已于 2026-09-14 经用户确认定稿；本阶段仅记录决策，不修改实现。
+- 首个 V2 完整包手动安装，必须内置 Python；V2 起进入新更新链路，不实现 V1 自动迁移兼容入口。
+- [V2 可执行规格](issues/maanop-updater-v2-spec.md) 已发布到本地问题跟踪器；实现进展见上方工单记录。
+- V1 仍是当前实现；以下发布集成与实机验收事项保留为历史待办，后续按 V2 收敛结果调整。
+
+## V1 发布集成与实机验收待办
 
 - 目标规格与六个切片工单快照位于 [`docs/issues/maanop-updater-v1.md`](issues/maanop-updater-v1.md)；当前实现证据和边界位于
   [`docs/UPDATER-VALIDATION.md`](UPDATER-VALIDATION.md)。

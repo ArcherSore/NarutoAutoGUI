@@ -1,5 +1,8 @@
 # 使用安装目录外的 Updater 替换完整 MaaNOP 包
 
+> V1 历史决策，仍描述当前实现。V2 的职责划分、安装和备份策略由
+> [ADR 0023](0023-centralize-updates-in-a-rust-engine.md) 替代；V2 尚未实现。
+
 MaaNOP 更新必须同时替换 GUI、Child Session Worker、固定 MaaFramework runtime、资源、Agent 和 Python 等协同发布内容。直接覆盖正在运行的安装目录既不能可靠删除旧版文件，也可能因为 GUI 或 Updater 自身持有文件句柄而留下半更新状态。
 
 ## Decision

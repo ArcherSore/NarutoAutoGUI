@@ -1,7 +1,5 @@
 using System.Diagnostics;
-using System.Net.Http.Headers;
 using System.Security.Cryptography;
-using System.Text.Json;
 
 namespace NarutoAutoGUI.Updates;
 
@@ -9,25 +7,6 @@ public sealed record DownloadProgress(long Received, long Total, double BytesPer
 
 public sealed class UpdateService(HttpClient client, Action<string> log)
 {
-    public async Task<UpdateRelease?> CheckAsync(UpdateSource source, CancellationToken cancellation)
-    {
-        log($"开始检查更新；本地版本={source.Version}；仓库={source.Repository}");
-        using var request = new HttpRequestMessage(HttpMethod.Get,
-            $"https://api.github.com/repos/{source.Repository}/releases/latest");
-        request.Headers.UserAgent.ParseAdd("NarutoAutoGUI-Updater/1.0");
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-        request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
-        using var response = await client.SendAsync(request, cancellation);
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync(cancellation);
-        using var document = JsonDocument.Parse(json);
-        log($"远程版本={document.RootElement.GetProperty("tag_name").GetString()}");
-        var release = UpdateRelease.Parse(json, source.Version);
-        log(release is null ? "Release 解析完成：无较新正式版本。"
-            : $"远程版本={release.Tag}；目标 asset={release.Name}；大小={release.Size}");
-        return release;
-    }
-
     public async Task DownloadAsync(
         UpdateRelease release, string destination,
         IProgress<DownloadProgress>? progress, CancellationToken cancellation)

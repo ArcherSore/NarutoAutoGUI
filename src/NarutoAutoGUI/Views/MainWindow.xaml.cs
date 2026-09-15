@@ -874,7 +874,7 @@ public partial class MainWindow : FluentWindow
     {
         var button = new WpfButton {
             Content = CreateSymbolIcon(symbol),
-            Style = (Style)FindResource("CompactIconButtonStyle")
+            Style = (Style)FindResource("TaskIconButtonStyle")
         };
         AutomationProperties.SetName(button, accessibleName);
         return button;

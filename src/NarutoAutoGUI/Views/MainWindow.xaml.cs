@@ -89,6 +89,7 @@ public partial class MainWindow : FluentWindow
     private DateTime _nextPreviewFailureLogAtUtc = DateTime.MinValue;
     private bool _allowClose;
     private bool _busy;
+    private bool _environmentPreparationFailed;
     private bool _exitInProgress;
     private bool _followLogs = true;
     private bool _projectConfigurationValid;
@@ -219,12 +220,10 @@ public partial class MainWindow : FluentWindow
         if (section != MainSection.Tasks) {
             CloseTaskDescriptionDrawer();
         }
-        HomeView.Visibility = section == MainSection.Home
+        HomeView.Visibility = section is MainSection.Home or MainSection.Tasks
             ? Visibility.Visible
             : Visibility.Collapsed;
-        TasksView.Visibility = section == MainSection.Tasks
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        RuntimeSidebarVisibility(section);
         SettingsView.Visibility = section == MainSection.Settings
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -295,28 +294,6 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void HomePrimaryActionButton_Click(object sender, RoutedEventArgs e)
-    {
-        var primary = DerivePrimaryAction();
-        if (!primary.CanExecute) {
-            return;
-        }
-        switch (primary.Mode) {
-            case PrimaryActionMode.NavigateToTasks:
-                SwitchSection(MainSection.Tasks);
-                break;
-            case PrimaryActionMode.Stop:
-                StopRunButton_Click(sender, e);
-                break;
-            case PrimaryActionMode.Start:
-                StartRunButton_Click(sender, e);
-                break;
-            case PrimaryActionMode.Prepare:
-                PrepareEnvironmentButton_Click(sender, e);
-                break;
-        }
-    }
-
     private void HomeSessionMoreButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is WpfButton button && button.ContextMenu is not null) {
@@ -343,25 +320,56 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private void RuntimeSidebarVisibility(MainSection section)
+    {
+        RuntimeSidebar.Visibility = section == MainSection.Home ? Visibility.Visible : Visibility.Collapsed;
+        RuntimeSidebarColumn.Width = section == MainSection.Home
+            ? new GridLength(392)
+            : new GridLength(0);
+    }
+
     private async void PrepareEnvironmentButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_busy || _exitInProgress) {
+            return;
+        }
+        _environmentPreparationFailed = false;
         await RunOperationAsync(
             "正在准备运行环境...",
             async () =>
             {
-                LoadProject();
-                var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
-                await _workerCoordinator.PrepareWorkerAsync(
-                    sessionId, _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"));
-                var game = NarutoGameLaunchProfile.ResolveExisting(_logger);
-                await _programService.LaunchIfNeededAsync(sessionId, game.ExecutablePath, game.Arguments);
-                _sessionManager.ShowPreview();
-                _logger.Info("真实 E2E 环境已准备；完成游戏登录后即可开始任务。 ");
+                try {
+                    LoadProject();
+                    var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
+                    await _workerCoordinator.PrepareWorkerAsync(
+                        sessionId, _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"));
+                    var game = NarutoGameLaunchProfile.ResolveExisting(_logger);
+                    await _programService.LaunchIfNeededAsync(
+                        sessionId, game.ExecutablePath, game.Arguments,
+                        launchedProcessName: NarutoGameLaunchProfile.ClientProcessName);
+                    _sessionManager.ShowPreview();
+                    _logger.Info("真实 E2E 环境已准备；完成游戏登录后即可开始任务。 ");
+                } catch {
+                    _environmentPreparationFailed = true;
+                    throw;
+                }
             });
+    }
+
+    private void RetryRuntimeHeaderButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_environmentPreparationFailed || DerivePrimaryAction().Mode != PrimaryActionMode.Start) {
+            PrepareEnvironmentButton_Click(sender, e);
+        } else {
+            StartRunButton_Click(sender, e);
+        }
     }
 
     private async void StartRunButton_Click(object sender, RoutedEventArgs e)
     {
+        if (DerivePrimaryAction() is not { Mode: PrimaryActionMode.Start, CanExecute: true }) {
+            return;
+        }
         await RunOperationAsync(
             "正在开始任务...",
             async () =>
@@ -390,6 +398,9 @@ public partial class MainWindow : FluentWindow
 
     private async void StopRunButton_Click(object sender, RoutedEventArgs e)
     {
+        if (DerivePrimaryAction() is not { Mode: PrimaryActionMode.Stop, CanExecute: true }) {
+            return;
+        }
         StopPreviewPolling();
         await RunOperationAsync(
             "正在停止任务...",
@@ -1519,7 +1530,7 @@ public partial class MainWindow : FluentWindow
         var sessionConnected = state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
         var hasSession = _sessionSnapshot.ChildSessionId is not null;
 
-        HomeDesktopVisibilityButton.Visibility = Visibility.Visible;
+        HomeDesktopVisibilityButton.Visibility = sessionConnected ? Visibility.Visible : Visibility.Collapsed;
         if (sessionConnected) {
             HomeDesktopVisibilityText.Text = state == ChildSessionState.ConnectedVisible
                 ? "隐藏桌面(_H)"
@@ -1530,8 +1541,6 @@ public partial class MainWindow : FluentWindow
             HomeDesktopVisibilityButton.IsEnabled = false;
         }
 
-        HomeSessionMoreButton.Visibility = Visibility.Visible;
-        HomeSessionMoreButton.IsEnabled = canStartCommand && hasSession;
         HomeTerminateSessionMenuItem.IsEnabled = canStartCommand && hasSession;
 
         HomeSessionHintText.Visibility = hasSession ? Visibility.Collapsed : Visibility.Visible;
@@ -1551,6 +1560,7 @@ public partial class MainWindow : FluentWindow
 
         var projectReady = _projectPlan is not null;
         var worker = _workerSnapshot.WorkerSnapshot;
+        UpdateRuntimeHeader(canStartCommand, projectReady, sessionConnected);
         var workerIdleFresh = _workerSnapshot.Observation == WorkerObservation.Connected
             && _workerSnapshot.SnapshotFresh
             && worker is not null && worker.ActiveRun is null && worker.RunState == RunState.Idle;
@@ -1558,23 +1568,6 @@ public partial class MainWindow : FluentWindow
             && (_workerSnapshot.Observation is WorkerObservation.WorkerNotStarted
                 or WorkerObservation.ChildSessionEnded || workerIdleFresh);
         TaskWorkspacePanel.IsEnabled = canEditProject && projectReady;
-
-        var primary = DerivePrimaryAction();
-        var isStarting = worker?.ActiveRun?.State == RunState.Starting;
-        var isStopping = worker?.ActiveRun?.State == RunState.Stopping;
-        HomePrimaryActionButton.Content = primary.Mode switch {
-            PrimaryActionMode.NavigateToTasks => "前往任务",
-            PrimaryActionMode.Start => "开始任务(_U)",
-            PrimaryActionMode.Stop => "停止任务(_X)",
-            PrimaryActionMode.Transition => isStarting ? "正在启动…" : (isStopping ? "正在停止…" : "请稍候…"),
-            _ => "准备运行环境(_O)"
-        };
-        HomePrimaryActionButton.Style = (Style)FindResource(primary.Mode switch {
-            PrimaryActionMode.Start => "TasksAccentButtonStyle",
-            PrimaryActionMode.Stop => "DestructiveButtonStyle",
-            _ => primary.Mode == PrimaryActionMode.Prepare ? "PrimaryButtonStyle" : "SecondaryButtonStyle"
-        });
-        HomePrimaryActionButton.IsEnabled = primary.CanExecute;
 
         var active = worker?.ActiveRun;
         var isRunning = active?.State is RunState.Starting or RunState.Running;
@@ -1589,6 +1582,48 @@ public partial class MainWindow : FluentWindow
         }
 
         UpdateRunContextPresentation();
+    }
+
+    private void UpdateRuntimeHeader(bool canStartCommand, bool projectReady, bool sessionConnected)
+    {
+        var worker = _workerSnapshot.WorkerSnapshot;
+        var active = worker?.ActiveRun;
+        var primary = DerivePrimaryAction();
+        var preparing = _busy && OperationStatusText.Text.StartsWith("正在准备运行环境", StringComparison.Ordinal)
+            || _sessionSnapshot.State is ChildSessionState.Connecting or ChildSessionState.Existing
+            || _workerSnapshot.Observation == WorkerObservation.WorkerStarting
+            || worker?.WorkerState == WorkerState.Starting;
+        var runtimeFaulted = _environmentPreparationFailed || _sessionSnapshot.State == ChildSessionState.Faulted
+            || _workerSnapshot.Observation is WorkerObservation.IpcDisconnected or WorkerObservation.WorkerExited
+                or WorkerObservation.WorkerRecoveryConflict
+            || worker?.WorkerState == WorkerState.Faulted;
+        var runFaulted = active is null && worker?.LastRun?.State == RunState.Failed;
+        var ready = sessionConnected && projectReady && _workerSnapshot.Observation == WorkerObservation.Connected
+            && _workerSnapshot.SnapshotFresh && worker?.WorkerState == WorkerState.Ready
+            && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
+        var running = active?.State is RunState.Starting or RunState.Running or RunState.Stopping;
+        var faulted = !running && (runtimeFaulted || runFaulted);
+        var starting = active?.State == RunState.Starting
+            || _busy && OperationStatusText.Text.StartsWith("正在开始任务", StringComparison.Ordinal);
+        var stopping = active?.State == RunState.Stopping
+            || _busy && OperationStatusText.Text.StartsWith("正在停止任务", StringComparison.Ordinal);
+        var transitioning = preparing || starting || stopping;
+
+        PrepareEnvironmentButton.Visibility = !transitioning && !running && !faulted && !ready
+            ? Visibility.Visible : Visibility.Collapsed;
+        PrepareEnvironmentButton.IsEnabled = canStartCommand && projectReady;
+        RetryEnvironmentButton.Visibility = !transitioning && faulted ? Visibility.Visible : Visibility.Collapsed;
+        RetryEnvironmentButton.IsEnabled = canStartCommand && projectReady;
+        StartTaskHeaderButton.Visibility = !transitioning && !running && ready && !faulted
+            ? Visibility.Visible : Visibility.Collapsed;
+        StartTaskHeaderButton.IsEnabled = primary is { Mode: PrimaryActionMode.Start, CanExecute: true };
+        StopTaskHeaderButton.Visibility = !transitioning && active?.State == RunState.Running
+            ? Visibility.Visible : Visibility.Collapsed;
+        StopTaskHeaderButton.IsEnabled = primary is { Mode: PrimaryActionMode.Stop, CanExecute: true };
+        RuntimeHeaderProgressRing.Visibility = transitioning ? Visibility.Visible : Visibility.Collapsed;
+        var progressText = stopping ? "正在停止任务" : starting ? "正在开始任务" : "正在准备运行环境";
+        RuntimeHeaderProgressRing.ToolTip = progressText;
+        System.Windows.Automation.AutomationProperties.SetName(RuntimeHeaderProgressRing, progressText);
     }
 
     private void ElapsedTimer_Tick(object? sender, EventArgs e) => UpdateRunContextPresentation();

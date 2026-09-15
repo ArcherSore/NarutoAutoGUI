@@ -52,6 +52,8 @@ NarutoAutoGUI/
    `RunEx(TASK_RUN_USE_SESSION_ID)`。
 6. 启动后使用已验证的 WMI/托管枚举流程在 10 秒内验证 PID 与 Session ID。单个启动失败被记录和呈现，不会终止
    GUI 或自动清理仍可用的 Session。
+   固定微端 profile 同时接受 `Launch.exe` 或 `QQMicroGameBox.exe`，用于兼容启动器交接后快速退出，
+   启动前幂等检查采用同一规则。这里只确认进程存在，游戏窗口和登录状态仍由后续运行检查确认。
 7. 主窗口和托盘的 Session/程序操作共用一个应用级操作门。退出在入口立即禁止新操作并等待在途操作完成，然后在门内重新查询 Session、按原行为确认、调用 Manager 注销，并在释放资源前再次确认 Session 已不存在。Manager 内部仍先断开 ActiveX，再同步调用 `WTSLogoffSession`；主窗口 X 只隐藏到托盘。
 8. Worker 启动先写入 Pending Admission，再通过 Worker 专用 Task Scheduler 路径等待新 PID/Session 验证；验证成功后将 PID 写回 Admission 并继续等待 Pipe admission 与 fresh Snapshot。`RunEx` 未真正生成进程时在 10 秒内携带 Task State/`LastTaskResult` 失败并清理；60 秒 admission 超时且没有存活的已验证 Worker 时自动回滚 `worker.json` 与 launch manifest，存活 Worker 则保留 Admission 供重连。
 

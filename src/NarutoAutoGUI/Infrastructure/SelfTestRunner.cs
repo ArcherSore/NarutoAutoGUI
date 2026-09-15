@@ -22,6 +22,7 @@ internal static class SelfTestRunner
             using var logger = new AppLogger(logDirectory);
             var projectDirectory = CreateProjectFixture(testDirectory);
             VerifyGameLaunchProfile(logger, testDirectory);
+            VerifyLauncherHandoff();
             VerifyRdpClientClsid();
             VerifyProjectPlan(testDirectory, projectDirectory);
             VerifyTaskCatalogVariants(testDirectory, projectDirectory);
@@ -103,6 +104,28 @@ internal static class SelfTestRunner
         var expected = Path.Combine(productionRoot, "Tencent", "QQMicroGameBox", "Launch.exe");
         if (!string.Equals(productionProfile.ExecutablePath, expected, StringComparison.OrdinalIgnoreCase)) {
             throw new InvalidOperationException("Production launch profile 路径推导与当前用户 ApplicationData 不一致。");
+        }
+    }
+
+    private static void VerifyLauncherHandoff()
+    {
+        (uint ProcessId, uint SessionId, string Name)[] processes = [
+            (101, 1, "Launch.exe"), (102, 1, "QQMicroGameBox.exe"), (103, 25, "unrelated.exe")
+        ];
+        var clientName = NarutoGameLaunchProfile.ClientProcessName;
+        if (ChildSessionProgramService.FindLaunchProcess(processes, 25, "Launch.exe", clientName).ProcessId != 0) {
+            throw new InvalidOperationException("启动验证不得接受其他 Session 或无关进程。");
+        }
+
+        var handedOff = processes.Append((104u, 25u, "qqmicrogamebox.EXE"));
+        if (ChildSessionProgramService.FindLaunchProcess(handedOff, 25, "Launch.exe", clientName).ProcessId != 104
+            || ChildSessionProgramService.FindLaunchProcess(handedOff, 25, "Launch.exe", null).ProcessId != 0) {
+            throw new InvalidOperationException("启动器退出后应接受当前 Session 的微端，普通程序不得接受微端替代。");
+        }
+
+        var launcher = processes.Append((105u, 25u, "launch.EXE"));
+        if (ChildSessionProgramService.FindLaunchProcess(launcher, 25, "Launch.exe", clientName).ProcessId != 105) {
+            throw new InvalidOperationException("启动器仍存活时应保留原有启动验证行为。");
         }
     }
 

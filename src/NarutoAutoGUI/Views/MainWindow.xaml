@@ -69,363 +69,29 @@
             <ui:NavigationView.ContentOverlay>
                 <Grid Background="{StaticResource Brush.Canvas}">
                     <!-- Home, Tasks and Settings intentionally remain in this single XAML namescope. -->
-                    <ScrollViewer x:Name="HomeView"
-                                  HorizontalContentAlignment="Stretch"
-                                  HorizontalScrollBarVisibility="Disabled"
-                                  VerticalContentAlignment="Stretch"
-                                  VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="24" MaxWidth="1240" HorizontalAlignment="Stretch">
-                            <Border x:Name="UpdateBanner" Visibility="Collapsed" Margin="0,0,0,16"
-                                    Padding="16" Background="{StaticResource Brush.Surface.Option}" CornerRadius="8">
+                    <Grid x:Name="HomeView">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="360" />
+                            <ColumnDefinition x:Name="RuntimeSidebarColumn" Width="392" />
+                        </Grid.ColumnDefinitions>
+                        <Grid Grid.Column="0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Visibility="Collapsed">
+                                <TextBlock x:Name="HomeRunContextTitleText" />
+                                <TextBlock x:Name="HomeRunContextSubText" />
+                            </StackPanel>
+                            <Border x:Name="UpdateBanner" Visibility="Collapsed" Margin="16,8,16,0"
+                                    Padding="12" Background="{StaticResource Brush.Surface.Option}" CornerRadius="8">
                                 <DockPanel>
                                     <Button DockPanel.Dock="Right" Content="查看更新" Click="ViewUpdate_Click"
                                             Style="{StaticResource SubtleButtonStyle}" />
-                                    <TextBlock x:Name="UpdateBannerText"
-                                               VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="UpdateBannerText" VerticalAlignment="Center" TextWrapping="Wrap" />
                                 </DockPanel>
                             </Border>
-                            <Grid Margin="0,0,0,16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock Text="运行控制台" Style="{StaticResource WindowTitleTextStyle}" />
-                                    <TextBlock Margin="0,4,0,0"
-                                               Text="管理当前任务的执行与运行动态"
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                </StackPanel>
-                                <Button Grid.Column="1"
-                                        Margin="16,0,0,0"
-                                        VerticalAlignment="Center"
-                                        Style="{StaticResource SubtleButtonStyle}"
-                                        Click="OpenLogsButton_Click">
-                                    <StackPanel Orientation="Horizontal">
-                                        <ui:SymbolIcon Margin="0,0,6,0"
-                                                       VerticalAlignment="Center"
-                                                       Foreground="{StaticResource Brush.Text.Secondary}"
-                                                       Symbol="Folder20" />
-                                        <TextBlock VerticalAlignment="Center" Text="打开日志目录(_L)" />
-                                    </StackPanel>
-                                </Button>
-                            </Grid>
-
-                            <Border Style="{StaticResource RunContextPanelStyle}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock x:Name="HomeRunContextTitleText"
-                                                   FontSize="15"
-                                                   Text="执行计划为空"
-                                                   Style="{StaticResource StatusPrimaryTextStyle}" />
-                                        <TextBlock x:Name="HomeRunContextSubText"
-                                                   Margin="0,3,0,0"
-                                                   Text="请先配置需要执行的任务"
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
-
-                                    <Button x:Name="HomePrimaryActionButton"
-                                            Grid.Column="1"
-                                            MinWidth="120"
-                                            Margin="16,0,0,0"
-                                            VerticalAlignment="Center"
-                                            Content="前往任务"
-                                            Style="{StaticResource SecondaryButtonStyle}"
-                                            Click="HomePrimaryActionButton_Click" />
-                                </Grid>
-                            </Border>
-
-                            <Grid Height="420">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="4.2*" />
-                                    <ColumnDefinition Width="16" />
-                                    <ColumnDefinition Width="5.8*" />
-                                </Grid.ColumnDefinitions>
-
-                                <Border Grid.Column="0"
-                                        Padding="16"
-                                        Background="{StaticResource Brush.Surface}"
-                                        BorderBrush="{StaticResource Brush.Border}"
-                                        BorderThickness="1"
-                                        CornerRadius="{StaticResource Radius.Section}">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="12" />
-                                            <RowDefinition Height="*" />
-                                            <RowDefinition Height="12" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-
-                                        <Grid Grid.Row="0">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="游戏画面预览"
-                                                       Style="{StaticResource SectionTitleTextStyle}" />
-                                            <StackPanel x:Name="HomeSessionStatusPanel"
-                                                        Grid.Column="1"
-                                                        Orientation="Horizontal"
-                                                        VerticalAlignment="Center"
-                                                        Visibility="Collapsed">
-                                                <Ellipse x:Name="HomeSessionStatusIndicator"
-                                                         Width="6"
-                                                         Height="6"
-                                                         Margin="0,0,6,0"
-                                                         VerticalAlignment="Center"
-                                                         Fill="{StaticResource Brush.Success}" />
-                                                <TextBlock x:Name="HomeSessionStatusText"
-                                                           Foreground="{StaticResource Brush.Text.Secondary}"
-                                                           Style="{StaticResource MonospaceMetaTextStyle}"
-                                                           Text="Session" />
-                                            </StackPanel>
-                                        </Grid>
-
-                                        <Viewbox Grid.Row="2"
-                                                 MaxHeight="360"
-                                                 Stretch="Uniform">
-                                            <Border Width="640"
-                                                    Height="360"
-                                                    Background="{StaticResource Brush.Surface.Subdued}"
-                                                    BorderBrush="{StaticResource Brush.Border}"
-                                                    BorderThickness="1"
-                                                    ClipToBounds="True"
-                                                    CornerRadius="{StaticResource Radius.Control}">
-                                                <Grid>
-                                                    <Image x:Name="HomePreviewImage"
-                                                           Stretch="Uniform"
-                                                           Visibility="Collapsed" />
-                                                    <StackPanel x:Name="HomePreviewPlaceholder"
-                                                                HorizontalAlignment="Center"
-                                                                VerticalAlignment="Center">
-                                                        <ui:SymbolIcon FontSize="32"
-                                                                       Foreground="{StaticResource Brush.Text.Disabled}"
-                                                                       Symbol="Desktop28" />
-                                                        <TextBlock Margin="0,8,0,0"
-                                                                   HorizontalAlignment="Center"
-                                                                   FontSize="{StaticResource FontSize.Body}"
-                                                                   Foreground="{StaticResource Brush.Text.Muted}"
-                                                                   Text="暂无游戏画面" />
-                                                    </StackPanel>
-                                                </Grid>
-                                            </Border>
-                                        </Viewbox>
-
-                                        <StackPanel Grid.Row="4"
-                                                    HorizontalAlignment="Right"
-                                                    VerticalAlignment="Bottom">
-                                            <StackPanel Orientation="Horizontal"
-                                                        HorizontalAlignment="Right"
-                                                        VerticalAlignment="Center">
-                                                <Button x:Name="HomeDesktopVisibilityButton"
-                                                        Margin="0,0,8,0"
-                                                        IsEnabled="False"
-                                                        Style="{StaticResource NeutralSecondaryButtonStyle}"
-                                                        Click="HomeDesktopVisibilityButton_Click">
-                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                        <ui:SymbolIcon Symbol="Desktop20"
-                                                                       FontSize="16"
-                                                                       Margin="0,0,6,0"
-                                                                       VerticalAlignment="Center" />
-                                                        <AccessText x:Name="HomeDesktopVisibilityText"
-                                                                    Text="打开完整桌面(_S)"
-                                                                    VerticalAlignment="Center" />
-                                                    </StackPanel>
-                                                </Button>
-                                                <Button x:Name="HomeSessionMoreButton"
-                                                        IsEnabled="False"
-                                                        Style="{StaticResource NeutralIconButtonStyle}"
-                                                        ToolTip="更多桌面分身操作"
-                                                        AutomationProperties.Name="更多桌面分身操作"
-                                                        Click="HomeSessionMoreButton_Click">
-                                                    <ui:SymbolIcon FontSize="16"
-                                                                   Symbol="MoreHorizontal20"
-                                                                   VerticalAlignment="Center"
-                                                                   HorizontalAlignment="Center" />
-                                                    <Button.ContextMenu>
-                                                        <ContextMenu x:Name="HomeSessionContextMenu"
-                                                                     Style="{StaticResource FloatingContextMenuStyle}">
-                                                            <MenuItem x:Name="HomeTerminateSessionMenuItem"
-                                                                      Header="结束桌面分身(_E)"
-                                                                      Style="{StaticResource DestructiveMenuItemStyle}"
-                                                                      Click="TerminateSessionButton_Click">
-                                                                <MenuItem.Icon>
-                                                                    <ui:SymbolIcon FontSize="16"
-                                                                                   Symbol="DismissCircle16" />
-                                                                </MenuItem.Icon>
-                                                            </MenuItem>
-                                                        </ContextMenu>
-                                                    </Button.ContextMenu>
-                                                </Button>
-                                            </StackPanel>
-                                            <TextBlock x:Name="HomeSessionHintText"
-                                                       Margin="0,4,0,0"
-                                                       HorizontalAlignment="Right"
-                                                       FontSize="{StaticResource FontSize.Meta}"
-                                                       Foreground="{StaticResource Brush.Text.Muted}"
-                                                       Text="需先准备运行环境" />
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-
-                                <Border Grid.Column="2"
-                                        Padding="16"
-                                        Background="{StaticResource Brush.Surface}"
-                                        BorderBrush="{StaticResource Brush.Border}"
-                                        BorderThickness="1"
-                                        CornerRadius="{StaticResource Radius.Section}">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="12" />
-                                            <RowDefinition Height="*" />
-                                        </Grid.RowDefinitions>
-                                        <Grid Grid.Row="0">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="运行动态"
-                                                       Style="{StaticResource SectionTitleTextStyle}" />
-                                            <TextBlock Grid.Column="1"
-                                                       Text="MaaNOP"
-                                                       Style="{StaticResource MonospaceMetaTextStyle}" />
-                                        </Grid>
-                                        <Grid Grid.Row="2">
-                                            <ListBox x:Name="HomeLogListBox"
-                                                     ItemsSource="{Binding LogLines}"
-                                                     Style="{StaticResource LogListBoxStyle}"
-                                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                                     AutomationProperties.Name="运行动态"
-                                                     AutomationProperties.HelpText="仅显示 MaaNOP 用户运行日志">
-                                                <ListBox.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Border MinHeight="28"
-                                                                Padding="4"
-                                                                BorderBrush="{StaticResource Brush.Border}"
-                                                                BorderThickness="0,0,0,1">
-                                                            <Grid>
-                                                                <Grid.ColumnDefinitions>
-                                                                    <ColumnDefinition Width="72" />
-                                                                    <ColumnDefinition Width="8" />
-                                                                    <ColumnDefinition Width="16" />
-                                                                    <ColumnDefinition Width="8" />
-                                                                    <ColumnDefinition Width="*" />
-                                                                </Grid.ColumnDefinitions>
-                                                                <TextBlock Grid.Column="0"
-                                                                    Text="{Binding Timestamp, StringFormat=HH:mm:ss}"
-                                                                    Style="{StaticResource MonospaceMetaTextStyle}"
-                                                                    VerticalAlignment="Center" />
-                                                                <ui:SymbolIcon x:Name="ActivityIcon"
-                                                                    Grid.Column="2"
-                                                                    Width="16"
-                                                                    Height="16"
-                                                                    Foreground="{StaticResource Brush.Primary}"
-                                                                    Symbol="Info16"
-                                                                    AutomationProperties.Name="信息" />
-                                                                <TextBlock Grid.Column="4"
-                                                                           Text="{Binding Message}"
-                                                                           Foreground="{StaticResource Brush.Text.Body}"
-                                                                           TextWrapping="Wrap"
-                                                                           VerticalAlignment="Center" />
-                                                            </Grid>
-                                                        </Border>
-                                                        <DataTemplate.Triggers>
-                                                            <DataTrigger Binding="{Binding DisplayLevel}" Value="DEBUG">
-                                                                <Setter TargetName="ActivityIcon"
-                                                                        Property="Symbol"
-                                                                        Value="BroadActivityFeed16" />
-                                                                <Setter TargetName="ActivityIcon"
-                                                                        Property="Foreground"
-                                                                        Value="{StaticResource Brush.Text.Muted}" />
-                                                                <Setter TargetName="ActivityIcon"
-                                                                        Property="AutomationProperties.Name"
-                                                                        Value="调试" />
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding DisplayLevel}" Value="WARN">
-                                                                <Setter TargetName="ActivityIcon"
-                                                                        Property="Symbol"
-                                                                        Value="Warning16" />
-                                                                <Setter TargetName="ActivityIcon"
-                                                                    Property="Foreground"
-                                                                    Value="{StaticResource Brush.Warning.Foreground}" />
-                                                                <Setter TargetName="ActivityIcon"
-                                                                        Property="AutomationProperties.Name"
-                                                                        Value="警告" />
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding DisplayLevel}" Value="ERROR">
-                                                                <Setter TargetName="ActivityIcon"
-                                                                        Property="Symbol"
-                                                                        Value="ErrorCircle16" />
-                                                                <Setter TargetName="ActivityIcon"
-                                                                    Property="Foreground"
-                                                                    Value="{StaticResource Brush.Error.Foreground}" />
-                                                                <Setter TargetName="ActivityIcon"
-                                                                        Property="AutomationProperties.Name"
-                                                                        Value="错误" />
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding DisplayLevel}"
-                                                                Value="CRITICAL">
-                                                                <Setter TargetName="ActivityIcon"
-                                                                        Property="Symbol"
-                                                                        Value="ErrorCircle16" />
-                                                                <Setter TargetName="ActivityIcon"
-                                                                    Property="Foreground"
-                                                                    Value="{StaticResource Brush.Error.Foreground}" />
-                                                                <Setter TargetName="ActivityIcon"
-                                                                        Property="AutomationProperties.Name"
-                                                                        Value="严重错误" />
-                                                            </DataTrigger>
-                                                        </DataTemplate.Triggers>
-                                                    </DataTemplate>
-                                                </ListBox.ItemTemplate>
-                                            </ListBox>
-
-                                            <TextBlock HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center"
-                                                       IsHitTestVisible="False"
-                                                       Text="暂无运行动态">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="{x:Type TextBlock}"
-                                                           BasedOn="{StaticResource SecondaryTextStyle}">
-                                                        <Setter Property="Visibility" Value="Collapsed" />
-                                                        <Style.Triggers>
-                                                            <DataTrigger Value="False">
-                                                                <DataTrigger.Binding>
-                                                                    <Binding Path="HasItems"
-                                                                        ElementName="HomeLogListBox" />
-                                                                </DataTrigger.Binding>
-                                                                <Setter Property="Visibility" Value="Visible" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-
-                                            <Button x:Name="HomeResumeLogFollowButton"
-                                                    Margin="0,0,12,12"
-                                                    HorizontalAlignment="Right"
-                                                    VerticalAlignment="Bottom"
-                                                    Panel.ZIndex="2"
-                                                    Content="有新日志，继续跟随(_F)"
-                                                    Style="{StaticResource NewLogsButtonStyle}"
-                                                    Visibility="Collapsed"
-                                                    AutomationProperties.LiveSetting="Polite"
-                                                    Click="ResumeLogFollowButton_Click" />
-                                        </Grid>
-                                    </Grid>
-                                </Border>
-                            </Grid>
-                        </StackPanel>
-                    </ScrollViewer>
-
-                    <Grid x:Name="TasksView" Margin="24" Visibility="Collapsed">
+                    <Grid x:Name="TasksView" Grid.Row="1" Margin="16,12,16,12">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -532,6 +198,247 @@
                                 </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
+                    </Grid>
+
+                        </Grid>
+                        <Grid x:Name="RuntimeSidebar" Grid.Column="1" Margin="0,12,12,12">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" MinHeight="120" />
+                            </Grid.RowDefinitions>
+                            <Border Grid.Row="0" Margin="0,0,0,10" Padding="12,1"
+                                    Background="{StaticResource Brush.Surface}"
+                                    BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
+                                <Border.Resources>
+                                    <Style x:Key="RuntimeActionIconButtonStyle" TargetType="{x:Type Button}"
+                                           BasedOn="{StaticResource CompactIconButtonStyle}">
+                                        <Setter Property="Width" Value="36" />
+                                        <Setter Property="Height" Value="36" />
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="Background" Value="{StaticResource Brush.Transparent}" />
+                                        <Setter Property="BorderThickness" Value="0" />
+                                        <Setter Property="Foreground" Value="{StaticResource Brush.Primary}" />
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background"
+                                                        Value="{StaticResource Brush.Primary.SurfaceHover}" />
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Resources>
+                                <Grid Height="36">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="运行控制" VerticalAlignment="Center"
+                                               FontSize="{StaticResource FontSize.SectionTitle}" />
+                                    <Button x:Name="PrepareEnvironmentButton" Grid.Column="1"
+                                            Style="{StaticResource RuntimeActionIconButtonStyle}"
+                                            ToolTip="准备运行环境" AutomationProperties.Name="准备运行环境"
+                                            Click="PrepareEnvironmentButton_Click">
+                                        <ui:SymbolIcon Width="24" Height="24" FontSize="24" Symbol="Power24" />
+                                    </Button>
+                                    <Button x:Name="RetryEnvironmentButton" Grid.Column="1"
+                                            Visibility="Collapsed" Style="{StaticResource RuntimeActionIconButtonStyle}"
+                                            ToolTip="重试" AutomationProperties.Name="重试运行环境"
+                                            Click="RetryRuntimeHeaderButton_Click">
+                                        <ui:SymbolIcon Width="24" Height="24" FontSize="24" Symbol="ArrowClockwise24" />
+                                    </Button>
+                                    <Button x:Name="StartTaskHeaderButton" Grid.Column="1"
+                                            Visibility="Collapsed" Style="{StaticResource RuntimeActionIconButtonStyle}"
+                                            ToolTip="开始任务" AutomationProperties.Name="开始任务"
+                                            Click="StartRunButton_Click">
+                                        <ui:SymbolIcon Width="24" Height="24" FontSize="24" Symbol="Play24" />
+                                    </Button>
+                                    <Button x:Name="StopTaskHeaderButton" Grid.Column="1"
+                                            Visibility="Collapsed" Style="{StaticResource RuntimeActionIconButtonStyle}"
+                                            ToolTip="停止任务" AutomationProperties.Name="停止任务"
+                                            Click="StopRunButton_Click">
+                                        <ui:SymbolIcon Width="24" Height="24" FontSize="24" Symbol="Stop24" />
+                                    </Button>
+                                    <ui:ProgressRing x:Name="RuntimeHeaderProgressRing" Grid.Column="1"
+                                                     Width="18" Height="18" Margin="0,0,9,0"
+                                                     VerticalAlignment="Center" Visibility="Collapsed"
+                                                     IsIndeterminate="True"
+                                                     ToolTip="正在准备运行环境"
+                                                     AutomationProperties.Name="正在准备运行环境" />
+                                </Grid>
+                            </Border>
+                            <Expander Grid.Row="1" IsExpanded="True" Margin="0,0,0,10">
+                                <Expander.Header>
+                                    <DockPanel Width="330" LastChildFill="False">
+                                        <Button x:Name="HomeDesktopVisibilityButton" DockPanel.Dock="Right"
+                                                Content="显示桌面" IsEnabled="False"
+                                                MinHeight="28" Padding="8,2"
+                                                Style="{StaticResource SubtleButtonStyle}"
+                                                Click="HomeDesktopVisibilityButton_Click" />
+                                        <TextBlock Text="实时截图" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="HomeSessionStatusText" Margin="8,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Style="{StaticResource MonospaceMetaTextStyle}" />
+                                        <StackPanel x:Name="HomeSessionStatusPanel" Visibility="Collapsed">
+                                            <Ellipse x:Name="HomeSessionStatusIndicator" Width="6" Height="6" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Expander.Header>
+                                <StackPanel>
+                                    <Viewbox Stretch="Uniform" HorizontalAlignment="Stretch">
+                                        <Border Width="360" Height="202.5" ClipToBounds="True"
+                                                Background="{StaticResource Brush.Surface.Subdued}"
+                                                BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
+                                            <Grid>
+                                                <Image x:Name="HomePreviewImage" Stretch="Uniform"
+                                                       Visibility="Collapsed" />
+                                                <TextBlock x:Name="HomePreviewPlaceholder" Text="暂无游戏画面"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           Style="{StaticResource SecondaryTextStyle}" />
+                                            </Grid>
+                                        </Border>
+                                    </Viewbox>
+                                    <TextBlock x:Name="HomeSessionHintText" Visibility="Collapsed" />
+                                    <AccessText x:Name="HomeDesktopVisibilityText" Visibility="Collapsed" />
+                                    <MenuItem x:Name="HomeTerminateSessionMenuItem" Visibility="Collapsed" />
+                                </StackPanel>
+                            </Expander>
+                            <Border Grid.Row="2" Background="{StaticResource Brush.Surface}"
+                                    BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
+                                <Grid Margin="12">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="运行动态" Style="{StaticResource SectionTitleTextStyle}"
+                                               Margin="0,0,0,8" />
+                                        <Grid Grid.Row="1">
+                                            <ListBox x:Name="HomeLogListBox"
+                                                     ItemsSource="{Binding LogLines}"
+                                                     Style="{StaticResource LogListBoxStyle}"
+                                                     Background="{StaticResource Brush.Surface}"
+                                                     BorderThickness="0" Padding="0"
+                                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                     AutomationProperties.Name="运行动态"
+                                                     AutomationProperties.HelpText="仅显示 MaaNOP 用户运行日志">
+                                                <ListBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border MinHeight="28"
+                                                                Padding="4"
+                                                                BorderBrush="{StaticResource Brush.Border}"
+                                                                BorderThickness="0,0,0,1">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="72" />
+                                                                    <ColumnDefinition Width="8" />
+                                                                    <ColumnDefinition Width="16" />
+                                                                    <ColumnDefinition Width="8" />
+                                                                    <ColumnDefinition Width="*" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Grid.Column="0"
+                                                                    Text="{Binding Timestamp, StringFormat=HH:mm:ss}"
+                                                                    Style="{StaticResource MonospaceMetaTextStyle}"
+                                                                    VerticalAlignment="Center" />
+                                                                <ui:SymbolIcon x:Name="ActivityIcon"
+                                                                    Grid.Column="2"
+                                                                    Width="16"
+                                                                    Height="16"
+                                                                    Foreground="{StaticResource Brush.Primary}"
+                                                                    Symbol="Info16"
+                                                                    AutomationProperties.Name="信息" />
+                                                                <TextBlock Grid.Column="4"
+                                                                           Text="{Binding Message}"
+                                                                           Foreground="{StaticResource Brush.Text.Body}"
+                                                                           TextWrapping="Wrap"
+                                                                           VerticalAlignment="Center" />
+                                                            </Grid>
+                                                        </Border>
+                                                        <DataTemplate.Triggers>
+                                                            <DataTrigger Binding="{Binding DisplayLevel}" Value="DEBUG">
+                                                                <Setter TargetName="ActivityIcon"
+                                                                        Property="Symbol"
+                                                                        Value="BroadActivityFeed16" />
+                                                                <Setter TargetName="ActivityIcon"
+                                                                        Property="Foreground"
+                                                                        Value="{StaticResource Brush.Text.Muted}" />
+                                                                <Setter TargetName="ActivityIcon"
+                                                                        Property="AutomationProperties.Name"
+                                                                        Value="调试" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding DisplayLevel}" Value="WARN">
+                                                                <Setter TargetName="ActivityIcon"
+                                                                        Property="Symbol"
+                                                                        Value="Warning16" />
+                                                                <Setter TargetName="ActivityIcon"
+                                                                    Property="Foreground"
+                                                                    Value="{StaticResource Brush.Warning.Foreground}" />
+                                                                <Setter TargetName="ActivityIcon"
+                                                                        Property="AutomationProperties.Name"
+                                                                        Value="警告" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding DisplayLevel}" Value="ERROR">
+                                                                <Setter TargetName="ActivityIcon"
+                                                                        Property="Symbol"
+                                                                        Value="ErrorCircle16" />
+                                                                <Setter TargetName="ActivityIcon"
+                                                                    Property="Foreground"
+                                                                    Value="{StaticResource Brush.Error.Foreground}" />
+                                                                <Setter TargetName="ActivityIcon"
+                                                                        Property="AutomationProperties.Name"
+                                                                        Value="错误" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding DisplayLevel}"
+                                                                Value="CRITICAL">
+                                                                <Setter TargetName="ActivityIcon"
+                                                                        Property="Symbol"
+                                                                        Value="ErrorCircle16" />
+                                                                <Setter TargetName="ActivityIcon"
+                                                                    Property="Foreground"
+                                                                    Value="{StaticResource Brush.Error.Foreground}" />
+                                                                <Setter TargetName="ActivityIcon"
+                                                                        Property="AutomationProperties.Name"
+                                                                        Value="严重错误" />
+                                                            </DataTrigger>
+                                                        </DataTemplate.Triggers>
+                                                    </DataTemplate>
+                                                </ListBox.ItemTemplate>
+                                            </ListBox>
+
+                                            <TextBlock HorizontalAlignment="Center"
+                                                       VerticalAlignment="Top" Margin="0,12,0,0"
+                                                       IsHitTestVisible="False"
+                                                       Text="暂无运行动态">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="{x:Type TextBlock}"
+                                                           BasedOn="{StaticResource SecondaryTextStyle}">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Value="False">
+                                                                <DataTrigger.Binding>
+                                                                    <Binding Path="HasItems"
+                                                                        ElementName="HomeLogListBox" />
+                                                                </DataTrigger.Binding>
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+
+                                            <Button x:Name="HomeResumeLogFollowButton"
+                                                    Margin="0,0,12,12"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Bottom"
+                                                    Panel.ZIndex="2"
+                                                    Content="有新日志，继续跟随(_F)"
+                                                    Style="{StaticResource NewLogsButtonStyle}"
+                                                    Visibility="Collapsed"
+                                                    AutomationProperties.LiveSetting="Polite"
+                                                    Click="ResumeLogFollowButton_Click" />
+                                        </Grid>
+                                </Grid>
+                            </Border>
+                        </Grid>
                     </Grid>
 
                     <ScrollViewer x:Name="SettingsView"

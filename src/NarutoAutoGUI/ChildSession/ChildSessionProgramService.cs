@@ -14,14 +14,16 @@ internal sealed class ChildSessionProgramService
 
     internal async Task LaunchIfNeededAsync(
         uint childSessionId, string executablePath, string arguments = "",
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, string? launchedProcessName = null)
     {
         var fullPath = ValidateExecutablePath(executablePath);
         var workDir = Path.GetDirectoryName(fullPath) ?? AppContext.BaseDirectory;
         var processName = Path.GetFileName(fullPath);
 
-        if (ChildSessionNativeMethods.TryFindProcessInSession(processName, childSessionId, out var existingPid)) {
-            _logger.Info($"跳过重复启动：{processName} 已在 Child Session {childSessionId} 中运行，PID={existingPid}。");
+        var existing = FindLaunchProcess(
+            ChildSessionNativeMethods.EnumerateProcesses(), childSessionId, processName, launchedProcessName);
+        if (existing.ProcessId != 0) {
+            _logger.Info($"跳过重复启动：{existing.Name} 已在 Child Session {childSessionId} 中运行，PID={existing.ProcessId}。");
             return;
         }
 
@@ -38,8 +40,10 @@ internal sealed class ChildSessionProgramService
         var deadline = DateTime.UtcNow + VerificationTimeout;
         while (DateTime.UtcNow < deadline) {
             cancellationToken.ThrowIfCancellationRequested();
-            if (ChildSessionNativeMethods.TryFindProcessInSession(processName, childSessionId, out var pid)) {
-                _logger.Info($"程序启动验证成功：{processName}，PID={pid}，SessionId={childSessionId}。");
+            var launched = FindLaunchProcess(
+                ChildSessionNativeMethods.EnumerateProcesses(), childSessionId, processName, launchedProcessName);
+            if (launched.ProcessId != 0) {
+                _logger.Info($"程序启动验证成功：{launched.Name}，PID={launched.ProcessId}，SessionId={childSessionId}。");
                 return;
             }
 
@@ -48,9 +52,22 @@ internal sealed class ChildSessionProgramService
 
         var exceptionMessage =
             $"已提交 {processName} 启动请求，但 {VerificationTimeout.TotalSeconds:0} 秒内未在 Child Session "
-            + $"{childSessionId} 中枚举到目标进程。";
+            + $"{childSessionId} 中枚举到 {processName}"
+            + (launchedProcessName is null ? "。" : $" 或 {launchedProcessName}。")
+            + "请打开完整桌面检查启动提示，确认微端可以正常启动后重试准备运行环境。";
         _logger.Warn(exceptionMessage);
         throw new InvalidOperationException(exceptionMessage);
+    }
+
+    internal static (uint ProcessId, uint SessionId, string Name) FindLaunchProcess(
+        IEnumerable<(uint ProcessId, uint SessionId, string Name)> processes,
+        uint sessionId, string launcherName, string? launchedProcessName)
+    {
+        // A bootstrap launcher may exit before the first poll while its client keeps running.
+        return processes.FirstOrDefault(process => process.SessionId == sessionId && process.ProcessId != 0
+            && (string.Equals(process.Name, launcherName, StringComparison.OrdinalIgnoreCase)
+                || launchedProcessName is not null
+                && string.Equals(process.Name, launchedProcessName, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static string ValidateExecutablePath(string executablePath)

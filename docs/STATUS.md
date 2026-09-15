@@ -15,6 +15,87 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 
 ## 本轮已实现
 
+- 2026-09-15：运行控制 Header 的 ProgressRing 覆盖开始/停止请求在途和 Worker 的 Starting/Stopping
+  状态，过渡期间隐藏其他操作按钮，避免任务开始与停止时短暂空白；Tooltip 与辅助名称同步显示具体操作。
+  GUI x64 Release build 通过（0 警告、0 错误），`git diff --check` 通过。真实任务过渡动画仍待交互式复验。
+
+- 2026-09-14：修复游戏准备仅检查 `Launch.exe` 导致可能漏掉启动器交接后的微端进程；固定 profile
+  在启动前与启动后同时检查同一 Session 的 `Launch.exe` / `QQMicroGameBox.exe`，普通程序保持原规则。
+  超时保留失败并提示打开完整桌面检查后重试；Header 在准备失败但 Worker Ready 时仅显示重试，
+  修复重试/开始图标重叠。COM/RDP/WTS/Worker 启动和清理流程未改。
+  GUI x64 Release build 通过（0 警告、0 错误）；GUI 自检通过，包含交接进程、跨 Session 拒绝与普通程序回归。
+  自检首次因沙箱 Named Pipe 权限失败，沙箱外重跑通过。真实微端启动及故障 Header 交互仍待复验。
+  2026-09-15 完成独立完整测试包 `artifacts/NarutoAutoGUI/runtime-launch-handoff-fix` 核对，GUI DLL
+  哈希与构建产物一致；保留用户任务配置，清理副本中的旧 state、debug 和 logs，未覆盖原测试包。
+  22:31 日志只证明未枚举到启动器，不足以断定该次游戏实际已启动；不把本次修复记为真实启动验收通过。
+
+- 2026-09-14：首页“运行控制”Header 内部 Grid 固定 36px 高，避免 36px 操作按钮与 18px
+  ProgressRing 在状态切换时改变整行高度。GUI x64 Release build 通过（0 警告、0 错误）；
+  已生成并核对独立完整包 `artifacts/NarutoAutoGUI/runtime-control-fixed-height` 的 GUI DLL。
+
+- 2026-09-14：补齐首页运行控制 Header 中遗漏的停止图标尺寸与按钮样式，并同步重试图标：
+  Power/Play/Stop/Retry 均使用 24px `SymbolIcon.FontSize` 和 36px 透明底热区。核对当前
+  Wpf.Ui 枚举中四个 Symbol 均有效；GUI x64 Release build 通过（0 警告、0 错误）。
+  独立完整包 `artifacts/NarutoAutoGUI/runtime-control-icons-aligned` 已生成并核对 GUI DLL 哈希。
+
+- 2026-09-14：首页“运行环境”Header 改名为“运行控制”，标题采用现有 14px SectionTitle
+  字号；主操作图标保留 24px 字形和 36px 热区，常驻蓝色底色改为透明，仅 hover 显示浅主题底色；
+  Header 上下 Padding 从 3px 收至 1px。GUI x64 Release build 通过（0 警告、0 错误），
+  独立完整包 `artifacts/NarutoAutoGUI/runtime-control-polish` 已生成并核对 GUI DLL 哈希。
+
+- 2026-09-14：用户截图指出只增大了按钮容器，Power/Play 字形仍小。首页运行环境 Header
+  删除左侧状态点，Power/Play 的 `SymbolIcon.FontSize` 与容器均设为 24px，操作热区 36px，
+  使用已有 Primary 浅色 Brush 提升辨识度；准备中仍用 ProgressRing，其他页面区域未调整。
+  GUI x64 Release build 通过（0 警告、0 错误），已生成并核对独立完整包
+  `artifacts/NarutoAutoGUI/prominent-runtime-icons`；新包视觉仍待交互式检查。
+
+- 2026-09-14：首页运行环境 Header 的 Power/Play 实际图标增至 20px，操作热区保持紧凑；
+  准备状态的 Wpf.Ui ProgressRing 明确设置 `IsIndeterminate=True`，以持续旋转表达没有可靠百分比
+  数据的启动流程。GUI x64 Release build 通过（0 警告、0 错误），图标枚举值已核对；生成
+  `artifacts/NarutoAutoGUI/icon-progress-fix` 独立完整包并核对 GUI DLL 哈希。尚未进行新包交互式检查。
+
+- 2026-09-14：用户截图确认 `PlugConnected16` 在“准备运行环境”按钮中显示为不符合预期的
+  插头形状；改用当前 Wpf.Ui 枚举存在的 `Power20`（18px 呈现）表达开机/准备。GUI x64 Release
+  build 通过（0 警告、0 错误）。正在使用的上一份独立包 DLL 被锁定，未强行替换；已生成
+  `artifacts/NarutoAutoGUI/power-icon-fix` 完整副本并替换为最新 GUI DLL，哈希已核对。
+
+- 2026-09-14：修复“运行环境”准备图标 `Power16` 不属于当前 Wpf.Ui `SymbolRegular` 而导致的
+  `MainWindow.InitializeComponent()` 启动崩溃，改用已存在的 `PlugConnected16`。通过发布目录中的
+  `Wpf.Ui.dll` 枚举核对首页 XAML 全部 7 个 Symbol 值，均有效；GUI Release build 通过（0 警告、
+  0 错误）。隔离目录完整 publish 因本机 NetBeauty 缺少 `v10.0.11/win-x64` artifact 失败，
+  未覆盖正在使用的 `artifacts/NarutoAutoGUI/win-x64`。已从现有完整包复制独立
+  `artifacts/NarutoAutoGUI/header-startup-fix` 并替换修复后的 GUI DLL；原目录 DLL 被现有进程锁定，
+  无法原地更新，新版本 GUI 尚未完成启动实测。
+
+- 2026-09-14：首页“运行环境”Header 右侧改为纯图标：灰/绿/红状态点、Power/Play/Stop/Retry
+  操作图标及准备时的 ProgressRing；状态和操作文案仅保留在 Tooltip/自动化名称。Release build
+  通过（0 警告、0 错误），XAML 静态检查确认 Header 无状态或操作 TextBlock。启动新 build-output
+  EXE 仍返回 `0xc0000142`；当前桌面已有 artifacts 目录的旧 GUI 实例，新 DLL 入口未呈现独立窗口，
+  因此本轮未完成新版本四态交互式验收，也未关闭旧实例或影响现有 Session。
+
+- 2026-09-14：首页运行控制改为右上角“运行环境”单行 Header 的准备、开始、停止和重试入口；
+  移除左侧任务工作区底部操作栏及其占位。Header 依据现有 Child Session、Worker ActiveRun/LastRun、
+  准备操作状态切换，运行失败时重试任务，运行环境故障时重试准备。GUI Release build 通过
+  （0 警告、0 错误）；尝试启动 build-output EXE 仍返回 `0xc0000142`。通过 `dotnet NarutoAutoGUI.dll`
+  启动后日志记录 GUI 初始化，但桌面自动化未枚举到应用窗口；未完成四态交互检查。
+
+- 2026-09-14：首页右侧“运行环境”收为单行状态 Header，使用 Child Session、Worker 快照与准备操作状态显示
+  未准备 / 准备中 / 已就绪 / 异常；只在未准备和异常时分别提供准备、重试图标。移除折叠正文、重复的
+  Worker/MaaNOP/Session/IPC 信息和常驻文字操作；刷新入口不再需要，结束桌面能力仍在托盘。
+  GUI Release build 通过（0 警告、0 错误）。尝试启动 build-output EXE 时系统返回 `0xc0000142`，
+  本轮未完成新 Header 的交互式状态检查。
+
+- 2026-09-14：首页视觉 polish 依据 Computer Use 的普通窗口和最大化窗口截图完成三轮检查：先压缩运行环境的
+  状态行并把截图操作放入 Header，再删除首页空计划时重复的“执行计划为空 / 前往任务”底栏、收紧侧栏按钮、
+  去掉展开任务选项的内层卡框和阴影，最后移除运行动态的内层日志边框。MaaNOP v2.3.0 的 `python`、
+  `resource`、`agent`、`interface.json` 已复制到本地测试构建输出以加载任务。最终普通窗口截图已复查；
+  最后一处日志边框改动后的最大化输入受测试程序管理员权限影响未能重复触发，上一轮最大化布局已检查。
+  正式 GUI Release build 通过（0 警告、0 错误）；未进行真实 Session、Worker 或游戏运行回归。
+
+- 2026-09-14：首页改为可扩展任务工作区加 392px 固定运行侧栏。首页和“任务”导航共用原有任务编辑控件与事件处理；
+  侧栏依次放置可折叠的运行环境、16:9 实时截图及填满剩余高度的运行动态。保留全局状态栏和现有执行、
+  Preview、Session 语义。GUI Release 构建通过；新布局的真实桌面/DPI 交互检查仍待进行。
+
 - 2026-09-12：完成 MaaNOP Updater runtime consolidation。Updater 改为非 single-file 入口（EXE/DLL/deps/runtimeconfig），
   使用 NetBeauty loader + `includedFrameworks` + `SubdirectoriesToProbe=libs` 复用 GUI 的 app-local runtime；发布包只保留
   一份根 `libs/`，GUI 安装前将 Updater 入口、`hostfxr.dll`、`hostpolicy.dll`、共享 `libs/` 和 bootstrap 文件复制到安装目录外

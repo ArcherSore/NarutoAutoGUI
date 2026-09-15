@@ -663,15 +663,13 @@
            TargetType="{x:Type Border}"
            BasedOn="{StaticResource PlanItemStyle}">
         <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
-        <Setter Property="Effect" Value="{StaticResource Effect.Surface.Light}" />
     </Style>
 
     <Style x:Key="OptionTileStyle" TargetType="{x:Type Border}">
         <Setter Property="MinWidth" Value="220" />
-        <Setter Property="Padding" Value="8,7,8,8" />
-        <Setter Property="Background" Value="{StaticResource Brush.Surface.Option}" />
-        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Subtle}" />
-        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="4,4,4,6" />
+        <Setter Property="Background" Value="{StaticResource Brush.Transparent}" />
+        <Setter Property="BorderThickness" Value="0" />
         <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
     </Style>
 

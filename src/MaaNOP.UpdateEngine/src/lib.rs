@@ -2,6 +2,11 @@ mod version;
 mod payload;
 mod files;
 pub use payload::prepare;
+mod install;
+pub use install::install;
+pub use install::handoff;
+#[cfg(windows)]
+mod native;
 
 use serde::Deserialize;
 use serde_json::{Value, json};

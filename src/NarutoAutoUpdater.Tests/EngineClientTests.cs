@@ -52,6 +52,14 @@ internal static class EngineClientTests
             throw new Exception("Cancelled prepare accepted.");
         } catch (OperationCanceledException) { }
         Console.WriteLine("UPDATE TEST PASS: prepare progress, opaque reference and fixed cancellation.");
+        await new UpdateEngineClient(FixtureStart("ready"))
+            .InstallAsync(Path.GetTempPath(), "opaque:prepared", Environment.ProcessId, default);
+        try {
+            await new UpdateEngineClient(FixtureStart("not-ready"))
+                .InstallAsync(Path.GetTempPath(), "opaque:prepared", Environment.ProcessId, default);
+            throw new Exception("Install result accepted without ready.");
+        } catch (InvalidDataException) { }
+        Console.WriteLine("UPDATE TEST PASS: install returns only on ready.");
     }
 
     public static async Task RunFixtureAsync()
@@ -64,6 +72,18 @@ internal static class EngineClientTests
             return;
         }
         var mode = Environment.GetCommandLineArgs().Last();
+        if (mode is "ready" or "not-ready") {
+            if (request.RootElement.GetProperty("reference").GetString() != "opaque:prepared"
+                || request.RootElement.GetProperty("guiPid").GetInt32() <= 0) {
+                Environment.ExitCode = 2;
+                return;
+            }
+            Console.WriteLine(JsonSerializer.Serialize(new {
+                protocolVersion = 1, type = mode == "ready" ? "ready" : "result", operation = "install"
+            }));
+            if (mode == "ready") { await Task.Delay(200); }
+            return;
+        }
         if (mode is "prepare" or "cancel") {
             if (request.RootElement.GetProperty("descriptor").GetString() != "opaque:do-not-parse") {
                 Environment.ExitCode = 2;

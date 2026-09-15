@@ -164,8 +164,23 @@ public partial class MainWindow
         }
     }
 
-    private void InstallUpdate_Click(object sender, RoutedEventArgs e)
+    private async void InstallUpdate_Click(object sender, RoutedEventArgs e)
     {
+        if (_updateBusy || _exitInProgress || _preparedReference is null) { return; }
+        if (System.Windows.MessageBox.Show("安装更新将重启 MaaNOP。保留 config、logs、debug、cache；\n"
+            + "其余程序目录内容（包括自行添加的文件）会被替换或删除。是否继续？", "安装 MaaNOP 更新",
+            MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) { return; }
+        _updateBusy = true;
+        UpdateUpdaterControls();
+        try {
+            await ((App)System.Windows.Application.Current).InstallUpdateAsync(_preparedReference);
+        } catch (Exception exception) {
+            _logger.Warn("安装交接失败。", exception);
+            UpdateDownloadStatus.Text = exception.Message;
+        } finally {
+            _updateBusy = false;
+            UpdateUpdaterControls();
+        }
     }
 
     private void CancelDownload_Click(object sender, RoutedEventArgs e) => _updateCancellation?.Cancel();
@@ -175,8 +190,8 @@ public partial class MainWindow
         CheckUpdateButton.IsEnabled = !_updateBusy && !_exitInProgress;
         DownloadUpdateButton.IsEnabled = !_updateBusy && !_exitInProgress && _updateCheck?.Update is not null;
         DownloadUpdateButton.Visibility = _preparedReference is null ? Visibility.Visible : Visibility.Collapsed;
-        InstallUpdateButton.IsEnabled = false;
-        InstallUpdateButton.Visibility = Visibility.Collapsed;
+        InstallUpdateButton.IsEnabled = !_updateBusy && !_exitInProgress;
+        InstallUpdateButton.Visibility = _preparedReference is not null ? Visibility.Visible : Visibility.Collapsed;
         CancelDownloadButton.Visibility = _preparingUpdate ? Visibility.Visible : Visibility.Collapsed;
         UpdateProgressBar.Visibility = _preparingUpdate ? Visibility.Visible : Visibility.Collapsed;
     }

@@ -35,3 +35,5 @@ HTTP 全局超时 30 秒，GUI check 总超时 45 秒；GUI 取消/超时会终�
 没有测试专用产品参数、更新源覆盖设置或通用 RPC。当前不声称 prepared/install 的消息已实现。
 
 prepare 输入 descriptor，返回 progress(download: bytes/total/bytesPerSecond；validate) 和 result(reference)。stdin 保持打开；固定取消消息为 protocolVersion=1、operation=cancel，EOF 同样取消。单消息上限 1 MiB，下载最长 1 小时，阻塞读取最长 15 秒；GUI 取消宽限 20 秒。reference 仅当前 GUI 内存持有，下次 prepare 删除此前全部 updater 工作内容。
+
+install 输入 reference、guiPid，只有实际缓存副本检查完成后返回 ready。GUI 等待最长45秒，副本等待根入口10秒、GUI退出30秒。ready后不依赖stdout；原地替换成功先清理old/Payload，再创建新版GUI进程。失败通过logs/updater.log及最小Windows提示呈现。--install-copy仅为Engine内部转交参数，不是公开操作。

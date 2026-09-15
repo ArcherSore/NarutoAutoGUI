@@ -1,4 +1,4 @@
-use maanop_update_engine::{MAX_MESSAGE_BYTES, MAX_RELEASE_BYTES, error, execute, prepare};
+use maanop_update_engine::{MAX_MESSAGE_BYTES, MAX_RELEASE_BYTES, error, execute, prepare, handoff};
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, Read, Write};
 use std::time::Duration;
@@ -12,6 +12,13 @@ fn main()
     let operation = serde_json::from_str::<Value>(&line).ok()
         .and_then(|v| v["operation"].as_str().map(str::to_owned)).unwrap_or_default();
     let response = match read {
+        Ok(_) if line.ends_with('\n') && line.len() <= MAX_MESSAGE_BYTES && operation == "install" => {
+            let args: Vec<_> = std::env::args().collect();
+            let parent = if args.get(1).map(String::as_str) == Some("--install-copy") {
+                args.get(2).and_then(|p| p.parse().ok())
+            } else { None };
+            handoff(&line, parent)
+        }
         Ok(_) if line.ends_with('\n') && line.len() <= MAX_MESSAGE_BYTES && operation == "prepare" => {
             let cancelled = Arc::new(AtomicBool::new(false));
             let signal = cancelled.clone();

@@ -491,3 +491,5 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - MaaFramework v5.8.1 会在载入时自动探测 `MaaFramework.dll` 同目录的可选 `plugins` 目录；NuGet 发布布局未创建该目录时会输出两条 `PluginMgr::load_dll` 错误。当前 MaaNOP 使用 Python Agent 而非该 demo native plugin，且 Worker 实测 Dependency Readiness=Ready，因此该日志不阻断本次 Run；后续需在固定 runtime 打包中创建空的默认探测目录以消除误导日志，不加载可选 `MaaPluginDemo.dll`。
 
 2026-09-15：V2 工单 02 接入 Rust prepare、完整包验证、Engine 缓存清理、GUI 下载进度/取消；构建与定向自动化通过。保留目录、危险 ZIP 和断线清理已加入测试；安装由后续 03/04 接入。
+
+2026-09-15：V2 工单 03 完成独立副本 ready、GUI PID 门槛、原地安装与最小状态/错误窗口。真实 Engine 进程隔离树测试通过，清理失败继续启动、移动/写入失败停止与 relaunch 失败区分已覆盖。此片 GUI 仍要求先结束运行环境；04 接入现有生命周期。旧 .NET Updater 源码已删除，正式发布脚本由 05 切换 Rust。

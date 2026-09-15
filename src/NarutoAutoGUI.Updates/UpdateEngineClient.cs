@@ -33,6 +33,13 @@ public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout
         return RequiredString(result, "reference");
     }
 
+    public async Task InstallAsync(string installation, string reference, int guiPid, CancellationToken cancellation)
+    {
+        await RunAsync(new {
+            protocolVersion = 1, operation = "install", installation = Path.GetFullPath(installation), reference, guiPid
+        }, "install", null, cancellation);
+    }
+
     private async Task<JsonElement> RunAsync(object request, string operation,
         IProgress<EngineProgress>? progress, CancellationToken cancellation)
     {
@@ -53,6 +60,7 @@ public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout
         var stderr = DrainErrorsAsync(process.StandardError, token);
         Task? cancelWrite = null;
         CancellationTokenRegistration registration = default;
+        var handedOff = false;
         try {
             var input = JsonSerializer.Serialize(request);
             if (Utf8.GetByteCount(input) + 1 > MaxMessageBytes) {
@@ -77,6 +85,10 @@ public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout
                     throw new InvalidDataException("Update Engine 返回了无效消息序列。");
                 }
                 var type = RequiredString(message, "type");
+                if (type == "ready" && operation == "install" && RequiredString(message, "operation") == "install") {
+                    handedOff = true;
+                    return message.Clone();
+                }
                 if (type == "progress" && operation == "prepare") {
                     var phase = RequiredString(message, "phase");
                     progress?.Report(new EngineProgress(phase,
@@ -98,7 +110,7 @@ public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout
             if (RequiredString(terminal, "type") == "error" && process.ExitCode != 0) {
                 throw new IOException(RequiredString(terminal, "message"));
             }
-            if (process.ExitCode != 0 || RequiredString(terminal, "type") != "result"
+            if (operation == "install" || process.ExitCode != 0 || RequiredString(terminal, "type") != "result"
                 || RequiredString(terminal, "operation") != operation) {
                 throw new InvalidDataException("Update Engine 未正常完成操作。");
             }
@@ -113,7 +125,7 @@ public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout
         } finally {
             await registration.DisposeAsync();
             try {
-                if (!process.HasExited) { process.Kill(entireProcessTree: true); }
+                if (!handedOff && !process.HasExited) { process.Kill(entireProcessTree: true); }
             } catch (Exception exception) when (exception is InvalidOperationException
                 or System.ComponentModel.Win32Exception) { }
             deadline.Cancel();

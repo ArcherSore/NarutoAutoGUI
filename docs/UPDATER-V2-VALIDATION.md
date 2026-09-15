@@ -1,5 +1,61 @@
 # Updater V2 验证记录
 
+## 2026-09-15：第二轮人工验收通过
+
+用户按第二轮操作步骤完成测试，反馈“目测没看到问题”；取消安装确认、画面与配置保留按用户反馈记录，
+不冒充本会话自动观察或文件哈希验证。正常 GUI 连续 v2.2.3 → v2.3.1 → v2.3.2 更新已通过。
+
+第二轮 GUI 日志记录：
+
+- 14:57:27 安装前停止任务与 Preview；Run `197d5be3-f3b4-4b56-b378-efd54f51f6f7` 收到 Stop。
+- 14:57:28 MaaFramework Stop 确认，Run 终结为 Cancelled，随后注销 Child Session 3。
+- 14:57:40 Session 注销完成，GUI 确认 Session 与已跟踪 Worker 结束后开始交接。
+- 14:57:41 实际 Engine ready；14:57:42 GUI 重启，随后加载 v2.3.2 且检测无 Child Session。
+- 14:58 新建 Child Session 4，Worker admission/Ready，内置 Python Agent 连接并提交真实游戏任务。
+  该任务正常停止为 Cancelled，随后 Session 注销、GUI 正常退出。
+
+updater.log 的第二轮 prepare/install 均成功，安装后 check 当前 v2.3.2；PI 仓库仍为测试源。
+检查 cache/updater 仅有 run，old/Payload 已清理。本轮没有独立采样旧游戏/Agent PID 退出时刻；
+退出证据来自 Session 注销、Worker 确认及用户观察。
+
+第二轮安装前的另一次游戏任务于 14:57:08 终结为 Failed，随后新任务成功提交并被安装流程停止。
+该失败原因未诊断，不据此声明游戏任务自然成功；第一轮 IPC 警告也继续作为独立观察保留。
+尚缺关闭失败时阻止安装、已有分身恢复的本轮实机证据，因此工单 05 不全部勾选。
+用户随后决定暂缓“已有分身恢复”验收。更新后免密进入的是新建 Session 4，不能作为恢复旧 Session 3 的证据；
+该项未计为通过，也未观察到对应功能故障。
+后续章节为各阶段历史记录，未执行边界以本节最新结论为准。
+
+## 2026-09-15：公开测试更新源
+
+### 第一轮人工验收
+
+用户报告第一轮通过。实际目录 PI 已为 v2.3.1；updater.log 记录取消 prepare、重新 prepare 成功、
+install 成功及重启后 check 当前 v2.3.1。cache/updater 仅剩 run，old/Payload 已清理。
+GUI 日志确认升级后创建 Child Session 2、Worker admission/readiness、内置 Python Agent 和真实任务提交，
+多次停止均终结为 Cancelled，关闭子桌面转为隐藏，最终注销 Session 并正常退出。
+没有据此宣称自然 Succeeded、活动任务中的安装关闭或故障阻止安装已通过。
+14:40:14 有一次 IPC JSON 解析警告，随后 admission 恢复且再次执行任务；原因未诊断，单独保留观察。
+
+第二轮测试包 v2.3.2 的 SHA256 为
+`9B7E255423E42A81FF4FBDD20BE6147FB6DDCF05DCEC3B5A7D0EB669C32BF92B`，与 GitHub digest 一致。
+已发布为测试源 latest 正式候选，待人工验证活动任务期间安装。
+
+用户授权创建 `https://github.com/ArcherSore/MaaNOP-UpdateTest` 并发布测试包；v2.3.1 已发布为
+非 draft、非 prerelease，资产名 `MaaNOP-win-x86_64-v2.3.1.zip`，238043649 bytes，SHA256：
+`BA59A57CBE288F205F796A55AE383FC290E02DB7CB52025AEA212BE1B6ED8BD3`，与 GitHub asset digest 一致。
+
+包沿用已验证 baseline runtime、已有 v2.3.0 MaaNOP 资源与 Python，替换 7451150 对应的 Release Engine
+和 Updates DLL；PI 仓库改为测试源，版本改为 v2.3.1。这不是本轮全量 baseline 重建，也不是正式 MaaNOP 发布。
+组装仅复制发布内容，不包含用户 config/logs/debug/cache 或 admission state；baseline 布局与独立 Engine 校验通过。
+当前源码的 prepare_local_package 校验通过；正式 Release Engine 在独立 remote-check 目录通过真实 GitHub
+check/prepare，包括实际下载、SHA256、完整包校验和解压。证据位于忽略目录 `artifacts/updater-v2/github-test/`。
+
+`manual-test-v2.2.3/interface.json` 已切换测试源，原 PI 备份在上述证据目录中。
+真实 GUI 已打开，但电脑操作被用户停止；用户随后明确自行操作 GUI/游戏。
+本轮未执行 GUI 安装、Active Run 关闭或 Child Session baseline，相关验收项继续待办。
+先人工验证 v2.2.3 → v2.3.1，再发布 v2.3.2 验证第二轮，不提前改变 latest 候选。
+下文“未发布”的表述均为此前本地验收阶段的历史边界。
+
 ## 2026-09-15：简化复验
 
 在 e184677 后落实四项审查建议：合并实际副本的重复 preflight、删除取消令牌中间层、

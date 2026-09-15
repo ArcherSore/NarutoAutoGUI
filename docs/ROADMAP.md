@@ -3,9 +3,10 @@
 ## 下一步：Updater V2 真实交互验收
 
 - 工单 01–04 已实现并逐张提交；05 发布集成和本地连续两轮完整包/实际进程安装通过。
-- [05](issues/maanop-updater-v2-tickets/05-release-e2e.md) 仍待正常 GUI 更新链路、Active Run/Child Session/游戏退出
-  和既有 Child Session baseline 实机回归；不新增第六张工单。
-- 首个 V2 完整包手动安装，之后才进入 V2 自动链路；下游发布和真实已发布 V2 候选需另行推进，不自动创建 Release。
+- [05](issues/maanop-updater-v2-tickets/05-release-e2e.md) 正常 GUI 连续更新及 Active Run 停止、环境退出通过；
+  仍待关闭失败时阻止安装的实机证据；已有 Child Session 恢复由用户决定暂缓验收，不新增第六张工单。
+- 首个 V2 完整包手动安装，之后才进入 V2 自动链路；独立测试源 v2.3.1、v2.3.2 已发布并经用户两轮验收。
+  正式 MaaNOP 发布流水线与 Release 仍需另行推进。
 - 验证范围见 [UPDATER-V2-VALIDATION](UPDATER-V2-VALIDATION.md)。
 
 ## 已完成：MaaNOP Updater V2 设计定稿

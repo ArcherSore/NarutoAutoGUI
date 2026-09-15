@@ -2,6 +2,23 @@
 
 ## 当前阶段
 
+2026-09-15：测试源连续两次真实 GUI 更新 v2.2.3 → v2.3.1 → v2.3.2 通过，用户操作并反馈未见问题。
+第二轮日志确认活动任务 Cancelled 后注销 Child Session、确认 Worker 结束、实际 Engine ready，随后重启 v2.3.2。
+更新后重新创建环境、真实游戏任务启动/停止、分身注销与正常退出通过；old/Payload 已清理，仅留运行副本。
+关闭失败时阻止安装仍缺本轮实机证据；已有 Child Session 恢复由用户决定暂缓验收，未计为通过。
+工单 05 不标为全部完成。
+测试源两包均已发布，正式 MaaNOP 发布流水线未改动。详细证据及历史观察见 UPDATER-V2-VALIDATION。
+
+2026-09-15：用户报告测试源第一轮 v2.2.3 → v2.3.1 通过；日志确认下载取消/重试、安装、重启新版本，
+升级后真实任务启动/取消、Child Session 隐藏与注销。第二轮继续验收活动任务中的安装关闭。
+一次 IPC JSON 解析警告后已重连并再次运行，原因待诊断；不据第一轮勾选全部生命周期验收项。
+
+2026-09-15：经用户授权创建公开测试仓库 `ArcherSore/MaaNOP-UpdateTest`，已发布 v2.3.1 完整测试包。
+测试包沿用已验证 runtime 布局，包含 7451150 的 Engine/Updates DLL；不代表完整 baseline 重新构建。
+正式 Release Engine 在隔离目录通过真实 GitHub check/prepare（下载、SHA256、完整包校验与解压）。
+`manual-test-v2.2.3` 已切换测试源；用户决定自行完成 GUI 和游戏验收，此次尚未验证安装与真实生命周期。
+第二轮 v2.3.2 待首轮人工升级通过后发布；正式 MaaNOP 仓库未改动。
+
 2026-09-15：完成 Updater V2 simplification review 的四项收敛：实际安装副本只做一次 ready 前 preflight，
 删除中间取消令牌与重复链接/Payload 过滤，安装终态统一由主入口记录，清理失败仍即时记录。
 Rust 22 项测试（含真实副本与终态日志回归）、Clippy、C# JSONL 适配测试及 GUI Release 构建通过。

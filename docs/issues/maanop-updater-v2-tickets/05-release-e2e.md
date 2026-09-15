@@ -15,6 +15,13 @@ issue-source: local-docs/issues
 
 **Status:** awaiting-validation（发布集成完成，部分真实交互仍待验收）
 
+2026-09-15 最新验收：经授权发布独立测试源 v2.3.1/v2.3.2，用户完成正常 GUI 连续两次升级。
+日志确认活动任务停止至 Cancelled 后注销 Session、等待 Worker 结束、实际 Engine ready 及重启新版本；
+更新后环境重建、真实任务启动/停止、隐藏、注销和退出已有证据。
+取消安装确认与配置/画面按用户反馈记录。下方组合验收项仍缺“无法确认退出时不安装”和“已有分身恢复”
+的实机覆盖，保持未勾选；详细时间线见 UPDATER-V2-VALIDATION。
+用户随后决定暂缓“已有分身恢复”验收；该项保留未验证，不影响已通过的正常更新流程结论。
+
 ## Acceptance criteria
 
 - [x] 正式构建/发布流程消费已完成的 Rust Engine，并按 V2 契约分发；移除正式布局中旧 .NET Updater 四件套、

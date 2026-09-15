@@ -47,4 +47,7 @@ issue-source: local-docs/issues
 包验证是本片功能，不留到 05；05 只把实际发布产物接入并验证该契约。
 
 产品布局的固定目录含义以父规格为准，名称是产品契约而非源代码定位。
+2026-09-15 收尾补验：缺少 GUI/Worker 启动元数据、Worker 私有 runtime 或 GUI 核心依赖的包，
+必须在 prepare 阶段拒绝。已补齐必需文件清单，并逐项删除完整测试包中的文件验证拒绝与无 prepared reference；
+该修复属于本片包契约，未增加 05 的产品职责。
 2026-09-15：Rust prepare 与 GUI 进度/取消已实现。可控下载和真实文件系统测试、C# 进程适配测试、Clippy 和 GUI Release build 通过。未执行 WPF 鼠标交互；实际完整包演示留待 05。旧安装器所引用的 V1 Validate 随紧接的 03 一并删除，本片已删除旧下载/解压入口。

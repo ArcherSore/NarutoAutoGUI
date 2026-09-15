@@ -214,9 +214,14 @@ fn extract(zip: &Path, payload: &Path, cancelled: &AtomicBool) -> Result<(), Str
 
 fn validate(payload: &Path, tag: &str) -> Result<(), String>
 {
-    for file in ["NarutoAutoGUI.exe", "NarutoAutoGUI.dll", "maanop-update-engine.exe", "hostfxr.dll",
-        "hostpolicy.dll", "libs/coreclr.dll", "libs/System.Private.CoreLib.dll", "worker/NarutoAutoWorker.exe",
-        "worker/NarutoAutoWorker.dll", "worker/runtimes/win-x64/native/MaaFramework.dll",
+    for file in ["NarutoAutoGUI.exe", "NarutoAutoGUI.dll", "maanop-update-engine.exe",
+        "NarutoAutoGUI.deps.json", "NarutoAutoGUI.runtimeconfig.json", "hostfxr.dll", "hostpolicy.dll",
+        "libs/coreclr.dll", "libs/System.Private.CoreLib.dll", "libs/PresentationFramework.dll",
+        "libs/Wpf.Ui.dll", "libs/NarutoAutoGUI.Updates.dll", "worker/NarutoAutoWorker.exe",
+        "worker/NarutoAutoWorker.dll",
+        "worker/NarutoAutoWorker.deps.json", "worker/NarutoAutoWorker.runtimeconfig.json",
+        "worker/hostfxr.dll", "worker/hostpolicy.dll", "worker/coreclr.dll", "worker/System.Private.CoreLib.dll",
+        "worker/runtimes/win-x64/native/MaaFramework.dll",
         "worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll", "python/python.exe"] {
         if !payload.join(file).is_file() { return Err(format!("完整包缺少必需文件：{file}")); }
     }

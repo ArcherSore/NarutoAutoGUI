@@ -1336,7 +1336,7 @@ public partial class MainWindow : FluentWindow
             _previewWindowSource = source;
             source.AddHook(PreviewWindowHook);
         }
-        ClosePreviewButton.Focus();
+        PreviewOverlay.Focus();
     }
 
     private void PreviewOverlay_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateExpandedPreviewSize();
@@ -1617,7 +1617,7 @@ public partial class MainWindow : FluentWindow
         var sessionConnected = state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
         var hasSession = _sessionSnapshot.ChildSessionId is not null;
 
-        HomeDesktopVisibilityButton.Visibility = sessionConnected ? Visibility.Visible : Visibility.Collapsed;
+        HomeDesktopVisibilityButton.Tag = state == ChildSessionState.ConnectedVisible ? "True" : "False";
         if (sessionConnected) {
             HomeDesktopVisibilityText.Text = state == ChildSessionState.ConnectedVisible
                 ? "隐藏分身"

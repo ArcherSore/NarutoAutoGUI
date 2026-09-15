@@ -189,7 +189,7 @@ public partial class MainWindow : FluentWindow
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
-        if (!_allowClose && PreviewOverlay.Visibility == Visibility.Visible) {
+        if (!_allowClose && IsGlobalModalOpen) {
             e.Cancel = true;
             return;
         }
@@ -501,6 +501,11 @@ public partial class MainWindow : FluentWindow
 
     private void MainWindow_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
+        if (e.Key == Key.Escape && UpdateOverlay.Visibility == Visibility.Visible) {
+            CloseUpdate_Click(sender, e);
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.Escape && PreviewOverlay.Visibility == Visibility.Visible) {
             ClosePreview_Click(sender, e);
             e.Handled = true;
@@ -1327,11 +1332,19 @@ public partial class MainWindow : FluentWindow
         PreviewOverlay.Visibility = Visibility.Visible;
         UpdateExpandedPreviewSize();
         MainNavigation.IsEnabled = false;
-        if (_previewWindowSource is null && PresentationSource.FromVisual(PreviewOverlay) is HwndSource source) {
+        EnsureModalWindowHook();
+        PreviewOverlay.Focus();
+    }
+
+    private bool IsGlobalModalOpen => PreviewOverlay.Visibility == Visibility.Visible
+        || UpdateOverlay.Visibility == Visibility.Visible;
+
+    private void EnsureModalWindowHook()
+    {
+        if (_previewWindowSource is null && PresentationSource.FromVisual(MainWindowContent) is HwndSource source) {
             _previewWindowSource = source;
             source.AddHook(PreviewWindowHook);
         }
-        PreviewOverlay.Focus();
     }
 
     private void PreviewOverlay_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateExpandedPreviewSize();
@@ -1367,7 +1380,7 @@ public partial class MainWindow : FluentWindow
 
     private nint PreviewWindowHook(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
-        if (PreviewOverlay.Visibility != Visibility.Visible) {
+        if (!IsGlobalModalOpen) {
             return 0;
         }
         // WPF-UI caption buttons handle native messages independently of WPF overlay hit testing.

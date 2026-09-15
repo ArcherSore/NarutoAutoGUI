@@ -90,7 +90,12 @@ NarutoAutoGUI/
 ## MaaNOP 完整包更新
 
 `NarutoAutoGUI.Updates` 提供 Release/SemVer、流式下载、SHA256、ZIP 预验证和完整目录事务。
-GUI 使用 Home Banner、右侧 Update Drawer 和 Settings 更新区；检查/下载与运行状态栏分离。
+GUI 使用设置上方的侧栏更新入口、全局居中 Modal Dialog 和 Settings 更新区；检查/下载与运行状态栏分离。
+打开更新窗口保持当前页面及任务配置不变，整个主窗口内容统一轻度 Blur 并覆盖半透明暗色遮罩；
+更新提示红点只在发现更新时显示，检查中显示互斥的 loading indicator。Dialog 宽 360 DIP，最大高度为
+600 DIP 与窗口高度 80% 中的较小值；Release Notes 使用 Markdig 解析为原生 WPF 文档，独立滚动区域最大高 220 DIP。
+支持基础标题、列表、任务列表、强调、删除线、引用、代码、表格和 HTTP(S) 链接；不执行 HTML 或自动加载远程图片。
+关闭按钮、Esc 和遮罩共用关闭入口，安装准备期间服从现有退出操作门；原生标题栏操作复用截图模态层的拦截。
 用户确认安装后，应用操作门阻止新操作，复用 Run Stop 与 Child Session 注销路径确认旧运行环境结束。
 安装目录外的非 single-file `NarutoAutoUpdater` 入口等待 GUI 退出；GUI 先复制 Updater 入口、`hostfxr`、
 `hostpolicy`、共享 `libs` 和 Updater bootstrap 文件到 TEMP，再由 Updater 检查文件释放、复制 config/logs、交换目录并启动新版。

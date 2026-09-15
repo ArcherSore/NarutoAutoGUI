@@ -14,55 +14,6 @@ public static class UpdatePackage
         "worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll", "interface.json", "python/python.exe"
     });
 
-    public static void Extract(string zip, string staging, string version, CancellationToken cancellation)
-    {
-        if (Directory.Exists(staging) || File.Exists(staging)) {
-            throw new IOException("更新暂存目录已存在。");
-        }
-        RejectLinkedAncestors(Directory.GetParent(Path.GetFullPath(staging))!.FullName);
-        Directory.CreateDirectory(staging);
-        try {
-            using var archive = ZipFile.OpenRead(zip);
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var entry in archive.Entries) {
-                cancellation.ThrowIfCancellationRequested();
-                var relative = entry.FullName.Replace('\\', '/');
-                var directory = relative.EndsWith('/');
-                var parts = relative.TrimEnd('/').Split('/');
-                if (parts.Any(InvalidPart) || (entry.ExternalAttributes & 0x400) != 0
-                    || ((entry.ExternalAttributes >> 16) & 0xF000) == 0xA000 || !seen.Add(relative.TrimEnd('/'))) {
-                    throw new InvalidDataException("更新 ZIP 包含非法或冲突路径。");
-                }
-                var target = Path.GetFullPath(Path.Combine(staging, Path.Combine(parts)));
-                if (!target.StartsWith(Path.GetFullPath(staging) + Path.DirectorySeparatorChar,
-                        StringComparison.OrdinalIgnoreCase)) {
-                    throw new InvalidDataException("更新 ZIP 路径超出暂存目录。");
-                }
-                if (directory) {
-                    Directory.CreateDirectory(target);
-                    continue;
-                }
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                using var source = entry.Open();
-                using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-                var buffer = new byte[81920];
-                int count;
-                while ((count = source.Read(buffer)) != 0) {
-                    cancellation.ThrowIfCancellationRequested();
-                    output.Write(buffer, 0, count);
-                }
-            }
-            Validate(staging, version);
-        } catch {
-            Directory.Delete(staging, true);
-            throw;
-        }
-    }
-
-    private static bool InvalidPart(string part) => part.Length == 0 || part is "." or ".."
-        || part.EndsWith('.') || part.EndsWith(' ') || part.Any(c => c < 32 || "<>:\"|?*".Contains(c))
-        || Regex.IsMatch(part, @"^(CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])(?:\.|$)", RegexOptions.IgnoreCase);
-
     public static void Validate(string staging, string version)
     {
         RejectLinks(staging);

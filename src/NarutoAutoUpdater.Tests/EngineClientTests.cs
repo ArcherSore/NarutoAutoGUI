@@ -39,19 +39,52 @@ internal static class EngineClientTests
             throw new Exception("Diagnostic output corrupted the protocol.");
         }
         Console.WriteLine("UPDATE TEST PASS: invalid responses, bounded messages, timeout, cancellation and stderr.");
+        var updates = new List<EngineProgress>();
+        var reference = await new UpdateEngineClient(FixtureStart("prepare"))
+            .PrepareAsync(Path.GetTempPath(), "opaque:do-not-parse", new CaptureProgress(updates), default);
+        if (reference != "opaque:prepared" || updates.Count != 1 || updates[0].Bytes != 10) {
+            throw new Exception("Prepare progress / reference was not preserved.");
+        }
+        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        try {
+            await new UpdateEngineClient(FixtureStart("cancel"))
+                .PrepareAsync(Path.GetTempPath(), "opaque:do-not-parse", new CaptureProgress(updates), cancel.Token);
+            throw new Exception("Cancelled prepare accepted.");
+        } catch (OperationCanceledException) { }
+        Console.WriteLine("UPDATE TEST PASS: prepare progress, opaque reference and fixed cancellation.");
     }
 
     public static async Task RunFixtureAsync()
     {
         var input = await Console.In.ReadLineAsync();
         using var request = JsonDocument.Parse(input!);
-        if (request.RootElement.GetProperty("operation").GetString() != "check"
-            || request.RootElement.GetProperty("protocolVersion").GetInt32() != 1
+        if (request.RootElement.GetProperty("protocolVersion").GetInt32() != 1
             || !Path.IsPathFullyQualified(request.RootElement.GetProperty("installation").GetString()!)) {
             Environment.ExitCode = 2;
             return;
         }
         var mode = Environment.GetCommandLineArgs().Last();
+        if (mode is "prepare" or "cancel") {
+            if (request.RootElement.GetProperty("descriptor").GetString() != "opaque:do-not-parse") {
+                Environment.ExitCode = 2;
+                return;
+            }
+            Console.WriteLine("""
+                {"protocolVersion":1,"type":"progress","phase":"download","bytes":10,"total":20,"bytesPerSecond":5}
+                """);
+            if (mode == "cancel") {
+                using var cancelMessage = JsonDocument.Parse((await Console.In.ReadLineAsync())!);
+                if (cancelMessage.RootElement.GetProperty("operation").GetString() != "cancel") {
+                    Environment.ExitCode = 2;
+                }
+                Console.WriteLine("""{"protocolVersion":1,"type":"cancelled","operation":"prepare"}""");
+            } else {
+                Console.WriteLine("""
+                    {"protocolVersion":1,"type":"result","operation":"prepare","reference":"opaque:prepared"}
+                    """);
+            }
+            return;
+        }
         if (mode == "hang") {
             await Task.Delay(TimeSpan.FromMinutes(1));
             return;
@@ -93,5 +126,10 @@ internal static class EngineClientTests
         start.ArgumentList.Add("--engine-fixture");
         start.ArgumentList.Add(mode);
         return start;
+    }
+
+    private sealed class CaptureProgress(List<EngineProgress> values) : IProgress<EngineProgress>
+    {
+        public void Report(EngineProgress value) => values.Add(value);
     }
 }

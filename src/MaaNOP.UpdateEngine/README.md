@@ -33,3 +33,5 @@ HTTP 全局超时 30 秒，GUI check 总超时 45 秒；GUI 取消/超时会终�
 
 测试通过 JSON 命令 seam 使用可控 HTTP 响应与真实隔离目录；真实进程测试验证 framing 和退出结果。
 没有测试专用产品参数、更新源覆盖设置或通用 RPC。当前不声称 prepared/install 的消息已实现。
+
+prepare 输入 descriptor，返回 progress(download: bytes/total/bytesPerSecond；validate) 和 result(reference)。stdin 保持打开；固定取消消息为 protocolVersion=1、operation=cancel，EOF 同样取消。单消息上限 1 MiB，下载最长 1 小时，阻塞读取最长 15 秒；GUI 取消宽限 20 秒。reference 仅当前 GUI 内存持有，下次 prepare 删除此前全部 updater 工作内容。

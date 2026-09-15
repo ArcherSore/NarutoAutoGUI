@@ -489,3 +489,5 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 - 幂等判断以 exe 文件名 + Session ID 为准；同一 Session 中同名但不同路径的进程会被视为已运行。
 - 首次 Child Session 偶尔会出现 `CrossDeviceResume.exe` 的 Windows 系统弹窗，目前不影响功能。本轮仅记录，不修改 SystemApps、ACL、系统文件或相关系统配置。
 - MaaFramework v5.8.1 会在载入时自动探测 `MaaFramework.dll` 同目录的可选 `plugins` 目录；NuGet 发布布局未创建该目录时会输出两条 `PluginMgr::load_dll` 错误。当前 MaaNOP 使用 Python Agent 而非该 demo native plugin，且 Worker 实测 Dependency Readiness=Ready，因此该日志不阻断本次 Run；后续需在固定 runtime 打包中创建空的默认探测目录以消除误导日志，不加载可选 `MaaPluginDemo.dll`。
+
+2026-09-15：V2 工单 02 接入 Rust prepare、完整包验证、Engine 缓存清理、GUI 下载进度/取消；构建与定向自动化通过。保留目录、危险 ZIP 和断线清理已加入测试；安装由后续 03/04 接入。

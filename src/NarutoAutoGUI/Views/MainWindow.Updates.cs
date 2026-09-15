@@ -9,6 +9,8 @@ public partial class MainWindow
 {
     private CancellationTokenSource? _updateCancellation;
     private EngineCheckResult? _updateCheck;
+    private string? _preparedReference;
+    private bool _preparingUpdate;
     private bool _updateBusy;
     private IInputElement? _updatePreviousFocus;
 
@@ -50,6 +52,7 @@ public partial class MainWindow
         _updateBusy = true;
         _updateCancellation = new CancellationTokenSource();
         _updateCheck = null;
+        _preparedReference = null;
         UpdateBanner.Visibility = Visibility.Collapsed;
         RefreshUpdateNotes();
         UpdateUpdaterControls();
@@ -123,8 +126,42 @@ public partial class MainWindow
         }
     }
 
-    private void DownloadUpdate_Click(object sender, RoutedEventArgs e)
+    private async void DownloadUpdate_Click(object sender, RoutedEventArgs e)
     {
+        if (_updateBusy || _exitInProgress || _updateCheck?.Update is not EngineUpdate update) { return; }
+        _updateBusy = _preparingUpdate = true;
+        _preparedReference = null;
+        _updateCancellation = new CancellationTokenSource();
+        UpdateUpdaterControls();
+        UpdateDownloadStatus.Text = "正在准备更新…";
+        try {
+            var engine = new UpdateEngineClient(new ProcessStartInfo(
+                Path.Combine(AppContext.BaseDirectory, "maanop-update-engine.exe")) {
+                WorkingDirectory = AppContext.BaseDirectory
+            });
+            var progress = new Progress<EngineProgress>(value => {
+                if (!_preparingUpdate || _exitInProgress) { return; }
+                UpdateProgressBar.IsIndeterminate = value.Phase != "download" || value.Total <= 0;
+                UpdateProgressBar.Value = value.Total > 0 ? 100.0 * value.Bytes / value.Total : 0;
+                UpdateDownloadStatus.Text = value.Phase == "download"
+                    ? $"已下载 {value.Bytes / 1048576.0:F1} / {value.Total / 1048576.0:F1} MB"
+                        + $" · {value.BytesPerSecond / 1048576.0:F1} MB/s"
+                    : "正在校验并解压完整包…";
+            });
+            _preparedReference = await engine.PrepareAsync(AppContext.BaseDirectory, update.Descriptor,
+                progress, _updateCancellation.Token);
+            UpdateDownloadStatus.Text = "更新已就绪。";
+        } catch (OperationCanceledException) {
+            UpdateDownloadStatus.Text = "已取消，可重新下载。";
+        } catch (Exception exception) {
+            _logger.Warn("准备更新失败。", exception);
+            UpdateDownloadStatus.Text = exception.Message;
+        } finally {
+            _updateCancellation.Dispose();
+            _updateCancellation = null;
+            _updateBusy = _preparingUpdate = false;
+            UpdateUpdaterControls();
+        }
     }
 
     private void InstallUpdate_Click(object sender, RoutedEventArgs e)
@@ -136,14 +173,11 @@ public partial class MainWindow
     private void UpdateUpdaterControls()
     {
         CheckUpdateButton.IsEnabled = !_updateBusy && !_exitInProgress;
-        // Ticket 01 cannot send a Rust descriptor to the old C# prepare/install chain.
-        DownloadUpdateButton.IsEnabled = false;
-        DownloadUpdateButton.Visibility = Visibility.Collapsed;
+        DownloadUpdateButton.IsEnabled = !_updateBusy && !_exitInProgress && _updateCheck?.Update is not null;
+        DownloadUpdateButton.Visibility = _preparedReference is null ? Visibility.Visible : Visibility.Collapsed;
         InstallUpdateButton.IsEnabled = false;
         InstallUpdateButton.Visibility = Visibility.Collapsed;
-        CancelDownloadButton.Visibility = Visibility.Collapsed;
-        UpdateProgressBar.Visibility = Visibility.Collapsed;
-        UpdateDownloadStatus.Text = _updateCheck?.Update is not null
-            ? "此开发版本暂不支持下载和安装更新。" : "";
+        CancelDownloadButton.Visibility = _preparingUpdate ? Visibility.Visible : Visibility.Collapsed;
+        UpdateProgressBar.Visibility = _preparingUpdate ? Visibility.Visible : Visibility.Collapsed;
     }
 }

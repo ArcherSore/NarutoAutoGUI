@@ -41,7 +41,7 @@ NarutoAutoGUI 会从完整发布包中自动读取 `interface.json`，并自动�
 
 ### 开发者本地构建
 
-完整构建需要 Windows x64 和 .NET 10 SDK。在仓库根目录运行：
+完整构建需要 Windows x64、.NET 10 SDK、Rust 1.98.1 MSVC 和 Visual Studio C++ Build Tools。在仓库根目录运行：
 
 ```powershell
 .\src\NarutoAutoGUI\scripts\build.ps1
@@ -72,3 +72,9 @@ NarutoAutoGUI 留在当前桌面负责配置、预览和控制；Worker、游戏
 ## 鸣谢
 
 - [BetterGI (Better Genshin Impact)](https://github.com/babalae/better-genshin-impact)：本项目核心的 Windows Child Session（桌面分身 / 独立后台会话）功能借鉴并参考了 BetterGI `v0.63.0` 版本引入的方案与原生接口实现，在此对原作者及开源社区表示诚挚感谢！
+## Updater V2
+
+首个 V2 完整 MaaNOP 包需要手动安装，此后支持 V2 自动更新，不支持 V1 自动迁移。
+更新保留 config/、logs/、debug/、cache/；其余程序目录内容（包括自加文件）会被替换或删除。
+安装失败时从 GitHub 下载完整包，保留四个目录并清除其余旧程序内容后重新解压；cache/updater/old 不是可恢复备份。
+当前发布和验收范围见 [V2 验证记录](docs/UPDATER-V2-VALIDATION.md)。

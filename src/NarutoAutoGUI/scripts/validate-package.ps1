@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [string]$PackageDirectory
@@ -6,57 +6,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$updaterBootstrapFiles = @(
-    'clrjit.dll', 'coreclr.dll', 'libloader.dll', 'PresentationFramework.dll', 'System.Collections.dll',
-    'System.IO.FileSystem.dll', 'System.IO.Packaging.dll', 'System.Memory.dll', 'System.Private.CoreLib.dll',
-    'System.Runtime.dll', 'System.Runtime.Extensions.dll', 'System.Runtime.InteropServices.dll',
-    'System.Runtime.InteropServices.RuntimeInformation.dll', 'System.Runtime.Loader.dll', 'System.Xaml.dll',
-    'WindowsBase.dll'
-)
-
 function Assert-PackageFile {
     param([string]$Name, [string]$Path)
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw "Package validation failed: $Name not found at '$Path'."
     }
     Write-Host "  [ok] $Name"
-}
-
-function Invoke-TempUpdaterProbe {
-    param([string]$PackageRoot)
-
-    $probeRoot = Join-Path ([IO.Path]::GetTempPath()) "NarutoAutoGUI-updater-probe-$([Guid]::NewGuid().ToString('N'))"
-    New-Item -ItemType Directory -Force -Path $probeRoot | Out-Null
-    try {
-        foreach ($fileName in @(
-            'NarutoAutoUpdater.exe', 'NarutoAutoUpdater.dll', 'NarutoAutoUpdater.deps.json',
-            'NarutoAutoUpdater.runtimeconfig.json', 'hostfxr.dll', 'hostpolicy.dll'
-        )) {
-            Copy-Item -LiteralPath (Join-Path $PackageRoot $fileName) -Destination $probeRoot
-        }
-        Copy-Item -LiteralPath (Join-Path $PackageRoot 'libs') -Destination $probeRoot -Recurse
-        foreach ($fileName in $updaterBootstrapFiles) {
-            Copy-Item -LiteralPath (Join-Path $probeRoot "libs\$fileName") -Destination $probeRoot
-        }
-        $start = [Diagnostics.ProcessStartInfo]::new()
-        $start.FileName = Join-Path $probeRoot 'NarutoAutoUpdater.exe'
-        $start.WorkingDirectory = $probeRoot
-        $start.UseShellExecute = $false
-        $start.ArgumentList.Add('--probe')
-        $process = [Diagnostics.Process]::Start($start)
-        if (-not $process.WaitForExit(30000)) {
-            $process.Kill()
-            throw 'TEMP Updater --probe 超时。'
-        }
-        if ($process.ExitCode -ne 0) {
-            throw "TEMP Updater --probe 失败，退出码 $($process.ExitCode)。"
-        }
-        Write-Host '  [ok] TEMP Updater independent --probe'
-    } finally {
-        if (Test-Path -LiteralPath $probeRoot) {
-            Remove-Item -LiteralPath $probeRoot -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
 }
 
 function Assert-PackageDirectory {
@@ -143,22 +98,10 @@ if (-not (Test-Path -LiteralPath $PackageDirectory -PathType Container)) {
     throw "Package directory not found: $PackageDirectory"
 }
 
-Assert-PackageFile -Name 'NarutoAutoUpdater.exe' -Path (Join-Path $PackageDirectory 'NarutoAutoUpdater.exe')
-Assert-PackageFile -Name 'NarutoAutoUpdater.dll' -Path (Join-Path $PackageDirectory 'NarutoAutoUpdater.dll')
-Assert-PackageFile -Name 'NarutoAutoUpdater.deps.json' -Path (Join-Path $PackageDirectory 'NarutoAutoUpdater.deps.json')
-Assert-PackageFile `
-    -Name 'NarutoAutoUpdater.runtimeconfig.json' `
-    -Path (Join-Path $PackageDirectory 'NarutoAutoUpdater.runtimeconfig.json')
-$updaterSize = (Get-Item -LiteralPath (Join-Path $PackageDirectory 'NarutoAutoUpdater.exe')).Length
-if ($updaterSize -gt 5MB) {
-    throw "Package validation failed: NarutoAutoUpdater.exe is still a bundled runtime ($updaterSize bytes)."
+Assert-PackageFile -Name 'Rust Engine' -Path (Join-Path $PackageDirectory 'maanop-update-engine.exe')
+if (Get-ChildItem -LiteralPath $PackageDirectory -Filter 'NarutoAutoUpdater*') {
+    throw '旧 .NET Updater 不得进入 V2 包。'
 }
-$updaterRuntimeConfigPath = Join-Path $PackageDirectory 'NarutoAutoUpdater.runtimeconfig.json'
-$updaterRuntimeConfig = Get-Content -Raw -LiteralPath $updaterRuntimeConfigPath | ConvertFrom-Json
-if ($updaterRuntimeConfig.runtimeOptions.configProperties.SubdirectoriesToProbe -ne 'libs') {
-    throw 'Package validation failed: Updater runtimeconfig does not probe shared libs/.'
-}
-Write-Host '  [ok] Updater uses shared libs runtime layout'
 
 Write-Host "Validating package layout: $PackageDirectory"
 
@@ -179,10 +122,6 @@ Assert-PackageFile -Name 'libs/coreclr.dll' -Path (Join-Path $libsDir 'coreclr.d
 Assert-PackageFile -Name 'libs/PresentationFramework.dll' -Path (Join-Path $libsDir 'PresentationFramework.dll')
 Assert-PackageFile -Name 'libs/Wpf.Ui.dll' -Path (Join-Path $libsDir 'Wpf.Ui.dll')
 Assert-PackageFile -Name 'libs/NarutoAutoGUI.Updates.dll' -Path (Join-Path $libsDir 'NarutoAutoGUI.Updates.dll')
-foreach ($fileName in $updaterBootstrapFiles) {
-    Assert-PackageFile -Name "libs/$fileName" -Path (Join-Path $libsDir $fileName)
-}
-
 # Worker under worker/.
 $workerDir = Join-Path $PackageDirectory 'worker'
 Assert-PackageFile -Name 'worker/NarutoAutoWorker.exe' -Path (Join-Path $workerDir 'NarutoAutoWorker.exe')
@@ -202,6 +141,6 @@ Assert-PackageFile `
 
 Assert-NoRootPollution -Path $PackageDirectory
 Assert-NoForbiddenPackageContent -Path $PackageDirectory
-Invoke-TempUpdaterProbe -PackageRoot $PackageDirectory
+& (Join-Path $PSScriptRoot 'test-independent-engine.ps1') -PackageDirectory $PackageDirectory
 
 Write-Host 'Package validation passed.'

@@ -1,39 +1,45 @@
-# MaaNOP Update Engine（V2 工单 01）
+# MaaNOP Update Engine V2
 
-目前只实现 check。prepare/install 由后续工单实现；GUI 暂时关闭下载/安装入口，不回退到 V1。
-独立 Rust 进程不依赖 .NET；支持 Windows x64，开发需要 Rust MSVC 工具链与 Visual Studio C++ build tools。
+独立 Windows x64 Rust 进程，拥有 check、prepare、install 的更新规则。GUI 负责 UI、确认、进程通信和运行环境生命周期。
+Rust 1.98.1 MSVC 与 Cargo.lock 固定工具链/依赖，Windows CRT 静态链接，不复制 GUI 的 .NET runtime。
 
-## 开发构建
+## 构建与验证
 
-在仓库根目录运行 `src/NarutoAutoGUI/scripts/build-development.ps1 -Configuration Release`。
-脚本构建 Engine 和 GUI，将 Engine 复制到 GUI 开发输出同级；不改变现有正式发布脚本，也不组装完整 MaaNOP 包。
-Cargo.lock 固定依赖解析；Cargo target 和依赖缓存不提交。
+- 正式 baseline：`src/NarutoAutoGUI/scripts/build.ps1 -Locked`。
+- 开发 GUI：`src/NarutoAutoGUI/scripts/build-development.ps1 -Configuration Release`。
+- 自动化：`src/NarutoAutoGUI/scripts/test-automated.ps1`，含 GUI、Worker、进程适配、Rust tests 和 Clippy。
+- 完整包集成与实机边界见 `docs/UPDATER-V2-VALIDATION.md`。baseline 不包含 MaaNOP/Python。
 
-Rust 验证：`cargo test --locked --manifest-path src/MaaNOP.UpdateEngine/Cargo.toml`。
-GUI 进程适配验证：`dotnet run --project src/NarutoAutoUpdater.Tests -- --engine-tests`。
-既有 GUI/Worker/Updater 全套验证继续由 `test-automated.ps1` 执行；其中 V1 安装用例保留到安装迁移工单替换。
+## JSONL v1
 
-## JSONL seam v1
+每次启动提交一个 UTF-8 JSONL 请求，包含 `protocolVersion: 1`、`operation` 和绝对路径 `installation`。
 
-启动 `maanop-update-engine.exe`，stdin 写一条 UTF-8（无 BOM）JSON，换行后关闭输入。
-请求包含 `protocolVersion: 1`、`operation: "check"` 和存在的绝对路径 `installation`。
-Engine 自己读取根 interface.json，并获取 GitHub 最新正式 Release；不下载包。
+| 操作 | 额外输入 | 输出 |
+| --- | --- | --- |
+| check | 无 | result：currentVersion、update（null 或 version/notes/descriptor） |
+| prepare | 原样 descriptor | progress、最终 result(reference) 或 cancelled/error |
+| install | 原样 reference、guiPid | 实际安装副本的 ready，或修改前 error |
 
-stdout 恰好返回一条 UTF-8 JSONL。成功返回 `protocolVersion: 1`、`type: "result"`、`operation: "check"`、
-`currentVersion` 和 `update`；无更新时 update 为 null，否则包含 `version`、`notes`、`descriptor` 字符串。
-descriptor 对 GUI 不透明，后续 prepare 负责消费；GUI 不解释内容、不从中提取展示字段。
+展示字段与 opaque descriptor/reference 分离，GUI 不解析 opaque 内容、不管理缓存。
+错误统一为 type=error、code、message，退出码 1；成功退出码 0。stdout 不混入诊断，GUI 持续排空 stderr。
+check/install 请求写完关闭 stdin。prepare 保持输入打开；固定取消消息为 protocolVersion=1、operation=cancel。
+prepare 输入断开也取消，尽力清理后退出；关闭 Drawer 不取消。GUI 重启不恢复 prepared reference。
 
-错误返回 `protocolVersion: 1`、`type: "error"`、`code`、`message`，退出码为 1；成功退出码为 0。
-当前错误类别为 invalid_request、invalid_source、network_error、invalid_release。
-GUI 同时验证退出码、协议版本、消息类型及必需字段，不把日志当作协议，也不接受多个结果。
+单条消息上限 1 MiB，check 的 PI 上限 1 MiB、GitHub 元数据上限 4 MiB。
+check HTTP 最长 30 秒，GUI 等待 45 秒。prepare HTTP 总预算 1 小时，下载流闲置 15 秒超时，GUI 取消宽限 20 秒。
+实际安装副本等待根入口释放最长 10 秒；ready 后等待 GUI PID 结束最长 30 秒，之后不再依赖 stdout。
+`--install-copy` 是内部转交参数，不是第四种公开操作；安装正常 UI 只显示状态和错误。
 
-单条请求/响应上限为 1 MiB（含输出换行），PI 上限 1 MiB，GitHub 原始 Release 响应上限 4 MiB。
-HTTP 全局超时 30 秒，GUI check 总超时 45 秒；GUI 取消/超时会终止自己的 check 进程。
-诊断写入 logs/updater.log；输出失败不得在 stdout 混入诊断。GUI 始终排空 stderr 且不积累无界日志缓冲。
+## 文件与失败
 
-测试通过 JSON 命令 seam 使用可控 HTTP 响应与真实隔离目录；真实进程测试验证 framing 和退出结果。
-没有测试专用产品参数、更新源覆盖设置或通用 RPC。当前不声称 prepared/install 的消息已实现。
+prepare 清理 cache/updater 的废弃内容，下载后校验长度/SHA256、全部 ZIP 路径与完整包布局，再形成 Payload。
+包内 config/logs/debug/cache 内容忽略，保留名称类型冲突拒绝；不复制旧用户数据，不接受 state 或缺少内置 Python 的包。
+install 只做前置检查，不重复整包验证；GUI 退出后先移走全部受管理根内容，再写入新版。
+先尽力清理 old/Payload，再 relaunch。失败不回滚；文件失败停止，启动失败可手动启动，清理失败仅记日志。
+运行副本留到下次 prepare；无安装锁、目录 swap、长期备份、恢复 journal 或健康确认。
 
-prepare 输入 descriptor，返回 progress(download: bytes/total/bytesPerSecond；validate) 和 result(reference)。stdin 保持打开；固定取消消息为 protocolVersion=1、operation=cancel，EOF 同样取消。单消息上限 1 MiB，下载最长 1 小时，阻塞读取最长 15 秒；GUI 取消宽限 20 秒。reference 仅当前 GUI 内存持有，下次 prepare 删除此前全部 updater 工作内容。
+## 验收工具
 
-install 输入 reference、guiPid，只有实际缓存副本检查完成后返回 ready。GUI 等待最长45秒，副本等待根入口10秒、GUI退出30秒。ready后不依赖stdout；原地替换成功先清理old/Payload，再创建新版GUI进程。失败通过logs/updater.log及最小Windows提示呈现。--install-copy仅为Engine内部转交参数，不是公开操作。
+`examples/prepare_local_package.rs` 仅用于本地完整包验收：复用生产 check/prepare，HTTP 用指定 ZIP 替代。
+运行方式：`cargo run --release --locked --example prepare_local_package -- INSTALLATION ZIP TAG`（crate 目录内）。
+它不发布、不进入产品命令，不等同于 GUI 从 GitHub 端到端下载验收。

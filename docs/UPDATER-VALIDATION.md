@@ -1,3 +1,5 @@
+> 本文为 V1 历史验证；当前 V2 能力和验证边界见 [UPDATER-V2-VALIDATION](UPDATER-V2-VALIDATION.md)。
+
 # Updater V1 验证
 
 > 对应目标规格：[`docs/issues/maanop-updater-v1.md`](issues/maanop-updater-v1.md)。当前结论是“Updater baseline 已实现，完整 MaaNOP 包集成和 Windows 实机 E2E 待完成”，不是完整产品升级已验收。

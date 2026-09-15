@@ -2,10 +2,13 @@
 
 ## 当前阶段
 
-2026-09-15：Updater V2 工单 01 已实现 Rust check、最小工程/JSONL seam、GUI 进程适配和配置内启动检查偏好。
-开发构建与 Rust 8 项测试、Clippy、GUI/Worker 自检及 Updater 自动化通过；真实 Rust 进程读取公开 GitHub Release
-并返回无更新结果通过，未下载更新包。GUI 不再使用 C# Release 检查或完成 Banner；下载/安装入口暂时关闭，
-待 02/03 接入，不能将 Rust descriptor 交给旧 V1 安装链路。正式发布布局仍待 05，未运行 GUI 交互或真实更新 E2E。
+2026-09-15：Updater V2 工单 01–04 已完成，05 正式发布集成完成、真实交互部分待验收。
+Rust check/prepare/install、GUI JSONL 适配、活动运行环境关闭、实际副本 ready、原地替换/清理/relaunch 已接通。
+V1 .NET Updater、swap/rollback、安装锁、completion journal 和 bootstrap 已删除。
+正式 locked build、baseline 布局、独立 Engine、正式 GUI/Worker 自检、C# 适配、Rust 21 项测试及 Clippy 通过。
+本地完整包 v2.3.0 → v2.3.1 → v2.3.2 连续两次安装通过：实际 GUI/Engine 进程，但 HTTP 与 GUI 交接由验收工具驱动。
+未完成正常 GUI 更新按钮、真实 Active Run/Child Session/游戏退出及 baseline 交互回归；未发布 Release 或修改下游仓库。
+详细来源、散列、结果及边界见 [V2 验证记录](UPDATER-V2-VALIDATION.md)，不得把该集成测试当作完整产品 E2E 通过。
 
 2026-09-14（设计阶段记录）：MaaNOP Updater V2 设计已由用户确认定稿，见 [设计记录](issues/maanop-updater-v2.md) 和
 [ADR 0023](adr/0023-centralize-updates-in-a-rust-engine.md)。

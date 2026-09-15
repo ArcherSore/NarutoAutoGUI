@@ -43,14 +43,30 @@ if (-not (Test-Path -LiteralPath $WorkerDll -PathType Leaf)) {
 
 # Running the DLLs through dotnet bypasses the elevated apphost manifests. The self-tests do not
 # initialize RDP/COM, load MaaFramework native runtime, or show windows.
-dotnet $GuiDll --self-test
-if ($LASTEXITCODE -ne 0) { throw "自动自检失败，退出码 $LASTEXITCODE" }
-
-dotnet $WorkerDll --self-test
-if ($LASTEXITCODE -ne 0) { throw "Worker 自动自检失败，退出码 $LASTEXITCODE" }
+foreach ($entry in @($GuiDll, $WorkerDll)) {
+    $entryPath = (Resolve-Path -LiteralPath $entry).Path
+    Push-Location (Split-Path $entryPath)
+    try {
+        dotnet $entryPath --self-test
+        if ($LASTEXITCODE -ne 0) { throw "自动自检失败：$entryPath，退出码 $LASTEXITCODE" }
+    } finally { Pop-Location }
+}
 
 Write-Host "自动自检通过。RDP/UAC/托盘等交互流程仍需按文档手动回归。"
 
 dotnet run --project (Join-Path $repositoryRoot 'src\NarutoAutoUpdater.Tests') -c $Configuration `
     -p:BuildInParallel=false
 if ($LASTEXITCODE -ne 0) { throw "Updater 自动化测试失败，退出码 $LASTEXITCODE" }
+
+$cargo = (Get-Command cargo -ErrorAction SilentlyContinue).Source
+if (-not $cargo) {
+    $cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
+    $env:PATH = (Split-Path $cargo) + ';' + $env:PATH
+}
+Push-Location $repositoryRoot
+try {
+    & $cargo test --locked --manifest-path src/MaaNOP.UpdateEngine/Cargo.toml
+    if ($LASTEXITCODE -ne 0) { throw 'Rust Engine tests failed.' }
+    & $cargo clippy --locked --manifest-path src/MaaNOP.UpdateEngine/Cargo.toml --all-targets -- -D warnings
+    if ($LASTEXITCODE -ne 0) { throw 'Rust Engine Clippy failed.' }
+} finally { Pop-Location }

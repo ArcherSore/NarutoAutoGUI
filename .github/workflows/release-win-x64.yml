@@ -60,6 +60,9 @@ jobs:
           Write-Host "Package version: $version"
           Write-Host "Zip base name: $zipBase"
 
+      - name: Setup Rust MSVC toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal --component clippy
+
       - name: Build + publish (build.ps1, locked restore)
         run: |
           ./src/NarutoAutoGUI/scripts/build.ps1 `
@@ -148,7 +151,7 @@ jobs:
           $releaseArgs = @(
             'release', 'create', $tag, $zip, '--verify-tag', '--repo', $env:GITHUB_REPOSITORY,
             '--title', "NarutoAutoGUI $tag", '--generate-notes',
-            '--notes', 'NarutoAutoGUI 是 MaaNOP 的 Windows GUI，通过独立 Windows Session 运行火影忍者 Online 自动化。'
+            '--notes', 'Updater V2 首个完整包需手动安装，后续支持 V2 自动更新；不支持 V1 自动迁移。'
           )
           if ($prerelease -eq 'True') { $releaseArgs += '--prerelease' }
           Write-Host "Creating release for tag $tag (prerelease=$prerelease)"

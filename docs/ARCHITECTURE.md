@@ -84,19 +84,19 @@ NarutoAutoGUI/
 
 ## MaaNOP 完整包更新
 
-2026-09-15 起，V2 工单 01 的检查入口使用独立 Rust Update Engine。GUI 经 JSONL 进程 seam 提交 check，
-只呈现展示字段并保存 opaque descriptor；Engine 自行读取 PI、比较 SemVer 和选择 Release 资产。
-开发构建由 build-development.ps1 提供，偏好写入 config/update-check.txt；旧完成 Banner 已移除。
-prepare/install 尚待后续工单，当前 GUI 暂不开放下载/安装，避免新 descriptor 进入旧 V1 安装路径。
+V2 以独立 Rust Update Engine 集中 check/prepare/install。GUI 经 JSONL 短命进程调用，只保存 opaque descriptor/reference，
+负责现有 UI、配置偏好、用户确认与运行环境生命周期；不下载、不解压、不管理更新文件。
+Engine 读取 PI 并选择正式 Release，prepare 固定候选、校验 SHA256 和完整包，将新内容放入 cache/updater/Payload。
+包必须含 Python；config/logs/debug/cache 的包内内容忽略，既有内容保留，其他根条目全部由完整包管理。
 
-以下为仍留在仓库、等待后续切片替换的 V1 安装实现与发布布局，不代表当前 GUI 已贯通 V2 安装：
+确认安装后 GUI 持有既有操作门，停止任务/Preview、注销 Child Session 并等待已跟踪 Worker 退出。
+Engine 内部复制自己，实际副本完成前置检查后发送 ready；GUI 此后退出，Engine 等待 PID 结束再开始移动旧程序内容。
+旧内容仅短命隔离到 cache/updater/old，全部隔离后才写入新内容；失败不回滚、不启动混合版本。
+安装完成先尽力清理 old/Payload，再启动原位置 GUI；运行副本可留到下一次 prepare 清理。
+没有目录 swap、安装锁、完成 journal、长期 backup、健康确认或 .NET Updater runtime bootstrap。
 
-`NarutoAutoGUI.Updates` 提供 Release/SemVer、流式下载、SHA256、ZIP 预验证和完整目录事务。
-GUI 使用 Home Banner、右侧 Update Drawer 和 Settings 更新区；检查/下载与运行状态栏分离。
-用户确认安装后，应用操作门阻止新操作，复用 Run Stop 与 Child Session 注销路径确认旧运行环境结束。
-安装目录外的非 single-file `NarutoAutoUpdater` 入口等待 GUI 退出；GUI 先复制 Updater 入口、`hostfxr`、
-`hostpolicy`、共享 `libs` 和 Updater bootstrap 文件到 TEMP，再由 Updater 检查文件释放、复制 config/logs、交换目录并启动新版。
-最多保留一个 `.old`，下次事务前安全清理；不使用健康握手或进程管理框架。
+正式 build.ps1 已集成 Rust；GUI baseline 和 MaaNOP 完整包分别验证。当前自动化、本地两轮完整包及真实进程证据见
+[UPDATER-V2-VALIDATION](UPDATER-V2-VALIDATION.md)；GUI/真实游戏生命周期交互验收尚未完成。
 
 ## 明确边界
 

@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
@@ -39,7 +39,7 @@ $projectDirectory = Split-Path -Parent $PSScriptRoot
 $repositoryRoot = (Resolve-Path (Join-Path $projectDirectory '..\..')).Path
 $projectPath = Join-Path $projectDirectory 'NarutoAutoGUI.csproj'
 $workerProjectPath = Join-Path $repositoryRoot 'src\NarutoAutoWorker\NarutoAutoWorker.csproj'
-$updaterProjectPath = Join-Path $repositoryRoot 'src\NarutoAutoUpdater\NarutoAutoUpdater.csproj'
+$engine = & (Join-Path $PSScriptRoot 'build-engine.ps1') -Configuration $Configuration
 
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $repositoryRoot 'artifacts\NarutoAutoGUI\win-x64'
@@ -57,9 +57,6 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet restore 失败，退出码 $LASTEXITCOD
 dotnet restore $workerProjectPath @restoreArgs
 if ($LASTEXITCODE -ne 0) { throw "Worker dotnet restore 失败，退出码 $LASTEXITCODE" }
 
-dotnet restore $updaterProjectPath @restoreArgs
-if ($LASTEXITCODE -ne 0) { throw "Updater dotnet restore 失败，退出码 $LASTEXITCODE" }
-
 dotnet build $projectPath -c $Configuration -p:Platform=x64 -r $Runtime --no-restore @versionArgs
 if ($LASTEXITCODE -ne 0) { throw "dotnet build 失败，退出码 $LASTEXITCODE" }
 
@@ -70,7 +67,7 @@ if ($LASTEXITCODE -ne 0) { throw "Worker dotnet build 失败，退出码 $LASTEX
 $stagingRoot = Join-Path $repositoryRoot 'artifacts\.staging'
 $guiPublishDir = Join-Path $stagingRoot 'gui'
 $workerPublishDir = Join-Path $stagingRoot 'worker'
-$updaterPublishDir = Join-Path $stagingRoot 'updater'
+
 $packageStagingDir = Join-Path $stagingRoot 'package'
 
 if (Test-Path -LiteralPath $stagingRoot) {
@@ -105,25 +102,10 @@ try {
         @versionArgs
     if ($LASTEXITCODE -ne 0) { throw "Worker dotnet publish 失败，退出码 $LASTEXITCODE" }
 
-    # The updater is published with the same app-local runtime layout as the GUI, but only
-    # its entry files are copied. The shared runtime comes from the GUI publish below.
-    dotnet publish $updaterProjectPath -c $Configuration -r $Runtime --self-contained true `
-        -p:PublishSingleFile=false -o $updaterPublishDir --no-restore @versionArgs
-    if ($LASTEXITCODE -ne 0) { throw "Updater publish 失败，退出码 $LASTEXITCODE" }
-
     # Assemble distribution package in package staging.
     Copy-CleanTree -Source $guiPublishDir -Destination $packageStagingDir
     Copy-CleanTree -Source $workerPublishDir -Destination (Join-Path $packageStagingDir 'worker')
-    foreach ($fileName in @(
-        'NarutoAutoUpdater.exe', 'NarutoAutoUpdater.dll', 'NarutoAutoUpdater.deps.json',
-        'NarutoAutoUpdater.runtimeconfig.json'
-    )) {
-        $sourceFile = Join-Path $updaterPublishDir $fileName
-        if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) {
-            throw "Updater publish 缺少入口文件：$fileName"
-        }
-        Copy-Item -LiteralPath $sourceFile -Destination $packageStagingDir
-    }
+    Copy-Item -LiteralPath $engine -Destination $packageStagingDir
 
     # Deploy assembled package to target OutputDirectory safely.
     $resolvedOutput = (New-Item -ItemType Directory -Force -Path $OutputDirectory).FullName

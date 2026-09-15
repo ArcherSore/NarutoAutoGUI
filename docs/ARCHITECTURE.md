@@ -71,7 +71,9 @@ NarutoAutoGUI/
 - GUI 运行日志：只显示 MaaNOP 通过字符串 `focus` 明确声明的 user-facing Run Log，保留最近 1000 条；
   主窗口可直接打开当前实际日志目录。
 - Worker 在 `MaaTasker.Callback` 中将匹配的字符串 `focus` 投影为 `source=maanop.run` 的既有
-  WorkerLogEntry。实时 sequence gap 通过 `log.getSince` 补取，Worker Instance 变化时 cursor 重置。
+  WorkerLogEntry。运行动态按接收顺序倒序呈现，最新一条高亮；自动滚动跟随顶部，翻阅旧记录时暂停并保留阅读位置。
+  清空只影响当前 GUI 列表，不清除文件日志或重置 Worker sequence cursor。实时 sequence gap 通过 `log.getSince`
+  补取，Worker Instance 变化时 cursor 重置。
 - Active Run 的 `WorkerRuntimeExecution` 持有唯一后台 producer，使用已有 `MaaWin32Controller.GetCachedImage` 约每
   200 ms 采样一次，最多缓存一个 640×360 PNG latest frame，并在释放 Controller 前结束 producer。GUI 只在可见 Home
   上用 `preview.getLatest(runId, afterRevision)` 单飞轮询；Idle、Stopping、终态、断线、Worker replacement、

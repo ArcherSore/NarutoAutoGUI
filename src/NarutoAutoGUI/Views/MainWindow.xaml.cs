@@ -103,7 +103,6 @@ public partial class MainWindow : FluentWindow
     private IInputElement? _descriptionDrawerPreviousFocus;
     private readonly List<Border> _dropIndicators = [];
     private readonly Dictionary<string, Border> _planItemContainers = new(StringComparer.Ordinal);
-    private int _newLogCount;
 
     private sealed record OptionInputTag(string OptionName, string InputName);
 
@@ -1192,22 +1191,22 @@ public partial class MainWindow : FluentWindow
         if (entry is null) {
             return;
         }
-        var shouldFollow = _followLogs && IsLogNearBottom();
-        LogLines.Add(entry);
+        var shouldFollow = _followLogs && IsLogNearTop();
+        var previousOffset = _homeLogScrollViewer?.VerticalOffset ?? 0;
+        LogLines.Insert(0, entry);
         while (LogLines.Count > MaximumGuiLogEntries) {
-            LogLines.RemoveAt(0);
+            LogLines.RemoveAt(LogLines.Count - 1);
+        }
+        if (!shouldFollow && LogLines.Count > 1) {
+            _homeLogScrollViewer?.ScrollToVerticalOffset(previousOffset + 1);
         }
 
         if (shouldFollow) {
-            _newLogCount = 0;
-            UpdateResumeLogFollowButton();
-            _ = Dispatcher.BeginInvoke(ScrollLogsToEnd, DispatcherPriority.Background);
+            _ = Dispatcher.BeginInvoke(ScrollLogsToLatest, DispatcherPriority.Background);
             return;
         }
 
         _followLogs = false;
-        _newLogCount++;
-        UpdateResumeLogFollowButton();
     }
 
     private void OnWorkerStateChanged(object? sender, WorkerCoordinatorSnapshot snapshot)
@@ -1495,56 +1494,31 @@ public partial class MainWindow : FluentWindow
             _homeLogScrollViewer = scrollViewer;
         }
 
-        if (e.VerticalChange < 0) {
-            _followLogs = false;
-            UpdateResumeLogFollowButton();
-            return;
-        }
-
-        if (e.VerticalChange > 0 && IsScrollViewerNearBottom(e.OriginalSource as ScrollViewer)) {
-            ResumeLogFollow(scrollToEnd: false);
+        if (e.VerticalChange != 0 && e.ExtentHeightChange == 0) {
+            _followLogs = IsLogNearTop();
         }
     }
 
-    private void ResumeLogFollowButton_Click(object sender, RoutedEventArgs e) =>
-        ResumeLogFollow(scrollToEnd: true);
-
-    private void ResumeLogFollow(bool scrollToEnd)
+    private void ClearActivity_Click(object sender, RoutedEventArgs e)
     {
+        LogLines.Clear();
         _followLogs = true;
-        _newLogCount = 0;
-        UpdateResumeLogFollowButton();
-        if (scrollToEnd) {
-            ScrollLogsToEnd();
-        }
     }
 
-    private bool IsLogNearBottom()
+    private bool IsLogNearTop()
     {
         _homeLogScrollViewer ??= FindVisualChild<ScrollViewer>(HomeLogListBox);
-        return IsScrollViewerNearBottom(_homeLogScrollViewer);
+        return IsScrollViewerNearTop(_homeLogScrollViewer);
     }
 
-    private static bool IsScrollViewerNearBottom(ScrollViewer? scrollViewer) =>
-        scrollViewer is null || scrollViewer.ScrollableHeight - scrollViewer.VerticalOffset <= 2.0;
+    private static bool IsScrollViewerNearTop(ScrollViewer? scrollViewer) =>
+        scrollViewer is null || scrollViewer.VerticalOffset <= 0.1;
 
-    private void ScrollLogsToEnd()
+    private void ScrollLogsToLatest()
     {
-        if (LogLines.LastOrDefault() is LogEntry lastLine) {
-            HomeLogListBox.ScrollIntoView(lastLine);
+        if (_followLogs && LogLines.FirstOrDefault() is LogEntry latestLine) {
+            HomeLogListBox.ScrollIntoView(latestLine);
         }
-    }
-
-    private void UpdateResumeLogFollowButton()
-    {
-        var visibility = _followLogs || _newLogCount == 0
-            ? Visibility.Collapsed
-            : Visibility.Visible;
-        var content = $"{_newLogCount} 条新日志，继续跟随(_F)";
-        var automationName = $"{_newLogCount} 条新日志，继续跟随";
-        HomeResumeLogFollowButton.Visibility = visibility;
-        HomeResumeLogFollowButton.Content = content;
-        System.Windows.Automation.AutomationProperties.SetName(HomeResumeLogFollowButton, automationName);
     }
 
     private void OnSessionStateChanged(object? sender, ChildSessionSnapshot snapshot)

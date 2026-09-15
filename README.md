@@ -8,7 +8,7 @@ Dashboard 页面：
 
 <img src="docs/images/homePage.png" width="80%" alt="Dashboard" />
 
-Tasks 页面：
+任务配置区域（旧版独立页面截图，现已合并至首页）：
 
 <img src="docs/images/taskPage.png" width="80%" alt="Tasks" />
 
@@ -20,7 +20,7 @@ Tasks 页面：
 4. 运行 `NarutoAutoGUI.exe`，并在 Windows 提示时允许管理员权限。
 5. 在首页点击“准备运行环境”。
 6. 在打开的完整桌面中完成必要的游戏登录。
-7. 在“任务”页选择任务并配置参数，然后回到首页开始任务。
+7. 在首页的任务区域选择任务并配置参数，然后通过右侧运行控制开始任务。
 
 NarutoAutoGUI 会从完整发布包中自动读取 `interface.json`，并自动确定 QQMicroGameBox 启动器路径、启动参数和 AppId
 

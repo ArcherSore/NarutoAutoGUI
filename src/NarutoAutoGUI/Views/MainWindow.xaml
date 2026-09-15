@@ -193,11 +193,6 @@
                                        IsActive="True"
                                        Tag="Home"
                                        Click="NavigationItem_Click" />
-                <ui:NavigationViewItem x:Name="TasksNavigationItem"
-                                       Content="任务"
-                                       Icon="{ui:SymbolIcon ClipboardTask24}"
-                                       Tag="Tasks"
-                                       Click="NavigationItem_Click" />
             </ui:NavigationView.MenuItems>
             <ui:NavigationView.FooterMenuItems>
                 <ui:NavigationViewItem x:Name="SettingsNavigationItem"
@@ -209,7 +204,7 @@
 
             <ui:NavigationView.ContentOverlay>
                 <Grid Background="{StaticResource Brush.Canvas}">
-                    <!-- Home, Tasks and Settings intentionally remain in this single XAML namescope. -->
+                    <!-- Home and Settings intentionally remain in this single XAML namescope. -->
                     <Grid x:Name="HomeView">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MinWidth="360" />
@@ -349,6 +344,7 @@
                                 <RowDefinition Height="*" MinHeight="120" />
                             </Grid.RowDefinitions>
                             <Border Grid.Row="0" Margin="0,0,0,10" Padding="22,5"
+                                    CornerRadius="{StaticResource Radius.Control}"
                                     Background="{StaticResource Brush.Surface}"
                                     BorderBrush="{StaticResource Preview.Border}" BorderThickness="1"
                                     Effect="{StaticResource Effect.Surface.Light}">
@@ -433,7 +429,8 @@
                                                      AutomationProperties.Name="正在准备运行环境" />
                                 </Grid>
                             </Border>
-                            <Border Grid.Row="1" Margin="0,0,0,10" CornerRadius="4"
+                            <Border Grid.Row="1" Margin="0,0,0,10"
+                                    CornerRadius="{StaticResource Radius.Control}"
                                     Background="{StaticResource Brush.Surface}"
                                     BorderBrush="{StaticResource Preview.Border}" BorderThickness="1"
                                     Effect="{StaticResource Effect.Surface.Light}">

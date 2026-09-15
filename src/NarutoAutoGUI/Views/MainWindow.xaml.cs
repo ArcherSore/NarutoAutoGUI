@@ -56,13 +56,12 @@ public partial class MainWindow : FluentWindow
     private enum MainSection
     {
         Home,
-        Tasks,
         Settings
     }
 
     private enum PrimaryActionMode
     {
-        NavigateToTasks,
+        ConfigureTasks,
         Prepare,
         Start,
         Stop,
@@ -223,10 +222,8 @@ public partial class MainWindow : FluentWindow
 
     private void SwitchSection(MainSection section)
     {
-        if (section != MainSection.Tasks) {
-            CloseTaskDescriptionDrawer();
-        }
-        HomeView.Visibility = section is MainSection.Home or MainSection.Tasks
+        CloseTaskDescriptionDrawer();
+        HomeView.Visibility = section == MainSection.Home
             ? Visibility.Visible
             : Visibility.Collapsed;
         RuntimeSidebarVisibility(section);
@@ -235,7 +232,6 @@ public partial class MainWindow : FluentWindow
             : Visibility.Collapsed;
 
         HomeNavigationItem.IsActive = section == MainSection.Home;
-        TasksNavigationItem.IsActive = section == MainSection.Tasks;
         SettingsNavigationItem.IsActive = section == MainSection.Settings;
         UpdatePreviewPolling();
     }
@@ -1550,7 +1546,7 @@ public partial class MainWindow : FluentWindow
         var taskCount = _projectPlan?.SelectedTaskNames.Count ?? 0;
 
         if (!projectReady || taskCount == 0) {
-            return new PrimaryActionState(PrimaryActionMode.NavigateToTasks, canStartCommand);
+            return new PrimaryActionState(PrimaryActionMode.ConfigureTasks, canStartCommand);
         }
 
         var worker = _workerSnapshot.WorkerSnapshot;
@@ -1708,7 +1704,7 @@ public partial class MainWindow : FluentWindow
         }
 
         switch (primary.Mode) {
-            case PrimaryActionMode.NavigateToTasks:
+            case PrimaryActionMode.ConfigureTasks:
                 HomeRunContextTitleText.Text = "执行计划为空";
                 HomeRunContextSubText.Text = !projectReady
                     ? "MaaNOP 项目尚未加载，请确认安装目录包含 interface.json。"

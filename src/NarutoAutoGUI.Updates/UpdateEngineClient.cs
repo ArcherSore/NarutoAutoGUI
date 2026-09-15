@@ -46,9 +46,8 @@ public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout
         cancellation.ThrowIfCancellationRequested();
         using var deadline = new CancellationTokenSource(timeout
             ?? TimeSpan.FromSeconds(operation == "prepare" ? 3660 : 45));
-        using var immediate = operation == "prepare" ? new CancellationTokenSource()
-            : CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        using var combined = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token, immediate.Token);
+        using var combined = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token,
+            operation == "prepare" ? CancellationToken.None : cancellation);
         var token = combined.Token;
         start.UseShellExecute = false;
         start.CreateNoWindow = true;

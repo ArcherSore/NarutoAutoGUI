@@ -1,5 +1,29 @@
 # Updater V2 验证记录
 
+## 2026-09-15：简化复验
+
+在 e184677 后落实四项审查建议：合并实际副本的重复 preflight、删除取消令牌中间层、
+去掉重复链接检查和 Payload 保留目录过滤、安装终态统一由 main 记录。
+入口复制前检查、实际副本 ready 前检查、GUI 退出后检查与清理失败即时日志继续保留。
+
+- Rust locked/offline 自动化 22 项通过，含真实缓存副本、PID 等待、文件操作失败与目录保留。
+- 补充安装成功和前置失败的终态日志单次记录检查；成功用例仍覆盖 ready 后 stdout 断开。
+- C# JSONL 适配测试通过，含取消、超时、opaque 值传递和 ready 条件。
+- Rust Clippy 全 targets（warnings as errors）、GUI Release 构建通过，构建 0 警告、0 错误。
+- 未重新生成完整发布包或运行真实 GUI/Child Session/游戏交互验收；下文包散列仍为历史产物。
+
+### 人工测试目录同步
+
+`artifacts/updater-v2/manual-test-v2.2.3/` 已替换新 Release `maanop-update-engine.exe` 与
+`libs/NarutoAutoGUI.Updates.dll`。保留产品版本 v2.2.3；同步时其余 3351 个文件逐项 SHA256 不变。
+目标目录 GUI 自检与独立 Engine check 通过，未启动正常 GUI 或执行更新交互。
+本次仅同步这两个成功构建的文件：完整 baseline 在线 restore 受网络限制，离线 GUI publish 的 NetBeauty
+artifact 查询失败，因此沿用测试目录已验证的 runtime 布局。文件散列、构建说明和验证记录位于
+`artifacts/updater-v2/manual-test-v2.2.3-sync.json`，不将本次同步描述为完整发布包重建。
+
+用户随后针对该目录反馈人工测试“没太大问题”，并同意提交本轮简化。
+此反馈作为用户人工测试记录；未提供逐项场景、日志或升级结果，不等同于下方所有待验收项均已通过。
+
 ## 2026-09-15：已执行
 
 代码来源为工单 01–04 提交 c89b3eb、1a69cd9、025c024、d3d7491，包契约修复 100ee2b，加本工单发布集成改动。

@@ -2,6 +2,14 @@
 
 ## 当前阶段
 
+2026-09-15：完成 Updater V2 simplification review 的四项收敛：实际安装副本只做一次 ready 前 preflight，
+删除中间取消令牌与重复链接/Payload 过滤，安装终态统一由主入口记录，清理失败仍即时记录。
+Rust 22 项测试（含真实副本与终态日志回归）、Clippy、C# JSONL 适配测试及 GUI Release 构建通过。
+本轮未重新生成完整发布包，未运行 GUI 更新按钮或真实 Child Session/游戏交互验收。
+随后将新 Release Engine 与 Updates DLL 同步至 `artifacts/updater-v2/manual-test-v2.2.3/`，保留 v2.2.3 元数据。
+同步时其余 3351 个文件哈希未变；目标目录 GUI 自检及 Engine 独立运行检查通过。
+用户随后反馈人工测试“没太大问题”，同意提交；未提供逐项覆盖记录，工单 05 剩余验收项不据此全部勾选。
+
 2026-09-15：Updater V2 工单 01–04 已完成，05 正式发布集成完成、真实交互部分待验收。
 Rust check/prepare/install、GUI JSONL 适配、活动运行环境关闭、实际副本 ready、原地替换/清理/relaunch 已接通。
 V1 .NET Updater、swap/rollback、安装锁、completion journal 和 bootstrap 已删除。

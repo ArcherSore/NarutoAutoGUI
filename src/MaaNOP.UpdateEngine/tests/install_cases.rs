@@ -136,12 +136,44 @@ fn actual_copy_handoff_waits_for_gui_pid_and_updates_itself()
     assert!(root.join("relaunched").exists());
     assert_eq!(fs::read_to_string(root.join("maanop-update-engine.exe")).unwrap(), "new");
     assert!(!root.join("old-file").exists());
+    // The terminal result is logged once even when the GUI closes stdout after ready.
+    let clock = Instant::now();
+    let log = loop {
+        let log = fs::read_to_string(root.join("logs/updater.log")).unwrap_or_default();
+        if log.contains("type=\"result\"") { break log; }
+        assert!(clock.elapsed() < Duration::from_secs(10), "install result was not logged");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(log.lines().filter(|line| line.contains("install:")).count(), 1);
     // The running copy is allowed to remain; wait for its image to be released before test cleanup.
     for _ in 0..100 {
         if fs::remove_dir_all(&root).is_ok() { return; }
         std::thread::sleep(Duration::from_millis(50));
     }
     panic!("Engine did not exit after relaunch");
+}
+
+#[cfg(windows)]
+#[test]
+fn preflight_process_failure_logs_once_without_launching_copy()
+{
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let root = fixture("preflight-log");
+    fs::write(root.join("cache/updater/prepared"), "wrong").unwrap();
+    let mut engine = Command::new(env!("CARGO_BIN_EXE_maanop-update-engine"))
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    writeln!(engine.stdin.take().unwrap(), "{}", request(&root, std::process::id())).unwrap();
+    let output = engine.wait_with_output().unwrap();
+    assert!(!output.status.success());
+    let response: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["code"], "install_preflight");
+    let log = fs::read_to_string(root.join("logs/updater.log")).unwrap();
+    assert_eq!(log.lines().count(), 1);
+    assert!(log.contains("install_preflight"));
+    assert!(!root.join("cache/updater/run").exists());
+    assert_eq!(fs::read_to_string(root.join("old-file")).unwrap(), "old");
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[cfg(windows)]

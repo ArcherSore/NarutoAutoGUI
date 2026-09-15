@@ -52,8 +52,8 @@ pub fn installation(root: &Path) -> Result<(), String>
     for entry in fs::read_dir(root).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
-        reject_link(&path)?;
         if preserved(&entry.file_name().to_string_lossy()) {
+            reject_link(&path)?;
             if !path.is_dir() {
                 return Err("保留目录名称与文件冲突。".into());
             }

@@ -51,19 +51,19 @@ pub fn install(
     log: &mut dyn FnMut(&str),
 ) -> Value
 {
-    run(request, ready, wait_gui, relaunch, log, files::remove)
-}
-
-fn run(
-    request: &str, ready: impl FnOnce(Value) -> Result<(), String>,
-    wait_gui: impl FnOnce(u32) -> Result<(), String>, relaunch: impl FnOnce(&Path) -> Result<(), String>,
-    log: &mut dyn FnMut(&str), cleanup: impl Fn(&Path) -> Result<(), String>,
-) -> Value
-{
     let request = match preflight(request) {
         Ok(request) => request,
         Err(message) => return error("install_preflight", &message),
     };
+    run(&request, ready, wait_gui, relaunch, log, files::remove)
+}
+
+fn run(
+    request: &Request, ready: impl FnOnce(Value) -> Result<(), String>,
+    wait_gui: impl FnOnce(u32) -> Result<(), String>, relaunch: impl FnOnce(&Path) -> Result<(), String>,
+    log: &mut dyn FnMut(&str), cleanup: impl Fn(&Path) -> Result<(), String>,
+) -> Value
+{
     if let Err(message) = ready(json!({"protocolVersion":1,"type":"ready","operation":"install"}))
         .and_then(|_| wait_gui(request.gui_pid)) {
         return error("install_preflight", &message);
@@ -86,9 +86,7 @@ fn run(
         // Every old managed entry has left the root before the first new entry is installed.
         for entry in fs::read_dir(&payload).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
-            if !files::preserved(&entry.file_name().to_string_lossy()) {
-                fs::rename(entry.path(), root.join(entry.file_name())).map_err(|e| e.to_string())?;
-            }
+            fs::rename(entry.path(), root.join(entry.file_name())).map_err(|e| e.to_string())?;
         }
         Ok(())
     })();
@@ -117,7 +115,7 @@ fn cleanup_failure_does_not_prevent_relaunch()
     let request = json!({"protocolVersion":1,"operation":"install","installation":root,
         "reference":"opaque","guiPid":123}).to_string();
     let mut logged = Vec::new();
-    let result = run(&request, |_| Ok(()), |_| Ok(()), |exe| {
+    let result = run(&preflight(&request).unwrap(), |_| Ok(()), |_| Ok(()), |exe| {
         assert!(exe.exists());
         Ok(())
     }, &mut |message| logged.push(message.to_owned()), |_| Err("injected cleanup failure".into()));
@@ -131,6 +129,13 @@ pub fn handoff(request: &str, copy_parent: Option<u32>) -> Value
 {
     use crate::native;
     use std::io::Write;
+    if let Some(pid) = copy_parent {
+        let parent = match native::Process::open(pid) {
+            Ok(parent) => parent,
+            Err(message) => return error("install_preflight", &message),
+        };
+        if let Err(message) = parent.wait(10000) { return error("install_preflight", &message); }
+    }
     let parsed = match preflight(request) {
         Ok(parsed) => parsed,
         Err(message) => return error("install_preflight", &message),
@@ -146,11 +151,6 @@ pub fn handoff(request: &str, copy_parent: Option<u32>) -> Value
     if std::env::current_exe().ok().as_deref() != Some(expected.as_path()) {
         return error("install_preflight", "安装副本位置无效。");
     }
-    let parent = match native::Process::open(copy_parent.unwrap()) {
-        Ok(parent) => parent,
-        Err(message) => return error("install_preflight", &message),
-    };
-    if let Err(message) = parent.wait(10000) { return error("install_preflight", &message); }
     let gui = match native::Process::open(parsed.gui_pid) {
         Ok(gui) => gui,
         Err(message) => return error("install_preflight", &message),
@@ -165,7 +165,7 @@ pub fn handoff(request: &str, copy_parent: Option<u32>) -> Value
     };
     let mut status = None;
     let mut sent_ready = false;
-    let response = install(request, |value| {
+    let response = run(&parsed, |value| {
         if !gui.running() { return Err("GUI 已在接管前退出。".into()); }
         let mut output = std::io::stdout().lock();
         writeln!(output, "{value}").and_then(|_| output.flush()).map_err(|e| e.to_string())?;
@@ -174,8 +174,7 @@ pub fn handoff(request: &str, copy_parent: Option<u32>) -> Value
     }, |_| {
         status = Some(native::Status::show());
         gui.wait(30000)
-    }, native::relaunch, &mut log);
-    log(&response.to_string());
+    }, native::relaunch, &mut log, files::remove);
     drop(status);
     if sent_ready && response["type"] == "error" {
         native::failure(&format!("{}\n日志：{}", response["message"].as_str().unwrap_or("安装失败"), log_path.display()));

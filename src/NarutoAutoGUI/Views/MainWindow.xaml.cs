@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
@@ -42,6 +43,7 @@ namespace NarutoAutoGUI.Views;
 public partial class MainWindow : FluentWindow
 {
     private const int MaximumGuiLogEntries = 1000;
+    private HwndSource? _previewWindowSource;
     private const string PlanItemDragDataFormat = "NarutoAutoGUI.PlanItem";
     private static readonly TimeSpan PreviewPollingInterval = TimeSpan.FromMilliseconds(
         ProtocolConstants.PreviewIntervalMilliseconds);
@@ -54,13 +56,12 @@ public partial class MainWindow : FluentWindow
     private enum MainSection
     {
         Home,
-        Tasks,
         Settings
     }
 
     private enum PrimaryActionMode
     {
-        NavigateToTasks,
+        ConfigureTasks,
         Prepare,
         Start,
         Stop,
@@ -89,6 +90,7 @@ public partial class MainWindow : FluentWindow
     private DateTime _nextPreviewFailureLogAtUtc = DateTime.MinValue;
     private bool _allowClose;
     private bool _busy;
+    private bool _environmentPreparationFailed;
     private bool _exitInProgress;
     private bool _followLogs = true;
     private bool _projectConfigurationValid;
@@ -100,7 +102,6 @@ public partial class MainWindow : FluentWindow
     private IInputElement? _descriptionDrawerPreviousFocus;
     private readonly List<Border> _dropIndicators = [];
     private readonly Dictionary<string, Border> _planItemContainers = new(StringComparer.Ordinal);
-    private int _newLogCount;
 
     private sealed record OptionInputTag(string OptionName, string InputName);
 
@@ -188,7 +189,12 @@ public partial class MainWindow : FluentWindow
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
+        if (!_allowClose && IsGlobalModalOpen) {
+            e.Cancel = true;
+            return;
+        }
         if (_allowClose) {
+            RemovePreviewWindowHook();
             _updateCancellation?.Cancel();
             _elapsedTimer.Stop();
             StopPreviewPolling();
@@ -216,21 +222,16 @@ public partial class MainWindow : FluentWindow
 
     private void SwitchSection(MainSection section)
     {
-        if (section != MainSection.Tasks) {
-            CloseTaskDescriptionDrawer();
-        }
+        CloseTaskDescriptionDrawer();
         HomeView.Visibility = section == MainSection.Home
             ? Visibility.Visible
             : Visibility.Collapsed;
-        TasksView.Visibility = section == MainSection.Tasks
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        RuntimeSidebarVisibility(section);
         SettingsView.Visibility = section == MainSection.Settings
             ? Visibility.Visible
             : Visibility.Collapsed;
 
         HomeNavigationItem.IsActive = section == MainSection.Home;
-        TasksNavigationItem.IsActive = section == MainSection.Tasks;
         SettingsNavigationItem.IsActive = section == MainSection.Settings;
         UpdatePreviewPolling();
     }
@@ -295,28 +296,6 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void HomePrimaryActionButton_Click(object sender, RoutedEventArgs e)
-    {
-        var primary = DerivePrimaryAction();
-        if (!primary.CanExecute) {
-            return;
-        }
-        switch (primary.Mode) {
-            case PrimaryActionMode.NavigateToTasks:
-                SwitchSection(MainSection.Tasks);
-                break;
-            case PrimaryActionMode.Stop:
-                StopRunButton_Click(sender, e);
-                break;
-            case PrimaryActionMode.Start:
-                StartRunButton_Click(sender, e);
-                break;
-            case PrimaryActionMode.Prepare:
-                PrepareEnvironmentButton_Click(sender, e);
-                break;
-        }
-    }
-
     private void HomeSessionMoreButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is WpfButton button && button.ContextMenu is not null) {
@@ -343,25 +322,56 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private void RuntimeSidebarVisibility(MainSection section)
+    {
+        RuntimeSidebar.Visibility = section == MainSection.Home ? Visibility.Visible : Visibility.Collapsed;
+        RuntimeSidebarColumn.Width = section == MainSection.Home
+            ? new GridLength(392)
+            : new GridLength(0);
+    }
+
     private async void PrepareEnvironmentButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_busy || _exitInProgress) {
+            return;
+        }
+        _environmentPreparationFailed = false;
         await RunOperationAsync(
             "正在准备运行环境...",
             async () =>
             {
-                LoadProject();
-                var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
-                await _workerCoordinator.PrepareWorkerAsync(
-                    sessionId, _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"));
-                var game = NarutoGameLaunchProfile.ResolveExisting(_logger);
-                await _programService.LaunchIfNeededAsync(sessionId, game.ExecutablePath, game.Arguments);
-                _sessionManager.ShowPreview();
-                _logger.Info("真实 E2E 环境已准备；完成游戏登录后即可开始任务。 ");
+                try {
+                    LoadProject();
+                    var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
+                    await _workerCoordinator.PrepareWorkerAsync(
+                        sessionId, _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"));
+                    var game = NarutoGameLaunchProfile.ResolveExisting(_logger);
+                    await _programService.LaunchIfNeededAsync(
+                        sessionId, game.ExecutablePath, game.Arguments,
+                        launchedProcessName: NarutoGameLaunchProfile.ClientProcessName);
+                    _sessionManager.ShowPreview();
+                    _logger.Info("真实 E2E 环境已准备；完成游戏登录后即可开始任务。 ");
+                } catch {
+                    _environmentPreparationFailed = true;
+                    throw;
+                }
             });
+    }
+
+    private void RetryRuntimeHeaderButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_environmentPreparationFailed || DerivePrimaryAction().Mode != PrimaryActionMode.Start) {
+            PrepareEnvironmentButton_Click(sender, e);
+        } else {
+            StartRunButton_Click(sender, e);
+        }
     }
 
     private async void StartRunButton_Click(object sender, RoutedEventArgs e)
     {
+        if (DerivePrimaryAction() is not { Mode: PrimaryActionMode.Start, CanExecute: true }) {
+            return;
+        }
         await RunOperationAsync(
             "正在开始任务...",
             async () =>
@@ -390,6 +400,9 @@ public partial class MainWindow : FluentWindow
 
     private async void StopRunButton_Click(object sender, RoutedEventArgs e)
     {
+        if (DerivePrimaryAction() is not { Mode: PrimaryActionMode.Stop, CanExecute: true }) {
+            return;
+        }
         StopPreviewPolling();
         await RunOperationAsync(
             "正在停止任务...",
@@ -488,6 +501,16 @@ public partial class MainWindow : FluentWindow
 
     private void MainWindow_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
+        if (e.Key == Key.Escape && UpdateOverlay.Visibility == Visibility.Visible) {
+            CloseUpdate_Click(sender, e);
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == Key.Escape && PreviewOverlay.Visibility == Visibility.Visible) {
+            ClosePreview_Click(sender, e);
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.Escape && TaskDescriptionOverlay.Visibility == Visibility.Visible) {
             CloseTaskDescriptionDrawer();
             e.Handled = true;
@@ -852,7 +875,7 @@ public partial class MainWindow : FluentWindow
     {
         var button = new WpfButton {
             Content = CreateSymbolIcon(symbol),
-            Style = (Style)FindResource("CompactIconButtonStyle")
+            Style = (Style)FindResource("TaskIconButtonStyle")
         };
         AutomationProperties.SetName(button, accessibleName);
         return button;
@@ -1169,22 +1192,22 @@ public partial class MainWindow : FluentWindow
         if (entry is null) {
             return;
         }
-        var shouldFollow = _followLogs && IsLogNearBottom();
-        LogLines.Add(entry);
+        var shouldFollow = _followLogs && IsLogNearTop();
+        var previousOffset = _homeLogScrollViewer?.VerticalOffset ?? 0;
+        LogLines.Insert(0, entry);
         while (LogLines.Count > MaximumGuiLogEntries) {
-            LogLines.RemoveAt(0);
+            LogLines.RemoveAt(LogLines.Count - 1);
+        }
+        if (!shouldFollow && LogLines.Count > 1) {
+            _homeLogScrollViewer?.ScrollToVerticalOffset(previousOffset + 1);
         }
 
         if (shouldFollow) {
-            _newLogCount = 0;
-            UpdateResumeLogFollowButton();
-            _ = Dispatcher.BeginInvoke(ScrollLogsToEnd, DispatcherPriority.Background);
+            _ = Dispatcher.BeginInvoke(ScrollLogsToLatest, DispatcherPriority.Background);
             return;
         }
 
         _followLogs = false;
-        _newLogCount++;
-        UpdateResumeLogFollowButton();
     }
 
     private void OnWorkerStateChanged(object? sender, WorkerCoordinatorSnapshot snapshot)
@@ -1304,6 +1327,87 @@ public partial class MainWindow : FluentWindow
         ShowPreviewPlaceholder();
     }
 
+    private void ExpandPreview_Click(object sender, RoutedEventArgs e)
+    {
+        PreviewOverlay.Visibility = Visibility.Visible;
+        UpdateExpandedPreviewSize();
+        MainNavigation.IsEnabled = false;
+        EnsureModalWindowHook();
+        PreviewOverlay.Focus();
+    }
+
+    private bool IsGlobalModalOpen => PreviewOverlay.Visibility == Visibility.Visible
+        || UpdateOverlay.Visibility == Visibility.Visible;
+
+    private void EnsureModalWindowHook()
+    {
+        if (_previewWindowSource is null && PresentationSource.FromVisual(MainWindowContent) is HwndSource source) {
+            _previewWindowSource = source;
+            source.AddHook(PreviewWindowHook);
+        }
+    }
+
+    private void PreviewOverlay_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateExpandedPreviewSize();
+
+    private void UpdateExpandedPreviewSize()
+    {
+        if (ExpandedPreviewCard is null || PreviewOverlay.Visibility != Visibility.Visible) {
+            return;
+        }
+        // Card chrome: 48px header, 8px image inset on each side, and 1px outer border.
+        var image = HomePreviewImage.Source as BitmapSource;
+        var aspectRatio = image is null ? 16.0 / 9 : (double)image.PixelWidth / image.PixelHeight;
+        var availableWidth = Math.Max(1, PreviewOverlay.ActualWidth - 80 - 18);
+        var availableHeight = Math.Max(1, PreviewOverlay.ActualHeight - 80 - 66);
+        var imageWidth = Math.Min(availableWidth, availableHeight * aspectRatio);
+        ExpandedPreviewCard.Width = imageWidth + 18;
+        ExpandedPreviewCard.Height = imageWidth / aspectRatio + 66;
+    }
+
+    private void ClosePreview_Click(object sender, RoutedEventArgs e)
+    {
+        PreviewOverlay.Visibility = Visibility.Collapsed;
+        RemovePreviewWindowHook();
+        MainNavigation.IsEnabled = true;
+        ExpandPreviewButton.Focus();
+    }
+
+    private void RemovePreviewWindowHook()
+    {
+        _previewWindowSource?.RemoveHook(PreviewWindowHook);
+        _previewWindowSource = null;
+    }
+
+    private nint PreviewWindowHook(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+    {
+        if (!IsGlobalModalOpen) {
+            return 0;
+        }
+        // WPF-UI caption buttons handle native messages independently of WPF overlay hit testing.
+        const int wmNcHitTest = 0x0084;
+        const int wmNcLeftButtonDown = 0x00A1;
+        const int wmNcLeftButtonUp = 0x00A2;
+        const int wmNcLeftButtonDoubleClick = 0x00A3;
+        const int wmSysCommand = 0x0112;
+        if (message == wmNcHitTest) {
+            handled = true;
+            return 1; // HTCLIENT routes caption-area clicks to the dismiss scrim.
+        }
+        var command = (int)(wParam.ToInt64() & 0xFFF0);
+        if (message is wmNcLeftButtonDown or wmNcLeftButtonUp or wmNcLeftButtonDoubleClick
+            || message == wmSysCommand && command is 0xF020 or 0xF030 or 0xF060 or 0xF120) {
+            handled = true;
+        }
+        return 0;
+    }
+
+    private void TogglePreview_Click(object sender, RoutedEventArgs e)
+    {
+        var expanded = PreviewCardContent.Visibility != Visibility.Visible;
+        PreviewCardContent.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+        PreviewChevron.Symbol = expanded ? WpfSymbolRegular.ChevronUp16 : WpfSymbolRegular.ChevronDown16;
+    }
+
     private void DisplayPreviewFrame(PreviewGetLatestResponse response)
     {
         using var stream = new MemoryStream(response.PngBytes!, writable: false);
@@ -1317,6 +1421,7 @@ public partial class MainWindow : FluentWindow
         }
         image.Freeze();
         HomePreviewImage.Source = image;
+        UpdateExpandedPreviewSize();
         HomePreviewImage.Visibility = Visibility.Visible;
         HomePreviewPlaceholder.Visibility = Visibility.Collapsed;
     }
@@ -1324,6 +1429,7 @@ public partial class MainWindow : FluentWindow
     private void ShowPreviewPlaceholder()
     {
         HomePreviewImage.Source = null;
+        UpdateExpandedPreviewSize();
         HomePreviewImage.Visibility = Visibility.Collapsed;
         HomePreviewPlaceholder.Visibility = Visibility.Visible;
     }
@@ -1397,56 +1503,31 @@ public partial class MainWindow : FluentWindow
             _homeLogScrollViewer = scrollViewer;
         }
 
-        if (e.VerticalChange < 0) {
-            _followLogs = false;
-            UpdateResumeLogFollowButton();
-            return;
-        }
-
-        if (e.VerticalChange > 0 && IsScrollViewerNearBottom(e.OriginalSource as ScrollViewer)) {
-            ResumeLogFollow(scrollToEnd: false);
+        if (e.VerticalChange != 0 && e.ExtentHeightChange == 0) {
+            _followLogs = IsLogNearTop();
         }
     }
 
-    private void ResumeLogFollowButton_Click(object sender, RoutedEventArgs e) =>
-        ResumeLogFollow(scrollToEnd: true);
-
-    private void ResumeLogFollow(bool scrollToEnd)
+    private void ClearActivity_Click(object sender, RoutedEventArgs e)
     {
+        LogLines.Clear();
         _followLogs = true;
-        _newLogCount = 0;
-        UpdateResumeLogFollowButton();
-        if (scrollToEnd) {
-            ScrollLogsToEnd();
-        }
     }
 
-    private bool IsLogNearBottom()
+    private bool IsLogNearTop()
     {
         _homeLogScrollViewer ??= FindVisualChild<ScrollViewer>(HomeLogListBox);
-        return IsScrollViewerNearBottom(_homeLogScrollViewer);
+        return IsScrollViewerNearTop(_homeLogScrollViewer);
     }
 
-    private static bool IsScrollViewerNearBottom(ScrollViewer? scrollViewer) =>
-        scrollViewer is null || scrollViewer.ScrollableHeight - scrollViewer.VerticalOffset <= 2.0;
+    private static bool IsScrollViewerNearTop(ScrollViewer? scrollViewer) =>
+        scrollViewer is null || scrollViewer.VerticalOffset <= 0.1;
 
-    private void ScrollLogsToEnd()
+    private void ScrollLogsToLatest()
     {
-        if (LogLines.LastOrDefault() is LogEntry lastLine) {
-            HomeLogListBox.ScrollIntoView(lastLine);
+        if (_followLogs && LogLines.FirstOrDefault() is LogEntry latestLine) {
+            HomeLogListBox.ScrollIntoView(latestLine);
         }
-    }
-
-    private void UpdateResumeLogFollowButton()
-    {
-        var visibility = _followLogs || _newLogCount == 0
-            ? Visibility.Collapsed
-            : Visibility.Visible;
-        var content = $"{_newLogCount} 条新日志，继续跟随(_F)";
-        var automationName = $"{_newLogCount} 条新日志，继续跟随";
-        HomeResumeLogFollowButton.Visibility = visibility;
-        HomeResumeLogFollowButton.Content = content;
-        System.Windows.Automation.AutomationProperties.SetName(HomeResumeLogFollowButton, automationName);
     }
 
     private void OnSessionStateChanged(object? sender, ChildSessionSnapshot snapshot)
@@ -1478,7 +1559,7 @@ public partial class MainWindow : FluentWindow
         var taskCount = _projectPlan?.SelectedTaskNames.Count ?? 0;
 
         if (!projectReady || taskCount == 0) {
-            return new PrimaryActionState(PrimaryActionMode.NavigateToTasks, canStartCommand);
+            return new PrimaryActionState(PrimaryActionMode.ConfigureTasks, canStartCommand);
         }
 
         var worker = _workerSnapshot.WorkerSnapshot;
@@ -1519,19 +1600,19 @@ public partial class MainWindow : FluentWindow
         var sessionConnected = state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
         var hasSession = _sessionSnapshot.ChildSessionId is not null;
 
-        HomeDesktopVisibilityButton.Visibility = Visibility.Visible;
+        HomeDesktopVisibilityButton.Tag = state == ChildSessionState.ConnectedVisible ? "True" : "False";
         if (sessionConnected) {
             HomeDesktopVisibilityText.Text = state == ChildSessionState.ConnectedVisible
-                ? "隐藏桌面(_H)"
-                : "打开完整桌面(_S)";
+                ? "隐藏分身"
+                : "显示分身";
             HomeDesktopVisibilityButton.IsEnabled = canStartCommand;
         } else {
-            HomeDesktopVisibilityText.Text = "打开完整桌面(_S)";
+            HomeDesktopVisibilityText.Text = "显示分身";
             HomeDesktopVisibilityButton.IsEnabled = false;
         }
 
-        HomeSessionMoreButton.Visibility = Visibility.Visible;
-        HomeSessionMoreButton.IsEnabled = canStartCommand && hasSession;
+        HomeDesktopVisibilityButton.ToolTip = HomeDesktopVisibilityText.Text;
+        AutomationProperties.SetName(HomeDesktopVisibilityButton, HomeDesktopVisibilityText.Text);
         HomeTerminateSessionMenuItem.IsEnabled = canStartCommand && hasSession;
 
         HomeSessionHintText.Visibility = hasSession ? Visibility.Collapsed : Visibility.Visible;
@@ -1551,6 +1632,7 @@ public partial class MainWindow : FluentWindow
 
         var projectReady = _projectPlan is not null;
         var worker = _workerSnapshot.WorkerSnapshot;
+        UpdateRuntimeHeader(canStartCommand, projectReady, sessionConnected);
         var workerIdleFresh = _workerSnapshot.Observation == WorkerObservation.Connected
             && _workerSnapshot.SnapshotFresh
             && worker is not null && worker.ActiveRun is null && worker.RunState == RunState.Idle;
@@ -1558,23 +1640,6 @@ public partial class MainWindow : FluentWindow
             && (_workerSnapshot.Observation is WorkerObservation.WorkerNotStarted
                 or WorkerObservation.ChildSessionEnded || workerIdleFresh);
         TaskWorkspacePanel.IsEnabled = canEditProject && projectReady;
-
-        var primary = DerivePrimaryAction();
-        var isStarting = worker?.ActiveRun?.State == RunState.Starting;
-        var isStopping = worker?.ActiveRun?.State == RunState.Stopping;
-        HomePrimaryActionButton.Content = primary.Mode switch {
-            PrimaryActionMode.NavigateToTasks => "前往任务",
-            PrimaryActionMode.Start => "开始任务(_U)",
-            PrimaryActionMode.Stop => "停止任务(_X)",
-            PrimaryActionMode.Transition => isStarting ? "正在启动…" : (isStopping ? "正在停止…" : "请稍候…"),
-            _ => "准备运行环境(_O)"
-        };
-        HomePrimaryActionButton.Style = (Style)FindResource(primary.Mode switch {
-            PrimaryActionMode.Start => "TasksAccentButtonStyle",
-            PrimaryActionMode.Stop => "DestructiveButtonStyle",
-            _ => primary.Mode == PrimaryActionMode.Prepare ? "PrimaryButtonStyle" : "SecondaryButtonStyle"
-        });
-        HomePrimaryActionButton.IsEnabled = primary.CanExecute;
 
         var active = worker?.ActiveRun;
         var isRunning = active?.State is RunState.Starting or RunState.Running;
@@ -1589,6 +1654,48 @@ public partial class MainWindow : FluentWindow
         }
 
         UpdateRunContextPresentation();
+    }
+
+    private void UpdateRuntimeHeader(bool canStartCommand, bool projectReady, bool sessionConnected)
+    {
+        var worker = _workerSnapshot.WorkerSnapshot;
+        var active = worker?.ActiveRun;
+        var primary = DerivePrimaryAction();
+        var preparing = _busy && OperationStatusText.Text.StartsWith("正在准备运行环境", StringComparison.Ordinal)
+            || _sessionSnapshot.State is ChildSessionState.Connecting or ChildSessionState.Existing
+            || _workerSnapshot.Observation == WorkerObservation.WorkerStarting
+            || worker?.WorkerState == WorkerState.Starting;
+        var runtimeFaulted = _environmentPreparationFailed || _sessionSnapshot.State == ChildSessionState.Faulted
+            || _workerSnapshot.Observation is WorkerObservation.IpcDisconnected or WorkerObservation.WorkerExited
+                or WorkerObservation.WorkerRecoveryConflict
+            || worker?.WorkerState == WorkerState.Faulted;
+        var runFaulted = active is null && worker?.LastRun?.State == RunState.Failed;
+        var ready = sessionConnected && projectReady && _workerSnapshot.Observation == WorkerObservation.Connected
+            && _workerSnapshot.SnapshotFresh && worker?.WorkerState == WorkerState.Ready
+            && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
+        var running = active?.State is RunState.Starting or RunState.Running or RunState.Stopping;
+        var faulted = !running && (runtimeFaulted || runFaulted);
+        var starting = active?.State == RunState.Starting
+            || _busy && OperationStatusText.Text.StartsWith("正在开始任务", StringComparison.Ordinal);
+        var stopping = active?.State == RunState.Stopping
+            || _busy && OperationStatusText.Text.StartsWith("正在停止任务", StringComparison.Ordinal);
+        var transitioning = preparing || starting || stopping;
+
+        PrepareEnvironmentButton.Visibility = !transitioning && !running && !faulted && !ready
+            ? Visibility.Visible : Visibility.Collapsed;
+        PrepareEnvironmentButton.IsEnabled = canStartCommand && projectReady;
+        RetryEnvironmentButton.Visibility = !transitioning && faulted ? Visibility.Visible : Visibility.Collapsed;
+        RetryEnvironmentButton.IsEnabled = canStartCommand && projectReady;
+        StartTaskHeaderButton.Visibility = !transitioning && !running && ready && !faulted
+            ? Visibility.Visible : Visibility.Collapsed;
+        StartTaskHeaderButton.IsEnabled = primary is { Mode: PrimaryActionMode.Start, CanExecute: true };
+        StopTaskHeaderButton.Visibility = !transitioning && active?.State == RunState.Running
+            ? Visibility.Visible : Visibility.Collapsed;
+        StopTaskHeaderButton.IsEnabled = primary is { Mode: PrimaryActionMode.Stop, CanExecute: true };
+        RuntimeHeaderProgressRing.Visibility = transitioning ? Visibility.Visible : Visibility.Collapsed;
+        var progressText = stopping ? "正在停止任务" : starting ? "正在开始任务" : "正在准备运行环境";
+        RuntimeHeaderProgressRing.ToolTip = progressText;
+        System.Windows.Automation.AutomationProperties.SetName(RuntimeHeaderProgressRing, progressText);
     }
 
     private void ElapsedTimer_Tick(object? sender, EventArgs e) => UpdateRunContextPresentation();
@@ -1610,7 +1717,7 @@ public partial class MainWindow : FluentWindow
         }
 
         switch (primary.Mode) {
-            case PrimaryActionMode.NavigateToTasks:
+            case PrimaryActionMode.ConfigureTasks:
                 HomeRunContextTitleText.Text = "执行计划为空";
                 HomeRunContextSubText.Text = !projectReady
                     ? "MaaNOP 项目尚未加载，请确认安装目录包含 interface.json。"

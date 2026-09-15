@@ -144,7 +144,9 @@ fn check(request: &str, fetch_release: impl FnOnce(&str) -> Result<String, Strin
         "schema": 1, "repository": repository, "tag": release.tag_name, "name": asset.name,
         "downloadUrl": download.as_str(), "size": asset.size, "sha256": digest.to_ascii_lowercase()
     }).to_string();
-    result["update"] = json!({"version": release.tag_name, "notes": release.body.unwrap_or_default(),
+    let release_url = format!("https://github.com/{repository}/releases/tag/{}", release.tag_name);
+    result["update"] = json!({"version": release.tag_name, "releaseUrl": release_url,
+        "notes": release.body.unwrap_or_default(),
         "descriptor": descriptor});
     Ok(result)
 }

@@ -52,6 +52,8 @@ NarutoAutoGUI/
    `RunEx(TASK_RUN_USE_SESSION_ID)`。
 6. 启动后使用已验证的 WMI/托管枚举流程在 10 秒内验证 PID 与 Session ID。单个启动失败被记录和呈现，不会终止
    GUI 或自动清理仍可用的 Session。
+   固定微端 profile 同时接受 `Launch.exe` 或 `QQMicroGameBox.exe`，用于兼容启动器交接后快速退出，
+   启动前幂等检查采用同一规则。这里只确认进程存在，游戏窗口和登录状态仍由后续运行检查确认。
 7. 主窗口和托盘的 Session/程序操作共用一个应用级操作门。退出在入口立即禁止新操作并等待在途操作完成，然后在门内重新查询 Session、按原行为确认、调用 Manager 注销，并在释放资源前再次确认 Session 已不存在。Manager 内部仍先断开 ActiveX，再同步调用 `WTSLogoffSession`；主窗口 X 只隐藏到托盘。
 8. Worker 启动先写入 Pending Admission，再通过 Worker 专用 Task Scheduler 路径等待新 PID/Session 验证；验证成功后将 PID 写回 Admission 并继续等待 Pipe admission 与 fresh Snapshot。`RunEx` 未真正生成进程时在 10 秒内携带 Task State/`LastTaskResult` 失败并清理；60 秒 admission 超时且没有存活的已验证 Worker 时自动回滚 `worker.json` 与 launch manifest，存活 Worker 则保留 Admission 供重连。
 
@@ -69,12 +71,15 @@ NarutoAutoGUI/
 - GUI 运行日志：只显示 MaaNOP 通过字符串 `focus` 明确声明的 user-facing Run Log，保留最近 1000 条；
   主窗口可直接打开当前实际日志目录。
 - Worker 在 `MaaTasker.Callback` 中将匹配的字符串 `focus` 投影为 `source=maanop.run` 的既有
-  WorkerLogEntry。实时 sequence gap 通过 `log.getSince` 补取，Worker Instance 变化时 cursor 重置。
+  WorkerLogEntry。运行动态按接收顺序倒序呈现，最新一条高亮；自动滚动跟随顶部，翻阅旧记录时暂停并保留阅读位置。
+  清空只影响当前 GUI 列表，不清除文件日志或重置 Worker sequence cursor。实时 sequence gap 通过 `log.getSince`
+  补取，Worker Instance 变化时 cursor 重置。
 - Active Run 的 `WorkerRuntimeExecution` 持有唯一后台 producer，使用已有 `MaaWin32Controller.GetCachedImage` 约每
   200 ms 采样一次，最多缓存一个 640×360 PNG latest frame，并在释放 Controller 前结束 producer。GUI 只在可见 Home
   上用 `preview.getLatest(runId, afterRevision)` 单飞轮询；Idle、Stopping、终态、断线、Worker replacement、
   隐藏/最小化窗口时立即清空显示并恢复 Placeholder。正常取消后的迟到 Preview response 按 requestId 消费并丢弃，
   不作为无法关联的 envelope 断开 Worker IPC。
+- Home 的只读放大层直接绑定同一个已解码 ImageSource，不启动第二条轮询；卡片按帧比例适配窗口，关闭按钮、遮罩或 Esc 返回卡片。
 - Preview 使用 `sampledAtUtc` 表示 Worker 复制 cached image 的时间，并以 Worker Instance、Run 和 revision 校验陈旧响应。
   revision 由 Run 级计数器分配，跨 Plan Item 持续递增；每项独立清理预览缓存，新 Run 重新从 1 开始。
   PNG 为 1400 KiB、完整响应为 2 MiB，仍位于现有 4 MiB Named Pipe JSON frame 内；不增加二进制通道或第二个 Controller。
@@ -96,7 +101,17 @@ Engine 内部复制自己，实际副本完成前置检查后发送 ready；GUI 
 没有目录 swap、安装锁、完成 journal、长期 backup、健康确认或 .NET Updater runtime bootstrap。
 
 正式 build.ps1 已集成 Rust；GUI baseline 和 MaaNOP 完整包分别验证。当前自动化、本地两轮完整包及真实进程证据见
-[UPDATER-V2-VALIDATION](UPDATER-V2-VALIDATION.md)；GUI/真实游戏生命周期交互验收尚未完成。
+[UPDATER-V2-VALIDATION](UPDATER-V2-VALIDATION.md)；已完成两轮 GUI 更新验收，剩余边界以该记录为准。
+
+GUI 使用设置上方的侧栏更新入口、全局居中 Modal Dialog 和 Settings 更新区；检查/下载与运行状态栏分离。
+打开更新窗口保持当前页面及任务配置不变，整个主窗口内容统一轻度 Blur 并覆盖半透明暗色遮罩；
+更新提示红点只在发现更新时显示，检查中显示互斥的 loading indicator。Dialog 宽 360 DIP，最大高度为
+600 DIP 与窗口高度 80% 中的较小值；Release Notes 使用 Markdig 解析为原生 WPF 文档，独立滚动区域最大高 220 DIP。
+支持基础标题、列表、任务列表、强调、删除线、引用、代码、表格和 HTTP(S) 链接；不执行 HTML 或自动加载远程图片。
+关闭按钮、Esc 和遮罩共用关闭入口，安装准备期间服从现有退出操作门；原生标题栏操作复用截图模态层的拦截。
+版本、说明及发布说明链接由 Engine 的展示字段提供；GUI 不解析 descriptor，不恢复 V1 的一次性完成提示。
+关闭弹窗不取消 Engine prepare；“取消下载”继续使用 V2 固定取消消息。
+
 
 ## 明确边界
 

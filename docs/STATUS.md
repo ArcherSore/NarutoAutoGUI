@@ -2,6 +2,15 @@
 
 ## 当前阶段
 
+2026-09-15：合并 ui 分支至 main，保留首页/任务/截图/运行动态改版和全局更新 Modal，更新操作接入 main 的
+Rust V2 check/prepare/install JSONL 链路。GUI 仅消费版本、说明、进度及原样 descriptor/reference，
+不恢复 V1 C# 下载、缓存管理、完成记录、目录交换或 .NET Updater。Rust check 仅新增 releaseUrl 展示字段；
+缺少该字段时仍可在弹窗内查看 Markdown，安装、准备及生命周期实现保持 main 版本。
+本机无 Rust 编译器，本轮未运行 Cargo build/test、Clippy 或完整发布构建，新增 Rust 字段断言仅完成源码核对。
+GUI locked Release build（0 警告、0 错误）、GUI 自检、C# JSONL 进程适配测试通过；离屏真实 XAML 和
+C# Engine 测试替身验证四状态、限高滚动、遮罩/标题栏拦截、安装关闭限制、准备中关闭不取消、取消后重试、
+ready 前的界面状态及 opaque 传递。测试替身不代表真实 Rust Engine 或真实更新安装验收。
+
 2026-09-15：测试源连续两次真实 GUI 更新 v2.2.3 → v2.3.1 → v2.3.2 通过，用户操作并反馈未见问题。
 第二轮日志确认活动任务 Cancelled 后注销 Child Session、确认 Worker 结束、实际 Engine ready，随后重启 v2.3.2。
 更新后重新创建环境、真实游戏任务启动/停止、分身注销与正常退出通过；old/Payload 已清理，仅留运行副本。
@@ -53,6 +62,141 @@ Python 语义下的 E2E 与本机回归已由用户完成，Python runtime 打�
 `src/NarutoAutoWorker`。
 
 ## 本轮已实现
+
+- 2026-09-15：更新入口移至侧栏底部、设置上方，替换原首页更新横幅和右侧抽屉。更新窗口为全局
+  360 DIP 居中 Modal Dialog，背景整体使用 8 DIP Blur 与半透明暗色遮罩，保留当前页面与任务配置。
+  覆盖 checking、up-to-date、update-available、check-failed，并保留未检查初态；检查环与新版本红点互斥，
+  启动检查不会自动打开弹窗。关闭按钮、Esc、遮罩统一关闭，安装阶段继续使用原有退出操作门限制关闭。
+  Release Notes 通过 Markdig 渲染基础 GitHub 风格 Markdown；说明区域最高 220 DIP 并可滚动，
+  Dialog 最高为 600 DIP 与窗口高度 80% 中的较小值。支持标题、列表、任务列表、强调、删除线、引用、
+  代码、表格和 HTTP(S) 链接；HTML 不执行，远程图片仅展示替代文本链接。
+  GUI x64 Release build 通过（0 警告、0 错误）；真实 XAML 离屏验证四状态、标记互斥、三种窗口尺寸的
+  长说明边界、遮罩禁用/模糊恢复、安装关闭限制与 Markdown 渲染。屏幕外真实 HWND 验证标题栏命令拦截、
+  Esc/遮罩关闭与 hook 清理通过；脚本化 HTTP 响应驱动实际检查方法，覆盖发现更新、已是最新与失败。
+  用户反馈「挺满意的」并确认提交本轮 UI 修改；该反馈不扩展为真实更新安装流程验收。
+  本轮未执行真实更新下载、安装、重启或游戏任务；不修改更新包校验、安装事务及 Child Session 流程。
+
+- 2026-09-15：运行控制、实时截图和运行动态卡片统一使用 Radius.Control 圆角；移除左侧独立
+  「任务」导航入口及对应页面枚举，首页保留全部任务配置，侧栏只保留首页和设置。
+  GUI x64 Release build 通过（0 警告、0 错误）；真实 XAML 离屏加载、导航项数量、首页任务区域保留、
+  三张卡片圆角一致性和渲染检查通过。未启动分身或真实任务。
+
+- 2026-09-15：任务区可用任务、执行计划标题及操作按钮保留原底色和边框，禁用时仅轻微淡化内容，
+  移除逐个灰色禁用块；任务编辑权限继续使用原有判断。按用户反馈移除新增的大块状态提示和
+  「可用任务」旁的小加载环，仅保留任务按钮的禁用外观优化。
+  GUI x64 Release build 通过（0 警告、0 错误）；临时离屏 UI 验证覆盖启动分身、开始任务、运行、停止、
+  断线等待、恢复编辑及无项目状态，检查实际计划卡片渲染、禁用按钮拒绝 UI Automation 调用和灰块移除。
+  常规与窄宽度渲染检查通过；用户反馈「其他没问题了」，确认保留样式优化并提交。
+  该反馈不扩展为未逐项记录的完整运行流程验收；本轮不修改 Worker 或 Child Session 流程。
+
+- 2026-09-15：按设计图重做运行动态。列表采用固定时间列与可换行文案，去掉逐行等级图标，
+  使用轻分隔线、细滚动条与最新记录浅蓝高亮；空状态增加图标和「任务开始后，将在此处显示关键状态更新」。
+  最新记录置顶，按滚动位置自动跟随：翻阅旧记录时保留阅读位置，回到顶部恢复跟随。清空仅移除当前
+  GUI 列表，不删除文件日志或重置 Worker 日志 cursor；继续保留 1000 条上限与列表虚拟化。
+  按用户后续反馈移除自动滚动勾选框及回到最新浮层，清空按钮改为透明无边框，空态只淡化图标和文字。
+  GUI x64 Release build 通过（0 警告、0 错误）；空态、4 条、长列表离屏渲染检查通过。
+  临时 UI 验证调用实际处理方法，覆盖倒序追加、高亮更新、手动翻阅暂停、自动恢复、保留上限、
+  清空后追加与回到顶部自动恢复；用户实测反馈「没问题了」，确认本轮运行动态优化通过。
+
+- 2026-09-15：按按钮状态设计图细化实时截图控件。显示分身采用蓝色窗口/眼睛图标与浅蓝底，
+  隐藏分身改为灰色划线眼睛图标与中性底；两者有独立 hover/pressed 配色，未连接时常驻 disabled。
+  按钮圆角复用现有 Radius.Control。截图标题栏与放大关闭按钮统一无边框、浅灰 hover/pressed 样式；
+  打开放大时先聚焦模态容器，关闭按钮不再默认出现蓝色焦点框，Tab 导航仍有轻量焦点提示。
+  GUI x64 Release build 通过（0 警告、0 错误）；XAML 渲染及显示/隐藏/禁用状态检查通过；
+  放大尺寸、背景恢复、原生标题栏拦截与退出恢复回归通过。用户实测反馈「通过，我很满意」，本轮按钮优化验收通过。
+
+- 2026-09-15：完成运行控制与实时截图 UI 调整及只读放大查看，用户实测反馈「没有新问题」并确认满意。
+  卡片采用蓝色图标、浅色画面区与空状态，不复刻参考图的大圆角；分身入口采用图标胶囊按钮，
+  按真实状态切换「显示分身 / 隐藏分身」，Tooltip 与辅助名称同步，复用原有分身显隐操作。
+  放大层共享 Home 最新帧，按帧比例适配窗口并保留 8px 画面内边距；浅色卡片外为 12px 高斯模糊背景
+  和半透明遮罩，背景与标题栏操作在放大期间禁用；关闭按钮、点击外围遮罩或 Esc 均可退出并恢复交互。
+  临时 HwndSource hook 阻止 WPF-UI 原生标题栏操作绕过遮罩，退出放大时移除；关闭按钮固定 32×32。
+  GUI x64 Release build（0 警告、0 错误）、GUI 自检、XAML 加载、离屏渲染和 diff 检查通过；
+  自检首次受沙箱 Named Pipe 权限限制，沙箱外重跑通过。临时 UI 验证覆盖 3 种窗口尺寸 × 3 种画面比例、
+  两种分身文案、关闭/遮罩退出和模糊/禁用恢复；屏幕外窗口的真实 HWND 命中、最小化/最大化/关闭/还原
+  命令拦截与 hook 移除均通过。用户实测确认不扩展为未逐项记录的停止、断线等完整边界验收。
+  放大仍使用现有最大 640×360 帧，不提升采集分辨率，不增加画面点击控制，不改动 Worker/Child Session 流程。
+
+- 2026-09-15：运行控制 Header 的 ProgressRing 覆盖开始/停止请求在途和 Worker 的 Starting/Stopping
+  状态，过渡期间隐藏其他操作按钮，避免任务开始与停止时短暂空白；Tooltip 与辅助名称同步显示具体操作。
+  GUI x64 Release build 通过（0 警告、0 错误），`git diff --check` 通过。真实任务过渡动画仍待交互式复验。
+
+- 2026-09-14：修复游戏准备仅检查 `Launch.exe` 导致可能漏掉启动器交接后的微端进程；固定 profile
+  在启动前与启动后同时检查同一 Session 的 `Launch.exe` / `QQMicroGameBox.exe`，普通程序保持原规则。
+  超时保留失败并提示打开完整桌面检查后重试；Header 在准备失败但 Worker Ready 时仅显示重试，
+  修复重试/开始图标重叠。COM/RDP/WTS/Worker 启动和清理流程未改。
+  GUI x64 Release build 通过（0 警告、0 错误）；GUI 自检通过，包含交接进程、跨 Session 拒绝与普通程序回归。
+  自检首次因沙箱 Named Pipe 权限失败，沙箱外重跑通过。真实微端启动及故障 Header 交互仍待复验。
+  2026-09-15 完成独立完整测试包 `artifacts/NarutoAutoGUI/runtime-launch-handoff-fix` 核对，GUI DLL
+  哈希与构建产物一致；保留用户任务配置，清理副本中的旧 state、debug 和 logs，未覆盖原测试包。
+  22:31 日志只证明未枚举到启动器，不足以断定该次游戏实际已启动；不把本次修复记为真实启动验收通过。
+
+- 2026-09-14：首页“运行控制”Header 内部 Grid 固定 36px 高，避免 36px 操作按钮与 18px
+  ProgressRing 在状态切换时改变整行高度。GUI x64 Release build 通过（0 警告、0 错误）；
+  已生成并核对独立完整包 `artifacts/NarutoAutoGUI/runtime-control-fixed-height` 的 GUI DLL。
+
+- 2026-09-14：补齐首页运行控制 Header 中遗漏的停止图标尺寸与按钮样式，并同步重试图标：
+  Power/Play/Stop/Retry 均使用 24px `SymbolIcon.FontSize` 和 36px 透明底热区。核对当前
+  Wpf.Ui 枚举中四个 Symbol 均有效；GUI x64 Release build 通过（0 警告、0 错误）。
+  独立完整包 `artifacts/NarutoAutoGUI/runtime-control-icons-aligned` 已生成并核对 GUI DLL 哈希。
+
+- 2026-09-14：首页“运行环境”Header 改名为“运行控制”，标题采用现有 14px SectionTitle
+  字号；主操作图标保留 24px 字形和 36px 热区，常驻蓝色底色改为透明，仅 hover 显示浅主题底色；
+  Header 上下 Padding 从 3px 收至 1px。GUI x64 Release build 通过（0 警告、0 错误），
+  独立完整包 `artifacts/NarutoAutoGUI/runtime-control-polish` 已生成并核对 GUI DLL 哈希。
+
+- 2026-09-14：用户截图指出只增大了按钮容器，Power/Play 字形仍小。首页运行环境 Header
+  删除左侧状态点，Power/Play 的 `SymbolIcon.FontSize` 与容器均设为 24px，操作热区 36px，
+  使用已有 Primary 浅色 Brush 提升辨识度；准备中仍用 ProgressRing，其他页面区域未调整。
+  GUI x64 Release build 通过（0 警告、0 错误），已生成并核对独立完整包
+  `artifacts/NarutoAutoGUI/prominent-runtime-icons`；新包视觉仍待交互式检查。
+
+- 2026-09-14：首页运行环境 Header 的 Power/Play 实际图标增至 20px，操作热区保持紧凑；
+  准备状态的 Wpf.Ui ProgressRing 明确设置 `IsIndeterminate=True`，以持续旋转表达没有可靠百分比
+  数据的启动流程。GUI x64 Release build 通过（0 警告、0 错误），图标枚举值已核对；生成
+  `artifacts/NarutoAutoGUI/icon-progress-fix` 独立完整包并核对 GUI DLL 哈希。尚未进行新包交互式检查。
+
+- 2026-09-14：用户截图确认 `PlugConnected16` 在“准备运行环境”按钮中显示为不符合预期的
+  插头形状；改用当前 Wpf.Ui 枚举存在的 `Power20`（18px 呈现）表达开机/准备。GUI x64 Release
+  build 通过（0 警告、0 错误）。正在使用的上一份独立包 DLL 被锁定，未强行替换；已生成
+  `artifacts/NarutoAutoGUI/power-icon-fix` 完整副本并替换为最新 GUI DLL，哈希已核对。
+
+- 2026-09-14：修复“运行环境”准备图标 `Power16` 不属于当前 Wpf.Ui `SymbolRegular` 而导致的
+  `MainWindow.InitializeComponent()` 启动崩溃，改用已存在的 `PlugConnected16`。通过发布目录中的
+  `Wpf.Ui.dll` 枚举核对首页 XAML 全部 7 个 Symbol 值，均有效；GUI Release build 通过（0 警告、
+  0 错误）。隔离目录完整 publish 因本机 NetBeauty 缺少 `v10.0.11/win-x64` artifact 失败，
+  未覆盖正在使用的 `artifacts/NarutoAutoGUI/win-x64`。已从现有完整包复制独立
+  `artifacts/NarutoAutoGUI/header-startup-fix` 并替换修复后的 GUI DLL；原目录 DLL 被现有进程锁定，
+  无法原地更新，新版本 GUI 尚未完成启动实测。
+
+- 2026-09-14：首页“运行环境”Header 右侧改为纯图标：灰/绿/红状态点、Power/Play/Stop/Retry
+  操作图标及准备时的 ProgressRing；状态和操作文案仅保留在 Tooltip/自动化名称。Release build
+  通过（0 警告、0 错误），XAML 静态检查确认 Header 无状态或操作 TextBlock。启动新 build-output
+  EXE 仍返回 `0xc0000142`；当前桌面已有 artifacts 目录的旧 GUI 实例，新 DLL 入口未呈现独立窗口，
+  因此本轮未完成新版本四态交互式验收，也未关闭旧实例或影响现有 Session。
+
+- 2026-09-14：首页运行控制改为右上角“运行环境”单行 Header 的准备、开始、停止和重试入口；
+  移除左侧任务工作区底部操作栏及其占位。Header 依据现有 Child Session、Worker ActiveRun/LastRun、
+  准备操作状态切换，运行失败时重试任务，运行环境故障时重试准备。GUI Release build 通过
+  （0 警告、0 错误）；尝试启动 build-output EXE 仍返回 `0xc0000142`。通过 `dotnet NarutoAutoGUI.dll`
+  启动后日志记录 GUI 初始化，但桌面自动化未枚举到应用窗口；未完成四态交互检查。
+
+- 2026-09-14：首页右侧“运行环境”收为单行状态 Header，使用 Child Session、Worker 快照与准备操作状态显示
+  未准备 / 准备中 / 已就绪 / 异常；只在未准备和异常时分别提供准备、重试图标。移除折叠正文、重复的
+  Worker/MaaNOP/Session/IPC 信息和常驻文字操作；刷新入口不再需要，结束桌面能力仍在托盘。
+  GUI Release build 通过（0 警告、0 错误）。尝试启动 build-output EXE 时系统返回 `0xc0000142`，
+  本轮未完成新 Header 的交互式状态检查。
+
+- 2026-09-14：首页视觉 polish 依据 Computer Use 的普通窗口和最大化窗口截图完成三轮检查：先压缩运行环境的
+  状态行并把截图操作放入 Header，再删除首页空计划时重复的“执行计划为空 / 前往任务”底栏、收紧侧栏按钮、
+  去掉展开任务选项的内层卡框和阴影，最后移除运行动态的内层日志边框。MaaNOP v2.3.0 的 `python`、
+  `resource`、`agent`、`interface.json` 已复制到本地测试构建输出以加载任务。最终普通窗口截图已复查；
+  最后一处日志边框改动后的最大化输入受测试程序管理员权限影响未能重复触发，上一轮最大化布局已检查。
+  正式 GUI Release build 通过（0 警告、0 错误）；未进行真实 Session、Worker 或游戏运行回归。
+
+- 2026-09-14：首页改为可扩展任务工作区加 392px 固定运行侧栏。首页和“任务”导航共用原有任务编辑控件与事件处理；
+  侧栏依次放置可折叠的运行环境、16:9 实时截图及填满剩余高度的运行动态。保留全局状态栏和现有执行、
+  Preview、Session 语义。GUI Release 构建通过；新布局的真实桌面/DPI 交互检查仍待进行。
 
 - 2026-09-12：完成 MaaNOP Updater runtime consolidation。Updater 改为非 single-file 入口（EXE/DLL/deps/runtimeconfig），
   使用 NetBeauty loader + `includedFrameworks` + `SubdirectoriesToProbe=libs` 复用 GUI 的 app-local runtime；发布包只保留

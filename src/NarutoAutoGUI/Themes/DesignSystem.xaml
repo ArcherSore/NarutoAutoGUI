@@ -586,10 +586,29 @@
         <Setter Property="Padding" Value="{StaticResource Thickness.Section}" />
     </Style>
 
+    <ControlTemplate x:Key="TaskButtonTemplate" TargetType="{x:Type Button}">
+        <Border Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="{StaticResource Radius.Control}"
+                SnapsToDevicePixels="True">
+            <ContentPresenter x:Name="TaskButtonContent" Margin="{TemplateBinding Padding}"
+                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                              RecognizesAccessKey="True" />
+        </Border>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="TaskButtonContent" Property="Opacity" Value="0.8" />
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
     <Style x:Key="TaskShelfHeaderButtonStyle"
            TargetType="{x:Type Button}"
            BasedOn="{StaticResource SubtleButtonStyle}">
         <Setter Property="MinHeight" Value="32" />
+        <Setter Property="Template" Value="{StaticResource TaskButtonTemplate}" />
         <Setter Property="Padding" Value="2,4" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="FocusVisualStyle" Value="{StaticResource TasksFocusVisualStyle}" />
@@ -605,6 +624,7 @@
            TargetType="{x:Type Button}"
            BasedOn="{StaticResource BaseButtonStyle}">
         <Setter Property="MinHeight" Value="38" />
+        <Setter Property="Template" Value="{StaticResource TaskButtonTemplate}" />
         <Setter Property="Margin" Value="0,0,8,8" />
         <Setter Property="Padding" Value="12,6" />
         <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
@@ -641,10 +661,16 @@
         <Setter Property="FocusVisualStyle" Value="{StaticResource TasksFocusVisualStyle}" />
     </Style>
 
+    <Style x:Key="TaskIconButtonStyle" TargetType="{x:Type Button}"
+           BasedOn="{StaticResource CompactIconButtonStyle}">
+        <Setter Property="Template" Value="{StaticResource TaskButtonTemplate}" />
+    </Style>
+
     <Style x:Key="PlanHeaderButtonStyle"
            TargetType="{x:Type Button}"
            BasedOn="{StaticResource SubtleButtonStyle}">
         <Setter Property="MinHeight" Value="44" />
+        <Setter Property="Template" Value="{StaticResource TaskButtonTemplate}" />
         <Setter Property="Padding" Value="8,6" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
@@ -663,15 +689,13 @@
            TargetType="{x:Type Border}"
            BasedOn="{StaticResource PlanItemStyle}">
         <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
-        <Setter Property="Effect" Value="{StaticResource Effect.Surface.Light}" />
     </Style>
 
     <Style x:Key="OptionTileStyle" TargetType="{x:Type Border}">
         <Setter Property="MinWidth" Value="220" />
-        <Setter Property="Padding" Value="8,7,8,8" />
-        <Setter Property="Background" Value="{StaticResource Brush.Surface.Option}" />
-        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Subtle}" />
-        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="4,4,4,6" />
+        <Setter Property="Background" Value="{StaticResource Brush.Transparent}" />
+        <Setter Property="BorderThickness" Value="0" />
         <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
     </Style>
 

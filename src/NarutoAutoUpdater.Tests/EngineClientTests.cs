@@ -15,6 +15,14 @@ internal static class EngineClientTests
             throw new Exception("Engine result display / opaque descriptor was not preserved.");
         }
         Console.WriteLine("UPDATE TEST PASS: JSONL process adapter preserves display and opaque descriptor.");
+        var linked = await new UpdateEngineClient(FixtureStart("release-url"))
+            .CheckAsync(Path.GetTempPath(), CancellationToken.None);
+        if (result.Update.ReleaseUrl is not null
+            || linked.Update?.ReleaseUrl != "https://github.com/owner/repo/releases/tag/v2.0.0"
+            || linked.Update.Descriptor != result.Update.Descriptor) {
+            throw new Exception("Release URL display field changed the opaque descriptor or became required.");
+        }
+        Console.WriteLine("UPDATE TEST PASS: optional release URL is separate from the opaque descriptor.");
         foreach (var mode in new[] { "bad-json", "duplicate", "no-newline", "oversize", "failed-result", "error" }) {
             var invalid = FixtureStart(mode);
             try {
@@ -122,10 +130,14 @@ internal static class EngineClientTests
         if (mode == "stderr") {
             await Console.Error.WriteAsync(new string('x', 128 * 1024));
         }
-        var message = JsonSerializer.Serialize(new {
+        var result = JsonSerializer.SerializeToNode(new {
             protocolVersion = 1, type = "result", operation = "check", currentVersion = "1.0.0",
             update = new { version = "2.0.0", notes = "新版说明\n第二行", descriptor = "opaque:do-not-parse" }
-        });
+        })!;
+        if (mode == "release-url") {
+            result["update"]!["releaseUrl"] = "https://github.com/owner/repo/releases/tag/v2.0.0";
+        }
+        var message = result.ToJsonString();
         if (mode == "no-newline") {
             Console.Write(message);
         } else {

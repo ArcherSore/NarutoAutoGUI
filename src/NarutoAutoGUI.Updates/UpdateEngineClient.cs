@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace NarutoAutoGUI.Updates;
 
-public sealed record EngineUpdate(string Version, string Notes, string Descriptor);
+public sealed record EngineUpdate(string Version, string Notes, string Descriptor, string? ReleaseUrl = null);
 public sealed record EngineCheckResult(string CurrentVersion, EngineUpdate? Update);
 public sealed record EngineProgress(string Phase, long Bytes, long Total, double BytesPerSecond);
 
@@ -21,7 +21,8 @@ public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout
         var update = result.GetProperty("update");
         return new EngineCheckResult(RequiredString(result, "currentVersion"), update.ValueKind == JsonValueKind.Null
             ? null : new EngineUpdate(RequiredString(update, "version"), RequiredString(update, "notes", true),
-                RequiredString(update, "descriptor")));
+                RequiredString(update, "descriptor"),
+                update.TryGetProperty("releaseUrl", out _) ? RequiredString(update, "releaseUrl") : null));
     }
 
     public async Task<string> PrepareAsync(string installation, string descriptor,

@@ -7,6 +7,7 @@ internal sealed record NarutoGameLaunchProfile(string AppId, string Arguments, s
     internal const string AppIdValue = "1103286479";
 
     internal const string ArgumentsValue = "-/appid:1103286479";
+    internal const string ClientProcessName = "QQMicroGameBox.exe";
 
     internal static NarutoGameLaunchProfile Resolve(string? applicationDataRoot = null)
     {

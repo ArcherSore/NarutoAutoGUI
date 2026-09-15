@@ -16,11 +16,12 @@ Rust 1.98.1 MSVC 与 Cargo.lock 固定工具链/依赖，Windows CRT 静态链�
 
 | 操作 | 额外输入 | 输出 |
 | --- | --- | --- |
-| check | 无 | result：currentVersion、update（null 或 version/notes/descriptor） |
+| check | 无 | result：currentVersion、update（null 或 version/notes/releaseUrl/descriptor） |
 | prepare | 原样 descriptor | progress、最终 result(reference) 或 cancelled/error |
 | install | 原样 reference、guiPid | 实际安装副本的 ready，或修改前 error |
 
 展示字段与 opaque descriptor/reference 分离，GUI 不解析 opaque 内容、不管理缓存。
+releaseUrl 为发布说明页面的展示链接；GUI 可消费没有该字段的 V2 返回，此时在弹窗内查看说明。
 错误统一为 type=error、code、message，退出码 1；成功退出码 0。stdout 不混入诊断，GUI 持续排空 stderr。
 check/install 请求写完关闭 stdin。prepare 保持输入打开；固定取消消息为 protocolVersion=1、operation=cancel。
 prepare 输入断开也取消，尽力清理后退出；关闭 Drawer 不取消。GUI 重启不恢复 prepared reference。

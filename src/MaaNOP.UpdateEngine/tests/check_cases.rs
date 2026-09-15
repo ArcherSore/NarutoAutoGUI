@@ -62,6 +62,7 @@ fn check_returns_display_and_opaque_candidate_without_downloading_or_creating_ca
     assert_eq!(result["currentVersion"], "v2.9.0");
     assert_eq!(result["update"]["version"], "v2.10.0");
     assert_eq!(result["update"]["notes"], "新版说明\n第二行");
+    assert_eq!(result["update"]["releaseUrl"], "https://github.com/owner/repo/releases/tag/v2.10.0");
     assert!(!result["update"]["descriptor"].as_str().unwrap().is_empty());
     assert_eq!(fs::read_dir(&installation.0).unwrap().count(), 1);
 }

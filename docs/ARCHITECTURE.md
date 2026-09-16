@@ -98,6 +98,8 @@ Engine 读取 PI 并选择正式 Release，prepare 固定候选、校验 SHA256 
 Engine 内部复制自己，实际副本完成前置检查后发送 ready；GUI 此后退出，Engine 等待 PID 结束再开始移动旧程序内容。
 旧内容仅短命隔离到 cache/updater/old，全部隔离后才写入新内容；失败不回滚、不启动混合版本。
 安装完成先尽力清理 old/Payload，再启动原位置 GUI；运行副本可留到下一次 prepare 清理。
+安装交接后 Engine 静默等待 GUI 退出、替换文件并重启，不创建状态或进度窗口。
+ready 后等待、安装或重启失败仍通过 Win32 MessageBox 提示具体错误和 updater.log 路径。
 没有目录 swap、安装锁、完成 journal、长期 backup、健康确认或 .NET Updater runtime bootstrap。
 
 正式 build.ps1 已集成 Rust；GUI baseline 和 MaaNOP 完整包分别验证。当前自动化、本地两轮完整包及真实进程证据见

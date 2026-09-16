@@ -68,10 +68,34 @@ internal static class EngineClientTests
             throw new Exception("Install result accepted without ready.");
         } catch (InvalidDataException) { }
         Console.WriteLine("UPDATE TEST PASS: install returns only on ready.");
+        foreach (var operation in new[] { "install", "check", "prepare" }) {
+            foreach (var mode in new[] { "error-zero", "error", "copy-error" }) {
+                var client = new UpdateEngineClient(FixtureStart(mode));
+                try {
+                    if (operation == "install") {
+                        await client.InstallAsync(Path.GetTempPath(), "opaque:prepared",
+                            Environment.ProcessId, default);
+                    } else if (operation == "prepare") {
+                        await client.PrepareAsync(Path.GetTempPath(), "opaque:do-not-parse",
+                            new CaptureProgress([]), default);
+                    } else {
+                        await client.CheckAsync(Path.GetTempPath(), default);
+                    }
+                    throw new Exception($"Engine error accepted: {operation}/{mode}");
+                } catch (IOException exception) {
+                    if (exception.Message != "已准备更新失效，请重新下载。") {
+                        throw new Exception($"Engine error message lost: {operation}/{mode}: {exception.Message}");
+                    }
+                }
+            }
+        }
+        Console.WriteLine("UPDATE TEST PASS: terminal errors preserve engine messages with exit code zero or nonzero.");
+        Console.WriteLine("UPDATE TEST PASS: copy pre-ready error survives a successful parent process exit.");
     }
 
     public static async Task RunFixtureAsync()
     {
+        Console.OutputEncoding = new System.Text.UTF8Encoding(false);
         var input = await Console.In.ReadLineAsync();
         using var request = JsonDocument.Parse(input!);
         if (request.RootElement.GetProperty("protocolVersion").GetInt32() != 1
@@ -80,6 +104,16 @@ internal static class EngineClientTests
             return;
         }
         var mode = Environment.GetCommandLineArgs().Last();
+        if (mode == "copy-error") {
+            var start = FixtureStart("error");
+            start.UseShellExecute = false;
+            start.CreateNoWindow = true;
+            start.RedirectStandardInput = true;
+            using var copy = Process.Start(start)!;
+            await copy.StandardInput.WriteLineAsync(input);
+            copy.StandardInput.Close();
+            return; // Exit zero while the copy owns the inherited stdout and reports the error.
+        }
         if (mode is "ready" or "not-ready") {
             if (request.RootElement.GetProperty("reference").GetString() != "opaque:prepared"
                 || request.RootElement.GetProperty("guiPid").GetInt32() <= 0) {
@@ -122,9 +156,11 @@ internal static class EngineClientTests
             Console.WriteLine(invalid);
             return;
         }
-        if (mode == "error") {
-            Console.WriteLine("""{"protocolVersion":1,"type":"error","code":"network_error","message":"失败"}""");
-            Environment.ExitCode = 1;
+        if (mode is "error" or "error-zero") {
+            Console.WriteLine("""
+                {"protocolVersion":1,"type":"error","code":"install_preflight","message":"已准备更新失效，请重新下载。"}
+                """);
+            Environment.ExitCode = mode == "error" ? 1 : 0;
             return;
         }
         if (mode == "stderr") {

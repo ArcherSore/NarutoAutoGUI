@@ -163,7 +163,6 @@ pub fn handoff(request: &str, copy_parent: Option<u32>) -> Value
             let _ = writeln!(file, "install: {message}");
         }
     };
-    let mut status = None;
     let mut sent_ready = false;
     let response = run(&parsed, |value| {
         if !gui.running() { return Err("GUI 已在接管前退出。".into()); }
@@ -171,11 +170,7 @@ pub fn handoff(request: &str, copy_parent: Option<u32>) -> Value
         writeln!(output, "{value}").and_then(|_| output.flush()).map_err(|e| e.to_string())?;
         sent_ready = true;
         Ok(())
-    }, |_| {
-        status = Some(native::Status::show());
-        gui.wait(30000)
-    }, native::relaunch, &mut log, files::remove);
-    drop(status);
+    }, |_| gui.wait(30000), native::relaunch, &mut log, files::remove);
     if sent_ready && response["type"] == "error" {
         native::failure(&format!("{}\n日志：{}", response["message"].as_str().unwrap_or("安装失败"), log_path.display()));
     }

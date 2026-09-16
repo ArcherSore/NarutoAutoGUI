@@ -2,6 +2,24 @@
 
 ## 当前阶段
 
+2026-09-16：Updater V2 安装交接后改为静默等待 GUI 退出、替换文件并 relaunch，完全删除 Rust Status
+窗口、窗口线程及其 Win32 API，不增加进度窗口、toast 或延迟 fallback。ready 后的等待、安装和启动失败
+继续调用 native::failure()，以 Win32 MessageBox 提示具体错误和 updater.log 路径；文件协议与不回滚语义不变。
+GUI client 对 terminal error 原样传播 Engine message，不再依赖入口进程退出码，覆盖副本 ready 前报错而
+入口进程成功退出的场景。C# JSONL 回归、GUI Release 构建（0 警告/错误）和自检、Rust Release 构建及
+Rust 全部 23 项测试与 Clippy 通过。真实 Engine 副本测试覆盖正常交接/安装无窗口、替换失败、
+有效 EXE 被占用导致 relaunch 失败，以及真实 30 秒等待超时；自动核对并关闭失败 MessageBox，
+确认错误正文、日志路径和对应文件状态。
+未重新打包或发布完整包，未执行真实 GUI 更新按钮、Child Session 或游戏环境的交互式升级验收。
+随后按用户要求同步至 `artifacts/updater-v2/ui-v2.3.3/MaaNOP-v2.3.3/`，仅替换 Release Engine 与
+`libs/NarutoAutoGUI.Updates.dll`，同步时其余 3354 个文件哈希不变；目标目录 GUI 自检和独立 Engine 检查通过。
+目录内 PI 当前实际版本为 `v2.2.3`、更新源为 MaaNOP-UpdateTest，均按原值保留，不因目录名称修改。
+随后用户发现 825d46d 的铃铛红点改动未呈现：日志确认该目录 10:16 曾升级至 v2.3.4，主 GUI DLL
+哈希与不含红点改动的已发布 v2.3.4 ZIP 一致；首次同步仅更新 Engine/Updates DLL，漏查主 GUI 版本。
+用户退出程序后补同步最新 `NarutoAutoGUI.dll`，哈希及新增红点/加载控件标识核对通过，目标目录自检通过。
+远端 v2.3.4 包未修改，更新至该包仍会覆盖本地新 UI 与本轮 Engine 改动。
+用户随后反馈“测试通过”，同意提交本轮修改；未提供逐项交互记录，不扩展为其他升级边界全部通过。
+
 2026-09-16：按用户设计图将更新红点从导航尾部移至铃铛右上角：6 DIP、#F53F3F、1 DIP 白边，
 铃铛保持 20 DIP，标记不单独占列；检查中在同一图标位置显示 loading，继续沿用既有更新状态与无障碍提示。
 Release 构建（0 警告/错误）、GUI 自检通过；实际 WPF 导航片段离屏渲染确认文字对齐，

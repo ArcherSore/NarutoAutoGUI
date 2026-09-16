@@ -107,7 +107,7 @@ public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout
             if (result is not JsonElement terminal) {
                 throw new InvalidDataException("Update Engine 未返回结果。");
             }
-            if (RequiredString(terminal, "type") == "error" && process.ExitCode != 0) {
+            if (RequiredString(terminal, "type") == "error") {
                 throw new IOException(RequiredString(terminal, "message"));
             }
             if (operation == "install" || process.ExitCode != 0 || RequiredString(terminal, "type") != "result"

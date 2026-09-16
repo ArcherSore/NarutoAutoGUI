@@ -3,6 +3,10 @@ use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[cfg(windows)]
+#[path = "support/windows.rs"]
+mod windows;
+
 fn fixture(name: &str) -> PathBuf
 {
     let root = std::env::temp_dir().join(format!("maanop-install-{name}-{}", std::process::id()));
@@ -126,11 +130,17 @@ fn actual_copy_handoff_waits_for_gui_pid_and_updates_itself()
     assert!(engine.wait().unwrap().success());
     assert_eq!(fs::read_to_string(root.join("old-file")).unwrap(), "old");
     assert!(!root.join("cache/updater/old").exists());
+    let copy = root.join("cache/updater/run/maanop-update-engine.exe");
+    for _ in 0..20 {
+        assert!(windows::windows(&copy).is_empty(), "normal handoff must not create any status UI");
+        std::thread::sleep(Duration::from_millis(50));
+    }
     drop(output); // GUI stdout may disappear after ready; the copy must continue independently.
     gui.kill().unwrap();
     gui.wait().unwrap();
     let clock = Instant::now();
     while !root.join("relaunched").exists() && clock.elapsed() < Duration::from_secs(10) {
+        assert!(windows::windows(&copy).is_empty(), "normal installation must not create any status UI");
         std::thread::sleep(Duration::from_millis(50));
     }
     assert!(root.join("relaunched").exists());
@@ -151,6 +161,89 @@ fn actual_copy_handoff_waits_for_gui_pid_and_updates_itself()
         std::thread::sleep(Duration::from_millis(50));
     }
     panic!("Engine did not exit after relaunch");
+}
+
+#[cfg(windows)]
+#[test]
+fn post_ready_failures_show_native_message_with_log_path()
+{
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+    for code in ["install_failed", "relaunch_failed", "install_preflight"] {
+        let root = fixture(code);
+        let helper = root.join("cache/other/gui-fixture.exe");
+        assert!(Command::new("rustc").arg("--edition=2024").arg("--crate-name=process_fixture")
+            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/process_fixture.rs"))
+            .arg("-o").arg(&helper).status().unwrap().success());
+        fs::copy(&helper, root.join("cache/updater/payload/NarutoAutoGUI.exe")).unwrap();
+        let mut gui = Command::new(&helper).arg("--wait").spawn().unwrap();
+        let mut engine = Command::new(env!("CARGO_BIN_EXE_maanop-update-engine"))
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+        writeln!(engine.stdin.take().unwrap(), "{}", request(&root, gui.id())).unwrap();
+        let mut output = BufReader::new(engine.stdout.take().unwrap());
+        let mut message = String::new();
+        output.read_line(&mut message).unwrap();
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&message).unwrap()["type"], "ready");
+        assert!(engine.wait().unwrap().success());
+        let held = if code == "install_failed" {
+            Some(fs::OpenOptions::new().read(true).share_mode(0).open(root.join("old-file")).unwrap())
+        } else if code == "relaunch_failed" {
+            // Allow replacement by rename, but deny CreateProcess access to the valid new executable.
+            Some(fs::OpenOptions::new().read(true).share_mode(4 /* FILE_SHARE_DELETE */)
+                .open(root.join("cache/updater/payload/NarutoAutoGUI.exe")).unwrap())
+        } else { None };
+        if code != "install_preflight" {
+            gui.kill().unwrap();
+        }
+        let copy = root.join("cache/updater/run/maanop-update-engine.exe");
+        let clock = Instant::now();
+        let text = loop {
+            let windows = windows::windows(&copy);
+            if let Some((hwnd, text)) = windows.iter().find(|(_, text)| text.starts_with("MaaNOP 更新失败")) {
+                windows::dismiss(*hwnd);
+                break text.clone();
+            }
+            assert!(clock.elapsed() < Duration::from_secs(40), "missing failure MessageBox: {code}");
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        if code == "install_preflight" {
+            assert!(gui.try_wait().unwrap().is_none());
+            gui.kill().unwrap();
+        }
+        gui.wait().unwrap();
+        message.clear();
+        output.read_line(&mut message).unwrap();
+        let response: serde_json::Value = serde_json::from_str(&message).unwrap();
+        drop(held);
+        assert_eq!(response["type"], "error");
+        assert_eq!(response["code"], code);
+        assert!(text.contains(response["message"].as_str().unwrap()), "{text}");
+        assert!(text.contains(&root.join("logs").join("updater.log").display().to_string()), "{text}");
+        assert!(!root.join("relaunched").exists());
+        let log = fs::read_to_string(root.join("logs/updater.log")).unwrap();
+        assert!(log.contains(code));
+        if code == "relaunch_failed" {
+            assert!(text.contains("文件安装完成但启动失败"));
+            assert!(text.contains("请手动启动程序"));
+            assert_eq!(fs::read(root.join("NarutoAutoGUI.exe")).unwrap(), fs::read(&helper).unwrap());
+            assert!(!root.join("cache/updater/old").exists());
+        } else if code == "install_preflight" {
+            assert!(text.contains("等待进程退出超时或失败"));
+            assert!(!root.join("cache/updater/old").exists());
+            assert!(root.join("old-file").exists());
+        } else {
+            assert!(text.contains("不要从 old 恢复"));
+            assert!(!root.join("NarutoAutoGUI.exe").exists());
+        }
+        drop(output);
+        let clock = Instant::now();
+        while fs::remove_dir_all(&root).is_err() {
+            assert!(clock.elapsed() < Duration::from_secs(5), "Engine did not exit after failure");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
 }
 
 #[cfg(windows)]

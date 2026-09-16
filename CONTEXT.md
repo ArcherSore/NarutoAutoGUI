@@ -22,7 +22,7 @@ _Avoid_: 独立组件更新、后台自动安装
 
 **Update Engine**:
 MaaNOP Updater V2 中拥有更新规则与更新执行的角色，涵盖发布发现、包准备、缓存管理、安装和重启。
-正常更新界面与自动化运行环境的关闭由 NarutoAutoGUI 负责；Engine 在独立安装期间提供最小状态与失败提示。
+正常更新界面与自动化运行环境的关闭由 NarutoAutoGUI 负责；Engine 独立安装期间静默执行，仅在失败时提示。
 _Avoid_: 仅安装器、GUI 更新界面
 
 **Update Descriptor**:

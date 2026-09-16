@@ -273,8 +273,9 @@ public partial class MainWindow
         var available = _updateCheckState == UpdateCheckState.UpdateAvailable;
         var latest = _updateCheckState == UpdateCheckState.UpToDate;
         var failed = _updateCheckState == UpdateCheckState.CheckFailed;
-        UpdateNavigationBadge.Tag = _updateCheckState.ToString();
-        UpdateNavigationBadge.Visibility = checking || available ? Visibility.Visible : Visibility.Collapsed;
+        UpdateNavigationBadge.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
+        UpdateNavigationLoading.Visibility = checking ? Visibility.Visible : Visibility.Collapsed;
+        UpdateNavigationIcon.Visibility = checking ? Visibility.Hidden : Visibility.Visible;
         UpdateNavigationItem.ToolTip = checking ? "正在检查更新…" : available ? "发现新版本" : "软件更新";
         System.Windows.Automation.AutomationProperties.SetName(
             UpdateNavigationItem, $"更新，{UpdateNavigationItem.ToolTip}");

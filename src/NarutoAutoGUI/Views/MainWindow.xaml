@@ -218,29 +218,21 @@
                                        Click="NavigationItem_Click" />
             </ui:NavigationView.MenuItems>
             <ui:NavigationView.FooterMenuItems>
-                <ui:NavigationViewItem x:Name="UpdateNavigationItem" Content="更新"
-                                       Icon="{ui:SymbolIcon Alert24}" Click="ViewUpdate_Click">
-                    <ui:NavigationViewItem.InfoBadge>
-                        <ui:InfoBadge x:Name="UpdateNavigationBadge" Visibility="Collapsed">
-                            <ui:InfoBadge.Template>
-                                <ControlTemplate TargetType="{x:Type ui:InfoBadge}">
-                                    <Grid Width="14" Height="14">
-                                        <Ellipse x:Name="Dot" Width="8" Height="8"
-                                                 Fill="{StaticResource Brush.Error}" />
-                                        <ui:ProgressRing x:Name="Loading" Width="14" Height="14"
-                                                         IsIndeterminate="True" Visibility="Collapsed"
-                                                         Foreground="{StaticResource Preview.Accent}" />
-                                    </Grid>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="Tag" Value="Checking">
-                                            <Setter TargetName="Dot" Property="Visibility" Value="Collapsed" />
-                                            <Setter TargetName="Loading" Property="Visibility" Value="Visible" />
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </ui:InfoBadge.Template>
-                        </ui:InfoBadge>
-                    </ui:NavigationViewItem.InfoBadge>
+                <ui:NavigationViewItem x:Name="UpdateNavigationItem" Click="ViewUpdate_Click">
+                    <Grid>
+                        <!-- Place the bell in NavigationViewItem's reserved icon slot. -->
+                        <Grid Width="20" Height="20" Margin="-30,0,0,0" HorizontalAlignment="Left"
+                              VerticalAlignment="Center" IsHitTestVisible="False">
+                            <ui:SymbolIcon x:Name="UpdateNavigationIcon" Symbol="Alert24" FontSize="20" />
+                            <Ellipse x:Name="UpdateNavigationBadge" Width="6" Height="6"
+                                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0"
+                                     Fill="#F53F3F" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
+                            <ui:ProgressRing x:Name="UpdateNavigationLoading" Width="14" Height="14"
+                                             IsIndeterminate="True" Visibility="Collapsed"
+                                             Foreground="{StaticResource Preview.Accent}" />
+                        </Grid>
+                        <TextBlock Text="更新" VerticalAlignment="Center" />
+                    </Grid>
                 </ui:NavigationViewItem>
                 <ui:NavigationViewItem x:Name="SettingsNavigationItem"
                                        Content="设置"

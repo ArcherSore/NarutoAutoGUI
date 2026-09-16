@@ -2,6 +2,24 @@
 
 ## 当前阶段
 
+2026-09-16：按用户设计图将更新红点从导航尾部移至铃铛右上角：6 DIP、#F53F3F、1 DIP 白边，
+铃铛保持 20 DIP，标记不单独占列；检查中在同一图标位置显示 loading，继续沿用既有更新状态与无障碍提示。
+Release 构建（0 警告/错误）、GUI 自检通过；实际 WPF 导航片段离屏渲染确认文字对齐，
+默认/有更新/选中/禁用/检查中五种状态图标位置不变。未执行真实窗口 hover 或游戏交互，尚未发布含此改动的新包。
+随后按用户要求将新 GUI DLL 同步至 `artifacts/updater-v2/ui-v2.3.3/MaaNOP-v2.3.3/`，仅替换该 DLL，
+保留 v2.3.3 元数据与既有配置/资源；目标目录自检通过。已发布 v2.3.3/v2.3.4 ZIP 不含本次红点改动。
+用户随后检查同步后的界面并反馈“没问题了”，同意提交本次修改。
+
+2026-09-16：以本地合并提交 9832137 重新完成 locked Release 全量发布构建（GUI、Worker、Rust Engine），
+组装 UI 测试版 v2.3.3；MaaNOP 资源与内置 Python 沿用上一轮完整包，PI 指向独立 MaaNOP-UpdateTest 测试源。
+GUI/Worker 发布自检、C# JSONL 适配、Rust 测试、Clippy、baseline 布局及完整 ZIP 生产 prepare 校验通过。
+本地产物位于 `artifacts/updater-v2/ui-v2.3.3/`，新 UI 的实际观感和交互留待用户测试，未操作真实 GUI/游戏。
+已发布测试源 v2.3.3，GitHub asset SHA256 与本地一致，正式 Engine 远端 check 识别 v2.3.2 → v2.3.3。
+ZIP 为 238249748 bytes，SHA256：`2C7ADF9EBC8C1ED52EE4EA3D7A7D68AF203BAF1551F3598158A1202CCBF79979`。
+随后按用户要求发布测试源 v2.3.4，仅将上述完整包的 PI 版本递增，供新 UI 更新流程人工验收。
+生产 prepare 校验通过，GitHub digest 与本地一致，尚未据此声明新版 GUI 下载/安装交互通过。
+v2.3.4 ZIP 为 238249746 bytes，SHA256：`D816EEABD4F0292AE21C565B28E077FDBB2E72FCEE5089BBC9931D0905C71E99`。
+
 2026-09-15：合并 ui 分支至 main，保留首页/任务/截图/运行动态改版和全局更新 Modal，更新操作接入 main 的
 Rust V2 check/prepare/install JSONL 链路。GUI 仅消费版本、说明、进度及原样 descriptor/reference，
 不恢复 V1 C# 下载、缓存管理、完成记录、目录交换或 .NET Updater。Rust check 仅新增 releaseUrl 展示字段；

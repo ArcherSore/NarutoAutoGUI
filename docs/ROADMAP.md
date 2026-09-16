@@ -2,6 +2,8 @@
 
 ## 下一步：Updater V2 真实交互验收
 
+- NarutoAutoGUI v1.4.0 前端正式版已发布，包含新版 UI 和 Rust Updater V2；正式发布流水线及 ZIP 校验通过。
+  MaaNOP 完整包与下游流水线切换仍需另行推进，不把前端 Release 视为完整产品包已发布。
 - 工单 01–04 已实现并逐张提交；05 发布集成和本地连续两轮完整包/实际进程安装通过。
 - [05](issues/maanop-updater-v2-tickets/05-release-e2e.md) 正常 GUI 连续更新及 Active Run 停止、环境退出通过；
   仍待关闭失败时阻止安装的实机证据；已有 Child Session 恢复由用户决定暂缓验收，不新增第六张工单。

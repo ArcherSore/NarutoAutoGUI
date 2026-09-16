@@ -2,6 +2,18 @@
 
 ## 当前阶段
 
+2026-09-16：按用户授权正式发布 NarutoAutoGUI v1.4.0（非 prerelease，已设为 latest），标签固定于
+`c6d2f8a12956f2486b90bc03228f808fbe446c8f`，包含新版 UI、825d46d 红点改动和 Rust Updater V2 静默安装。
+[发布流水线 35049480288](https://github.com/ArcherSore/NarutoAutoGUI/actions/runs/35049480288) 全部通过：
+locked 全量构建、自动测试、发布目录 GUI/Worker 自检、包布局及 ZIP 解压复验。
+[正式 Release](https://github.com/ArcherSore/NarutoAutoGUI/releases/tag/v1.4.0) 提供
+`NarutoAutoGUI-win-x64-v1.4.0.zip`，147412183 bytes，GitHub SHA256：
+`52DF22FB43FD7AEC1F07C0AAB3AB38C17AF8E183048F7C3D7BC0F1101EBA5A27`。
+公开资产已下载回读，本地 SHA256 与 GitHub 一致；GUI ProductVersion 为 `1.4.0+c6d2f8a…`，
+确认包含新增铃铛红点/加载控件及 Engine、Updates DLL、Worker 四个发布组件。
+本次仅发布当前仓库的前端包，不含 MaaNOP 游戏资源或 Python；未发布 MaaNOP 完整包，也未改动测试源旧资产。
+发布说明明确 V1 首次迁移需手动安装 V2 完整包、四目录保留和安装失败不回滚。
+
 2026-09-16：Updater V2 安装交接后改为静默等待 GUI 退出、替换文件并 relaunch，完全删除 Rust Status
 窗口、窗口线程及其 Win32 API，不增加进度窗口、toast 或延迟 fallback。ready 后的等待、安装和启动失败
 继续调用 native::failure()，以 Win32 MessageBox 提示具体错误和 updater.log 路径；文件协议与不回滚语义不变。

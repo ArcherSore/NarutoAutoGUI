@@ -1550,6 +1550,11 @@ public partial class MainWindow : FluentWindow
         UpdateCommandAvailability();
     }
 
+    // Keep the stale snapshot for diagnostics, but a confirmed ended runtime cannot own current controls.
+    private WorkerSnapshot? RuntimeControlWorker =>
+        _workerSnapshot.Observation is WorkerObservation.ChildSessionEnded or WorkerObservation.WorkerExited
+            ? null : _workerSnapshot.WorkerSnapshot;
+
     private PrimaryActionState DerivePrimaryAction()
     {
         var state = _sessionSnapshot.State;
@@ -1562,7 +1567,7 @@ public partial class MainWindow : FluentWindow
             return new PrimaryActionState(PrimaryActionMode.ConfigureTasks, canStartCommand);
         }
 
-        var worker = _workerSnapshot.WorkerSnapshot;
+        var worker = RuntimeControlWorker;
         var workerIdleFresh = _workerSnapshot.Observation == WorkerObservation.Connected
             && _workerSnapshot.SnapshotFresh
             && worker is not null && worker.ActiveRun is null && worker.RunState == RunState.Idle;
@@ -1631,7 +1636,7 @@ public partial class MainWindow : FluentWindow
         }
 
         var projectReady = _projectPlan is not null;
-        var worker = _workerSnapshot.WorkerSnapshot;
+        var worker = RuntimeControlWorker;
         UpdateRuntimeHeader(canStartCommand, projectReady, sessionConnected);
         var workerIdleFresh = _workerSnapshot.Observation == WorkerObservation.Connected
             && _workerSnapshot.SnapshotFresh
@@ -1658,7 +1663,7 @@ public partial class MainWindow : FluentWindow
 
     private void UpdateRuntimeHeader(bool canStartCommand, bool projectReady, bool sessionConnected)
     {
-        var worker = _workerSnapshot.WorkerSnapshot;
+        var worker = RuntimeControlWorker;
         var active = worker?.ActiveRun;
         var primary = DerivePrimaryAction();
         var preparing = _busy && OperationStatusText.Text.StartsWith("正在准备运行环境", StringComparison.Ordinal)
@@ -1705,7 +1710,7 @@ public partial class MainWindow : FluentWindow
         var primary = DerivePrimaryAction();
         var taskCount = _projectPlan?.SelectedTaskNames.Count ?? 0;
         var projectReady = _projectPlan is not null;
-        var worker = _workerSnapshot.WorkerSnapshot;
+        var worker = RuntimeControlWorker;
         var activeRun = worker?.ActiveRun;
 
         if (_busy) {

@@ -2,6 +2,14 @@
 
 ## 当前阶段
 
+2026-09-17：修复活动任务期间结束桌面分身后，运行控制仍显示禁用停止图标的问题。
+原因是控件继续使用保留的 stale ActiveRun；现在确认 ChildSessionEnded / WorkerExited 后，运行控制
+不再把旧快照作为当前运行状态，分身结束恢复准备入口，Worker 退出显示重试入口；历史快照仍保留。
+GUI Release 构建通过（0 警告/错误），实际 WPF 控件自检先复现失败、修复后通过；覆盖 Running、Starting、
+Stopping 后分身结束的按钮/进度环/计时器/文案恢复，以及暂时 IPC 断线仍禁用停止、旧快照不被改写。
+用户退出后已仅同步主 GUI DLL 至 `D:\MaaNOP-win-x86_64-v2.4.0`，哈希一致，目标目录 GUI 自检通过。
+未改动 Child Session 原生注销与 Worker/IPC 实现；真实游戏运行中结束分身的交互式复测待用户完成。
+
 2026-09-16：按用户授权正式发布 NarutoAutoGUI v1.4.0（非 prerelease，已设为 latest），标签固定于
 `c6d2f8a12956f2486b90bc03228f808fbe446c8f`，包含新版 UI、825d46d 红点改动和 Rust Updater V2 静默安装。
 [发布流水线 35049480288](https://github.com/ArcherSore/NarutoAutoGUI/actions/runs/35049480288) 全部通过：

@@ -968,7 +968,7 @@
                     </ControlTemplate>
                 </Button.Template>
             </Button>
-            <Border x:Name="UpdateDialog" Width="360" MaxHeight="600" Margin="24"
+            <Border x:Name="UpdateDialog" Width="440" MaxHeight="600" Margin="24"
                     HorizontalAlignment="Center" VerticalAlignment="Center" Padding="24"
                     Background="{StaticResource Brush.Surface}" BorderBrush="{StaticResource Preview.Border}"
                     BorderThickness="1" CornerRadius="{StaticResource Radius.Section}">
@@ -1009,7 +1009,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <Image x:Name="UpdateAppIcon" Source="pack://application:,,,/Assets/app.png"
-                                           Width="48" Height="48" />
+                                           Width="44" Height="44" />
                                     <Border x:Name="UpdateStateIconBackground" Width="44" Height="44"
                                             CornerRadius="22" Background="{StaticResource Brush.Success}">
                                         <ui:SymbolIcon x:Name="UpdateStateIcon" Symbol="Checkmark24"
@@ -1018,8 +1018,19 @@
                                     <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
                                         <TextBlock x:Name="UpdateStateTitle" FontSize="14" FontWeight="SemiBold"
                                                    TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
-                                        <TextBlock x:Name="UpdateVersionText" FontSize="22" FontWeight="SemiBold"
-                                                   Margin="0,4,0,0" TextWrapping="Wrap" />
+                                        <WrapPanel VerticalAlignment="Center">
+                                            <TextBlock x:Name="UpdateVersionText" FontSize="25" FontWeight="SemiBold"
+                                                       TextWrapping="Wrap"
+                                                       MaxWidth="{Binding ActualWidth,
+                                                           RelativeSource={RelativeSource AncestorType=StackPanel}}" />
+                                            <Border x:Name="UpdateVersionBadge" CornerRadius="4" Padding="7,3"
+                                                    Margin="10,0,0,0" VerticalAlignment="Center"
+                                                    Background="{StaticResource Brush.Primary.Surface}"
+                                                    Visibility="Collapsed">
+                                                <TextBlock Text="发现新版本" FontSize="11"
+                                                           Foreground="{StaticResource Brush.Primary}" />
+                                            </Border>
+                                        </WrapPanel>
                                         <TextBlock x:Name="UpdateInstalledVersionText" Margin="0,4,0,0"
                                                    Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                     </StackPanel>
@@ -1027,10 +1038,10 @@
                                 <TextBlock x:Name="UpdateResultMessage" TextWrapping="Wrap" Margin="0,0,0,16"
                                            Style="{StaticResource SecondaryTextStyle}" />
                                 <Border x:Name="UpdateNotesPanel" Background="{StaticResource Brush.Surface.Option}"
-                                        Padding="12" CornerRadius="{StaticResource Radius.Control}">
+                                        Padding="16,14,10,14" CornerRadius="{StaticResource Radius.Control}">
                                     <StackPanel>
                                         <TextBlock Text="更新内容" FontWeight="SemiBold" Margin="0,0,0,8" />
-                                        <FlowDocumentScrollViewer x:Name="UpdateNotesViewer" MaxHeight="220"
+                                        <FlowDocumentScrollViewer x:Name="UpdateNotesViewer" MaxHeight="260"
                                                                   VerticalScrollBarVisibility="Auto"
                                                                   HorizontalScrollBarVisibility="Disabled"
                                                                   IsToolBarVisible="False" Zoom="100" />

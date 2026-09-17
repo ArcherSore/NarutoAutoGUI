@@ -158,7 +158,7 @@ public partial class MainWindow
 
     private void UpdateDialogSize()
     {
-        UpdateDialog.Width = Math.Min(360, Math.Max(1, UpdateOverlay.ActualWidth - 48));
+        UpdateDialog.Width = Math.Min(440, Math.Max(1, UpdateOverlay.ActualWidth - 48));
         UpdateDialog.MaxHeight = Math.Max(1, Math.Min(600, UpdateOverlay.ActualHeight * 0.8));
     }
 
@@ -291,6 +291,8 @@ public partial class MainWindow
         UpdateStateIcon.Symbol = latest ? Wpf.Ui.Controls.SymbolRegular.Checkmark24
             : failed ? Wpf.Ui.Controls.SymbolRegular.Warning24 : Wpf.Ui.Controls.SymbolRegular.ArrowSync24;
         UpdateStateTitle.Text = available ? "发现新版本" : latest ? "已是最新版本" : failed ? "检查更新失败" : "检查软件更新";
+        UpdateStateTitle.Visibility = available ? Visibility.Collapsed : Visibility.Visible;
+        UpdateVersionBadge.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
         UpdateVersionText.Text = available ? _updateCheck?.Update?.Version : CurrentUpdateVersion;
         UpdateInstalledVersionText.Text = available ? $"当前版本：{CurrentUpdateVersion}" : "";
         UpdateInstalledVersionText.Visibility = available ? Visibility.Visible : Visibility.Collapsed;

@@ -20,7 +20,10 @@ internal static class ReleaseNotesDocument
 
     public static FlowDocument Create(string markdown, Action<Uri> openLink)
     {
-        var document = new FlowDocument { PagePadding = new Thickness(0), FontSize = 13, ColumnWidth = 10000 };
+        var document = new FlowDocument {
+            PagePadding = new Thickness(0, 0, 12, 8), FontSize = 13, ColumnWidth = 10000,
+            TextAlignment = TextAlignment.Left
+        };
         document.SetResourceReference(FlowDocument.ForegroundProperty, "Brush.Text.Body");
         document.SetResourceReference(FlowDocument.FontFamilyProperty, "FontFamily.Ui");
         foreach (var block in Markdown.Parse(markdown, Pipeline)) {
@@ -96,7 +99,7 @@ internal static class ReleaseNotesDocument
                 paragraph.Inlines.Add(new Run(leaf.Lines.ToString()));
             }
             if (block is HeadingBlock heading) {
-                paragraph.FontSize = heading.Level switch { 1 => 20, 2 => 17, _ => 14 };
+                paragraph.FontSize = heading.Level switch { 1 => 18, 2 => 16, _ => 14 };
                 paragraph.FontWeight = FontWeights.SemiBold;
                 paragraph.Margin = new Thickness(0, 6, 0, 8);
             }

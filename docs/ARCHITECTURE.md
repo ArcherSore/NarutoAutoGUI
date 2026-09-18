@@ -63,8 +63,15 @@ NarutoAutoGUI/
   `interface.json` 位于 `NarutoAutoGUI.exe` 同级目录。火影忍者 Online 使用固定 launch profile：
   `NarutoGameLaunchProfile` 从当前用户 `%APPDATA%\Tencent\QQMicroGameBox\Launch.exe` 推导启动器路径，AppId
   固定为 `1103286479`，参数固定为 `-/appid:1103286479`，均不由用户配置；MaaNOP 用户意图保存在
-  `<程序目录>\config\maanop-config.json`。`SelectedTasks` 保存不重复 task name 的实际执行顺序，Worker 按同序逐项执行；
-  `ExplicitOptions` 继续按 option name 保存，不引入 TaskInstanceId 或每实例 option 存储。
+  `<程序目录>\config\maanop-config.json`。SchemaVersion 2 容器保存 ActiveConfigurationId 与有序 Configurations；
+  每份配置用稳定 Id 标识，Name 允许重复，独立持有 SelectedTasks 和 ExplicitOptions。SelectedTasks 保存不重复
+  task name 的实际执行顺序；ExplicitOptions 继续按 option name 保存，同配置的 global 在各任务卡共享，跨配置独立。
+  GUI 通过 Tab 新建、切换、重命名和直接删除配置；删除当前项选左邻、其次右邻，最后一份不能删除。
+  全部配置操作服从现有运行编辑锁；Start 只解析当前配置，不引入 TaskInstanceId、Worker 配置或协议字段。
+- 配置加载：明确声明的 V1 无损包装为“配置 1”，验证结构后原子保存；不因当前 PI 无法执行而丢弃旧意图。
+  Active 指针无效时选第一份，空列表生成空配置；无法读取或解析时仍提供空工作区，原文件保持不变。
+  此类异常原文件仅在用户真实修改触发首次替换前按原始 bytes 保存相邻 invalid 备份，备份失败不覆盖。
+  不提供恢复模式或历史管理。迁移/指针修正写回失败保留加载结果并报告错误，不能宣称持久化成功。
 - 工作目录不提供配置字段，统一自动使用启动器所在目录。
 - 文件日志：默认写入 `<程序目录>\logs`，记录 DEBUG+；按日期命名，单文件最大 10 MB，保留 14 天。若程序目录
   不可写，则依次回退到 LocalAppData 和临时目录并记录 WARN。

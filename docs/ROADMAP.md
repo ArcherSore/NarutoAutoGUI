@@ -1,5 +1,13 @@
 # Roadmap
 
+## 已实现：多份独立任务配置，待实机验收
+
+- 按 [多配置规格](issues/multiple-task-configurations-spec.md) 实现 Tab 切换、新建空配置、重命名和直接删除，
+  独立保存每份任务顺序与 ExplicitOptions；运行期间沿用整个配置工作区的锁定语义。
+- V1 首次加载包装为 V2，异常文件首次被用户修改替换前保留原始 bytes；复用现有 Resolver 与 RunPlan。
+- 模块自检及离屏 GUI 的失焦归属、切换失败、同名配置和小窗口布局已通过；真实游戏运行、多 DPI
+  与桌面鼠标/键盘交互仍待验收。不扩展配置复制、导入导出、调度或 Worker/Protocol。
+
 ## 下一步：Updater V2 真实交互验收
 
 - NarutoAutoGUI v1.4.0 前端正式版已发布，包含新版 UI 和 Rust Updater V2；正式发布流水线及 ZIP 校验通过。

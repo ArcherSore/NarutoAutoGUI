@@ -314,6 +314,47 @@
                                       VerticalScrollBarVisibility="Auto"
                                       Visibility="Collapsed">
                             <StackPanel Margin="0,0,8,24">
+                                <DockPanel Margin="0,0,0,12"
+                                           PreviewMouseDown="ConfigurationActions_PreviewMouseDown"
+                                           PreviewKeyDown="ConfigurationActions_PreviewKeyDown">
+                                    <Button x:Name="NewConfigurationButton" DockPanel.Dock="Right"
+                                            Margin="6,0,0,0" Padding="10,6" Content="+" Height="36"
+                                            VerticalAlignment="Top" Style="{StaticResource SubtleButtonStyle}"
+                                            ToolTip="新建空配置" AutomationProperties.Name="新建空配置"
+                                            Click="NewConfigurationButton_Click" />
+                                    <Button DockPanel.Dock="Right" Margin="6,0,0,0" Padding="10,6" Content="⋯"
+                                            Height="36" VerticalAlignment="Top"
+                                            Style="{StaticResource SubtleButtonStyle}"
+                                            ToolTip="配置操作" AutomationProperties.Name="配置操作"
+                                            Click="ConfigurationMenuButton_Click" />
+                                    <TabControl x:Name="ConfigurationTabs" BorderThickness="0"
+                                                Background="Transparent"
+                                                SelectionChanged="ConfigurationTabs_SelectionChanged"
+                                                AutomationProperties.Name="任务配置">
+                                        <TabControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </TabControl.ItemsPanel>
+                                        <TabControl.Template>
+                                            <ControlTemplate TargetType="TabControl">
+                                                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                                              VerticalScrollBarVisibility="Disabled"
+                                                              CanContentScroll="True" Focusable="False">
+                                                    <ItemsPresenter KeyboardNavigation.TabNavigation="Once" />
+                                                </ScrollViewer>
+                                            </ControlTemplate>
+                                        </TabControl.Template>
+                                    </TabControl>
+                                </DockPanel>
+                                <StackPanel x:Name="ConfigurationNamePanel" Visibility="Collapsed" Margin="0,0,0,12">
+                                    <Label Content="配置名称" Target="{Binding ElementName=ConfigurationNameEditor}" />
+                                    <TextBox x:Name="ConfigurationNameEditor" MaxWidth="300"
+                                             HorizontalAlignment="Left" MinWidth="140"
+                                             AutomationProperties.Name="配置名称"
+                                             LostKeyboardFocus="ConfigurationNameEditor_LostKeyboardFocus"
+                                             KeyDown="ConfigurationNameEditor_KeyDown" />
+                                </StackPanel>
                                 <Button x:Name="TaskShelfHeaderButton"
                                         Style="{StaticResource TaskShelfHeaderButtonStyle}"
                                         AutomationProperties.Name="展开或收起可用任务"

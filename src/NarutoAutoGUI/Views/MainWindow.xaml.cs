@@ -99,9 +99,10 @@ public partial class MainWindow : FluentWindow
     private readonly List<Border> _dropIndicators = [];
     private readonly Dictionary<string, Border> _planItemContainers = new(StringComparer.Ordinal);
 
-    private sealed record OptionInputTag(string OptionName, string InputName);
+    private sealed record OptionInputTag(
+        Guid ConfigurationId, string OptionName, string InputName, string Value, bool Submitted = false);
 
-    private sealed record OptionCaseTag(string OptionName);
+    private sealed record OptionCaseTag(Guid ConfigurationId, string OptionName);
 
     internal MainWindow(
         AppLogger logger,
@@ -372,6 +373,9 @@ public partial class MainWindow : FluentWindow
 
     private async void StartRunButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!CommitFocusedConfigurationInput()) {
+            return;
+        }
         if (DerivePrimaryAction() is not { Mode: PrimaryActionMode.Start, CanExecute: true }) {
             return;
         }
@@ -543,29 +547,14 @@ public partial class MainWindow : FluentWindow
 
     private void OptionInputTextBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
-        if (_updatingOptionEditors
-            || sender is not WpfTextBox { Tag: OptionInputTag tag } textBox) {
-            return;
-        }
-
-        try {
-            _ = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
-                .SetInputValue(tag.OptionName, tag.InputName, textBox.Text);
-            _pendingStartAttempt = null;
-            RenderTaskPlan();
-            _logger.Info(
-                $"已保存 MaaNOP explicit input：option={tag.OptionName}，input={tag.InputName}。 ");
-            UpdateCommandAvailability();
-        } catch (Exception exception) {
-            HandleOperationError("保存 MaaNOP input option 失败", exception);
-            TryRenderTaskPlan();
-            ShowProjectValidationError(exception);
+        if (sender is WpfTextBox editor) {
+            _ = CommitOptionInput(editor);
         }
     }
 
     private void OptionCaseComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_updatingOptionEditors
+        if (_updatingOptionEditors || !CanEditConfiguration
             || sender is not WpfComboBox {
                 Tag: OptionCaseTag tag,
                 SelectedItem: ProjectCaseEditor selected
@@ -575,7 +564,7 @@ public partial class MainWindow : FluentWindow
 
         try {
             _ = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
-                .SetSelectedCase(tag.OptionName, selected.Name);
+                .SetSelectedCase(tag.ConfigurationId, tag.OptionName, selected.Name);
             _pendingStartAttempt = null;
             RenderTaskPlan();
             _logger.Info($"已保存 MaaNOP explicit case：option={tag.OptionName}。 ");
@@ -605,12 +594,20 @@ public partial class MainWindow : FluentWindow
                       ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 ");
         _updatingOptionEditors = true;
         try {
+            RenderConfigurationTabs();
             RenderAvailableTaskShelf(project);
             RenderPlanItems(project);
+            try {
+                project.ValidateConfiguration();
+                _projectConfigurationValid = true;
+                ProjectValidationText.Text = project.LoadWarning ?? string.Empty;
+                ProjectValidationBorder.Visibility = project.LoadWarning is null
+                    ? Visibility.Collapsed : Visibility.Visible;
+            } catch (Exception exception) {
+                _projectConfigurationValid = false;
+                ShowProjectValidationError(exception);
+            }
             UpdatePlanSummary(project);
-            ProjectValidationText.Text = string.Empty;
-            ProjectValidationBorder.Visibility = Visibility.Collapsed;
-            _projectConfigurationValid = true;
         } finally {
             _updatingOptionEditors = false;
         }
@@ -651,7 +648,8 @@ public partial class MainWindow : FluentWindow
 
         foreach (var taskName in project.SelectedTaskNames) {
             AddDropIndicator();
-            var task = project.Tasks.Single(candidate => candidate.Name == taskName);
+            var task = project.Tasks.SingleOrDefault(candidate => candidate.Name == taskName)
+                ?? new ProjectTaskChoice(taskName, taskName, "此任务已不在当前项目中，可从配置中移除。");
             var expanded = _expandedTaskName == task.Name;
             var container = CreatePlanItem(task, expanded);
             _planItemContainers.Add(task.Name, container);
@@ -672,8 +670,13 @@ public partial class MainWindow : FluentWindow
 
     private Border CreatePlanItem(ProjectTaskChoice task, bool expanded)
     {
-        var configuration = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
-            .GetConfiguration(task.Name);
+        ProjectConfigurationView configuration;
+        try {
+            configuration = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
+                .GetConfiguration(task.Name);
+        } catch (Exception exception) when (exception is InvalidDataException or ArgumentException) {
+            configuration = new ProjectConfigurationView([], []);
+        }
         var hasParameters = EnumerateOptions(configuration)
             .Any(option => option.Kind != ProjectOptionKind.Input || option.Inputs.Count != 0);
         var container = new Border {
@@ -843,7 +846,7 @@ public partial class MainWindow : FluentWindow
         var editor = new WpfTextBox {
             Margin = new Thickness(0, 5, 0, 0),
             Text = input.Value,
-            Tag = new OptionInputTag(option.Name, input.Name),
+            Tag = new OptionInputTag(_projectPlan!.ActiveConfigurationId, option.Name, input.Name, input.Value),
             HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
             ToolTip = input.PatternMessage
         };
@@ -866,7 +869,7 @@ public partial class MainWindow : FluentWindow
             ItemsSource = option.Cases,
             DisplayMemberPath = nameof(ProjectCaseEditor.Label),
             SelectedItem = option.Cases.Single(item => item.Name == option.SelectedCase),
-            Tag = new OptionCaseTag(option.Name),
+            Tag = new OptionCaseTag(_projectPlan!.ActiveConfigurationId, option.Name),
             HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
             ToolTip = option.IsExplicit
                 ? "当前值由用户显式设置"
@@ -1167,6 +1170,9 @@ public partial class MainWindow : FluentWindow
         TaskWorkspacePanel.Visibility = Visibility.Visible;
 
         RenderTaskPlan();
+        if (project.LoadWarning is not null) {
+            _logger.Warn(project.LoadWarning);
+        }
         _logger.Info(
             $"已加载 MaaNOP Project Interface：{project.ProjectName} {project.ProjectVersion}；"
             + $"interfaceDigest={project.SourceInterfaceDigest}；"
@@ -1658,13 +1664,9 @@ public partial class MainWindow : FluentWindow
         var projectReady = _projectPlan is not null;
         var worker = RuntimeControlWorker;
         UpdateRuntimeHeader(canStartCommand, projectReady, sessionConnected);
-        var workerIdleFresh = _workerSnapshot.Observation == WorkerObservation.Connected
-            && _workerSnapshot.SnapshotFresh
-            && worker is not null && worker.ActiveRun is null && worker.RunState == RunState.Idle;
-        var canEditProject = canStartCommand
-            && (_workerSnapshot.Observation is WorkerObservation.WorkerNotStarted
-                or WorkerObservation.ChildSessionEnded || workerIdleFresh);
-        TaskWorkspacePanel.IsEnabled = canEditProject && projectReady;
+        TaskWorkspacePanel.IsEnabled = CanEditConfiguration;
+        ConfigurationTabs.IsEnabled = CanEditConfiguration;
+        NewConfigurationButton.IsEnabled = CanEditConfiguration;
 
         var active = worker?.ActiveRun;
         var isRunning = active?.State is RunState.Starting or RunState.Running;

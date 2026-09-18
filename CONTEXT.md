@@ -71,11 +71,24 @@ _Avoid_: MaaNOP Config、Run Plan
 _Avoid_: Controller Target Process、目标窗口身份约束
 
 **MaaNOP Config**:
-主 GUI 以 SchemaVersion 1 保存在 `config/maanop-config.json` 的一份当前 MaaNOP 用户意图，只记录选中的顶层 task，以及由用户操作明确形成的 SelectedCase/input 值；显式值即使等于当前 default 也保存，只有用户选择“跟随项目默认”才删除并回到 Unset。
+主 GUI 持有的多份任务配置及当前激活位置的集合；它保存用户意图，不保存解析结果或运行状态。
 _Avoid_: Application Settings、Run Plan、MFAAvalonia 配置
 
+**Task Configuration（任务配置）**:
+一份具有稳定身份和展示名称的独立用户意图，包含有序且不重复的顶层 task 和显式 option 值。
+名称可以重复；同配置内引用同一 option 的任务共享该值，不同配置互不影响。
+显式值即使等于当前 default 也保留，未显式设置的值跟随当前 Project Interface 默认值。
+_Avoid_: task 实例、Run Plan、运行环境、项目版本快照
+
+**Active Configuration（激活配置）**:
+当前在任务工作区显示和编辑、供下一次 Run 解析的那份 Task Configuration。
+激活位置是 GUI 状态，不是正在执行的 Run 的权威来源；运行期间不能切换配置。
+_Avoid_: Active Run、运行配置快照、下一次 Run 草稿
+
 **Config Status**:
-GUI 根据当前 Project Interface 对持久化 MaaNOP Config 得出的 Valid、Warning 或 Invalid/NeedsReview 结果。忽略某条配置可能改变本次 Run 意图时必须 Blocking 并禁止 Start；完全不参与当前解析的旧条目或 dormant intent 才可非阻塞 WARN。
+GUI 根据当前 Project Interface 对单份 Task Configuration 得出的 Valid、Warning 或 Invalid/NeedsReview 结果。
+忽略某条意图可能改变本次 Run 时必须 Blocking 并禁止该配置 Start；不阻止查看和管理它或使用其他有效配置。
+完全不参与当前解析的旧条目或 dormant intent 才可非阻塞 WARN。
 _Avoid_: 一律 WARN 后忽略、自动修复配置文件
 
 **Dormant Intent**:
@@ -223,7 +236,9 @@ _Avoid_: Connected、Worker State、Run State
 _Avoid_: Log sequence、字段变更计数、跨 Worker revision
 
 **Configuration Edit Lock**:
-只要最新可信 Snapshot 的 activeRun 非空，主 GUI 就禁止编辑 MaaNOP task/option；IPC 断开后若最后可信 Snapshot 仍有 activeRun，锁继续保持，直到重连并取得 fresh Snapshot 明确显示 activeRun 为 null。
+只要最新可信 Snapshot 的 activeRun 非空，主 GUI 就禁止全部配置操作，包括 Tab 切换、新建、删除、重命名和
+task/option 编辑；Start 请求在途也锁定。IPC 断开后若最后可信 Snapshot 仍有 activeRun，锁继续保持，
+直到重连并取得 fresh Snapshot 明确显示 activeRun 为 null。
 _Avoid_: IPC 断开即解锁、下一次 Run 草稿
 
 **MaaNOP Run**:

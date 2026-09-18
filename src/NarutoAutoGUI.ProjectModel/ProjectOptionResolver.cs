@@ -6,7 +6,8 @@ namespace NarutoAutoGUI.ProjectModel;
 
 internal static class ProjectOptionResolver
 {
-    internal static ResolvedProjectOptions Resolve(ProjectDefinition project, TaskDefinition task, MaaNopConfig config)
+    internal static ResolvedProjectOptions Resolve(
+        ProjectDefinition project, TaskDefinition task, TaskConfiguration config)
     {
         var pipelineOverrides = new JsonArray { ParseObject(task.PipelineOverride) };
 
@@ -17,13 +18,14 @@ internal static class ProjectOptionResolver
         return new ResolvedProjectOptions(ToElement(globalValues), ToElement(taskValues), ToElement(pipelineOverrides));
     }
 
-    internal static void ValidateScope(ProjectDefinition project, IReadOnlyList<string> optionNames, MaaNopConfig config, string scope)
+    internal static void ValidateScope(
+        ProjectDefinition project, IReadOnlyList<string> optionNames, TaskConfiguration config, string scope)
     {
         ResolveScope(project, optionNames, config, new JsonObject(), new JsonArray(), scope);
     }
 
     private static void ResolveScope(
-        ProjectDefinition project, IReadOnlyList<string> optionNames, MaaNopConfig config,
+        ProjectDefinition project, IReadOnlyList<string> optionNames, TaskConfiguration config,
         JsonObject resolvedValues, JsonArray pipelineOverrides, string scope)
     {
         foreach (var optionName in optionNames) {
@@ -32,7 +34,7 @@ internal static class ProjectOptionResolver
     }
 
     private static void ResolveOption(
-        ProjectDefinition project, string optionName, MaaNopConfig config,
+        ProjectDefinition project, string optionName, TaskConfiguration config,
         JsonObject resolvedValues, JsonArray pipelineOverrides, string scope)
     {
         var option = project.Options[optionName];
@@ -77,7 +79,8 @@ internal static class ProjectOptionResolver
         }
     }
 
-    private static JsonObject CreateTemplatedOverride(JsonElement template, IReadOnlyDictionary<string, JsonNode?> substitutions)
+    private static JsonObject CreateTemplatedOverride(
+        JsonElement template, IReadOnlyDictionary<string, JsonNode?> substitutions)
     {
         var node = ParseObject(template);
         Substitute(node, substitutions);

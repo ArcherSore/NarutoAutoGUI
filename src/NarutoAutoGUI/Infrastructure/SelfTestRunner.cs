@@ -10,9 +10,9 @@ using NarutoAutoGUI.Worker;
 
 namespace NarutoAutoGUI.Infrastructure;
 
-internal static class SelfTestRunner
+internal static partial class SelfTestRunner
 {
-    internal static int Run()
+    internal static int Run(bool projectOnly = false)
     {
         var testDirectory = Path.Combine(Path.GetTempPath(), $"NarutoAutoGUI-self-test-{Guid.NewGuid():N}");
 
@@ -21,11 +21,20 @@ internal static class SelfTestRunner
             var logDirectory = Path.Combine(testDirectory, "logs");
             using var logger = new AppLogger(logDirectory);
             var projectDirectory = CreateProjectFixture(testDirectory);
+            VerifyConfigurationMigration(testDirectory, projectDirectory);
+            VerifyIndependentConfigurations(testDirectory, projectDirectory);
+            VerifyConfigurationFallback(testDirectory, projectDirectory);
+            VerifyInvalidConfigurationIsolation(testDirectory, projectDirectory);
+            VerifyConfigurationTabs(logger, testDirectory, projectDirectory);
+            VerifyProjectPlan(testDirectory, projectDirectory);
+            VerifyTaskCatalogVariants(testDirectory, projectDirectory);
+            if (projectOnly) {
+                Console.WriteLine("PROJECT SELF-TEST PASS");
+                return 0;
+            }
             VerifyGameLaunchProfile(logger, testDirectory);
             VerifyLauncherHandoff();
             VerifyRdpClientClsid();
-            VerifyProjectPlan(testDirectory, projectDirectory);
-            VerifyTaskCatalogVariants(testDirectory, projectDirectory);
             VerifyTaskDescriptionMarkup();
             VerifyResponsiveOptionLayout();
             VerifyUnsupportedProjectConstraints(testDirectory, projectDirectory);
@@ -61,7 +70,7 @@ internal static class SelfTestRunner
                 + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
                 + "PI structure/default/graph validation; typed input validation; "
                 + "task catalog/description; ordered task plan persistence; responsive option layout; "
-                + "MaaNOP Config v1; RunPlan digest; "
+                + "MaaNOP Config v2/migration/independent tabs; RunPlan digest; "
                 + "IPC framing; preview schema; "
                 + "log sequence tracking/recovery; Worker Instance replacement; "
                 + "run-log routing; DEBUG+ file logging");
@@ -164,8 +173,8 @@ internal static class SelfTestRunner
         using (var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath))) {
             var root = configDocument.RootElement;
             if (root.GetProperty("SchemaVersion").GetInt32() != MaaNopConfig.CurrentSchemaVersion
-                || root.GetProperty("SelectedTasks")[0].GetString() != "RealTask"
-                || root.GetProperty("ExplicitOptions").EnumerateObject().Any()) {
+                || root.GetProperty("Configurations")[0].GetProperty("SelectedTasks")[0].GetString() != "RealTask"
+                || root.GetProperty("Configurations")[0].GetProperty("ExplicitOptions").EnumerateObject().Any()) {
                 throw new InvalidOperationException(
                     $"MaaNOP Config SchemaVersion {MaaNopConfig.CurrentSchemaVersion} 验证失败。");
             }
@@ -208,7 +217,8 @@ internal static class SelfTestRunner
         project.SetInputValue("ServerRange", "server_range", "978");
         project.SetSelectedCase("Nested", "Off");
         using (var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath))) {
-            var explicitOptions = configDocument.RootElement.GetProperty("ExplicitOptions");
+            var explicitOptions = configDocument.RootElement.GetProperty("Configurations")[0]
+                .GetProperty("ExplicitOptions");
             if (explicitOptions.GetProperty("ServerRange").GetProperty("Inputs")
                     .GetProperty("server_range").GetString() != "978"
                 || explicitOptions.GetProperty("Nested").GetProperty("SelectedCase")
@@ -240,7 +250,7 @@ internal static class SelfTestRunner
             throw new InvalidOperationException("PI nested option active graph 验证失败。");
         }
         using (var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath))) {
-            if (configDocument.RootElement.GetProperty("ExplicitOptions")
+            if (configDocument.RootElement.GetProperty("Configurations")[0].GetProperty("ExplicitOptions")
                     .GetProperty("Nested").GetProperty("SelectedCase").GetString() != "Off") {
                 throw new InvalidOperationException("MaaNOP Config dormant intent 保留验证失败。");
             }
@@ -373,7 +383,7 @@ internal static class SelfTestRunner
             throw new InvalidOperationException("执行计划删除与顺序保持验证失败。");
         }
         using var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath));
-        var persisted = configDocument.RootElement.GetProperty("SelectedTasks")
+        var persisted = configDocument.RootElement.GetProperty("Configurations")[0].GetProperty("SelectedTasks")
             .EnumerateArray().Select(item => item.GetString()).ToArray();
         if (!persisted.SequenceEqual(new[] { "WhitespaceDescriptionTask", "RealTask", "LongLabelTask" })) {
             throw new InvalidOperationException("SelectedTasks 持久化顺序验证失败。");
@@ -622,7 +632,7 @@ internal static class SelfTestRunner
         } finally {
             window.AllowClose();
             window.Close();
-            coordinator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
         }
     }
 

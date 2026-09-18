@@ -2,6 +2,18 @@
 
 ## 当前阶段
 
+2026-09-18：实现多份独立任务配置：Tab 切换、新建空配置并激活、同名重命名、直接删除及激活位置持久化。
+配置以稳定 Id 区分，独立保存 SelectedTasks 和 ExplicitOptions；删除当前项选择左邻或右邻，最后一份不可删除。
+参数仍在任务卡编辑，失焦事件绑定来源配置 Id；保存失败保留原文件和当前 Tab，沿用整个工作区的运行锁。
+Schema V1 首次加载包装为 V2，不重解释显式参数；无效 active 选首项，空列表/读取异常退回可用空配置。
+异常原文件在首次真实编辑保存前按原始 bytes 备份，备份失败不覆盖；PI 语义失效仅阻止该配置运行。
+Resolver 复用现有解析，RunPlan、Protocol、Worker 和 Child Session 生产代码未改动；同步架构、领域与相关 ADR。
+GUI/Worker Release 构建通过（0 警告/错误）；完整 test-automated.ps1 通过，包括 GUI/Worker 自检、
+C# 更新客户端测试、Rust Engine 测试和 Clippy；多配置专项自检、120 列及 diff 空白检查通过。
+修正自检 DisposeAsync 在 UI 同步上下文中同步等待造成的阻塞，仅调整测试清理方式。
+临时离屏 GUI 检查通过：真实键盘失焦归属、非法输入、文件锁下保存失败阻止切换、同名/长名称和
+1180×760、920×640 布局，截图已目检。未执行真实游戏运行、多 DPI 或实际桌面交互验收，未同步安装目录或发布。
+
 2026-09-18：执行计划任务卡折叠时，在任务名后显示当前参数摘要；直接读取现有 ProjectConfigurationView，
 复用编辑器的 GlobalOptions → TaskOptions 及 ActiveChildren 深度优先原始顺序，包含默认值和显式值。
 input 使用可见 label/value，select/switch 使用 option label/当前 case label，参数以 ` · ` 分隔。

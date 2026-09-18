@@ -11,6 +11,7 @@ public sealed class ProjectPlanModule
 {
     private readonly ProjectDefinition _project;
     private readonly MaaNopConfigStore _configStore;
+    private MaaNopConfig _config;
 
     private ProjectPlanModule(ProjectDefinition project, MaaNopConfigStore configStore)
     {
@@ -20,10 +21,7 @@ public sealed class ProjectPlanModule
             .Select(task => new ProjectTaskChoice(task.Name, task.Label, task.Description))
             .ToArray();
 
-        var config = configStore.Load();
-        ValidateConfigShape(config);
-        ValidateSelectedTasks(config);
-        SelectedTaskNames = config.SelectedTasks.ToArray();
+        _config = configStore.Load();
     }
 
     public string ProjectName => _project.Provenance.Name;
@@ -31,7 +29,58 @@ public sealed class ProjectPlanModule
     public string RuntimeProfileDigest => _project.RuntimeProfileDigest;
     public string SourceInterfaceDigest => _project.Provenance.SourceInterfaceDigest;
     public IReadOnlyList<ProjectTaskChoice> Tasks { get; }
-    public IReadOnlyList<string> SelectedTaskNames { get; private set; }
+    public IReadOnlyList<string> SelectedTaskNames => LoadConfig().SelectedTasks;
+    public Guid ActiveConfigurationId => _config.ActiveConfigurationId;
+    public string? LoadWarning => _configStore.LoadWarning;
+    public IReadOnlyList<TaskConfiguration> Configurations => _config.Configurations;
+
+    public Guid CreateConfiguration()
+    {
+        var configuration = new TaskConfiguration {
+            Id = Guid.NewGuid(), Name = $"配置 {_config.Configurations.Count + 1}"
+        };
+        SaveConfig(_config with {
+            ActiveConfigurationId = configuration.Id,
+            Configurations = _config.Configurations.Append(configuration).ToArray()
+        });
+        return configuration.Id;
+    }
+
+    public void ActivateConfiguration(Guid id)
+    {
+        _ = FindConfiguration(id);
+        if (id != ActiveConfigurationId) {
+            SaveConfig(_config with { ActiveConfigurationId = id });
+        }
+    }
+
+    public void RenameConfiguration(Guid id, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) {
+            throw new InvalidDataException("配置名称不能为空。");
+        }
+        var configuration = FindConfiguration(id);
+        if (configuration.Name != name.Trim()) {
+            SaveConfiguration(configuration with { Name = name.Trim() });
+        }
+    }
+
+    public bool DeleteConfiguration(Guid id)
+    {
+        var index = _config.Configurations.ToList().FindIndex(item => item.Id == id);
+        if (index < 0 || _config.Configurations.Count == 1) {
+            return false;
+        }
+        var active = id == ActiveConfigurationId
+            ? _config.Configurations[index == 0 ? 1 : index - 1].Id : ActiveConfigurationId;
+        SaveConfig(_config with {
+            ActiveConfigurationId = active,
+            Configurations = _config.Configurations.Where(item => item.Id != id).ToArray()
+        });
+        return true;
+    }
+
+    public void ValidateConfiguration() => ValidateActiveConfiguration(LoadConfig());
 
     public static ProjectPlanModule Open(string projectDirectory, string configPath)
     {
@@ -49,8 +98,7 @@ public sealed class ProjectPlanModule
 
         var updated = config with { SelectedTasks = config.SelectedTasks.Append(taskName).ToArray() };
         ValidateActiveConfiguration(updated);
-        _configStore.Save(updated);
-        SelectedTaskNames = updated.SelectedTasks;
+        SaveConfiguration(updated);
         return true;
     }
 
@@ -64,9 +112,7 @@ public sealed class ProjectPlanModule
         var updated = config with {
             SelectedTasks = config.SelectedTasks.Where(name => name != taskName).ToArray()
         };
-        ValidateActiveConfiguration(updated);
-        _configStore.Save(updated);
-        SelectedTaskNames = updated.SelectedTasks;
+        SaveConfiguration(updated);
         return true;
     }
 
@@ -89,8 +135,7 @@ public sealed class ProjectPlanModule
         selected.Insert(targetIndex, taskName);
         var updated = config with { SelectedTasks = selected };
         ValidateActiveConfiguration(updated);
-        _configStore.Save(updated);
-        SelectedTaskNames = updated.SelectedTasks;
+        SaveConfiguration(updated);
         return true;
     }
 
@@ -101,11 +146,14 @@ public sealed class ProjectPlanModule
         if (!config.SelectedTasks.Contains(taskName, StringComparer.Ordinal)) {
             throw new InvalidOperationException($"task {taskName} 不在当前执行计划中。 ");
         }
-        ValidateActiveConfiguration(config);
         return BuildConfiguration(config, taskName);
     }
 
     public ProjectConfigurationView SetInputValue(string optionName, string inputName, string value)
+        => SetInputValue(ActiveConfigurationId, optionName, inputName, value);
+
+    public ProjectConfigurationView SetInputValue(
+        Guid configurationId, string optionName, string inputName, string value)
     {
         var option = FindOption(optionName);
         if (option.Kind != OptionDefinitionKind.Input) {
@@ -117,17 +165,20 @@ public sealed class ProjectPlanModule
                 nameof(inputName));
         }
 
-        var config = LoadConfig();
+        var config = FindConfiguration(configurationId);
         var values = ExplicitOptionIntent.ReadInputs(option, config)
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         values[inputName] = value;
         var updated = ReplaceExplicit(config, optionName, ExplicitOptionIntent.CreateInputs(values));
         ValidateActiveConfiguration(updated);
-        _configStore.Save(updated);
+        SaveConfiguration(updated);
         return BuildConfiguration(updated);
     }
 
     public ProjectConfigurationView SetSelectedCase(string optionName, string selectedCase)
+        => SetSelectedCase(ActiveConfigurationId, optionName, selectedCase);
+
+    public ProjectConfigurationView SetSelectedCase(Guid configurationId, string optionName, string selectedCase)
     {
         var option = FindOption(optionName);
         if (option.Kind is not (OptionDefinitionKind.Select or OptionDefinitionKind.Switch)) {
@@ -141,10 +192,10 @@ public sealed class ProjectPlanModule
                 nameof(selectedCase));
         }
 
-        var config = LoadConfig();
+        var config = FindConfiguration(configurationId);
         var updated = ReplaceExplicit(config, optionName, ExplicitOptionIntent.CreateSelectedCase(selectedCase));
         ValidateActiveConfiguration(updated);
-        _configStore.Save(updated);
+        SaveConfiguration(updated);
         return BuildConfiguration(updated);
     }
 
@@ -181,32 +232,30 @@ public sealed class ProjectPlanModule
         return new RunStartAttempt(Guid.NewGuid(), plan, CanonicalDigest.ComputePlanDigestV1(plan));
     }
 
-    private static void ValidateConfigShape(MaaNopConfig config)
+    private TaskConfiguration LoadConfig() => FindConfiguration(ActiveConfigurationId);
+
+    private TaskConfiguration FindConfiguration(Guid id) =>
+        _config.Configurations.SingleOrDefault(item => item.Id == id)
+        ?? throw new InvalidOperationException("目标配置已不存在。");
+
+    private void SaveConfiguration(TaskConfiguration configuration)
     {
-        if (config.SchemaVersion != MaaNopConfig.CurrentSchemaVersion) {
-            throw new InvalidDataException(
-                $"首片只接受 SchemaVersion {MaaNopConfig.CurrentSchemaVersion} MaaNOP Config。 ");
-        }
-        if (config.SelectedTasks.Count != config.SelectedTasks.Distinct(StringComparer.Ordinal).Count()) {
-            throw new InvalidDataException("SelectedTasks 不能包含重复 task；当前不支持同一 Task 多实例。 ");
-        }
-        foreach (var (optionName, value) in config.ExplicitOptions) {
-            if (string.IsNullOrWhiteSpace(optionName) || value.ValueKind != JsonValueKind.Object) {
-                throw new InvalidDataException("ExplicitOptions key 必须为非空 option name，value 必须为 object。 ");
-            }
-        }
+        var updated = _config with {
+            Configurations = _config.Configurations.Select(item => item.Id == configuration.Id ? configuration : item)
+                .ToArray()
+        };
+        SaveConfig(updated);
     }
 
-    private MaaNopConfig LoadConfig()
+    private void SaveConfig(MaaNopConfig config)
     {
-        var config = _configStore.Load();
-        ValidateConfigShape(config);
+        _configStore.Save(config);
+        _config = config;
+    }
+
+    private void ValidateActiveConfiguration(TaskConfiguration config)
+    {
         ValidateSelectedTasks(config);
-        return config;
-    }
-
-    private void ValidateActiveConfiguration(MaaNopConfig config)
-    {
         foreach (var taskName in config.SelectedTasks) {
             _ = ProjectOptionResolver.Resolve(_project, FindTask(taskName), config);
         }
@@ -215,13 +264,13 @@ public sealed class ProjectPlanModule
         }
     }
 
-    private ProjectConfigurationView BuildConfiguration(MaaNopConfig config)
+    private ProjectConfigurationView BuildConfiguration(TaskConfiguration config)
     {
         var taskName = config.SelectedTasks.FirstOrDefault();
         return BuildConfiguration(config, taskName);
     }
 
-    private ProjectConfigurationView BuildConfiguration(MaaNopConfig config, string? taskName)
+    private ProjectConfigurationView BuildConfiguration(TaskConfiguration config, string? taskName)
     {
         var global = BuildEditors(_project.GlobalOptions, config);
         var task = taskName is null
@@ -230,7 +279,7 @@ public sealed class ProjectPlanModule
         return new ProjectConfigurationView(global, task);
     }
 
-    private void ValidateSelectedTasks(MaaNopConfig config)
+    private void ValidateSelectedTasks(TaskConfiguration config)
     {
         foreach (var taskName in config.SelectedTasks) {
             if (!_project.Tasks.Any(task => task.Name == taskName)) {
@@ -239,10 +288,10 @@ public sealed class ProjectPlanModule
         }
     }
 
-    private IReadOnlyList<ProjectOptionEditor> BuildEditors(IReadOnlyList<string> names, MaaNopConfig config) =>
+    private IReadOnlyList<ProjectOptionEditor> BuildEditors(IReadOnlyList<string> names, TaskConfiguration config) =>
         names.Select(name => BuildEditor(name, config)).ToArray();
 
-    private ProjectOptionEditor BuildEditor(string optionName, MaaNopConfig config)
+    private ProjectOptionEditor BuildEditor(string optionName, TaskConfiguration config)
     {
         var option = FindOption(optionName);
         if (option.Kind == OptionDefinitionKind.Input) {
@@ -282,7 +331,7 @@ public sealed class ProjectPlanModule
         _project.Options.GetValueOrDefault(optionName)
         ?? throw new ArgumentException($"PI 中不存在 option：{optionName}。", nameof(optionName));
 
-    private static MaaNopConfig ReplaceExplicit(MaaNopConfig config, string optionName, JsonElement value)
+    private static TaskConfiguration ReplaceExplicit(TaskConfiguration config, string optionName, JsonElement value)
     {
         var values = config.ExplicitOptions.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         values[optionName] = value;

@@ -22,7 +22,7 @@ public sealed record ProjectConfigurationView(
 
 internal static class ExplicitOptionIntent
 {
-    internal static IReadOnlyDictionary<string, string> ReadInputs(OptionDefinition option, MaaNopConfig config)
+    internal static IReadOnlyDictionary<string, string> ReadInputs(OptionDefinition option, TaskConfiguration config)
     {
         if (!config.ExplicitOptions.TryGetValue(option.Name, out var element)) {
             return new Dictionary<string, string>(StringComparer.Ordinal);
@@ -55,7 +55,7 @@ internal static class ExplicitOptionIntent
         return result;
     }
 
-    internal static string? ReadSelectedCase(OptionDefinition option, MaaNopConfig config)
+    internal static string? ReadSelectedCase(OptionDefinition option, TaskConfiguration config)
     {
         if (!config.ExplicitOptions.TryGetValue(option.Name, out var element)) {
             return null;

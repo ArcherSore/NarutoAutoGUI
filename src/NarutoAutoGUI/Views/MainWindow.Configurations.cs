@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -6,14 +6,13 @@ using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Worker;
 using WpfButton = System.Windows.Controls.Button;
 using WpfTextBox = System.Windows.Controls.TextBox;
-using ContextMenu = System.Windows.Controls.ContextMenu;
-using MenuItem = System.Windows.Controls.MenuItem;
 
 namespace NarutoAutoGUI.Views;
 
 public partial class MainWindow
 {
     private bool _committingConfigurationInput;
+    private WpfTextBox? _configurationNameEditor;
 
     private bool CanEditConfiguration => _projectPlan is not null && !_busy && !_exitInProgress
         && _sessionSnapshot.State is not (ChildSessionState.Connecting or ChildSessionState.Disconnecting)
@@ -25,16 +24,65 @@ public partial class MainWindow
     {
         var project = _projectPlan!;
         var existing = ConfigurationTabs.Items.Cast<TabItem>().ToArray();
-        if (!existing.Select(item => (Id: (Guid)item.Tag, Name: item.ToolTip as string))
-            .SequenceEqual(project.Configurations.Select(item => (item.Id, (string?)item.Name)))) {
+        if (!existing.Select(item => (Id: (Guid)item.Tag, Name: AutomationProperties.GetName(item)))
+            .SequenceEqual(project.Configurations.Select(item => (item.Id, item.Name)))) {
             ConfigurationTabs.Items.Clear();
             foreach (var configuration in project.Configurations) {
+                var header = new Grid();
+                var label = new TextBlock {
+                    Text = configuration.Name, MaxWidth = 150, Margin = new Thickness(0, 0, 16, 0),
+                    FontSize = 14,
+                    VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis
+                };
+                header.Children.Add(label);
+                var delete = new WpfButton {
+                    Tag = configuration.Id, Style = (Style)FindResource("Configuration.Delete"),
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+                    IsEnabled = project.Configurations.Count > 1,
+                    Content = new Wpf.Ui.Controls.SymbolIcon { Symbol = Wpf.Ui.Controls.SymbolRegular.Dismiss16,
+                        FontSize = 10 }
+                };
+                AutomationProperties.SetName(delete, $"删除配置 {configuration.Name}");
+                delete.PreviewMouseLeftButtonDown += (_, e) => {
+                    if (!CanEditConfiguration || _configurationNameEditor is not null
+                        || !CommitFocusedConfigurationInput()) {
+                        e.Handled = true;
+                    } else {
+                        delete.Focus();
+                        delete.CaptureMouse();
+                        e.Handled = true;
+                    }
+                };
+                delete.PreviewMouseLeftButtonUp += (_, e) => {
+                    if (delete.IsMouseCaptured) {
+                        delete.ReleaseMouseCapture();
+                        if (delete.IsMouseOver) {
+                            DeleteConfiguration_Click(delete, e);
+                        }
+                        e.Handled = true;
+                    }
+                };
+                delete.Click += DeleteConfiguration_Click;
+                header.Children.Add(delete);
                 var tab = new TabItem {
-                    Tag = configuration.Id, ToolTip = configuration.Name, Padding = new Thickness(10, 6, 10, 6),
-                    Header = new TextBlock {
-                        Text = configuration.Name, MaxWidth = 150, TextTrimming = TextTrimming.CharacterEllipsis
-                    },
-                    ContextMenu = CreateConfigurationMenu(configuration.Id)
+                    Tag = configuration.Id, Header = header,
+                    Style = (Style)FindResource("Configuration.Tab")
+                };
+                label.SetBinding(TextBlock.FontWeightProperty,
+                    new System.Windows.Data.Binding(nameof(FontWeight)) { Source = tab });
+                label.SetBinding(TextBlock.ForegroundProperty,
+                    new System.Windows.Data.Binding(nameof(Foreground)) { Source = tab });
+                tab.MouseDoubleClick += (_, e) => {
+                    if (e.ChangedButton == MouseButton.Left && !delete.IsMouseOver) {
+                        BeginConfigurationRename(tab);
+                        e.Handled = true;
+                    }
+                };
+                tab.KeyDown += (_, e) => {
+                    if (e.Key == Key.F2) {
+                        BeginConfigurationRename(tab);
+                        e.Handled = true;
+                    }
                 };
                 AutomationProperties.SetName(tab, configuration.Name);
                 ConfigurationTabs.Items.Add(tab);
@@ -46,41 +94,31 @@ public partial class MainWindow
         _ = Dispatcher.BeginInvoke(() => selected.BringIntoView());
     }
 
-    private ContextMenu CreateConfigurationMenu(Guid id)
+    private void ConfigurationScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        var menu = new ContextMenu();
-        var rename = new MenuItem { Header = "重命名", Tag = id };
-        rename.Click += RenameConfiguration_Click;
-        var delete = new MenuItem { Header = "删除配置", Tag = id };
-        delete.Click += DeleteConfiguration_Click;
-        menu.Items.Add(rename);
-        menu.Items.Add(delete);
-        menu.Opened += (_, _) => {
-            rename.IsEnabled = CanEditConfiguration;
-            delete.IsEnabled = CanEditConfiguration && _projectPlan!.Configurations.Count > 1;
-        };
-        return menu;
-    }
-
-    private void ConfigurationMenuButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!CanEditConfiguration || !CommitFocusedConfigurationInput() || sender is not WpfButton button) {
-            return;
+        if (sender is ScrollViewer { ScrollableWidth: > 0 } scroll && CanEditConfiguration) {
+            scroll.ScrollToHorizontalOffset(scroll.HorizontalOffset - e.Delta / 120.0 * 64);
+            e.Handled = true;
         }
-        button.ContextMenu = CreateConfigurationMenu(_projectPlan!.ActiveConfigurationId);
-        button.ContextMenu.PlacementTarget = button;
-        button.ContextMenu.IsOpen = true;
     }
 
     private void ConfigurationActions_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (!CommitFocusedConfigurationInput()) {
+        if (_configurationNameEditor is not null) {
+            if (!_configurationNameEditor.IsMouseOver) {
+                _ = CommitConfigurationName();
+                e.Handled = true;
+            }
+        } else if (!CommitFocusedConfigurationInput()) {
             e.Handled = true;
         }
     }
 
     private void ConfigurationActions_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (_configurationNameEditor is not null) {
+            return;
+        }
         if (!CommitFocusedConfigurationInput()) {
             e.Handled = true;
         }
@@ -92,7 +130,7 @@ public partial class MainWindow
             return true;
         }
         return editor.Tag is OptionInputTag ? CommitOptionInput(editor)
-            : editor == ConfigurationNameEditor ? CommitConfigurationName() : true;
+            : editor == _configurationNameEditor ? CommitConfigurationName() : true;
     }
 
     private void NewConfigurationButton_Click(object sender, RoutedEventArgs e)
@@ -111,14 +149,14 @@ public partial class MainWindow
 
     private void DeleteConfiguration_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is MenuItem { Tag: Guid id }) {
+        if (sender is WpfButton { Tag: Guid id }) {
             ChangeConfiguration(() => _projectPlan!.DeleteConfiguration(id));
         }
     }
 
     private void ChangeConfiguration(Action change)
     {
-        if (!CanEditConfiguration || !CommitFocusedConfigurationInput()) {
+        if (!CanEditConfiguration || _configurationNameEditor is not null || !CommitFocusedConfigurationInput()) {
             if (_projectPlan is not null) {
                 RestoreConfigurationSelection();
             }
@@ -129,8 +167,7 @@ public partial class MainWindow
             _pendingStartAttempt = null;
             _expandedTaskName = null;
             _dragTaskName = null;
-            ConfigurationNameEditor.Tag = null;
-            ConfigurationNamePanel.Visibility = Visibility.Collapsed;
+            EndConfigurationRename();
             CloseTaskDescriptionDrawer();
             RenderTaskPlan();
         } catch (Exception exception) {
@@ -149,18 +186,38 @@ public partial class MainWindow
         }
     }
 
-    private void RenameConfiguration_Click(object sender, RoutedEventArgs e)
+    private void BeginConfigurationRename(TabItem tab)
     {
-        if (!CanEditConfiguration || !CommitFocusedConfigurationInput()
-            || sender is not MenuItem { Tag: Guid id }) {
+        if (!CanEditConfiguration || _configurationNameEditor is not null || !CommitFocusedConfigurationInput()) {
             return;
         }
-        var configuration = _projectPlan!.Configurations.Single(item => item.Id == id);
-        ConfigurationNameEditor.Tag = id;
-        ConfigurationNameEditor.Text = configuration.Name;
-        ConfigurationNamePanel.Visibility = Visibility.Visible;
-        ConfigurationNameEditor.Focus();
-        ConfigurationNameEditor.SelectAll();
+        var header = (Grid)tab.Header;
+        var label = (TextBlock)header.Children[0];
+        var editor = new WpfTextBox {
+            Tag = (Guid)tab.Tag, Text = label.Text, MinWidth = 40, MaxWidth = 150,
+            FontSize = label.FontSize, FontWeight = label.FontWeight,
+            Height = 30, MinHeight = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0),
+            Margin = label.Margin, VerticalContentAlignment = VerticalAlignment.Center
+        };
+        AutomationProperties.SetName(editor, "配置名称");
+        editor.LostKeyboardFocus += ConfigurationNameEditor_LostKeyboardFocus;
+        editor.KeyDown += ConfigurationNameEditor_KeyDown;
+        _configurationNameEditor = editor;
+        label.Visibility = Visibility.Hidden;
+        header.Children.Add(editor);
+        editor.Focus();
+        editor.SelectAll();
+    }
+
+    private void EndConfigurationRename()
+    {
+        if (_configurationNameEditor is not { Parent: Grid header } editor) {
+            return;
+        }
+        _configurationNameEditor = null;
+        editor.Tag = null;
+        header.Children.Remove(editor);
+        header.Children[0].Visibility = Visibility.Visible;
     }
 
     private void ConfigurationNameEditor_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
@@ -176,26 +233,29 @@ public partial class MainWindow
             _ = CommitConfigurationName();
             e.Handled = true;
         } else if (e.Key == Key.Escape) {
-            ConfigurationNameEditor.Tag = null;
-            ConfigurationNamePanel.Visibility = Visibility.Collapsed;
+            EndConfigurationRename();
+            ConfigurationTabs.Focus();
             e.Handled = true;
         }
     }
 
     private bool CommitConfigurationName()
     {
-        if (!CanEditConfiguration || ConfigurationNameEditor.Tag is not Guid id || _committingConfigurationInput) {
+        if (!CanEditConfiguration || _configurationNameEditor is not { Tag: Guid id } editor
+            || _committingConfigurationInput) {
             return true;
         }
         _committingConfigurationInput = true;
         try {
-            _projectPlan!.RenameConfiguration(id, ConfigurationNameEditor.Text);
-            ConfigurationNameEditor.Tag = null;
-            ConfigurationNamePanel.Visibility = Visibility.Collapsed;
-            TryRenderTaskPlan();
+            if (!string.IsNullOrWhiteSpace(editor.Text)) {
+                _projectPlan!.RenameConfiguration(id, editor.Text);
+            }
+            EndConfigurationRename();
+            RestoreConfigurationSelection();
             return true;
         } catch (Exception exception) {
-            ConfigurationNameEditor.Text = _projectPlan!.Configurations.Single(item => item.Id == id).Name;
+            editor.Text = _projectPlan!.Configurations.Single(item => item.Id == id).Name;
+            EndConfigurationRename();
             HandleOperationError("保存配置名称失败", exception);
             return false;
         } finally {

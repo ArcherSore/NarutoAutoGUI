@@ -668,6 +668,10 @@ public partial class MainWindow : FluentWindow
 
     private Border CreatePlanItem(ProjectTaskChoice task, bool expanded)
     {
+        var configuration = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
+            .GetConfiguration(task.Name);
+        var hasParameters = EnumerateOptions(configuration)
+            .Any(option => option.Kind != ProjectOptionKind.Input || option.Inputs.Count != 0);
         var container = new Border {
             Tag = task,
             Style = (Style)FindResource(expanded ? "PlanItemExpandedStyle" : "PlanItemStyle")
@@ -689,12 +693,10 @@ public partial class MainWindow : FluentWindow
             layout.Children.Add(accentLine);
         }
 
-        layout.Children.Add(CreatePlanItemHeader(task, expanded));
+        layout.Children.Add(CreatePlanItemHeader(task, expanded, hasParameters));
 
-        if (expanded) {
-            var editor = CreateParameterEditor(
-                (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 "))
-                .GetConfiguration(task.Name));
+        if (expanded && hasParameters) {
+            var editor = CreateParameterEditor(configuration);
             var editorBorder = new Border {
                 Margin = new Thickness(12, 0, 12, 10),
                 Padding = new Thickness(0, 8, 0, 0),
@@ -709,7 +711,7 @@ public partial class MainWindow : FluentWindow
         return container;
     }
 
-    private Grid CreatePlanItemHeader(ProjectTaskChoice task, bool expanded)
+    private Grid CreatePlanItemHeader(ProjectTaskChoice task, bool expanded, bool hasParameters)
     {
         var header = new Grid {
             MinHeight = 44,
@@ -728,17 +730,21 @@ public partial class MainWindow : FluentWindow
         dragHandle.PreviewKeyDown += PlanDragHandle_PreviewKeyDown;
         header.Children.Add(dragHandle);
 
+        var label = new TextBlock {
+            Text = task.Label,
+            FontWeight = FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center
+        };
         var main = new WpfButton {
             Tag = task,
-            Content = new TextBlock {
-                Text = task.Label,
-                FontWeight = FontWeights.SemiBold,
-                TextWrapping = TextWrapping.Wrap
-            },
+            Content = label,
             Style = (Style)FindResource("PlanHeaderButtonStyle")
         };
-        AutomationProperties.SetName(main, $"{task.Label}，{(expanded ? "已展开" : "已折叠")}");
-        AutomationProperties.SetHelpText(main, expanded ? "点击折叠参数" : "点击展开参数");
+        var state = hasParameters ? (expanded ? "已展开" : "已折叠") : (expanded ? "已选中" : "未选中");
+        AutomationProperties.SetName(main, $"{task.Label}，{state}");
+        AutomationProperties.SetHelpText(main, hasParameters
+            ? (expanded ? "点击折叠参数" : "点击展开参数") : (expanded ? "点击取消选中" : "点击选中任务"));
         main.Click += PlanItemHeader_Click;
         Grid.SetColumn(main, 1);
         header.Children.Add(main);
@@ -772,13 +778,7 @@ public partial class MainWindow : FluentWindow
             }
         }
 
-        if (panel.Children.Count != 0) {
-            return panel;
-        }
-        return new TextBlock {
-            Text = "当前任务没有可编辑参数。",
-            Style = (Style)FindResource("MutedTextStyle")
-        };
+        return panel;
     }
 
     private Border CreateInputEditor(ProjectOptionEditor option, ProjectInputEditor input)

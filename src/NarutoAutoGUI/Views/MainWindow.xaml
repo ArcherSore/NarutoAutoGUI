@@ -1065,6 +1065,9 @@
                             </Grid.ColumnDefinitions>
                             <Button x:Name="ReleaseNotesButton" Content="查看更新说明" Click="ReleaseNotes_Click"
                                     Style="{StaticResource Update.SecondaryButton}" Height="36" Padding="8,0" />
+                            <Button x:Name="LaterUpdateButton" Content="稍后" Click="CloseUpdate_Click"
+                                    Visibility="Collapsed" Style="{StaticResource Update.SecondaryButton}"
+                                    Height="36" Padding="8,0" />
                             <Button x:Name="CancelDownloadButton" Content="取消下载" Visibility="Collapsed"
                                     Click="CancelDownload_Click" Style="{StaticResource Update.SecondaryButton}"
                                     Height="36" Padding="8,0" />

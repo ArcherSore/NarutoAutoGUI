@@ -214,7 +214,8 @@ public partial class MainWindow
             });
             _preparedReference = await engine.PrepareAsync(AppContext.BaseDirectory, update.Descriptor,
                 progress, _updateCancellation.Token);
-            UpdateDownloadStatus.Text = "更新已就绪。";
+            UpdateDownloadStatus.Text = "";
+            UpdateDownloadStatus.Visibility = Visibility.Collapsed;
         } catch (OperationCanceledException) {
             UpdateDownloadStatus.Text = "已取消，可重新下载。";
         } catch (Exception exception) {
@@ -231,10 +232,6 @@ public partial class MainWindow
     private async void InstallUpdate_Click(object sender, RoutedEventArgs e)
     {
         if (_updateBusy || _exitInProgress || _preparedReference is null) { return; }
-        if (System.Windows.MessageBox.Show("安装更新将停止任务、关闭桌面分身及其中程序，并重启 MaaNOP。\n"
-            + "保留 config、logs、debug、cache；\n"
-            + "其余程序目录内容（包括自行添加的文件）会被替换或删除。是否继续？", "安装 MaaNOP 更新",
-            MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) { return; }
         _updateBusy = true;
         UpdateUpdaterControls();
         try {
@@ -242,6 +239,7 @@ public partial class MainWindow
         } catch (Exception exception) {
             _logger.Warn("安装交接失败。", exception);
             UpdateDownloadStatus.Text = exception.Message;
+            UpdateDownloadStatus.Visibility = Visibility.Visible;
         } finally {
             _updateBusy = false;
             UpdateUpdaterControls();
@@ -273,6 +271,7 @@ public partial class MainWindow
         var available = _updateCheckState == UpdateCheckState.UpdateAvailable;
         var latest = _updateCheckState == UpdateCheckState.UpToDate;
         var failed = _updateCheckState == UpdateCheckState.CheckFailed;
+        var ready = available && _preparedReference is not null;
         UpdateNavigationBadge.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
         UpdateNavigationLoading.Visibility = checking ? Visibility.Visible : Visibility.Collapsed;
         UpdateNavigationIcon.Visibility = checking ? Visibility.Hidden : Visibility.Visible;
@@ -284,27 +283,32 @@ public partial class MainWindow
         DialogCheckUpdateButton.Visibility = checking || available ? Visibility.Collapsed : Visibility.Visible;
         DialogCheckUpdateButton.Content = failed ? "重试" : "检查更新";
         UpdateAvailableActions.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
-        UpdateAppIcon.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
-        UpdateStateIconBackground.Visibility = available ? Visibility.Collapsed : Visibility.Visible;
-        UpdateStateIconBackground.Background = (Brush)FindResource(latest ? "Brush.Success" : "Brush.Primary.Surface");
-        UpdateStateIcon.Foreground = (Brush)FindResource(latest ? "Brush.Text.Inverse" : "Brush.Primary");
-        UpdateStateIcon.Symbol = latest ? Wpf.Ui.Controls.SymbolRegular.Checkmark24
+        UpdateAppIcon.Visibility = available && !ready ? Visibility.Visible : Visibility.Collapsed;
+        UpdateStateIconBackground.Visibility = available && !ready ? Visibility.Collapsed : Visibility.Visible;
+        UpdateStateIconBackground.Background = (Brush)FindResource(
+            latest || ready ? "Brush.Success" : "Brush.Primary.Surface");
+        UpdateStateIcon.Foreground = (Brush)FindResource(latest || ready ? "Brush.Text.Inverse" : "Brush.Primary");
+        UpdateStateIcon.Symbol = latest || ready ? Wpf.Ui.Controls.SymbolRegular.Checkmark24
             : failed ? Wpf.Ui.Controls.SymbolRegular.Warning24 : Wpf.Ui.Controls.SymbolRegular.ArrowSync24;
-        UpdateStateTitle.Text = available ? "发现新版本" : latest ? "已是最新版本" : failed ? "检查更新失败" : "检查软件更新";
-        UpdateStateTitle.Visibility = available ? Visibility.Collapsed : Visibility.Visible;
-        UpdateVersionBadge.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
+        UpdateStateTitle.Text = ready ? "更新已就绪" : available ? "发现新版本"
+            : latest ? "已是最新版本" : failed ? "检查更新失败" : "检查软件更新";
+        UpdateStateTitle.Visibility = available && !ready ? Visibility.Collapsed : Visibility.Visible;
+        UpdateVersionBadge.Visibility = available && !ready ? Visibility.Visible : Visibility.Collapsed;
         UpdateVersionText.Text = available ? _updateCheck?.Update?.Version : CurrentUpdateVersion;
         UpdateInstalledVersionText.Text = available ? $"当前版本：{CurrentUpdateVersion}" : "";
         UpdateInstalledVersionText.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
-        UpdateResultMessage.Text = _updateCheckState switch {
+        UpdateResultMessage.Text = ready ? "安装将关闭桌面分身并重启，配置会保留。" : _updateCheckState switch {
             UpdateCheckState.CheckFailed => UpdateCheckStatus.Text,
             UpdateCheckState.UpToDate => "当前已是最新版本，感谢使用！",
             UpdateCheckState.UpdateAvailable => "",
             _ => "查看是否有可用的新版本。"
         };
-        UpdateResultMessage.Visibility = available ? Visibility.Collapsed : Visibility.Visible;
-        UpdateNotesPanel.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
-        ReleaseNotesButton.Visibility = _preparingUpdate ? Visibility.Collapsed : Visibility.Visible;
+        UpdateResultMessage.Visibility = available && !ready ? Visibility.Collapsed : Visibility.Visible;
+        UpdateNotesPanel.Visibility = available && !ready ? Visibility.Visible : Visibility.Collapsed;
+        ReleaseNotesButton.Visibility = _preparingUpdate || _preparedReference is not null
+            ? Visibility.Collapsed : Visibility.Visible;
+        LaterUpdateButton.Visibility = _preparedReference is not null ? Visibility.Visible : Visibility.Collapsed;
+        LaterUpdateButton.IsEnabled = !_updateBusy && !_exitInProgress;
         RefreshUpdateNotes();
     }
 }

@@ -2,6 +2,16 @@
 
 ## 当前阶段
 
+2026-09-18：执行计划任务卡折叠时，在任务名后显示当前参数摘要；直接读取现有 ProjectConfigurationView，
+复用编辑器的 GlobalOptions → TaskOptions 及 ActiveChildren 深度优先原始顺序，包含默认值和显式值。
+input 使用可见 label/value，select/switch 使用 option label/当前 case label，参数以 ` · ` 分隔。
+标题与摘要间为 1 DIP 浅色 Border，摘要使用剩余星号列、NoWrap 和 CharacterEllipsis；右侧按钮保留独立 Auto 列。
+展开或无参数时不显示摘要及分隔线，不缓存第二份配置，不新增 Tooltip。
+GUI x64 Release 构建（0 警告/错误）及 GUI `--self-test` 通过；临时专项检查覆盖默认/显式值、嵌套启用树、
+顺序、展开/空参数和 320/540/800 DIP 标题行的截断及按钮空间，离屏渲染已目检，120 列和 diff 空白检查通过。
+仅同步主 GUI DLL 至 `D:\MaaNOP-win-x86_64-v2.4.0`，SHA256 与构建产物一致；旧 DLL 备份于
+`artifacts/task-summary-backup-20260918-114026/`。未执行目标目录自检或实际桌面交互验收；ROADMAP 不变。
+
 2026-09-18：修正「菜单」文字与导航项未对齐：WPF-UI 4.3 默认 PaneTitle 左边缘多出 6 DIP，
 仅调整原生切换按钮标题的 Margin，保留原生展开/折叠行为。离屏坐标检查先复现 51/45 DIP 不一致，
 修复后菜单/首页均为 45 DIP；1180×760、920×640 与展开/折叠回归通过，已目检截图。

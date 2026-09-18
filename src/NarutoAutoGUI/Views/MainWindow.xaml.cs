@@ -697,7 +697,8 @@ public partial class MainWindow : FluentWindow
             layout.Children.Add(accentLine);
         }
 
-        layout.Children.Add(CreatePlanItemHeader(task, expanded, hasParameters));
+        var summary = expanded ? string.Empty : CreateParameterSummary(configuration);
+        layout.Children.Add(CreatePlanItemHeader(task, expanded, hasParameters, summary));
 
         if (expanded && hasParameters) {
             var editor = CreateParameterEditor(configuration);
@@ -715,7 +716,7 @@ public partial class MainWindow : FluentWindow
         return container;
     }
 
-    private Grid CreatePlanItemHeader(ProjectTaskChoice task, bool expanded, bool hasParameters)
+    private Grid CreatePlanItemHeader(ProjectTaskChoice task, bool expanded, bool hasParameters, string summary)
     {
         var header = new Grid {
             MinHeight = 44,
@@ -740,9 +741,37 @@ public partial class MainWindow : FluentWindow
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center
         };
+        var title = new Grid();
+        title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        title.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        if (summary.Length != 0) {
+            label.TextWrapping = TextWrapping.NoWrap;
+            title.Children.Add(label);
+            var separator = new Border {
+                Width = 1,
+                Height = 16,
+                Margin = new Thickness(10, 0, 10, 0),
+                Background = (WpfBrush)FindResource("Brush.Border.Subtle"),
+                VerticalAlignment = VerticalAlignment.Center,
+                SnapsToDevicePixels = true
+            };
+            Grid.SetColumn(separator, 1);
+            title.Children.Add(separator);
+            var summaryText = new TextBlock {
+                Text = summary,
+                FontWeight = FontWeights.Normal,
+                Foreground = (WpfBrush)FindResource("Brush.Text.Secondary"),
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(summaryText, 2);
+            title.Children.Add(summaryText);
+        }
         var main = new WpfButton {
             Tag = task,
-            Content = label,
+            Content = summary.Length == 0 ? label : title,
             Style = (Style)FindResource("PlanHeaderButtonStyle")
         };
         var state = hasParameters ? (expanded ? "已展开" : "已折叠") : (expanded ? "已选中" : "未选中");
@@ -767,6 +796,24 @@ public partial class MainWindow : FluentWindow
         Grid.SetColumn(remove, 3);
         header.Children.Add(remove);
         return header;
+    }
+
+    private static string CreateParameterSummary(ProjectConfigurationView configuration)
+    {
+        var parameters = new List<string>();
+        foreach (var option in EnumerateOptions(configuration)) {
+            var label = string.IsNullOrWhiteSpace(option.Label) ? option.Name : option.Label;
+            if (option.Kind == ProjectOptionKind.Input) {
+                foreach (var input in option.Inputs) {
+                    var inputLabel = string.IsNullOrWhiteSpace(input.Label) ? label : input.Label;
+                    parameters.Add($"{inputLabel}：{input.Value}");
+                }
+            } else {
+                var selected = option.Cases.Single(item => item.Name == option.SelectedCase);
+                parameters.Add($"{label}：{selected.Label}");
+            }
+        }
+        return string.Join(" · ", parameters);
     }
 
     private FrameworkElement CreateParameterEditor(ProjectConfigurationView configuration)

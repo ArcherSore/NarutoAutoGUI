@@ -116,7 +116,7 @@ public partial class MainWindow
             return;
         }
         _renderedUpdateNotes = notes;
-        UpdateNotesViewer.Document = ReleaseNotesDocument.Create(
+        UpdateNotesViewer.Document = MarkdownDocument.Create(
             string.IsNullOrWhiteSpace(notes) ? "此版本暂无更新说明。" : notes, OpenUpdateLink);
     }
 

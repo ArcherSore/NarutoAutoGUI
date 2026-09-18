@@ -12,8 +12,8 @@ using WpfInline = System.Windows.Documents.Inline;
 
 namespace NarutoAutoGUI.Views;
 
-// Render release text as native document elements: no HTML, scripts or remote image loading.
-internal static class ReleaseNotesDocument
+// Render Markdown as native document elements: no HTML, scripts or remote image loading.
+internal static class MarkdownDocument
 {
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UseAutoLinks().UsePipeTables().UseTaskLists().UseEmphasisExtras().DisableHtml().Build();

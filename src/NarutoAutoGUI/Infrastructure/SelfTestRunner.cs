@@ -382,17 +382,32 @@ internal static class SelfTestRunner
 
     private static void VerifyTaskDescriptionMarkup()
     {
-        var markup = "<span>1. 第一行</span><br><span>2. 第二行</span><br><span>3. 第三行</span>";
-        var rendered = MainWindow.RenderDescriptionText(markup);
-        if (rendered != "1. 第一行\n2. 第二行\n3. 第三行") {
-            throw new InvalidOperationException("PI task description span/br 标记解析验证失败。");
+        var document = MarkdownDocument.Create(
+            "# 标题\n\n普通段落 **粗体** *斜体* `code` [链接](https://example.com)  \n换行"
+            + "\n\n- 第一项\n- 第二项\n\n3. 第三项\n4. 第四项", _ => { });
+        var blocks = document.Blocks.ToArray();
+        var heading = (System.Windows.Documents.Paragraph)blocks[0];
+        var paragraph = (System.Windows.Documents.Paragraph)blocks[1];
+        var inlines = paragraph.Inlines.ToArray();
+        var unordered = (System.Windows.Documents.List)blocks[2];
+        var ordered = (System.Windows.Documents.List)blocks[3];
+        if (heading.FontSize <= document.FontSize || paragraph.LineHeight < document.FontSize
+            || !inlines.Any(inline => inline.FontWeight == System.Windows.FontWeights.Bold)
+            || !inlines.Any(inline => inline.FontStyle == System.Windows.FontStyles.Italic)
+            || !inlines.OfType<System.Windows.Documents.Run>().Any(run => run.Text == "code")
+            || !inlines.OfType<System.Windows.Documents.Hyperlink>().Any(link =>
+                link.NavigateUri.AbsoluteUri == "https://example.com/")
+            || !inlines.OfType<System.Windows.Documents.LineBreak>().Any()
+            || unordered.MarkerStyle != System.Windows.TextMarkerStyle.Disc || unordered.ListItems.Count != 2
+            || ordered.MarkerStyle != System.Windows.TextMarkerStyle.Decimal || ordered.StartIndex != 3) {
+            throw new InvalidOperationException("任务说明 Markdown 标题、段落、强调、代码、链接或列表验证失败。");
         }
-        if (MainWindow.RenderDescriptionText(null) != string.Empty
-            || MainWindow.RenderDescriptionText("   ") != "   "
-            || MainWindow.RenderDescriptionText("无标记纯文本") != "无标记纯文本"
-            || MainWindow.RenderDescriptionText("<BR>大写</BR>") != "\n大写"
-            || MainWindow.RenderDescriptionText("<span style=\"color:red\">x</span>") != "x") {
-            throw new InvalidOperationException("PI task description 标记边界验证失败。");
+        const string legacy = "<span>旧说明</span><br>下一行";
+        var legacyDocument = MarkdownDocument.Create(legacy, _ => { });
+        var text = new System.Windows.Documents.TextRange(
+            legacyDocument.ContentStart, legacyDocument.ContentEnd).Text.TrimEnd();
+        if (text != legacy || MarkdownDocument.Create(string.Empty, _ => { }).Blocks.Count != 0) {
+            throw new InvalidOperationException("旧 HTML 不应剥离标签或转换换行；空说明应为空文档。");
         }
     }
 

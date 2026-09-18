@@ -186,7 +186,6 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="44" />
         </Grid.RowDefinitions>
 
         <ui:TitleBar
@@ -199,12 +198,14 @@
         </ui:TitleBar>
 
         <ui:NavigationView x:Name="MainNavigation"
+                           Loaded="MainNavigation_Loaded"
                            Grid.Row="1"
                            PaneDisplayMode="Left"
+                           PaneTitle="菜单"
                            OpenPaneLength="168"
                            IsPaneOpen="True"
                            IsPaneVisible="True"
-                           IsPaneToggleVisible="False"
+                           IsPaneToggleVisible="True"
                            IsBackButtonVisible="Collapsed"
                            IsTopSeparatorVisible="False"
                            HeaderVisibility="Collapsed"
@@ -218,21 +219,21 @@
                                        Click="NavigationItem_Click" />
             </ui:NavigationView.MenuItems>
             <ui:NavigationView.FooterMenuItems>
-                <ui:NavigationViewItem x:Name="UpdateNavigationItem" Click="ViewUpdate_Click">
-                    <Grid>
-                        <!-- Place the bell in NavigationViewItem's reserved icon slot. -->
-                        <Grid Width="20" Height="20" Margin="-30,0,0,0" HorizontalAlignment="Left"
-                              VerticalAlignment="Center" IsHitTestVisible="False">
-                            <ui:SymbolIcon x:Name="UpdateNavigationIcon" Symbol="Alert24" FontSize="20" />
-                            <Ellipse x:Name="UpdateNavigationBadge" Width="6" Height="6"
-                                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0"
-                                     Fill="#F53F3F" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
-                            <ui:ProgressRing x:Name="UpdateNavigationLoading" Width="14" Height="14"
-                                             IsIndeterminate="True" Visibility="Collapsed"
-                                             Foreground="{StaticResource Preview.Accent}" />
-                        </Grid>
-                        <TextBlock Text="更新" VerticalAlignment="Center" />
-                    </Grid>
+                <ui:NavigationViewItem x:Name="UpdateNavigationItem" Content="更新" Click="ViewUpdate_Click">
+                    <ui:NavigationViewItem.Icon>
+                        <views:NavigationIcon>
+                            <Grid Width="20" Height="20" HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" IsHitTestVisible="False">
+                                <ui:SymbolIcon x:Name="UpdateNavigationIcon" Symbol="Alert24" FontSize="20" />
+                                <Ellipse x:Name="UpdateNavigationBadge" Width="6" Height="6"
+                                         HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0"
+                                         Fill="#F53F3F" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
+                                <ui:ProgressRing x:Name="UpdateNavigationLoading" Width="14" Height="14"
+                                                 IsIndeterminate="True" Visibility="Collapsed"
+                                                 Foreground="{StaticResource Preview.Accent}" />
+                            </Grid>
+                        </views:NavigationIcon>
+                    </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
                 <ui:NavigationViewItem x:Name="SettingsNavigationItem"
                                        Content="设置"
@@ -246,7 +247,7 @@
                     <!-- Home and Settings intentionally remain in this single XAML namescope. -->
                     <Grid x:Name="HomeView">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" MinWidth="360" />
+                            <ColumnDefinition Width="*" MinWidth="320" />
                             <ColumnDefinition x:Name="RuntimeSidebarColumn" Width="392" />
                         </Grid.ColumnDefinitions>
                         <Grid Grid.Column="0">
@@ -798,14 +799,10 @@
                                         Height="1"
                                         Margin="0,14,0,14"
                                         Background="{StaticResource Brush.Border}" />
-                                <ScrollViewer Grid.Row="2"
-                                              HorizontalScrollBarVisibility="Disabled"
-                                              VerticalScrollBarVisibility="Auto">
-                                    <TextBlock x:Name="TaskDescriptionDrawerText"
-                                               Margin="0,0,8,0"
-                                               TextWrapping="Wrap"
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                </ScrollViewer>
+                                <FlowDocumentScrollViewer x:Name="TaskDescriptionViewer" Grid.Row="2"
+                                                          HorizontalScrollBarVisibility="Disabled"
+                                                          VerticalScrollBarVisibility="Auto"
+                                                          IsToolBarVisible="False" Zoom="100" />
                             </Grid>
                         </Border>
                     </Grid>
@@ -813,91 +810,6 @@
             </ui:NavigationView.ContentOverlay>
         </ui:NavigationView>
 
-        <Border Grid.Row="2"
-                Padding="16,0"
-                Background="{StaticResource Brush.Surface}"
-                BorderBrush="{StaticResource Brush.Border}"
-                BorderThickness="0,1,0,0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse x:Name="GlobalReadyIndicator"
-                             Width="6"
-                             Height="6"
-                             Margin="0,0,6,0"
-                             VerticalAlignment="Center"
-                             Fill="{StaticResource Brush.Text.Muted}" />
-                    <TextBlock x:Name="GlobalReadyText"
-                               Text="整体：尚未就绪"
-                               Style="{StaticResource MonospaceMetaTextStyle}" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="1" Margin="20,0,0,0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse x:Name="GlobalWorkerIndicator"
-                             Width="6"
-                             Height="6"
-                             Margin="0,0,6,0"
-                             VerticalAlignment="Center"
-                             Fill="{StaticResource Brush.Text.Muted}" />
-                    <TextBlock x:Name="GlobalWorkerStatusText"
-                               Text="Worker：尚未启动"
-                               Style="{StaticResource MonospaceMetaTextStyle}" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="2" Margin="20,0,0,0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse x:Name="GlobalSessionIndicator"
-                             Width="6"
-                             Height="6"
-                             Margin="0,0,6,0"
-                             VerticalAlignment="Center"
-                             Fill="{StaticResource Brush.Text.Muted}" />
-                    <TextBlock x:Name="GlobalSessionStatusText"
-                               Text="Session：未运行"
-                               Style="{StaticResource MonospaceMetaTextStyle}" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="3" Margin="20,0,0,0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse x:Name="GlobalIpcIndicator"
-                             Width="6"
-                             Height="6"
-                             Margin="0,0,6,0"
-                             VerticalAlignment="Center"
-                             Fill="{StaticResource Brush.Text.Muted}" />
-                    <TextBlock x:Name="GlobalIpcStatusText"
-                               Text="IPC：未连接"
-                               Style="{StaticResource MonospaceMetaTextStyle}" />
-                </StackPanel>
-
-                <TextBlock x:Name="OperationStatusText"
-                           Grid.Column="4"
-                           Margin="24,0,0,0"
-                           HorizontalAlignment="Right"
-                           VerticalAlignment="Center"
-                           Text="就绪"
-                           TextTrimming="CharacterEllipsis"
-                           Style="{StaticResource SecondaryTextStyle}"
-                           AutomationProperties.Name="操作状态"
-                           AutomationProperties.LiveSetting="Polite" />
-                <ProgressBar x:Name="OperationProgressBar"
-                             Grid.Column="5"
-                             Width="120"
-                             Height="4"
-                             Margin="16,0,0,0"
-                             VerticalAlignment="Center"
-                             IsIndeterminate="True"
-                             Visibility="Collapsed"
-                             IsTabStop="False"
-                             AutomationProperties.Name="操作正在进行" />
-            </Grid>
-        </Border>
     </Grid>
         <Grid x:Name="PreviewOverlay" Panel.ZIndex="200" Visibility="Collapsed"
               Focusable="True" KeyboardNavigation.TabNavigation="Cycle" SizeChanged="PreviewOverlay_SizeChanged"

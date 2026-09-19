@@ -81,17 +81,22 @@ NarutoAutoGUI/
   WorkerLogEntry。运行动态按接收顺序倒序呈现，最新一条高亮；自动滚动跟随顶部，翻阅旧记录时暂停并保留阅读位置。
   清空只影响当前 GUI 列表，不清除文件日志或重置 Worker sequence cursor。实时 sequence gap 通过 `log.getSince`
   补取，Worker Instance 变化时 cursor 重置。
-- Active Run 的 `WorkerRuntimeExecution` 持有唯一后台 producer，使用已有 `MaaWin32Controller.GetCachedImage` 约每
-  200 ms 采样一次，最多缓存一个 640×360 PNG latest frame，并在释放 Controller 前结束 producer。GUI 只在可见 Home
-  上用 `preview.getLatest(runId, afterRevision)` 单飞轮询；Idle、Stopping、终态、断线、Worker replacement、
-  隐藏/最小化窗口时立即清空显示并恢复 Placeholder。正常取消后的迟到 Preview response 按 requestId 消费并丢弃，
-  不作为无法关联的 envelope 断开 Worker IPC。
-- Home 的只读放大层直接绑定同一个已解码 ImageSource，不启动第二条轮询；卡片按帧比例适配窗口，关闭按钮、遮罩或 Esc 返回卡片。
-- Preview 使用 `sampledAtUtc` 表示 Worker 复制 cached image 的时间，并以 Worker Instance、Run 和 revision 校验陈旧响应。
-  revision 由 Run 级计数器分配，跨 Plan Item 持续递增；每项独立清理预览缓存，新 Run 重新从 1 开始。
-  PNG 为 1400 KiB、完整响应为 2 MiB，仍位于现有 4 MiB Named Pipe JSON frame 内；不增加二进制通道或第二个 Controller。
+- `WorkerPreviewService` 独立于 Run 持有一个只截图 Controller，按 MaaNOP 配置截图，最高约 30 fps，
+  最多一次截图在途；游戏发现和失效检查约每 2 秒执行。窗口关闭清空，重开自动恢复；暂时截图失败保帧低频重试。
+  旧截图返回后才释放 Controller，预览回收不进入任务 Stop 或 Child Session 退出的等待链。
+- 协议版本为 2，Pipe 名称不变；`preview.start/renew/stop` 仅传控制信息，2 秒续订、6 秒单调时钟租约。
+  像素使用固定 925696 字节的文件映射与受限 Global Mutex 跨 Session 传输，GUI 只读打开。
+  每帧为最大 640×360、保持比例的 BGR32；非阻塞锁保证完整提交，竞争时跳帧，清空请求持续重试。
+- GUI 只有在启动完成、Worker Ready/Fresh、Session 匹配且首页预览可见时订阅，与 Active Run 无关。
+  隐藏/最小化 GUI、离开首页、收起预览或连接失效时撤销并清空；仅隐藏 RDP 宿主继续预览。
+  同 Worker 重连取得 Fresh Snapshot 后建立新订阅。取消后迟到控制响应沿用 requestId 消费，不误断主 Pipe。
+- `LivePreviewClient` 后台续订和读取，`PreviewPresentation` 用两个固定像素缓冲合并最新帧，
+  最多一个 Dispatcher 回调在途；显示前重新检查目标代次，显示操作不持采样锁。
+  GUI 复用 WriteableBitmap，放大层共用同一图像，不另采高清。身份包含 Worker、Session、订阅和目标代次，
+  `sampledAtUtc` 是截图完成时间；每个目标的 revision 独立递增，不依赖 Run 或 Plan Item。
+  当前实现与未完成的实机验证见 [验收记录](issues/preview-live-validation.md)。
 - Diagnostic log 不进入 GUI 列表，继续覆盖应用/Session/RDP 生命周期、程序路径、PID、SessionId、异常堆栈
-  以及 Child Session 模块返回的 Win32/COM 错误码。Preview 采样、编码、IPC 或 GUI 解码失败也只写限频诊断，不能改变
+  以及 Child Session 模块返回的 Win32/COM 错误码。Preview 采样、映射或显示失败也只写限频诊断，不能改变
   Run、Worker admission、cleanup 或 Child Session 生命周期。
 
 ## MaaNOP 完整包更新
@@ -127,5 +132,5 @@ GUI 使用设置上方的侧栏更新入口、全局居中 Modal Dialog 和 Sett
 
 当前执行计划支持把 PI 中不重复的 top-level task 按 `SelectedTasks` 顺序组成多个 Plan Item，并由同一 Worker 逐项执行；
 当前项失败或用户停止时不再启动后续项。仍不支持同一 Task 多实例独立参数、DAG、依赖、条件或并行调度。Active Run 期间
-继续提供固定约 5 FPS 的只读 latest-frame Preview。不包含自动登录/扫码、自动隐藏子桌面、自动开始 MaaNOP 任务、Worker
+提供最高约 30 FPS、允许自然降帧的只读连续 Preview。不包含自动登录/扫码、自动隐藏子桌面、自动开始 MaaNOP 任务、Worker
 replacement UI、可调 Preview FPS、截图历史、录制、保存截图、画面点击控制或可调分辨率/DPI。

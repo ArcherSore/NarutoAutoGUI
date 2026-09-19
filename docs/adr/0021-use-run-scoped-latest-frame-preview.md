@@ -1,5 +1,9 @@
 # Preview 使用 Run-scoped latest frame，不参与执行状态
 
+状态：以下描述当前 V1 实现。后续规格由 [ADR 0024](0024-preview-is-independent-of-active-runs.md)
+调整产品范围与 Controller 所有权，并由 [ADR 0025](0025-separate-preview-pixels-from-control-ipc.md)
+替代采集节奏、帧身份及 PNG/JSON 传输约束；[新规格](../issues/preview-live-spec.md) 已发布，尚未实现。
+
 Home 游戏画面 Preview V1 是纯 QoL 功能。每个 `WorkerRuntimeExecution` 在现有
 `MaaWin32Controller` 创建成功后拥有一个 `LatestFramePreview`，并在 Run 停止或 cleanup 时先停止它，再按原顺序释放
 MaaFramework execution context。Preview 不创建第二个 Controller，不把 Controller 生命周期扩展到 Worker，也不改变

@@ -315,22 +315,31 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             cancellationToken);
     }
 
-    internal async Task<PreviewGetLatestResponse> GetLatestPreviewAsync(Guid runId, long afterRevision, CancellationToken cancellationToken = default)
+    internal async Task<PreviewResponse> SendPreviewAsync(
+        string operation, PreviewRequest request, CancellationToken cancellationToken = default)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(afterRevision);
-        Guid workerInstanceId;
+        uint sessionId;
+        int workerPid;
         lock (_gate) {
             var worker = Snapshot.WorkerSnapshot;
             if (Snapshot.Observation != WorkerObservation.Connected || !Snapshot.SnapshotFresh
-                || worker?.ActiveRun?.RunId != runId) {
-                throw new InvalidOperationException("当前 Worker/Snapshot/Run 状态不允许读取 Preview。 ");
+                || worker?.WorkerInstanceId != request.WorkerInstanceId) {
+                throw new InvalidOperationException("当前 Worker/Snapshot 不允许预览。");
             }
-            workerInstanceId = worker.WorkerInstanceId;
+            sessionId = worker.ChildSessionId;
+            workerPid = worker.WorkerPid;
         }
-
-        var response = await SendRequestAsync<PreviewGetLatestRequest, PreviewGetLatestResponse>(
-            ProtocolOperations.PreviewGetLatest, new PreviewGetLatestRequest(runId, afterRevision), cancellationToken);
-        ValidatePreviewResponse(response, workerInstanceId, runId, afterRevision);
+        var response = await SendRequestAsync<PreviewRequest, PreviewResponse>(operation, request, cancellationToken);
+        var expected = new PreviewIdentity(request.WorkerInstanceId, sessionId, request.SubscriptionId);
+        if (response.Identity != expected || !Enum.IsDefined(response.State) || response.Generation < 0) {
+            throw new ProtocolException("Preview response identity/state 非法。");
+        }
+        if (response.Descriptor is { } descriptor) {
+            PreviewBuffer.ValidateDescriptor(descriptor);
+            if (descriptor.Identity != expected || descriptor.OwnerPid != workerPid) {
+                throw new ProtocolException("Preview descriptor 不属于当前 Worker。");
+            }
+        }
         return response;
     }
 
@@ -863,47 +872,6 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         }
         if (snapshot.ActiveRun is not null && snapshot.ActiveRun.State != snapshot.RunState) {
             throw new ProtocolException("Worker Snapshot activeRun.state 与 runState 不一致。 ");
-        }
-    }
-
-    private static void ValidatePreviewResponse(
-        PreviewGetLatestResponse response, Guid workerInstanceId, Guid runId, long afterRevision)
-    {
-        if (response.WorkerInstanceId != workerInstanceId) {
-            throw new ProtocolException("Preview response workerInstanceId 不匹配。 ");
-        }
-
-        switch (response.Disposition) {
-            case "frame":
-                if (response.RunId != runId || response.Revision <= afterRevision
-                    || response.SampledAtUtc is not { Kind: DateTimeKind.Utc }
-                    || response.PixelWidth is not > 0 || response.PixelHeight is not > 0
-                    || response.PixelWidth > ProtocolConstants.MaximumPreviewPixelWidth
-                    || response.PixelHeight > ProtocolConstants.MaximumPreviewPixelHeight
-                    || response.ContentType != "image/png" || response.PngBytes is not { Length: > 0 } pngBytes
-                    || pngBytes.Length > ProtocolConstants.MaximumPreviewPngBytes || response.Reason is not null) {
-                    throw new ProtocolException("Preview frame response schema 非法。 ");
-                }
-                break;
-            case "not_modified":
-                if (response.RunId != runId || response.Revision > afterRevision
-                    || response.SampledAtUtc is not null || response.PixelWidth is not null
-                    || response.PixelHeight is not null || response.ContentType is not null
-                    || response.PngBytes is not null || response.Reason is not null) {
-                    throw new ProtocolException("Preview not_modified response schema 非法。 ");
-                }
-                break;
-            case "unavailable":
-                if (response.RunId is not null && response.RunId != runId
-                    || response.Revision != 0 || response.SampledAtUtc is not null
-                    || response.PixelWidth is not null || response.PixelHeight is not null
-                    || response.ContentType is not null || response.PngBytes is not null
-                    || string.IsNullOrWhiteSpace(response.Reason)) {
-                    throw new ProtocolException("Preview unavailable response schema 非法。 ");
-                }
-                break;
-            default:
-                throw new ProtocolException($"未知 Preview disposition：{response.Disposition}。 ");
         }
     }
 

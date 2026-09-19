@@ -44,9 +44,6 @@ public partial class MainWindow : FluentWindow
     private const int MaximumGuiLogEntries = 1000;
     private HwndSource? _previewWindowSource;
     private const string PlanItemDragDataFormat = "NarutoAutoGUI.PlanItem";
-    private static readonly TimeSpan PreviewPollingInterval = TimeSpan.FromMilliseconds(
-        ProtocolConstants.PreviewIntervalMilliseconds);
-    private static readonly TimeSpan PreviewFailureLogInterval = TimeSpan.FromSeconds(30);
 
     private enum MainSection
     {
@@ -79,10 +76,7 @@ public partial class MainWindow : FluentWindow
     private CancellationTokenSource? _previewPollingCancellation;
     private Task? _previewPollingTask;
     private Guid? _previewWorkerInstanceId;
-    private Guid? _previewRunId;
-    private long _previewRevision;
     private int _previewPollingGeneration;
-    private DateTime _nextPreviewFailureLogAtUtc = DateTime.MinValue;
     private bool _allowClose;
     private bool _busy;
     private string _operationStatus = string.Empty;
@@ -1284,84 +1278,62 @@ public partial class MainWindow : FluentWindow
 
     private void UpdatePreviewPolling()
     {
-        if (!TryGetPreviewTarget(out var workerInstanceId, out var runId)) {
+        if (!TryGetPreviewTarget(out var workerId)) {
             StopPreviewPolling();
             return;
         }
-        if (_previewWorkerInstanceId == workerInstanceId && _previewRunId == runId
-            && _previewPollingTask is { IsCompleted: false }) {
+        if (_previewWorkerInstanceId == workerId && _previewPollingTask is { IsCompleted: false }) {
             return;
         }
-
         StopPreviewPolling();
-        _previewWorkerInstanceId = workerInstanceId;
-        _previewRunId = runId;
-        _previewRevision = 0;
+        _previewWorkerInstanceId = workerId;
+        var generation = _previewPollingGeneration;
         var cancellation = new CancellationTokenSource();
         _previewPollingCancellation = cancellation;
-        var generation = _previewPollingGeneration;
-        _previewPollingTask = RunPreviewPollingAsync(workerInstanceId, runId, generation, cancellation);
+        var client = new LivePreviewClient(_workerCoordinator,
+            error => _logger.Warn("Preview 传输失败。", error));
+        _previewPollingTask = Task.Run(async () =>
+        {
+            try {
+                await client.RunAsync(workerId,
+                    action => Dispatcher.InvokeAsync(action, DispatcherPriority.Background, cancellation.Token).Task,
+                    (frame, pixels) =>
+                    {
+                        if (_previewPollingGeneration != generation || cancellation.IsCancellationRequested
+                            || !TryGetPreviewTarget(out var current) || current != workerId) {
+                            return;
+                        }
+                        if (frame is { State: PreviewState.Streaming, Revision: > 0 }) {
+                            DisplayPreviewFrame(frame, pixels);
+                        } else {
+                            ShowPreviewPlaceholder(frame?.State == PreviewState.WaitingForWindow
+                                ? "等待游戏窗口" : "等待游戏画面");
+                        }
+                    }, cancellation.Token);
+            } catch (OperationCanceledException) when (cancellation.IsCancellationRequested) {
+            } finally {
+                cancellation.Dispose();
+            }
+        });
     }
 
-    private async Task RunPreviewPollingAsync(
-        Guid workerInstanceId, Guid runId, int generation, CancellationTokenSource cancellation)
-    {
-        try {
-            while (!cancellation.IsCancellationRequested) {
-                var cycleStarted = Stopwatch.GetTimestamp();
-                try {
-                    var response = await _workerCoordinator.GetLatestPreviewAsync(
-                        runId, _previewRevision, cancellation.Token);
-                    if (!IsCurrentPreviewTarget(workerInstanceId, runId, generation)) {
-                        return;
-                    }
-                    if (response.Disposition == "frame") {
-                        _previewRevision = response.Revision;
-                        DisplayPreviewFrame(response);
-                    }
-                } catch (OperationCanceledException) when (cancellation.IsCancellationRequested) {
-                    return;
-                } catch (Exception exception) {
-                    LogPreviewFailure("Preview 请求或显示失败。", exception);
-                }
-
-                var remaining = PreviewPollingInterval - Stopwatch.GetElapsedTime(cycleStarted);
-                if (remaining > TimeSpan.Zero) {
-                    await Task.Delay(remaining, cancellation.Token);
-                }
-            }
-        } catch (OperationCanceledException) when (cancellation.IsCancellationRequested) {
-        } finally {
-            cancellation.Dispose();
-            if (_previewPollingGeneration == generation) {
-                _previewPollingCancellation = null;
-                _previewPollingTask = null;
-            }
-        }
-    }
-
-    private bool TryGetPreviewTarget(out Guid workerInstanceId, out Guid runId)
+    private bool TryGetPreviewTarget(out Guid workerId)
     {
         var worker = _workerSnapshot.WorkerSnapshot;
-        var activeRun = worker?.ActiveRun;
-        if (!_exitInProgress && IsVisible && WindowState != WindowState.Minimized
-            && HomeView.Visibility == Visibility.Visible
+        var preparing = _busy && _operationStatus.StartsWith("正在准备运行环境", StringComparison.Ordinal);
+        if (!_exitInProgress && !_environmentPreparationFailed && !preparing && IsVisible
+            && WindowState != WindowState.Minimized && HomeView.Visibility == Visibility.Visible
+            && (PreviewCardContent.Visibility == Visibility.Visible || PreviewOverlay.Visibility == Visibility.Visible)
+            && _sessionSnapshot.State is ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden
             && _workerSnapshot.Observation == WorkerObservation.Connected && _workerSnapshot.SnapshotFresh
-            && worker is not null && activeRun?.State is RunState.Starting or RunState.Running) {
-            workerInstanceId = worker.WorkerInstanceId;
-            runId = activeRun.RunId;
+            && worker is { WorkerState: WorkerState.Ready }
+            && worker.ChildSessionId == _sessionSnapshot.ChildSessionId) {
+            workerId = worker.WorkerInstanceId;
             return true;
         }
-
-        workerInstanceId = Guid.Empty;
-        runId = Guid.Empty;
+        workerId = Guid.Empty;
         return false;
     }
-
-    private bool IsCurrentPreviewTarget(Guid workerInstanceId, Guid runId, int generation) =>
-        _previewPollingGeneration == generation && _previewWorkerInstanceId == workerInstanceId
-        && _previewRunId == runId && TryGetPreviewTarget(out var currentWorkerInstanceId, out var currentRunId)
-        && currentWorkerInstanceId == workerInstanceId && currentRunId == runId;
 
     private void StopPreviewPolling()
     {
@@ -1370,13 +1342,10 @@ public partial class MainWindow : FluentWindow
         _previewPollingCancellation = null;
         _previewPollingTask = null;
         _previewWorkerInstanceId = null;
-        _previewRunId = null;
-        _previewRevision = 0;
-        _nextPreviewFailureLogAtUtc = DateTime.MinValue;
         try {
             cancellation?.Cancel();
-        } catch (Exception exception) {
-            LogPreviewFailure("停止 Preview 轮询失败。", exception);
+        } catch (ObjectDisposedException) {
+            // The background reader may already have completed.
         }
         ShowPreviewPlaceholder();
     }
@@ -1388,6 +1357,7 @@ public partial class MainWindow : FluentWindow
         MainNavigation.IsEnabled = false;
         EnsureModalWindowHook();
         PreviewOverlay.Focus();
+        UpdatePreviewPolling();
     }
 
     private bool IsGlobalModalOpen => PreviewOverlay.Visibility == Visibility.Visible
@@ -1424,6 +1394,7 @@ public partial class MainWindow : FluentWindow
         RemovePreviewWindowHook();
         MainNavigation.IsEnabled = true;
         ExpandPreviewButton.Focus();
+        UpdatePreviewPolling();
     }
 
     private void RemovePreviewWindowHook()
@@ -1460,46 +1431,29 @@ public partial class MainWindow : FluentWindow
         var expanded = PreviewCardContent.Visibility != Visibility.Visible;
         PreviewCardContent.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
         PreviewChevron.Symbol = expanded ? WpfSymbolRegular.ChevronUp16 : WpfSymbolRegular.ChevronDown16;
+        UpdatePreviewPolling();
     }
 
-    private void DisplayPreviewFrame(PreviewGetLatestResponse response)
+    private void DisplayPreviewFrame(PreviewFrameInfo frame, byte[] pixels)
     {
-        using var stream = new MemoryStream(response.PngBytes!, writable: false);
-        var image = new BitmapImage();
-        image.BeginInit();
-        image.CacheOption = BitmapCacheOption.OnLoad;
-        image.StreamSource = stream;
-        image.EndInit();
-        if (image.PixelWidth != response.PixelWidth || image.PixelHeight != response.PixelHeight) {
-            throw new InvalidDataException("Preview PNG 像素尺寸与响应元数据不一致。 ");
+        if (HomePreviewImage.Source is not WriteableBitmap image
+            || image.PixelWidth != frame.Width || image.PixelHeight != frame.Height) {
+            image = new WriteableBitmap(frame.Width, frame.Height, 96, 96, PixelFormats.Bgr32, null);
+            HomePreviewImage.Source = image;
+            UpdateExpandedPreviewSize();
         }
-        image.Freeze();
-        HomePreviewImage.Source = image;
-        UpdateExpandedPreviewSize();
+        image.WritePixels(new Int32Rect(0, 0, frame.Width, frame.Height), pixels, frame.Width * 4, 0);
         HomePreviewImage.Visibility = Visibility.Visible;
         HomePreviewPlaceholder.Visibility = Visibility.Collapsed;
     }
 
-    private void ShowPreviewPlaceholder()
+    private void ShowPreviewPlaceholder(string detail = "请先连接运行环境")
     {
         HomePreviewImage.Source = null;
+        HomePreviewPlaceholder.Content = detail;
         UpdateExpandedPreviewSize();
         HomePreviewImage.Visibility = Visibility.Collapsed;
         HomePreviewPlaceholder.Visibility = Visibility.Visible;
-    }
-
-    private void LogPreviewFailure(string message, Exception exception)
-    {
-        var nowUtc = DateTime.UtcNow;
-        if (nowUtc < _nextPreviewFailureLogAtUtc) {
-            return;
-        }
-        _nextPreviewFailureLogAtUtc = nowUtc + PreviewFailureLogInterval;
-        try {
-            _logger.Warn(message, exception);
-        } catch {
-            // Preview diagnostics must never affect Run or GUI lifecycle.
-        }
     }
 
     private void OnWorkerLogReceived(object? sender, WorkerLogEntry entry)
@@ -1565,6 +1519,7 @@ public partial class MainWindow : FluentWindow
         }
 
         _sessionSnapshot = snapshot;
+        UpdatePreviewPolling();
         UpdateCommandAvailability();
     }
 

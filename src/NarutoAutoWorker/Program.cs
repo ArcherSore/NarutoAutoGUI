@@ -9,6 +9,9 @@ internal static class Program
     private static async Task<int> Main(string[] args)
     {
         try {
+            if (args.Length == 2 && args[0] == "--preview-buffer-reader") {
+                return PreviewSelfTests.RunBufferReader(args[1]);
+            }
             if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase)) {
                 return WorkerSelfTestRunner.Run();
             }
@@ -28,7 +31,7 @@ internal static class Program
                 eventArgs.Cancel = true;
                 shutdown.Cancel();
             };
-            var host = new WorkerHost(arguments, manifest);
+            using var host = new WorkerHost(arguments, manifest);
             await host.RunAsync(shutdown.Token);
             return 0;
         } catch (Exception exception) {

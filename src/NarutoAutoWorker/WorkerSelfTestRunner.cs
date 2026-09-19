@@ -8,14 +8,11 @@ internal static class WorkerSelfTestRunner
 {
     internal static int Run()
     {
+        PreviewSelfTests.Run();
         try {
             VerifyFocusProjection();
             VerifyCallbackAdapter();
             VerifyLogResponseBudget();
-            VerifyLatestFramePreview();
-            VerifyPreviewStopRejectsInFlightFrame();
-            VerifyPreviewResponseBudget();
-            VerifyPreviewResponseBudgetRejection();
             VerifyTransportWriteBeforeSendGuard();
             VerifyAgentExecutableResolution();
             VerifyAcceptedStopWinsTerminalRace();
@@ -23,7 +20,7 @@ internal static class WorkerSelfTestRunner
             VerifyTaskerTaskCallbackCompletion();
             Console.WriteLine(
                 "WORKER SELF-TEST PASS: MaaNOP string focus projection; Callback adapter; "
-                + "log response budget; latest-frame preview; preview response budget; "
+                + "log response budget; preview shared buffer; "
                 + "budget rejection; transport write guard; agent executable resolution; "
                 + "accepted stop wins terminal race; stop/cleanup serialization; "
                 + "Tasker.Task callback completion");
@@ -169,121 +166,14 @@ internal static class WorkerSelfTestRunner
         }
     }
 
-    private static void VerifyLatestFramePreview()
-    {
-        var runId = Guid.NewGuid();
-        var sampledAtUtc = new DateTime(2026, 8, 26, 8, 0, 0, DateTimeKind.Utc);
-        var failures = new List<string>();
-        var source = new ScriptedPreviewFrameSource(
-            () => new PreviewImageData(sampledAtUtc, 4, 3, [1, 2, 3]),
-            () => new PreviewImageData(sampledAtUtc.AddMilliseconds(200), 4, 3, [1, 2, 3]),
-            () => new PreviewImageData(sampledAtUtc.AddMilliseconds(400), 4, 3, [4, 5, 6]),
-            () => throw new InvalidOperationException("scripted capture failure"),
-            () => new PreviewImageData(sampledAtUtc.AddMilliseconds(800), 0, 3, [7]));
-        long revision = 0;
-        Func<long> nextRevision = () => Interlocked.Increment(ref revision);
-        var preview = new LatestFramePreview(runId, source, (_, _, message) => failures.Add(message), nextRevision);
 
-        preview.Pump(sampledAtUtc);
-        var first = preview.ReadLatest();
-        preview.Pump(sampledAtUtc.AddMilliseconds(199));
-        if (first is null || first.RunId != runId || first.Revision != 1
-            || first.SampledAtUtc != sampledAtUtc
-            || !first.PngBytes.AsSpan().SequenceEqual(new byte[] { 1, 2, 3 })
-            || source.ReadCount != 1) {
-            throw new InvalidOperationException("Preview 首帧、sampledAtUtc 或 200ms 限频验证失败。 ");
-        }
 
-        preview.Pump(sampledAtUtc.AddMilliseconds(200));
-        if (preview.ReadLatest()?.Revision != 1 || source.ReadCount != 2) {
-            throw new InvalidOperationException("Preview 重复画面不应推进 revision。 ");
-        }
-
-        preview.Pump(sampledAtUtc.AddMilliseconds(400));
-        var second = preview.ReadLatest();
-        if (second?.Revision != 2 || second.SampledAtUtc != sampledAtUtc.AddMilliseconds(400)
-            || !second.PngBytes.AsSpan().SequenceEqual(new byte[] { 4, 5, 6 })) {
-            throw new InvalidOperationException("Preview 内容变化未替换 latest frame。 ");
-        }
-
-        preview.Pump(sampledAtUtc.AddMilliseconds(600));
-        preview.Pump(sampledAtUtc.AddMilliseconds(800));
-        if (preview.ReadLatest()?.Revision != 2 || failures.Count != 1) {
-            throw new InvalidOperationException("Preview 失败隔离、旧帧保留或诊断限频验证失败。 ");
-        }
-
-        preview.Stop();
-        preview.Pump(sampledAtUtc.AddSeconds(31));
-        if (preview.ReadLatest() is not null) {
-            throw new InvalidOperationException("Preview stop 后未清空缓存，或在途生产者重新发布了画面。 ");
-        }
-
-        // The next Plan Item may start with the same image after the previous cache was cleared.
-        var nextSource = new ScriptedPreviewFrameSource(
-            () => new PreviewImageData(sampledAtUtc, 4, 3, [4, 5, 6]),
-            () => new PreviewImageData(sampledAtUtc, 4, 3, [4, 5, 6]));
-        var nextPreview = new LatestFramePreview(runId, nextSource, (_, _, _) => { }, nextRevision);
-        nextPreview.Pump(sampledAtUtc);
-        var nextFrame = nextPreview.ReadLatest();
-        if (nextFrame is null || nextFrame.RunId != runId || nextFrame.Revision != 3
-            || nextFrame.Revision <= second!.Revision) {
-            throw new InvalidOperationException("跨 Plan Item 首帧未超过上一任务的 Preview 游标。 ");
-        }
-        nextPreview.Pump(sampledAtUtc.AddMilliseconds(200));
-        nextPreview.Stop();
-        if (revision != 3 || nextPreview.ReadLatest() is not null) {
-            throw new InvalidOperationException("跨 Plan Item 后内容去重或停止清空验证失败。 ");
-        }
-
-        long newRunRevision = 0;
-        var newRunId = Guid.NewGuid();
-        var newRunSource = new ScriptedPreviewFrameSource(
-            () => new PreviewImageData(sampledAtUtc, 4, 3, [4, 5, 6]));
-        var newRunPreview = new LatestFramePreview(
-            newRunId, newRunSource, (_, _, _) => { }, () => Interlocked.Increment(ref newRunRevision));
-        newRunPreview.Pump(sampledAtUtc);
-        if (newRunPreview.ReadLatest() is not { Revision: 1 } newRunFrame || newRunFrame.RunId != newRunId) {
-            throw new InvalidOperationException("新 Run 的 Preview 游标未独立从 1 开始。 ");
-        }
-        newRunPreview.Stop();
-    }
-
-    private static void VerifyPreviewResponseBudget()
-    {
-        var pngBytes = new byte[ProtocolConstants.MaximumPreviewPngBytes];
-        var response = new PreviewGetLatestResponse(
-            "frame", Guid.NewGuid(), Guid.NewGuid(), 1, DateTime.UtcNow,
-            640, 360, "image/png", pngBytes, null);
-        var envelope = WireEnvelope.Response(ProtocolOperations.PreviewGetLatest, Guid.NewGuid(), response);
-        var serializedBytes = System.Text.Json.JsonSerializer
-            .SerializeToUtf8Bytes(envelope, ProtocolJson.Options).Length;
-        if (serializedBytes > ProtocolConstants.MaximumPreviewResponseBytes
-            || ProtocolConstants.MaximumPreviewResponseBytes >= ProtocolConstants.MaximumFramePayloadBytes) {
-            throw new InvalidOperationException("Preview PNG/base64 响应预算验证失败。 ");
-        }
-    }
-
-    private static void VerifyPreviewResponseBudgetRejection()
-    {
-        var oversizedPng = new byte[ProtocolConstants.MaximumPreviewPngBytes + 256 * 1024];
-        var response = new PreviewGetLatestResponse(
-            "frame", Guid.NewGuid(), Guid.NewGuid(), 1, DateTime.UtcNow,
-            640, 360, "image/png", oversizedPng, null);
-        var envelope = WireEnvelope.Response(ProtocolOperations.PreviewGetLatest, Guid.NewGuid(), response);
-        var serializedBytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
-            envelope, ProtocolJson.Options).Length;
-        if (serializedBytes <= ProtocolConstants.MaximumPreviewResponseBytes) {
-            throw new InvalidOperationException("超过 PNG 预算的响应应触发 2 MiB 响应预算拒绝边界。 ");
-        }
-    }
 
     private static void VerifyTransportWriteBeforeSendGuard()
     {
         var oversizedPng = new byte[3 * 1024 * 1024 + 1];
-        var response = new PreviewGetLatestResponse(
-            "frame", Guid.NewGuid(), Guid.NewGuid(), 1, DateTime.UtcNow,
-            640, 360, "image/png", oversizedPng, null);
-        var envelope = WireEnvelope.Response(ProtocolOperations.PreviewGetLatest, Guid.NewGuid(), response);
+        var envelope = WireEnvelope.Response(ProtocolOperations.LogGetSince, Guid.NewGuid(),
+            new { message = new string('x', ProtocolConstants.MaximumFramePayloadBytes + 1) });
         using var stream = new MemoryStream();
         var connection = new ProtocolConnection(stream);
         try {
@@ -294,25 +184,6 @@ internal static class WorkerSelfTestRunner
         }
     }
 
-    private static void VerifyPreviewStopRejectsInFlightFrame()
-    {
-        using var entered = new ManualResetEventSlim();
-        using var release = new ManualResetEventSlim();
-        var sampledAtUtc = new DateTime(2026, 8, 26, 9, 0, 0, DateTimeKind.Utc);
-        var source = new BlockingPreviewFrameSource(entered, release, sampledAtUtc);
-        long revision = 0;
-        var preview = new LatestFramePreview(
-            Guid.NewGuid(), source, (_, _, _) => { }, () => Interlocked.Increment(ref revision));
-        var pump = Task.Run(() => preview.Pump(sampledAtUtc));
-        if (!entered.Wait(TimeSpan.FromSeconds(2))) {
-            throw new TimeoutException("Preview 在途停止自检未进入 frame source。 ");
-        }
-        preview.Stop();
-        release.Set();
-        if (!pump.Wait(TimeSpan.FromSeconds(2)) || preview.ReadLatest() is not null || revision != 0) {
-            throw new InvalidOperationException("Preview Stop 后发布了已经在途的旧帧。 ");
-        }
-    }
 
     private static void VerifyAgentExecutableResolution()
     {
@@ -380,34 +251,22 @@ internal static class WorkerSelfTestRunner
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
         var warnings = new List<string>();
         var execution = new WorkerRuntimeExecution(
-            null!, Guid.NewGuid(), null!, 0, (_, _, message) => warnings.Add(message), () => { }, () => 1);
-        var producer = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Dispose();
-        typeof(WorkerRuntimeExecution).GetField("_previewCancellation", flags)!.SetValue(execution, cancellation);
-        typeof(WorkerRuntimeExecution).GetField("_previewProducerTask", flags)!.SetValue(execution, producer.Task);
+            null!, Guid.NewGuid(), null!, 0, (_, _, message) => warnings.Add(message), () => { });
         var cleanupMethod = typeof(WorkerRuntimeExecution).GetMethod("CleanupAsync", flags)!;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var cleanup = (Task<(bool Success, string? Error)>)cleanupMethod.Invoke(
             execution, [CancellationToken.None])!;
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var stop = execution.StopAsync(timeout.Token);
-        try {
-            if (cleanup.IsCompleted || stop.IsCompleted) {
-                throw new InvalidOperationException("在途 Preview 清理完成前，迟到 Stop 必须等待清理。 ");
-            }
-        } finally {
-            producer.TrySetResult();
-        }
         var result = await cleanup.WaitAsync(timeout.Token);
+        var stop = execution.StopAsync(timeout.Token);
         await stop.WaitAsync(timeout.Token);
         await execution.StopAsync(timeout.Token);
         if (!result.Success || warnings.Count != 0) {
-            throw new InvalidOperationException("清理后重复 Stop 不应访问 Tasker 或对已释放 Preview 产生告警。 ");
+            throw new InvalidOperationException("清理后重复 Stop 不应访问 Tasker 或产生告警。");
         }
 
         // Stop wins first, but readiness fails: cleanup must retain the unconfirmed context.
         execution = new WorkerRuntimeExecution(
-            null!, Guid.NewGuid(), null!, 0, (_, _, _) => { }, () => { }, () => 1);
+            null!, Guid.NewGuid(), null!, 0, (_, _, _) => { }, () => { });
         var ready = (TaskCompletionSource<MaaFramework.Binding.MaaTasker>)typeof(WorkerRuntimeExecution)
             .GetField("_taskerReady", flags)!.GetValue(execution)!;
         stop = execution.StopAsync(timeout.Token);
@@ -445,7 +304,7 @@ internal static class WorkerSelfTestRunner
         var runningReported = false;
         var execution = new WorkerRuntimeExecution(
             manifest, Guid.NewGuid(), item, 0,
-            (_, _, _) => { }, () => runningReported = true, () => 1);
+            (_, _, _) => { }, () => runningReported = true);
 
         execution.OnTaskerCallback(null, new MaaCallbackEventArgs(
             MaaMsg.Tasker.Task.Starting, "{}", MaaHandleType.Tasker));
@@ -462,7 +321,7 @@ internal static class WorkerSelfTestRunner
 
         var failedExecution = new WorkerRuntimeExecution(
             manifest, Guid.NewGuid(), item, 0,
-            (_, _, _) => { }, () => { }, () => 1);
+            (_, _, _) => { }, () => { });
         failedExecution.OnTaskerCallback(null, new MaaCallbackEventArgs(
             MaaMsg.Tasker.Task.Failed, "{}", MaaHandleType.Tasker));
         if (failedExecution.TaskCompletion.Status != TaskStatus.RanToCompletion
@@ -477,31 +336,5 @@ internal static class WorkerSelfTestRunner
         }
     }
 
-    private sealed class ScriptedPreviewFrameSource(params Func<PreviewImageData?>[] reads) : IPreviewFrameSource
-    {
-        private readonly Queue<Func<PreviewImageData?>> _reads = new(reads);
 
-        internal int ReadCount { get; private set; }
-
-        public PreviewImageData? ReadLatest()
-        {
-            ReadCount++;
-            return _reads.Count == 0 ? null : _reads.Dequeue()();
-        }
-    }
-
-    private sealed class BlockingPreviewFrameSource(
-        ManualResetEventSlim entered,
-        ManualResetEventSlim release,
-        DateTime sampledAtUtc) : IPreviewFrameSource
-    {
-        public PreviewImageData? ReadLatest()
-        {
-            entered.Set();
-            if (!release.Wait(TimeSpan.FromSeconds(2))) {
-                throw new TimeoutException("Preview 在途停止自检未释放 frame source。 ");
-            }
-            return new PreviewImageData(sampledAtUtc, 4, 3, [1, 2, 3]);
-        }
-    }
 }

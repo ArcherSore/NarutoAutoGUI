@@ -7,7 +7,7 @@ using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoWorker;
 
-internal sealed class WorkerHost
+internal sealed class WorkerHost : IDisposable
 {
     private sealed record DeferredStop(Guid RunId, WorkerRuntimeExecution Execution, WorkerSnapshot StoppingSnapshot);
 
@@ -26,11 +26,17 @@ internal sealed class WorkerHost
     private RunSnapshot? _lastRun;
     private WorkerRuntimeExecution? _execution;
     private long _stateRevision = 1;
+    private readonly WorkerPreviewService _preview;
+    private Guid _connectionId;
 
-    internal WorkerHost(WorkerArguments arguments, LaunchManifest manifest)
+    internal WorkerHost(WorkerArguments arguments, LaunchManifest manifest, IPreviewCaptureSource? previewSource = null)
     {
         _arguments = arguments;
         _manifest = manifest;
+        var sessionId = (uint)Process.GetCurrentProcess().SessionId;
+        _preview = new WorkerPreviewService(manifest.WorkerInstanceId, sessionId,
+            previewSource ?? new MaaPreviewCaptureSource(manifest, sessionId),
+            (level, source, message) => Log(level, source, message));
         var unavailable = new DependencyCheck(false, null, "尚未检查");
         _dependencyStatus = new DependencyStatus(
             DateTime.UtcNow,
@@ -121,6 +127,13 @@ internal sealed class WorkerHost
         }
         Log("INFO", "ipc.lifecycle", "Worker admission 成功。 ");
 
+        await ServeConnectionAsync(connection, cancellationToken);
+    }
+
+    internal async Task ServeConnectionAsync(ProtocolConnection connection, CancellationToken cancellationToken)
+    {
+        var connectionId = Guid.NewGuid();
+        _connectionId = connectionId;
         await using var events = new WorkerEventSender(connection);
         lock (_stateGate) {
             _events = events;
@@ -138,6 +151,7 @@ internal sealed class WorkerHost
                 }
             }
         } finally {
+            _preview.Disconnect(connectionId);
             lock (_stateGate) {
                 if (ReferenceEquals(_events, events)) {
                     _events = null;
@@ -171,9 +185,9 @@ internal sealed class WorkerHost
                 ProtocolOperations.LogGetSince => WireEnvelope.Response(
                     request.Operation, requestId,
                     GetLogs(ProtocolJson.Deserialize<LogGetSinceRequest>(request.Data))),
-                ProtocolOperations.PreviewGetLatest => HandlePreviewGetLatest(
-                    request.Operation, requestId,
-                    ProtocolJson.Deserialize<PreviewGetLatestRequest>(request.Data)),
+                ProtocolOperations.PreviewStart or ProtocolOperations.PreviewRenew
+                    or ProtocolOperations.PreviewStop => HandlePreview(request.Operation, requestId,
+                        ProtocolJson.Deserialize<PreviewRequest>(request.Data)),
                 _ => throw new WorkerRequestException("invalid_request", $"未知 operation：{request.Operation}。 ")
             };
         } catch (WorkerRequestException exception) {
@@ -192,9 +206,6 @@ internal sealed class WorkerHost
 
     private RunStartResponse AcceptRun(RunStartRequest request)
     {
-        // The cursor belongs to the Run, while each Plan Item owns a separate preview cache.
-        long previewRevision = 0;
-        Func<long> nextPreviewRevision = () => Interlocked.Increment(ref previewRevision);
         WorkerRuntimeExecution execution;
         RunSnapshot run;
         WorkerSnapshot snapshot;
@@ -240,7 +251,7 @@ internal sealed class WorkerHost
             _lastRun = null;
             _activeRun = run;
             _ledger.Add(request.RunId, (request.PlanDigest, null));
-            execution = CreateExecution(request.RunId, item, nextPreviewRevision);
+            execution = CreateExecution(request.RunId, item);
             _execution = execution;
             snapshot = CommitLocked();
         }
@@ -249,7 +260,7 @@ internal sealed class WorkerHost
         Log(
             "INFO", "run.lifecycle",
             $"Run 已接受：{request.RunId}，items={run.Items.Count}，first={run.Items[0].TaskName}。 ", request.RunId);
-        _ = Task.Run(() => ExecuteRunAsync(request.RunId, execution, nextPreviewRevision, _shutdown.Token));
+        _ = Task.Run(() => ExecuteRunAsync(request.RunId, execution, _shutdown.Token));
         return new RunStartResponse("accepted");
     }
 
@@ -329,7 +340,7 @@ internal sealed class WorkerHost
 
     private async Task ExecuteRunAsync(
         Guid runId, WorkerRuntimeExecution execution,
-        Func<long> nextPreviewRevision, CancellationToken cancellationToken)
+        CancellationToken cancellationToken)
     {
         while (true) {
             var result = await execution.ExecuteAsync(cancellationToken);
@@ -369,7 +380,7 @@ internal sealed class WorkerHost
                             CurrentPlanItemIndex = nextIndex,
                             Items = items
                         };
-                        nextExecution = CreateExecution(runId, nextItem, nextPreviewRevision);
+                        nextExecution = CreateExecution(runId, nextItem);
                         _execution = nextExecution;
                         snapshot = CommitLocked();
                     } else {
@@ -456,10 +467,10 @@ internal sealed class WorkerHost
         };
     }
 
-    private WorkerRuntimeExecution CreateExecution(Guid runId, RunPlanItem item, Func<long> nextPreviewRevision) => new(
+    private WorkerRuntimeExecution CreateExecution(Guid runId, RunPlanItem item) => new(
         _manifest, runId, item, checked((uint)Process.GetCurrentProcess().SessionId),
         (level, source, message) => Log(level, source, message, runId, item.PlanItemId, item.TaskName),
-        () => MarkRunRunning(runId, item.PlanItemId), nextPreviewRevision);
+        () => MarkRunRunning(runId, item.PlanItemId));
 
     private void MarkRunRunning(Guid runId, Guid planItemId)
     {
@@ -491,53 +502,17 @@ internal sealed class WorkerHost
         }
     }
 
-    private WireEnvelope HandlePreviewGetLatest(string operation, Guid requestId, PreviewGetLatestRequest request)
+    private WireEnvelope HandlePreview(string operation, Guid requestId, PreviewRequest request)
     {
-        if (request.AfterRevision < 0) {
-            throw new WorkerRequestException("invalid_request", "afterRevision 必须 >=0。 ");
-        }
-
-        WorkerRuntimeExecution? execution;
-        Guid? activeRunId;
         lock (_stateGate) {
-            execution = _execution;
-            activeRunId = _activeRun?.RunId;
+            if (operation != ProtocolOperations.PreviewStop && _workerState != WorkerState.Ready) {
+                throw new WorkerRequestException("worker_not_ready", "Worker 尚未就绪。");
+            }
         }
-
-        PreviewGetLatestResponse response;
-        if (execution is null || activeRunId is null) {
-            response = PreviewUnavailable(activeRunId, "no_active_run");
-        } else if (activeRunId != request.RunId) {
-            response = PreviewUnavailable(activeRunId, "run_mismatch");
-        } else if (execution.ReadLatestPreview() is not { } frame) {
-            response = PreviewUnavailable(activeRunId, "no_frame");
-        } else if (frame.Revision > request.AfterRevision) {
-            response = new PreviewGetLatestResponse(
-                "frame", _manifest.WorkerInstanceId, frame.RunId, frame.Revision,
-                frame.SampledAtUtc, frame.PixelWidth, frame.PixelHeight, "image/png",
-                frame.PngBytes, null);
-        } else {
-            response = new PreviewGetLatestResponse(
-                "not_modified", _manifest.WorkerInstanceId, activeRunId, frame.Revision,
-                null, null, null, null, null, null);
-        }
-
-        var envelope = WireEnvelope.Response(operation, requestId, response);
-        var responseBytes = JsonSerializer.SerializeToUtf8Bytes(envelope, ProtocolJson.Options).Length;
-        if (responseBytes <= ProtocolConstants.MaximumPreviewResponseBytes) {
-            return envelope;
-        }
-
-        Log(
-            "WARN", "preview.transport",
-            $"Preview response 超过预算：{responseBytes} > {ProtocolConstants.MaximumPreviewResponseBytes} bytes。 ",
-            activeRunId);
-        return WireEnvelope.Response(operation, requestId, PreviewUnavailable(activeRunId, "frame_too_large"));
+        return WireEnvelope.Response(operation, requestId, _preview.Handle(operation, _connectionId, request));
     }
 
-    private PreviewGetLatestResponse PreviewUnavailable(Guid? runId, string reason) => new(
-        "unavailable", _manifest.WorkerInstanceId, runId, 0,
-        null, null, null, null, null, reason);
+    public void Dispose() => _preview.Dispose();
 
     private void ValidateRunPlan(RunStartRequest request)
     {

@@ -1,5 +1,25 @@
 # Roadmap
 
+## 已实现：连续游戏画面 Preview，待实机验收
+
+- 独立 Demo 的三种截图方式均获得用户对流畅度的认可；正式实现已完成代码接入，尚未实机验收。
+- 新目标为启动运行环境完成且游戏画面可用后显示预览，覆盖任务开始前、执行与等待期间、结束后。
+- 最高约 30 fps，允许降帧，不设 CPU/内存数值门槛；截图方式遵循 MaaNOP 配置。
+- GUI 预览不可见时允许停采；游戏窗口关闭后等待，重新出现时自动恢复预览，不重跑任务。
+- 截图暂时失败保留最后一帧并低频重试，不增加暂停提示；窗口关闭仍清空。
+- 已对照 MFAAvalonia 独立截图实例和 MFW-PyQt6 共享实例，采用现有 Worker 内独立只截图 Controller，
+  跨 Session 传回主桌面 GUI，保留既有任务生命周期；双实例负载与长期内存仍待验证。
+- 暂不增加高清采集或多窗口选择；游戏最小化遵循 MaaNOP 能力，截图失败保留旧帧，成功返回黑帧则显示。
+- [可执行规格](issues/preview-live-spec.md) 已发布到本地问题跟踪器，标记 ready-for-agent；测试边界经用户确认。
+- [5 张开发工单](issues/preview-live-tickets/README.md) 的粒度与依赖已获用户确认并发布；
+  依赖为 01 → 02/03 → 04 → 05；01–04 已接入代码和自动测试，未满足实机验收前不关闭。
+- 像素通过固定容量文件映射跨 Session 传输，控制 Pipe 协商带租约订阅；协议升为 2，GUI/Worker 同版发布。
+  传输与释放决定见 [ADR 0025](adr/0025-separate-preview-pixels-from-control-ipc.md)。
+- 范围决定见 [ADR 0024](adr/0024-preview-is-independent-of-active-runs.md)，过程见
+  [设计讨论](issues/preview-live-discussion.md)。用户要求实机测试暂缓，后续完成同版完整包集成、
+  真实分身任务并行和至少 30 分钟资源观察；当前环境还需恢复 Rust 工具链后补跑完整构建与 Rust 检查。
+  具体结果见 [验收记录](issues/preview-live-validation.md)，不把早期 Demo 观感视为生产验收。
+
 ## 已实现：多份独立任务配置，待实机验收
 
 - 按 [多配置规格](issues/multiple-task-configurations-spec.md) 实现 Tab 切换、新建空配置、重命名和直接删除，

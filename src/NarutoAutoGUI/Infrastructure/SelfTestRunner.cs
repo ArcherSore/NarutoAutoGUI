@@ -41,6 +41,7 @@ internal static partial class SelfTestRunner
             VerifyInvalidProjectInterfaces(testDirectory, projectDirectory);
             VerifyProtocolFrame();
             VerifyPreviewProtocol();
+            PreviewPresentationSelfTest.Run();
             VerifyWorkerLogSequenceTracker();
             VerifyRunLogRouting(logger);
             VerifyHomePresentation();
@@ -458,28 +459,12 @@ internal static partial class SelfTestRunner
 
     private static void VerifyPreviewProtocol()
     {
-        var response = new PreviewGetLatestResponse(
-            "frame", Guid.NewGuid(), Guid.NewGuid(), 3,
-            new DateTime(2026, 8, 26, 8, 30, 0, DateTimeKind.Utc), 4, 3, "image/png",
-            [1, 2, 3], null);
+        var identity = new PreviewIdentity(Guid.NewGuid(), 1, Guid.NewGuid());
+        var response = new PreviewResponse(identity, PreviewState.WaitingForWindow, 0, null);
         var json = JsonSerializer.Serialize(response, ProtocolJson.Options);
-        if (!json.Contains("\"sampledAtUtc\"", StringComparison.Ordinal)
-            || json.Contains("capturedAtUtc", StringComparison.Ordinal)) {
-            throw new InvalidOperationException("Preview timestamp 字段名不是 sampledAtUtc。 ");
-        }
-        var decoded = JsonSerializer.Deserialize<PreviewGetLatestResponse>(json, ProtocolJson.Options);
-        if (decoded is null
-            || decoded with { PngBytes = response.PngBytes } != response
-            || !decoded.PngBytes!.SequenceEqual(response.PngBytes!)) {
-            throw new InvalidOperationException("Preview JSON/base64 round-trip 验证失败。 ");
-        }
-
-        var staleFieldJson = json.Replace("\"sampledAtUtc\"", "\"capturedAtUtc\"", StringComparison.Ordinal);
-        try {
-            _ = JsonSerializer.Deserialize<PreviewGetLatestResponse>(staleFieldJson, ProtocolJson.Options);
-            throw new InvalidOperationException("Preview schema 未拒绝旧 capturedAtUtc 字段。 ");
-        } catch (JsonException) {
-            // Expected: GUI and Worker ship together and use one strict schema.
+        if (JsonSerializer.Deserialize<PreviewResponse>(json, ProtocolJson.Options) != response
+            || json.Contains("png", StringComparison.OrdinalIgnoreCase)) {
+            throw new InvalidOperationException("Preview 订阅协议 round-trip 失败。");
         }
     }
 

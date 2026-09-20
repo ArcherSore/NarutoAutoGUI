@@ -22,6 +22,14 @@ internal static class PreviewPresentationSelfTest
                 throw new InvalidOperationException("UI 提交前未拒绝失效目标。");
             }
         });
+        // A newer control response must not be replaced by the previous target's mapped frame.
+        presentation.Sample(reader, response with { Generation = 3, State = PreviewState.WaitingForFrame });
+        presentation.Present((frame, _) =>
+        {
+            if (frame is not { Generation: 3, Revision: 0, State: PreviewState.WaitingForFrame }) {
+                throw new InvalidOperationException("旧映射覆盖了新目标的等待状态。");
+            }
+        });
         // A slow UI consumes the latest replacement, never its originally queued pixels.
         for (var revision = 1; revision <= 100; revision++) {
             Array.Fill(pixels, (byte)revision);
@@ -32,6 +40,13 @@ internal static class PreviewPresentationSelfTest
         {
             if (frame is not { Generation: 3, Revision: 100 } || received[0] != 100) {
                 throw new InvalidOperationException("慢 UI 未合并为最新完整帧。");
+            }
+        });
+        writer.TryClear(3, PreviewState.WaitingForWindow);
+        presentation.Present((frame, _) =>
+        {
+            if (frame is not { Generation: 3, Revision: 0, State: PreviewState.WaitingForWindow }) {
+                throw new InvalidOperationException("同代次清空后仍显示旧帧。");
             }
         });
         presentation.Reset();

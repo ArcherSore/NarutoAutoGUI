@@ -35,18 +35,20 @@ internal sealed class WorkerPreviewService : IDisposable
         }
         var identity = new PreviewIdentity(_workerId, _sessionId, request.SubscriptionId);
         lock (_gate) {
+            var matches = _desired is { } current
+                && current.ConnectionId == connectionId && current.Identity == identity;
             if (operation == ProtocolOperations.PreviewStop) {
-                if (_desired is { } current && current.ConnectionId == connectionId && current.Identity == identity) {
+                if (matches) {
                     _desired = null;
                 }
                 return new PreviewResponse(identity, PreviewState.Retiring, 0, null);
             }
             if (operation == ProtocolOperations.PreviewStart) {
-                if (_desired?.ConnectionId != connectionId || _desired.Identity != identity) {
+                if (!matches) {
                     _desired = new Interest(connectionId, identity);
                     _response = new PreviewResponse(identity, PreviewState.Preparing, 0, null);
                 }
-            } else if (_desired?.ConnectionId != connectionId || _desired.Identity != identity || LeaseExpired()) {
+            } else if (!matches || LeaseExpired()) {
                 throw new WorkerRequestException("preview_expired", "Preview 订阅已失效。");
             }
             _renewedAt = Stopwatch.GetTimestamp();
@@ -110,7 +112,6 @@ internal sealed class WorkerPreviewService : IDisposable
         PreviewTarget? target = null;
         long generation = 0, revision = 0;
         long nextCheck = 0, nextCapture = 0;
-        var retireCapture = false;
         PreviewState? pendingClear = PreviewState.WaitingForWindow;
         SetState(interest, PreviewState.WaitingForWindow, generation, buffer.Descriptor);
         try {
@@ -122,13 +123,11 @@ internal sealed class WorkerPreviewService : IDisposable
                         target = null;
                         generation++;
                         revision = 0;
-                        retireCapture = true;
                         SetState(interest, PreviewState.WaitingForWindow, generation, buffer.Descriptor);
                         pendingClear = PreviewState.WaitingForWindow;
                     }
                     if (target is null && pending is null) {
                         DisposeCapture(ref capture);
-                        retireCapture = false;
                         target = _source.FindTarget();
                         if (target is not null) {
                             generation++;
@@ -151,19 +150,17 @@ internal sealed class WorkerPreviewService : IDisposable
                     pending = null;
                     if (frame is not null) {
                         lock (_gate) {
-                            if (!retireCapture && target is not null && IsCurrent(interest)) {
-                                if (buffer.TryPublish(generation, revision + 1, frame.SampledAtUtc,
+                            if (target is not null && IsCurrent(interest)
+                                && buffer.TryPublish(generation, revision + 1, frame.SampledAtUtc,
                                     frame.Width, frame.Height, pixels)) {
-                                    revision++;
-                                    pendingClear = null;
-                                    SetState(interest, PreviewState.Streaming, generation, buffer.Descriptor);
-                                }
+                                revision++;
+                                pendingClear = null;
+                                SetState(interest, PreviewState.Streaming, generation, buffer.Descriptor);
                             }
                         }
                     }
-                    if (retireCapture) {
+                    if (target is null) {
                         DisposeCapture(ref capture);
-                        retireCapture = false;
                     }
                 }
                 if (target is not null && pending is null && now >= nextCapture) {
@@ -191,7 +188,7 @@ internal sealed class WorkerPreviewService : IDisposable
         }
     }
 
-    private void DisposeCapture(ref IPreviewCapture? capture)
+    private static void DisposeCapture(ref IPreviewCapture? capture)
     {
         try {
             capture?.Dispose();

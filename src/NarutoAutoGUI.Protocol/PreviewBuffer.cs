@@ -108,7 +108,6 @@ public sealed class PreviewBuffer : IDisposable
         }
         try {
             _view.Write(8, 0);
-            PutInt(8, 1);
             PutInt(12, (int)frame.State);
             PutLong(64, frame.Generation);
             PutLong(72, frame.Revision);

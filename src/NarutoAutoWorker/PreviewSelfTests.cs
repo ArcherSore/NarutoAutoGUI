@@ -107,7 +107,7 @@ internal static class PreviewSelfTests
         while (watch.Elapsed < TimeSpan.FromSeconds(10) && received < 20) {
             if (reader.TryRead(pixels, out var frame) && frame is { Revision: > 0 } && frame.Revision > previous) {
                 var expected = (byte)(frame.Revision % 251);
-                if (pixels.Any(pixel => pixel != expected)) {
+                if (pixels.AsSpan().ContainsAnyExcept(expected)) {
                     throw new InvalidOperationException("映射读到了不同版本拼接的像素。");
                 }
                 previous = frame.Revision;
@@ -156,6 +156,13 @@ internal static class PreviewSelfTests
         await WaitForStateAsync(service, connection, request, PreviewState.Streaming);
         source.Block = true;
         await WaitUntilAsync(() => source.Entered.IsSet);
+        source.Target = null;
+        await WaitForStateAsync(service, connection, request, PreviewState.WaitingForWindow);
+        if (source.DisposedCount != source.OpenCount - 1) {
+            source.Release.Set();
+            throw new InvalidOperationException("窗口失效时提前释放了仍在截图的 Controller。");
+        }
+        source.Target = new PreviewTarget(3, 1, 1, 1);
         var clock = Stopwatch.StartNew();
         service.Handle(ProtocolOperations.PreviewStop, connection, request);
         var next = new PreviewRequest(worker, Guid.NewGuid());

@@ -404,7 +404,6 @@ public partial class MainWindow : FluentWindow
         if (DerivePrimaryAction() is not { Mode: PrimaryActionMode.Stop, CanExecute: true }) {
             return;
         }
-        StopPreviewPolling();
         await RunOperationAsync(
             "正在停止任务...",
             async () =>
@@ -422,7 +421,6 @@ public partial class MainWindow : FluentWindow
                 }
                 _logger.Info($"run.stop 已确认 stop_requested：runId={activeRun.RunId:D}。 ");
             });
-        UpdatePreviewPolling();
     }
 
     private void TaskShelfHeaderButton_Click(object sender, RoutedEventArgs e)
@@ -1529,6 +1527,7 @@ public partial class MainWindow : FluentWindow
         _operationStatus = status;
         Mouse.OverrideCursor = busy ? System.Windows.Input.Cursors.Wait : null;
         UpdateCommandAvailability();
+        UpdatePreviewPolling();
     }
 
     // Keep the stale snapshot for diagnostics, but a confirmed ended runtime cannot own current controls.

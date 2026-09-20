@@ -38,9 +38,8 @@ internal sealed class PreviewPresentation
                 if (!_buffer.TryReadInfo(out var current) || current is null) {
                     return;
                 }
-                if (_frame is not null && current.Generation < _frame.Generation) {
-                    frame = _frame;
-                } else if (_frame is null || current.Generation != _frame.Generation || current.Revision == 0) {
+                if (frame is null || current.Generation > frame.Generation
+                    || current.Generation == frame.Generation && current.Revision == 0) {
                     frame = current with { State = current.State == PreviewState.WaitingForWindow
                         ? PreviewState.WaitingForWindow : PreviewState.WaitingForFrame,
                         Revision = 0, Width = 0, Height = 0 };

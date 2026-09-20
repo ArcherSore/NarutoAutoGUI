@@ -2,6 +2,17 @@
 
 ## 当前阶段
 
+2026-09-20：核对用户实测目录的 GUI 日志并修复连续 Preview 的两处 GUI 生命周期问题。
+Ready 与准备结束的先后顺序影响首次订阅；`SetBusy` 现在同步重评预览，准备完成后无需切页或开始任务。
+任务 Stop 不再撤销预览订阅或清空位图，仍沿用原 run.stop 与任务终态流程。
+离屏真实 MainWindow + 测试 Pipe 回归先复现失败，再分别验证两种 Ready 时序均自动首帧，
+停止任务保留同一位图和订阅且收到 Stop ACK；GUI Release 构建与完整自检通过。
+WPF 增量构建首次缺少旧 BAML 缓存，clean 后构建通过。未替换实测目录产物、未操作真实游戏或分身；
+随后按用户要求，在确认目标 GUI/Worker 均已退出后，仅将修复后的 GUI DLL 替换至实测目录，
+SHA256 一致，配置和 interface 哈希未变；旧 DLL 备份于 `artifacts/preview-lifecycle-backup-20260920-101232/`。
+部署后用户反馈实测“没有大问题”；此反馈对应本轮 GUI 修复，不扩展为全部场景和长时间资源验收通过。
+提交前 Standards/Spec 复查均无明显新问题。详细证据见 [验收记录](issues/preview-live-validation.md)。
+
 2026-09-19：按 [连续 Preview 规格](issues/preview-live-spec.md) 实现 Worker 独立截图、协议 2 订阅、
 跨 Session 文件映射与 GUI 最新帧显示，覆盖无任务预览、窗口恢复、可见性、租约和任务隔离。
 GUI/Worker Release 构建与独立发布产物生成通过；新增双进程完整帧、真实 Worker 协议入口、

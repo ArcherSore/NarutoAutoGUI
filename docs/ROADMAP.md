@@ -31,6 +31,18 @@
 - 模块自检及离屏 GUI 的失焦归属、切换失败、同名配置和小窗口布局已通过；真实游戏运行、多 DPI
   与桌面鼠标/键盘交互仍待验收。不扩展配置复制、导入导出、调度或 Worker/Protocol。
 
+## 已实现：四步新手指引，待实机验收
+
+- [Onboarding Tour 规格](issues/onboarding-tour-spec.md) 已发布到本地问题跟踪器，标记 ready-for-agent；
+  MainWindow/WPF 与 ProjectPlanModule 的测试边界已经用户确认，首次初始化和四步 GUI 已接入。
+- 固定介绍任务配置、任务说明与参数、运行控制、实时截图；首次缺失配置预置并展开 PI 第一项，
+  后续新建配置仍为空。老用户不自动弹，设置页可 replay，replay 不修改用户配置或完成版本。
+- 已接入独立首次资格/完成版本、真实 target 与滚动裁剪、暂停恢复、焦点和有限 Pulse；
+  保留现有 Preview/Update 原生钩子。模块与真实离屏 WPF 自检已通过，交互边界见
+  [验证记录](issues/onboarding-tour-validation.md)；真实 DPI、原生标题栏/托盘和键盘仍待验收。
+  不改变现有 Preview/Updater 的待验收优先级。完整本地套件仍受已记录的 Worker 双进程帧测试超时影响；
+  用户反馈该测试在 GitHub CI 可以通过，本次未独立复验线上结果。
+
 ## 下一步：Updater V2 真实交互验收
 
 - NarutoAutoGUI v1.4.0 前端正式版已发布，包含新版 UI 和 Rust Updater V2；正式发布流水线及 ZIP 校验通过。

@@ -10,4 +10,7 @@
 - `docs/UPDATER-VALIDATION.md`：Updater 当前实现的验证边界和未完成的实机验收，不是需求规格。
 - `artifacts/`：构建、发布和测试产物；被 `.gitignore` 排除，不能保存规格源文件。
 
+新手指引的 [四步 Onboarding Tour 规格](onboarding-tour-spec.md) 已标记 `ready-for-agent`，
+测试边界经用户确认，实现已接入；[验证记录](onboarding-tour-validation.md) 区分自动化证据与待实机验收项。
+
 当前 Updater 的 01–05 切片已移入归档，06 保留在活动目录，等待完整 MaaNOP 包和 Windows 实机 E2E 验收。

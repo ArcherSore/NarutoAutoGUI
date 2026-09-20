@@ -12,6 +12,7 @@ public sealed class ProjectPlanModule
     private readonly ProjectDefinition _project;
     private readonly MaaNopConfigStore _configStore;
     private MaaNopConfig _config;
+    private string? _initializationWarning;
 
     private ProjectPlanModule(ProjectDefinition project, MaaNopConfigStore configStore)
     {
@@ -22,6 +23,14 @@ public sealed class ProjectPlanModule
             .ToArray();
 
         _config = configStore.Load();
+        if (configStore.WasMissing) {
+            try {
+                AddTask(Tasks[0].Name);
+                InitializedTaskName = Tasks[0].Name;
+            } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+                _initializationWarning = $"无法保存首次默认任务，已提供空配置。{exception.Message}";
+            }
+        }
     }
 
     public string ProjectName => _project.Provenance.Name;
@@ -31,7 +40,8 @@ public sealed class ProjectPlanModule
     public IReadOnlyList<ProjectTaskChoice> Tasks { get; }
     public IReadOnlyList<string> SelectedTaskNames => LoadConfig().SelectedTasks;
     public Guid ActiveConfigurationId => _config.ActiveConfigurationId;
-    public string? LoadWarning => _configStore.LoadWarning;
+    public string? LoadWarning => _initializationWarning ?? _configStore.LoadWarning;
+    public string? InitializedTaskName { get; }
     public IReadOnlyList<TaskConfiguration> Configurations => _config.Configurations;
 
     public Guid CreateConfiguration()
@@ -251,6 +261,7 @@ public sealed class ProjectPlanModule
     {
         _configStore.Save(config);
         _config = config;
+        _initializationWarning = null;
     }
 
     private void ValidateActiveConfiguration(TaskConfiguration config)

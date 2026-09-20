@@ -36,6 +36,7 @@ internal sealed class MaaNopConfigStore
     private bool _protectOriginal;
     private bool _originalBackedUp;
     internal string? LoadWarning { get; private set; }
+    internal bool WasMissing { get; private set; }
 
     internal MaaNopConfigStore(string path)
     {
@@ -85,6 +86,7 @@ internal sealed class MaaNopConfigStore
             }
             Validate(config);
         } catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException) {
+            WasMissing = true;
             return CreateEmpty();
         } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or JsonException or InvalidDataException or ArgumentException) {

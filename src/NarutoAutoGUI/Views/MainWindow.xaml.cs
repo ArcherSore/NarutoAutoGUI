@@ -62,6 +62,7 @@ public partial class MainWindow : FluentWindow
 
     private sealed record PrimaryActionState(PrimaryActionMode Mode, bool CanExecute);
     private readonly AppLogger _logger;
+    private readonly string _applicationDirectory;
     private readonly ChildSessionManager _sessionManager;
     private readonly ChildSessionProgramService _programService;
     private readonly WorkerCoordinator _workerCoordinator;
@@ -102,11 +103,12 @@ public partial class MainWindow : FluentWindow
         AppLogger logger,
         ChildSessionManager sessionManager, ChildSessionProgramService programService,
         WorkerCoordinator workerCoordinator, Func<Func<Task>, Task> runApplicationOperationAsync,
-        Func<Task> requestExitAsync)
+        Func<Task> requestExitAsync, string? applicationDirectory = null)
     {
         InitializeComponent();
         DataContext = this;
         _logger = logger;
+        _applicationDirectory = applicationDirectory ?? AppContext.BaseDirectory;
         _sessionManager = sessionManager;
         _programService = programService;
         _workerCoordinator = workerCoordinator;
@@ -143,6 +145,9 @@ public partial class MainWindow : FluentWindow
     internal void SetExitInProgress(bool exitInProgress)
     {
         _exitInProgress = exitInProgress;
+        if (exitInProgress) {
+            EndOnboarding(handled: false);
+        }
         UpdateUpdaterControls();
         UpdatePreviewPolling();
         UpdateCommandAvailability();
@@ -151,6 +156,11 @@ public partial class MainWindow : FluentWindow
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         Loaded -= MainWindow_Loaded;
+        await InitializeStartupAsync(RestoreExistingSessionAsync);
+    }
+
+    private async Task InitializeStartupAsync(Func<Task> restoreExistingSession)
+    {
         _homeLogScrollViewer = FindVisualChild<ScrollViewer>(HomeLogListBox);
         try {
             LoadProject();
@@ -164,11 +174,20 @@ public partial class MainWindow : FluentWindow
             UpdateCommandAvailability();
         }
         InitializeUpdates();
+        try {
+            await restoreExistingSession();
+        } finally {
+            _onboardingStartupCompleted = true;
+            ReevaluateOnboarding();
+        }
+    }
+
+    private async Task RestoreExistingSessionAsync()
+    {
         var existingId = _sessionManager.DetectExistingSession();
         if (existingId is null) {
             return;
         }
-
         await RunOperationAsync(
             "正在恢复已有桌面分身...",
             async () =>
@@ -185,6 +204,8 @@ public partial class MainWindow : FluentWindow
             return;
         }
         if (_allowClose) {
+            _onboardingClosed = true;
+            EndOnboarding(handled: false);
             RemovePreviewWindowHook();
             _updateCancellation?.Cancel();
             _elapsedTimer.Stop();
@@ -234,6 +255,7 @@ public partial class MainWindow : FluentWindow
         HomeNavigationItem.IsActive = section == MainSection.Home;
         SettingsNavigationItem.IsActive = section == MainSection.Settings;
         UpdatePreviewPolling();
+        ReevaluateOnboarding();
     }
 
     private async void ShowSessionButton_Click(object sender, RoutedEventArgs e) =>
@@ -424,8 +446,11 @@ public partial class MainWindow : FluentWindow
     }
 
     private void TaskShelfHeaderButton_Click(object sender, RoutedEventArgs e)
+        => SetTaskShelfExpanded(!_taskShelfExpanded);
+
+    private void SetTaskShelfExpanded(bool expanded)
     {
-        _taskShelfExpanded = !_taskShelfExpanded;
+        _taskShelfExpanded = expanded;
         TaskShelfContent.Visibility = _taskShelfExpanded ? Visibility.Visible : Visibility.Collapsed;
         TaskShelfChevronIcon.Symbol = _taskShelfExpanded
             ? WpfSymbolRegular.ChevronUp16
@@ -499,6 +524,16 @@ public partial class MainWindow : FluentWindow
 
     private void MainWindow_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
+        if (IsOnboardingVisible) {
+            if (e.Key == Key.Escape) {
+                EndOnboarding(handled: true);
+                e.Handled = true;
+            } else if (!(e.Key == Key.System && e.SystemKey == Key.F4)
+                && e.Key is not (Key.Tab or Key.Enter or Key.Space)) {
+                e.Handled = true;
+            }
+            return;
+        }
         if (e.Key == Key.Escape && UpdateOverlay.Visibility == Visibility.Visible) {
             CloseUpdate_Click(sender, e);
             e.Handled = true;
@@ -517,6 +552,9 @@ public partial class MainWindow : FluentWindow
 
     private void OpenTaskDescriptionDrawer(ProjectTaskChoice task)
     {
+        if (_onboardingActive) {
+            return;
+        }
         _descriptionDrawerPreviousFocus = Keyboard.FocusedElement;
         TaskDescriptionDrawerTitle.Text = task.Label;
         TaskDescriptionViewer.Document = MarkdownDocument.Create(task.Description, OpenTaskDescriptionLink);
@@ -535,6 +573,7 @@ public partial class MainWindow : FluentWindow
             element.Focus();
         }
         _descriptionDrawerPreviousFocus = null;
+        ReevaluateOnboarding();
     }
 
     private void OptionInputTextBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
@@ -634,6 +673,7 @@ public partial class MainWindow : FluentWindow
         PlanItemsPanel.Children.Clear();
         _dropIndicators.Clear();
         _planItemContainers.Clear();
+        _taskDescriptionButtons.Clear();
         EmptyPlanPanel.Visibility = project.SelectedTaskNames.Count == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -781,6 +821,7 @@ public partial class MainWindow : FluentWindow
             var information = CreateIconButton(WpfSymbolRegular.Info16, $"查看 {task.Label} 的任务描述");
             information.Tag = task;
             information.Click += TaskDescriptionButton_Click;
+            _taskDescriptionButtons[task.Name] = information;
             Grid.SetColumn(information, 2);
             header.Children.Add(information);
         }
@@ -1152,11 +1193,17 @@ public partial class MainWindow : FluentWindow
 
     private void LoadProject()
     {
-        var configPath = Path.Combine(AppContext.BaseDirectory, "config", "maanop-config.json");
-        var project = ProjectPlanModule.Open(AppContext.BaseDirectory, configPath);
+        var configPath = Path.Combine(_applicationDirectory, "config", "maanop-config.json");
+        if (_onboardingPreferences is null) {
+            _onboardingPreferences = new OnboardingPreferences(Path.GetDirectoryName(configPath)!, _logger);
+            _onboardingPreferences.CaptureBeforeProjectLoad(configPath);
+        }
+        var project = ProjectPlanModule.Open(_applicationDirectory, configPath);
         _projectPlan = project;
         _pendingStartAttempt = null;
-        _expandedTaskName = null;
+        _expandedTaskName = project.InitializedTaskName
+            ?? (_onboardingPreferences.ShouldOfferAutomatically && !_onboardingAutoEnded
+                ? project.SelectedTaskNames.FirstOrDefault() : null);
         CloseTaskDescriptionDrawer();
         ProjectEmptyStatePanel.Visibility = Visibility.Collapsed;
         TaskWorkspacePanel.Visibility = Visibility.Visible;
@@ -1269,10 +1316,17 @@ public partial class MainWindow : FluentWindow
         UpdatePreviewPolling();
     }
 
-    private void MainWindow_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e) =>
+    private void MainWindow_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
         UpdatePreviewPolling();
+        ReevaluateOnboarding();
+    }
 
-    private void MainWindow_StateChanged(object? sender, EventArgs e) => UpdatePreviewPolling();
+    private void MainWindow_StateChanged(object? sender, EventArgs e)
+    {
+        UpdatePreviewPolling();
+        ReevaluateOnboarding();
+    }
 
     private void UpdatePreviewPolling()
     {
@@ -1350,6 +1404,9 @@ public partial class MainWindow : FluentWindow
 
     private void ExpandPreview_Click(object sender, RoutedEventArgs e)
     {
+        if (_onboardingActive) {
+            return;
+        }
         PreviewOverlay.Visibility = Visibility.Visible;
         UpdateExpandedPreviewSize();
         MainNavigation.IsEnabled = false;
@@ -1393,6 +1450,7 @@ public partial class MainWindow : FluentWindow
         MainNavigation.IsEnabled = true;
         ExpandPreviewButton.Focus();
         UpdatePreviewPolling();
+        ReevaluateOnboarding();
     }
 
     private void RemovePreviewWindowHook()
@@ -1425,8 +1483,10 @@ public partial class MainWindow : FluentWindow
     }
 
     private void TogglePreview_Click(object sender, RoutedEventArgs e)
+        => SetPreviewExpanded(PreviewCardContent.Visibility != Visibility.Visible);
+
+    private void SetPreviewExpanded(bool expanded)
     {
-        var expanded = PreviewCardContent.Visibility != Visibility.Visible;
         PreviewCardContent.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
         PreviewChevron.Symbol = expanded ? WpfSymbolRegular.ChevronUp16 : WpfSymbolRegular.ChevronDown16;
         UpdatePreviewPolling();
@@ -1578,6 +1638,7 @@ public partial class MainWindow : FluentWindow
 
     private void UpdateCommandAvailability()
     {
+        ReevaluateOnboarding();
         var state = _sessionSnapshot.State;
         var canStartCommand = !_busy && !_exitInProgress
             && state is not ChildSessionState.Connecting && state is not ChildSessionState.Disconnecting;

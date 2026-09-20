@@ -23,3 +23,8 @@ SelectedTasks 保存不重复 task.name 的实际执行顺序；ExplicitOptions 
 
 `interface.json` 缺失时抛出面向正式安装包的错误（"安装目录缺少 interface.json，请确认使用完整的 MaaNOP 发布包。"），
 并在 diagnostic log 中记录 `AppContext.BaseDirectory` 实际路径；不自动搜索其他 interface.json。
+
+2026-09-20 按新手指引规格限定替代“文件不存在时提供空配置”：PI 加载成功且确认原文件缺失时，
+首次配置由 ProjectPlanModule 预置 PI 第一项并保存，ExplicitOptions 不写默认值。
+首次保存失败仍提供空工作区并报告错误；不把未保存的默认任务宣称为成功配置。
+损坏文件、已有空配置、V2 空列表修正、V1 迁移和后续 `+` 新建仍保持原有空配置或原意图语义。

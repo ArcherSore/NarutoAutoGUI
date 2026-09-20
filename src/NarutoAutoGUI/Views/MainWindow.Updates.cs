@@ -24,7 +24,7 @@ public partial class MainWindow
         Idle, Checking, UpToDate, UpdateAvailable, CheckFailed
     }
 
-    private static string UpdatePreferencePath => Path.Combine(AppContext.BaseDirectory, "config", "update-check.txt");
+    private string UpdatePreferencePath => Path.Combine(_applicationDirectory, "config", "update-check.txt");
 
     private void InitializeUpdates()
     {
@@ -129,7 +129,7 @@ public partial class MainWindow
 
     private void OpenUpdateDialog()
     {
-        if (UpdateOverlay.Visibility == Visibility.Visible || _exitInProgress) {
+        if (UpdateOverlay.Visibility == Visibility.Visible || _exitInProgress || _onboardingActive) {
             return;
         }
         _updatePreviousFocus = Keyboard.FocusedElement;
@@ -152,6 +152,7 @@ public partial class MainWindow
         if (_updatePreviousFocus is not null) {
             Keyboard.Focus(_updatePreviousFocus);
         }
+        ReevaluateOnboarding();
     }
 
     private void UpdateOverlay_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateDialogSize();

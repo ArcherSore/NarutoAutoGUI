@@ -5,6 +5,44 @@ namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
+    private static void VerifyFirstConfiguration(string testDirectory, string projectDirectory)
+    {
+        var path = Path.Combine(testDirectory, "first-use.json");
+        var project = ProjectPlanModule.Open(projectDirectory, path);
+        if (!project.SelectedTaskNames.SequenceEqual(new[] { "RealTask" })
+            || project.Configurations.Single().Name != "配置 1"
+            || project.Configurations.Single().ExplicitOptions.Count != 0) {
+            throw new InvalidOperationException("首次缺失配置必须预置真实 PI 第一项且不写默认参数。");
+        }
+        var reopened = ProjectPlanModule.Open(projectDirectory, path);
+        if (reopened.ActiveConfigurationId != project.ActiveConfigurationId
+            || !reopened.SelectedTaskNames.SequenceEqual(project.SelectedTaskNames)) {
+            throw new InvalidOperationException("首次默认任务必须已保存，重开保持身份和任务。");
+        }
+        project.RemoveTask("RealTask");
+        if (ProjectPlanModule.Open(projectDirectory, path).SelectedTaskNames.Count != 0) {
+            throw new InvalidOperationException("已有空配置不得自动补入任务。");
+        }
+        var blockedDirectory = Path.Combine(testDirectory, "blocked-initial-save");
+        File.WriteAllText(blockedDirectory, "not a directory");
+        var failed = ProjectPlanModule.Open(projectDirectory, Path.Combine(blockedDirectory, "config.json"));
+        if (failed.LoadWarning is null || failed.SelectedTaskNames.Count != 0
+            || failed.InitializedTaskName is not null) {
+            throw new InvalidOperationException("默认保存失败必须保留空工作区并报告警告。");
+        }
+        var alternate = CreateProjectFixture(Path.Combine(testDirectory, "first-task-order"));
+        var interfacePath = Path.Combine(alternate, "interface.json");
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(interfacePath))!;
+        var first = json["task"]![0]!.DeepClone();
+        first["name"] = "DifferentFirstTask";
+        json["task"]!.AsArray().Insert(0, first);
+        File.WriteAllText(interfacePath, json.ToJsonString());
+        var reordered = ProjectPlanModule.Open(alternate, Path.Combine(alternate, "config.json"));
+        if (!reordered.SelectedTaskNames.SequenceEqual(new[] { "DifferentFirstTask" })) {
+            throw new InvalidOperationException("首次默认任务必须跟随 PI 数组顺序。");
+        }
+    }
+
     private static void VerifyInvalidConfigurationIsolation(string testDirectory, string projectDirectory)
     {
         var path = Path.Combine(testDirectory, "invalid-intent.json");

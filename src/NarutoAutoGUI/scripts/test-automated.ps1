@@ -42,7 +42,7 @@ if (-not (Test-Path -LiteralPath $WorkerDll -PathType Leaf)) {
 }
 
 # Running the DLLs through dotnet bypasses the elevated apphost manifests. The self-tests do not
-# initialize RDP/COM, load MaaFramework native runtime, or show windows.
+# initialize RDP/COM or load MaaFramework native runtime. GUI layout tests use offscreen windows.
 foreach ($entry in @($GuiDll, $WorkerDll)) {
     $entryPath = (Resolve-Path -LiteralPath $entry).Path
     Push-Location (Split-Path $entryPath)

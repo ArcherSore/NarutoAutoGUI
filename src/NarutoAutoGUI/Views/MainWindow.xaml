@@ -330,7 +330,7 @@
             <Setter Property="BorderBrush" Value="{StaticResource Preview.Border}" />
         </Style>
     </ui:FluentWindow.Resources>
-    <Grid>
+    <Grid x:Name="WindowOverlayRoot">
     <Grid x:Name="MainWindowContent">
         <Grid.Style>
             <Style TargetType="{x:Type Grid}">
@@ -582,7 +582,7 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" MinHeight="120" />
                             </Grid.RowDefinitions>
-                            <Border Grid.Row="0" Margin="0,0,0,10" Padding="22,5"
+                            <Border x:Name="RuntimeControlCard" Grid.Row="0" Margin="0,0,0,10" Padding="22,5"
                                     CornerRadius="{StaticResource Radius.Control}"
                                     Background="{StaticResource Brush.Surface}"
                                     BorderBrush="{StaticResource Preview.Border}" BorderThickness="1"
@@ -668,7 +668,7 @@
                                                      AutomationProperties.Name="正在准备运行环境" />
                                 </Grid>
                             </Border>
-                            <Border Grid.Row="1" Margin="0,0,0,10"
+                            <Border x:Name="PreviewCard" Grid.Row="1" Margin="0,0,0,10"
                                     CornerRadius="{StaticResource Radius.Control}"
                                     Background="{StaticResource Brush.Surface}"
                                     BorderBrush="{StaticResource Preview.Border}" BorderThickness="1"
@@ -962,6 +962,17 @@
                                 <TextBlock Margin="0,10,0,0"
                                            Text="关闭主窗口时会隐藏到系统托盘，任务与桌面分身继续运行。请使用托盘菜单中的“退出程序”完成清理。"
                                            Style="{StaticResource SecondaryTextStyle}" />
+                                <Border Height="1" Margin="0,24" Background="{StaticResource Brush.Border}" />
+                                <TextBlock Text="帮助" Style="{StaticResource SectionTitleTextStyle}" />
+                                <TextBlock Text="新手指引" FontWeight="SemiBold" Margin="0,12,0,4" />
+                                <TextBlock Text="快速了解任务配置、运行控制和实时截图。"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                                <Button x:Name="ReplayOnboardingButton" Content="重新查看新手指引"
+                                        HorizontalAlignment="Left" Margin="0,12,0,0"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        AutomationProperties.Name="重新查看新手指引" Click="ReplayOnboarding_Click" />
+                                <TextBlock x:Name="OnboardingStatusText" Margin="0,8,0,0" TextWrapping="Wrap"
+                                           Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
                         </Grid>
                     </ScrollViewer>
@@ -1198,6 +1209,71 @@
                                     Style="{StaticResource Update.PrimaryButton}" Height="36" Padding="8,0" />
                         </Grid>
                     </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+        <Grid x:Name="OnboardingOverlay" Panel.ZIndex="220" Visibility="Collapsed" Background="Transparent"
+              Focusable="True" KeyboardNavigation.TabNavigation="Cycle"
+              KeyboardNavigation.ControlTabNavigation="Cycle" AllowDrop="True"
+              PreviewDrop="Onboarding_BlockDrop" PreviewDragOver="Onboarding_BlockDrop"
+              AutomationProperties.Name="新手指引">
+            <Grid.Resources>
+                <DataTemplate x:Key="Onboarding.ActionText">
+                    <TextBlock Text="{Binding}"
+                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                </DataTemplate>
+            </Grid.Resources>
+            <Path x:Name="OnboardingDim" Fill="#42000000" IsHitTestVisible="False" />
+            <Path x:Name="OnboardingOutline" Stroke="{StaticResource Brush.Primary.Border}" StrokeThickness="1"
+                  IsHitTestVisible="False" />
+            <Canvas IsHitTestVisible="False">
+                <Border x:Name="OnboardingPulse" Visibility="Collapsed" CornerRadius="16"
+                        BorderBrush="{StaticResource Brush.Primary}" BorderThickness="2"
+                        Background="{StaticResource Brush.Primary.Surface}" RenderTransformOrigin="0.5,0.5">
+                    <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
+                </Border>
+                <Path x:Name="OnboardingArrow" Fill="{StaticResource Brush.Surface}" />
+            </Canvas>
+            <Border x:Name="OnboardingPopover" Width="312" HorizontalAlignment="Left" VerticalAlignment="Top"
+                    Padding="18" Background="{StaticResource Brush.Surface}"
+                    CornerRadius="{StaticResource Radius.Section}" Effect="{StaticResource Effect.Surface.Light}"
+                    KeyboardNavigation.TabNavigation="Cycle" KeyboardNavigation.ControlTabNavigation="Cycle">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <DockPanel LastChildFill="True" Margin="0,0,0,12">
+                        <TextBlock x:Name="OnboardingCounter" DockPanel.Dock="Right" Margin="10,2,0,0"
+                                   Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Name="OnboardingTitle" FontSize="14" FontWeight="SemiBold"
+                                   TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                    </DockPanel>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                        <TextBlock x:Name="OnboardingDescription" TextWrapping="Wrap" LineHeight="22"
+                                   Foreground="{StaticResource Brush.Text.Secondary}" />
+                    </ScrollViewer>
+                    <Grid Grid.Row="2" Margin="0,18,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="OnboardingSkip" Content="跳过" HorizontalAlignment="Left"
+                                ContentTemplate="{StaticResource Onboarding.ActionText}"
+                                Padding="6,4" MinWidth="0" Style="{StaticResource SecondaryButtonStyle}"
+                                Click="OnboardingSkip_Click" AutomationProperties.Name="跳过新手指引" />
+                        <Button x:Name="OnboardingPrevious" Grid.Column="1" Content="← 上一步" Margin="4,0,6,0"
+                                ContentTemplate="{StaticResource Onboarding.ActionText}"
+                                Padding="6,4" MinWidth="0" Style="{StaticResource SecondaryButtonStyle}"
+                                Click="OnboardingPrevious_Click" AutomationProperties.Name="上一步" />
+                        <Button x:Name="OnboardingNext" Grid.Column="2" Content="下一步 →" Padding="10,4" MinWidth="0"
+                                ContentTemplate="{StaticResource Onboarding.ActionText}"
+                                Style="{StaticResource PrimaryButtonStyle}" Click="OnboardingNext_Click"
+                                AutomationProperties.Name="下一步" />
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>

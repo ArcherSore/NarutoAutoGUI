@@ -21,6 +21,7 @@ internal static partial class SelfTestRunner
             var logDirectory = Path.Combine(testDirectory, "logs");
             using var logger = new AppLogger(logDirectory);
             var projectDirectory = CreateProjectFixture(testDirectory);
+            VerifyFirstConfiguration(testDirectory, projectDirectory);
             VerifyConfigurationMigration(testDirectory, projectDirectory);
             VerifyIndependentConfigurations(testDirectory, projectDirectory);
             VerifyConfigurationFallback(testDirectory, projectDirectory);
@@ -28,6 +29,7 @@ internal static partial class SelfTestRunner
             VerifyConfigurationTabs(logger, testDirectory, projectDirectory);
             VerifyProjectPlan(testDirectory, projectDirectory);
             VerifyTaskCatalogVariants(testDirectory, projectDirectory);
+            VerifyOnboarding(logger, testDirectory);
             if (projectOnly) {
                 Console.WriteLine("PROJECT SELF-TEST PASS");
                 return 0;
@@ -71,7 +73,7 @@ internal static partial class SelfTestRunner
                 + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
                 + "PI structure/default/graph validation; typed input validation; "
                 + "task catalog/description; ordered task plan persistence; responsive option layout; "
-                + "MaaNOP Config v2/migration/independent tabs; RunPlan digest; "
+                + "MaaNOP Config v2/migration/independent tabs; onboarding tour; RunPlan digest; "
                 + "IPC framing; preview schema; "
                 + "log sequence tracking/recovery; Worker Instance replacement; "
                 + "run-log routing; DEBUG+ file logging");

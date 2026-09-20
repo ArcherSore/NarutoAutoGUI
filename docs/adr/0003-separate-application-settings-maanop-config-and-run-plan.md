@@ -14,3 +14,9 @@ MaaNOP Config 继续使用同目录 temp、flush/close、atomic replace/move；�
 不将内存状态伪装成已保存。Start 仅解析 Active Configuration，Run Plan 通过 IPC 交给 Worker 后仅存在于
 Worker 内存，不加入配置身份，不做继承、import/export、持久化运行恢复或断点续跑。
 controller、resource、Agent、项目根目录等环境继续由 Worker Launch Context 持有。
+
+2026-09-20 新手指引增加有限的首次配置例外：仅原文件确实不存在时，ProjectPlanModule 按 PI 数组顺序
+预置第一项到“配置 1”并原子保存；ExplicitOptions 仍为空，参数继续跟随项目默认。
+Store 仅报告缺失事实，不依赖 Project Definition；GUI 在首次渲染时展开该任务，不保存展开状态。
+已有空配置、异常 fallback、迁移与用户新增配置不适用。Onboarding 的完成版本和未完成新用户资格
+由 GUI 独立保存在 config 下，不进入 MaaNOP Config 或 Run Plan。

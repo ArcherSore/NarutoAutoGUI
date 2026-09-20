@@ -2,6 +2,15 @@
 
 ## 当前阶段
 
+2026-09-20：按 [新手指引规格](issues/onboarding-tour-spec.md) 接入四步 Fluent Spotlight/Popover，
+首次缺失配置预置并展开 PI 第一项，后续 `+` 仍为空；独立保存首次资格和完成版本，老用户不自动弹，
+设置 replay 不改配置或版本。支持真实 target/滚动裁剪、有限 Pulse、暂停恢复和输入/焦点限制。
+GUI/Worker Release 构建、GUI 完整自检、Updater 客户端测试、Rust tests/Clippy 通过；
+完整本地自动化在既有 Worker 双进程完整帧测试处超时，未记作整套通过。
+用户反馈该测试在 GitHub CI 可通过，本次未独立复验线上结果，也未修改 Worker 实现。
+已目检离屏截图；真实 DPI、标题栏/托盘、键盘及正式包体验仍待验收，见
+[验证记录](issues/onboarding-tour-validation.md)。未操作真实游戏/分身，未替换实测包或发布。
+
 2026-09-20：核对用户实测目录的 GUI 日志并修复连续 Preview 的两处 GUI 生命周期问题。
 Ready 与准备结束的先后顺序影响首次订阅；`SetBusy` 现在同步重评预览，准备完成后无需切页或开始任务。
 任务 Stop 不再撤销预览订阅或清空位图，仍沿用原 run.stop 与任务终态流程。

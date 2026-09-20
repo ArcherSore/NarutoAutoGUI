@@ -73,6 +73,13 @@ NarutoAutoGUI/
   此类异常原文件仅在用户真实修改触发首次替换前按原始 bytes 保存相邻 invalid 备份，备份失败不覆盖。
   不提供恢复模式或历史管理。迁移/指针修正写回失败保留加载结果并报告错误，不能宣称持久化成功。
 - 工作目录不提供配置字段，统一自动使用启动器所在目录。
+- 首次配置：Store 确认原文件不存在时，由 ProjectPlanModule 预置 PI 第一项到“配置 1”并原子保存，
+  ExplicitOptions 为空，GUI 首次渲染即展开。已有空配置、损坏 fallback、迁移及用户新增配置不补任务。
+- 新手指引：MainWindow 内单层四步 Spotlight/Popover，设置页可 replay；真实控件定位、滚动裁剪、
+  键盘限制和有限 Pulse 均由 GUI 管理。Tour 单独拦截输入，不使用 Preview/Update 的原生模态钩子，
+  因而保留最小化/隐藏到托盘后的同一步恢复。启动完成信号位于 Project、更新偏好和 Session 恢复之后。
+  `config/onboarding.txt` 保存处理版本；首次配置保存前创建空的 `config/onboarding-new-user.pending`，
+  只保留未完成新用户的跨启动资格。老用户缺完成文件不自动弹，replay 不改这两个文件或用户配置。
 - 文件日志：默认写入 `<程序目录>\logs`，记录 DEBUG+；按日期命名，单文件最大 10 MB，保留 14 天。若程序目录
   不可写，则依次回退到 LocalAppData 和临时目录并记录 WARN。
 - GUI 运行日志：只显示 MaaNOP 通过字符串 `focus` 明确声明的 user-facing Run Log，保留最近 1000 条；

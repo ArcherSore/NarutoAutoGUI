@@ -967,10 +967,10 @@
                                 <TextBlock Text="新手指引" FontWeight="SemiBold" Margin="0,12,0,4" />
                                 <TextBlock Text="快速了解任务配置、运行控制和实时截图。"
                                            Style="{StaticResource SecondaryTextStyle}" />
-                                <Button x:Name="ReplayOnboardingButton" Content="重新查看新手指引"
+                                <Button x:Name="ReplayOnboardingButton" Content="查看新手指引"
                                         HorizontalAlignment="Left" Margin="0,12,0,0"
                                         Style="{StaticResource SecondaryButtonStyle}"
-                                        AutomationProperties.Name="重新查看新手指引" Click="ReplayOnboarding_Click" />
+                                        AutomationProperties.Name="查看新手指引" Click="ReplayOnboarding_Click" />
                                 <TextBlock x:Name="OnboardingStatusText" Margin="0,8,0,0" TextWrapping="Wrap"
                                            Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
@@ -1220,6 +1220,9 @@
             <Grid.Resources>
                 <DataTemplate x:Key="Onboarding.ActionText">
                     <TextBlock Text="{Binding}"
+                               FontFamily="{Binding FontFamily, RelativeSource={RelativeSource AncestorType=Button}}"
+                               FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType=Button}}"
+                               FontWeight="{Binding FontWeight, RelativeSource={RelativeSource AncestorType=Button}}"
                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                 </DataTemplate>
             </Grid.Resources>
@@ -1227,9 +1230,9 @@
             <Path x:Name="OnboardingOutline" Stroke="{StaticResource Brush.Primary.Border}" StrokeThickness="1"
                   IsHitTestVisible="False" />
             <Canvas IsHitTestVisible="False">
-                <Border x:Name="OnboardingPulse" Visibility="Collapsed" CornerRadius="16"
-                        BorderBrush="{StaticResource Brush.Primary}" BorderThickness="2"
-                        Background="{StaticResource Brush.Primary.Surface}" RenderTransformOrigin="0.5,0.5">
+                <Border x:Name="OnboardingPulse" Visibility="Collapsed" CornerRadius="12" Width="24" Height="24"
+                        BorderBrush="{StaticResource Brush.Primary}" BorderThickness="1.25"
+                        RenderTransformOrigin="0.5,0.5">
                     <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
                 </Border>
                 <Path x:Name="OnboardingArrow" Fill="{StaticResource Brush.Surface}" />
@@ -1263,13 +1266,17 @@
                         </Grid.ColumnDefinitions>
                         <Button x:Name="OnboardingSkip" Content="跳过" HorizontalAlignment="Left"
                                 ContentTemplate="{StaticResource Onboarding.ActionText}"
-                                Padding="6,4" MinWidth="0" Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="12,0" Height="34" FontSize="13" FontWeight="Normal"
+                                Foreground="{StaticResource Brush.Text.Secondary}"
+                                Style="{StaticResource SubtleButtonStyle}"
                                 Click="OnboardingSkip_Click" AutomationProperties.Name="跳过新手指引" />
-                        <Button x:Name="OnboardingPrevious" Grid.Column="1" Content="← 上一步" Margin="4,0,6,0"
+                        <Button x:Name="OnboardingPrevious" Grid.Column="1" Content="上一步" Margin="4,0,8,0"
                                 ContentTemplate="{StaticResource Onboarding.ActionText}"
-                                Padding="6,4" MinWidth="0" Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="14,0" Height="34" FontSize="13" FontWeight="Normal"
+                                Style="{StaticResource SubtleButtonStyle}"
                                 Click="OnboardingPrevious_Click" AutomationProperties.Name="上一步" />
-                        <Button x:Name="OnboardingNext" Grid.Column="2" Content="下一步 →" Padding="10,4" MinWidth="0"
+                        <Button x:Name="OnboardingNext" Grid.Column="2" Content="下一步" Padding="14,0"
+                                Width="88" Height="34" FontSize="13" FontWeight="SemiBold"
                                 ContentTemplate="{StaticResource Onboarding.ActionText}"
                                 Style="{StaticResource PrimaryButtonStyle}" Click="OnboardingNext_Click"
                                 AutomationProperties.Name="下一步" />

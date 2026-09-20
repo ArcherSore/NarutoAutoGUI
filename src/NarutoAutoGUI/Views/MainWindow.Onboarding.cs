@@ -36,6 +36,7 @@ public partial class MainWindow
     private readonly RectangleGeometry _onboardingHole = new();
     private Rect _onboardingTargetBounds = Rect.Empty;
     private Rect _onboardingWindowBounds = Rect.Empty;
+    private (Rect Popover, Rect Target) _onboardingArrowBounds = (Rect.Empty, Rect.Empty);
     private readonly Dictionary<string, FrameworkElement> _taskDescriptionButtons = new(StringComparer.Ordinal);
 
     private bool IsOnboardingVisible => _onboardingActive && !_onboardingPaused
@@ -133,7 +134,7 @@ public partial class MainWindow
                     new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
             }
             if (playPulse && _onboardingStep == 1 && SystemParameters.ClientAreaAnimation) {
-                await Task.Delay(300, cancellation.Token);
+                await Task.Delay(450, cancellation.Token);
                 await PlayOnboardingPulseAsync(cancellation.Token);
             }
         } catch (OperationCanceledException) when (cancellation.IsCancellationRequested) {
@@ -187,7 +188,7 @@ public partial class MainWindow
         AutomationProperties.SetName(OnboardingPopover, OnboardingTitle.Text);
         OnboardingPrevious.Visibility = _onboardingStep == 0 ? Visibility.Collapsed : Visibility.Visible;
         OnboardingSkip.Visibility = _onboardingStep == 3 ? Visibility.Collapsed : Visibility.Visible;
-        OnboardingNext.Content = _onboardingStep == 3 ? "开始使用" : "下一步 →";
+        OnboardingNext.Content = _onboardingStep == 3 ? "开始使用" : "下一步";
         AutomationProperties.SetName(OnboardingNext, _onboardingStep == 3 ? "开始使用" : "下一步");
     }
 
@@ -201,13 +202,16 @@ public partial class MainWindow
             .TransformBounds(new Rect(new WpfSize(target.ActualWidth, target.ActualHeight)));
     }
 
-    private Rect VisibleOnboardingBounds(FrameworkElement target)
+    private Rect VisibleOnboardingBounds(FrameworkElement target, double padding = 0)
     {
         var bounds = OnboardingBounds(target);
-        bounds.Intersect(OnboardingClipBounds(target));
+        var clip = OnboardingClipBounds(target);
+        bounds.Intersect(clip);
         if (bounds.IsEmpty || bounds.Width <= 0 || bounds.Height <= 0) {
             throw new InvalidOperationException("新手指引目标不在可见区域。");
         }
+        bounds.Inflate(padding, padding);
+        bounds.Intersect(clip);
         return bounds;
     }
 
@@ -226,10 +230,8 @@ public partial class MainWindow
     private void UpdateOnboardingGeometry(bool animate = false)
     {
         var target = ResolveOnboardingTarget(_onboardingStep);
-        var bounds = VisibleOnboardingBounds(target);
-        bounds.Inflate(8, 8);
+        var bounds = VisibleOnboardingBounds(target, padding: 8);
         var window = new Rect(new WpfSize(WindowOverlayRoot.ActualWidth, WindowOverlayRoot.ActualHeight));
-        bounds.Intersect(OnboardingClipBounds(target));
         var changed = bounds != _onboardingTargetBounds || window != _onboardingWindowBounds;
         if (changed) {
             var previous = _onboardingHole.Rect;
@@ -257,8 +259,9 @@ public partial class MainWindow
     {
         const double inset = 16;
         const double gap = 12;
+        var topInset = Math.Max(inset, OnboardingBounds(MainNavigation).Top + inset);
         OnboardingPopover.Width = Math.Min(312, Math.Max(1, window.Width - inset * 2));
-        OnboardingPopover.MaxHeight = Math.Max(1, window.Height - inset * 2);
+        OnboardingPopover.MaxHeight = Math.Max(1, window.Height - topInset - inset);
         OnboardingPopover.Measure(new WpfSize(OnboardingPopover.Width, OnboardingPopover.MaxHeight));
         var size = OnboardingPopover.DesiredSize;
         var center = new WpfPoint(target.X + target.Width / 2, target.Y + target.Height / 2);
@@ -272,7 +275,7 @@ public partial class MainWindow
         foreach (var candidate in candidates) {
             var placed = new Rect(
                 Math.Clamp(candidate.X, inset, Math.Max(inset, window.Width - inset - size.Width)),
-                Math.Clamp(candidate.Y, inset, Math.Max(inset, window.Height - inset - size.Height)),
+                Math.Clamp(candidate.Y, topInset, Math.Max(topInset, window.Height - inset - size.Height)),
                 size.Width, size.Height);
             var intersection = Rect.Intersect(placed, target);
             var overlap = intersection.IsEmpty ? 0 : intersection.Width * intersection.Height;
@@ -294,10 +297,10 @@ public partial class MainWindow
     private void DrawOnboardingArrow(Rect popover, Rect target, bool visible)
     {
         OnboardingArrow.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        if (!visible) {
+        if (!visible || _onboardingArrowBounds == (popover, target)) {
             return;
         }
-        var points = new WpfPoint[3];
+        WpfPoint[] points;
         if (popover.Left >= target.Right || popover.Right <= target.Left) {
             var x = popover.Left >= target.Right ? popover.Left : popover.Right;
             var y = Math.Clamp(target.Y + target.Height / 2, popover.Top + 16, popover.Bottom - 16);
@@ -314,6 +317,7 @@ public partial class MainWindow
             context.LineTo(points[2], isStroked: true, isSmoothJoin: false);
         }
         OnboardingArrow.Data = geometry;
+        _onboardingArrowBounds = (popover, target);
     }
 
     private void Onboarding_LayoutUpdated(object? sender, EventArgs e)
@@ -334,23 +338,34 @@ public partial class MainWindow
         }, DispatcherPriority.Background);
     }
 
-    private async Task PlayOnboardingPulseAsync(CancellationToken cancellation, int count = 2)
+    private async Task PlayOnboardingPulseAsync(CancellationToken cancellation, int count = 3)
     {
         if (!PositionOnboardingPulse()) {
             return;
         }
-        for (var index = 0; index < Math.Clamp(count, 1, 3); index++) {
+        var repetitions = Math.Clamp(count, 1, 3);
+        for (var index = 0; index < repetitions; index++) {
             cancellation.ThrowIfCancellationRequested();
             if (!IsOnboardingVisible || !SystemParameters.ClientAreaAnimation) {
                 return;
             }
             OnboardingPulse.Visibility = Visibility.Visible;
-            var duration = TimeSpan.FromMilliseconds(600);
-            OnboardingPulse.BeginAnimation(OpacityProperty, new DoubleAnimation(0.65, 0, duration));
+            var duration = TimeSpan.FromMilliseconds(850);
+            var opacity = new DoubleAnimationUsingKeyFrames();
+            opacity.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+            opacity.KeyFrames.Add(new LinearDoubleKeyFrame(0.38, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(100))));
+            opacity.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(duration)));
+            OnboardingPulse.BeginAnimation(OpacityProperty, opacity);
             var scale = (ScaleTransform)OnboardingPulse.RenderTransform;
-            scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1, 1.35, duration));
-            scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, 1.35, duration));
+            var expansion = new DoubleAnimation(1, 32.0 / 24, duration) {
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+            };
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, expansion);
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, expansion);
             await Task.Delay(duration, cancellation);
+            if (index + 1 < repetitions) {
+                await Task.Delay(200, cancellation);
+            }
         }
         StopOnboardingPulse();
     }
@@ -368,10 +383,8 @@ public partial class MainWindow
             StopOnboardingPulse();
             return false;
         }
-        Canvas.SetLeft(OnboardingPulse, bounds.Left - 3);
-        Canvas.SetTop(OnboardingPulse, bounds.Top - 3);
-        OnboardingPulse.Width = bounds.Width + 6;
-        OnboardingPulse.Height = bounds.Height + 6;
+        Canvas.SetLeft(OnboardingPulse, bounds.Left + bounds.Width / 2 - OnboardingPulse.Width / 2);
+        Canvas.SetTop(OnboardingPulse, bounds.Top + bounds.Height / 2 - OnboardingPulse.Height / 2);
         return true;
     }
 
@@ -464,14 +477,12 @@ public partial class MainWindow
                     RenderTaskPlan();
                 }
                 TaskWorkspacePanel.ScrollToVerticalOffset(_onboardingPreviousScroll);
-                SwitchSection(MainSection.Settings);
+                SwitchSection(MainSection.Home);
             }
             if (!_onboardingClosed && !_exitInProgress) {
                 if (_onboardingPreviousFocus is UIElement { IsVisible: true, IsEnabled: true, Focusable: true }
                     element) {
                     element.Focus();
-                } else if (restoreReplay) {
-                    ReplayOnboardingButton.Focus();
                 } else {
                     HomeNavigationItem.Focus();
                 }

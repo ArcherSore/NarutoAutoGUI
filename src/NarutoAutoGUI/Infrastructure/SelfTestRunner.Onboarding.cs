@@ -16,6 +16,14 @@ internal static partial class SelfTestRunner
 {
     private static void VerifyOnboarding(AppLogger logger, string testDirectory)
     {
+        RunOnboardingScenario(logger, Path.Combine(testDirectory, "layout-stability"), (window, directory) => {
+            StartAutomaticOnboarding(window);
+            AssertOnboardingLayoutSettles(window);
+            window.Width = 920;
+            window.Height = 640;
+            AssertOnboardingLayoutSettles(window);
+            AssertOnboardingPlacement(window);
+        });
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "auto"), (window, directory) => {
             PumpOnboarding(450);
             if (!ConfigurationDescendants((DependencyObject)window.FindName("PlanItemsPanel"))
@@ -86,10 +94,10 @@ internal static partial class SelfTestRunner
             ClickOnboarding(window, "OnboardingNext");
             ClickOnboarding(window, "OnboardingNext");
             if (((UIElement)window.FindName("OnboardingOverlay")).Visibility != Visibility.Collapsed
-                || ((UIElement)window.FindName("SettingsView")).Visibility != Visibility.Visible
+                || ((UIElement)window.FindName("HomeView")).Visibility != Visibility.Visible
                 || !before.SequenceEqual(File.ReadAllBytes(path)) || File.ReadAllText(versionPath) != "9"
                 || !pending.SequenceEqual(File.ReadAllBytes(pendingPath))) {
-                throw new InvalidOperationException("Replay 必须回到设置且保持配置、完成版本和资格不变。");
+                throw new InvalidOperationException("Replay 必须回到首页且保持配置、完成版本和资格不变。");
             }
             var project = ProjectPlanModule.Open(directory, path);
             project.RemoveTask("RealTask");
@@ -209,7 +217,7 @@ internal static partial class SelfTestRunner
             PumpOnboarding(500);
             AssertOnboardingStep(window, 1, "配置自动化任务");
             ClickOnboarding(window, "OnboardingNext");
-            PumpOnboarding(1700);
+            PumpOnboarding(3700);
             if (((UIElement)window.FindName("OnboardingPulse")).Visibility != Visibility.Collapsed) {
                 throw new InvalidOperationException("说明图标 Pulse 必须有限，不能无限循环。");
             }
@@ -337,13 +345,33 @@ internal static partial class SelfTestRunner
         }
     }
 
+    private static void AssertOnboardingLayoutSettles(MainWindow window)
+    {
+        PumpOnboarding(400);
+        var root = (FrameworkElement)window.FindName("WindowOverlayRoot");
+        var layouts = 0;
+        EventHandler onLayout = (_, _) => layouts++;
+        root.LayoutUpdated += onLayout;
+        try {
+            PumpOnboarding(200);
+            if (layouts > 5) {
+                throw new InvalidOperationException("新手指引静止后不能持续触发布局。");
+            }
+        } finally {
+            root.LayoutUpdated -= onLayout;
+        }
+    }
+
     private static void AssertOnboardingPlacement(MainWindow window)
     {
         var root = (FrameworkElement)window.FindName("WindowOverlayRoot");
         var popover = (FrameworkElement)window.FindName("OnboardingPopover");
         var bounds = popover.TransformToAncestor(root).TransformBounds(new Rect(popover.RenderSize));
-        if (bounds.Left < 0 || bounds.Top < 0 || bounds.Right > root.ActualWidth || bounds.Bottom > root.ActualHeight) {
-            throw new InvalidOperationException("新手指引浮层必须完整位于窗口内。");
+        var navigation = (FrameworkElement)window.FindName("MainNavigation");
+        var contentTop = navigation.TransformToAncestor(root).Transform(new System.Windows.Point()).Y;
+        if (bounds.Left < 0 || bounds.Top < contentTop + 16
+            || bounds.Right > root.ActualWidth || bounds.Bottom > root.ActualHeight) {
+            throw new InvalidOperationException("新手指引浮层必须完整位于窗口内并避开标题栏。");
         }
     }
 }

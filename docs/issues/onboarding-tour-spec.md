@@ -33,7 +33,7 @@ implementation: implemented-awaiting-interactive-validation
 后续点击 `+` 仍创建空配置。已有文件、迁移、损坏文件 fallback 和空列表修正均不补入任务。
 
 仅真正的新用户获得自动 Tour。自动 Tour 的“开始使用”“跳过”和 Esc 都记录已处理 V1；
-设置页提供“重新查看新手指引”，忽略完成版本且不改写任何 Onboarding 持久化状态。
+设置页提供“查看新手指引”，忽略完成版本且不改写任何 Onboarding 持久化状态。
 最小化或隐藏到托盘只暂停显示，同一窗口恢复后继续当前步；跨进程只保留新用户资格，不保存步骤。
 
 ## User Stories
@@ -196,7 +196,7 @@ implementation: implemented-awaiting-interactive-validation
   进入时工作区滚动到顶部，确保配置标签可见；不高亮“任务”标题、错误提示或整个左栏。
   计划比窗口高时不要求全部内容同时入屏。
 - Preferred placement：Right。
-- 操作按顺序为“跳过”“下一步 →”；不显示“上一步”。计数 `1 / 4`。
+- 操作按顺序为“跳过”“下一步”；不显示“上一步”。计数 `1 / 4`。
 
 #### Step 2：任务说明与参数
 
@@ -210,7 +210,7 @@ implementation: implemented-awaiting-interactive-validation
   通过 `_planItemContainers` 取实际 Border；包含标题、顶层任务说明按钮和整个参数编辑区域。
   不依据当前 Active Run 的 Plan Item ID，也不缓存上一次 RenderPlanItems 的控件。
 - 首次自动路径中卡片已在正常初始化时展开。进入前 BringIntoView，等布局完成后再计算几何。
-- Preferred placement：Right。操作为“跳过”“← 上一步”“下一步 →”，计数 `2 / 4`。
+- Preferred placement：Right。操作为“跳过”“上一步”“下一步”，计数 `2 / 4`。
 - 仅顶层任务说明 ⓘ 播放有限蓝色 Pulse；参数标签旁的说明图标不播放，整个卡片不 Pulse。
 - Description 缺失时当前 UI 不创建 ⓘ，参数为空时没有编辑器。这是合法 PI 形态：
   保持第一项选择及真实卡片，不伪造入口、参数或选另一个 task；可选 Pulse target 缺失时省略动画。
@@ -232,7 +232,7 @@ implementation: implemented-awaiting-interactive-validation
 
 - Target：RuntimeSidebar 第一行整张 Runtime Control Border，含标题及当前状态操作。
   不只框 32×32 图标，不改原有重试、进度环、禁用及状态投影逻辑。
-- Preferred placement：Left。操作为“跳过”“← 上一步”“下一步 →”，计数 `3 / 4`。
+- Preferred placement：Left。操作为“跳过”“上一步”“下一步”，计数 `3 / 4`。
 - 不调用 Prepare、Start、Stop，也不要求用户实际点击运行入口。
 
 #### Step 4：实时截图
@@ -245,14 +245,14 @@ implementation: implemented-awaiting-interactive-validation
 
 - Target：RuntimeSidebar 第二行整张 Preview Border，包含标题、放大/折叠入口、图像或占位图，
   以及显示/隐藏分身入口。分身按钮沿用真实 enabled/visibility，不伪造运行环境状态。
-- Preferred placement：Left。操作为“← 上一步”“开始使用”，计数 `4 / 4`。
+- Preferred placement：Left。操作为“上一步”“开始使用”，计数 `4 / 4`。
   最后一步不显示“下一步”或单独“跳过”；Esc 仍等价 Skip。
 - 无 Session、Worker 或游戏画面时用真实 placeholder 完成介绍，无需先准备环境。
 
 ### 6. Replay 和临时展示状态
 
 - Settings 添加轻量“帮助”区，项目名“新手指引”，说明
-  “快速了解任务配置、运行控制和实时截图。”，按钮“重新查看新手指引”。
+  “快速了解任务配置、运行控制和实时截图。”，按钮“查看新手指引”。
 - 入口在 Project 成功、非 busy、非退出且没有其他 Overlay 时可用；不可用时显示简短原因。
   若必要 target 仍缺失，停止并 WARN，不留下遮罩，帮助区可提示暂时无法显示。
 - 手动开始先记录原焦点和原页面，再通过已有 SwitchSection 切到 Home，从 Step 1 开始。
@@ -264,7 +264,7 @@ implementation: implemented-awaiting-interactive-validation
   不因重建/焦点变化触发额外的 option 保存。Settings 点击之前的正常用户失焦提交仍按原规则处理。
 - 运行中的 Configuration Edit Lock 继续有效。replay 只可改变 GUI 展开显示，不解除运行编辑锁。
   已有运行和 Preview 继续按原状态工作；用户始终能 Esc 返回，Tour 不持有应用操作门。
-- 手动 Tour 结束回 Settings，恢复可用的原焦点，否则聚焦 replay 按钮；不因隐藏的 Home 控件留下焦点。
+- 手动 Tour 结束留在首页，恢复可见且可用的原焦点，否则聚焦首页导航；不聚焦已隐藏的设置控件。
   如果期间真实退出，释放 UI 引用即可，不强行切回页面。
 - 所有 View-only 恢复先核对窗口、配置和控件仍有效；不为恢复布局重建消失的配置或任务。
 
@@ -295,6 +295,9 @@ implementation: implemented-awaiting-interactive-validation
 
 - Popover 使用现有 Surface 背景、字体、正文/次要文字色、Radius.Section 和轻量 Surface 阴影。
   保留标题、正文、step counter、footer 和小箭头；不引入 Web Tour 样式或第三方大框架。
+- 2026-09-20 实测反馈调整：跳过/上一步使用无常驻描边的中性色轻按钮，保留 hover 和键盘焦点反馈；
+  下一步/开始使用保留蓝底白字，固定 88 DIP 宽，按钮统一 34 DIP 高，不使用字符箭头。
+  Popover 顶部至少位于导航内容起点下方 16 DIP，避免覆盖标题栏。
 - backdrop 使用 26% 黑色透明度作为 24–28% 的默认值，目标保持正常亮度，不 Blur 背景。
   视觉 hole 可用排除圆角矩形的几何；另设完整透明输入拦截层，hole 不成为 hit-test hole。
 - 卡片高亮圆角跟随真实 target，矩形工作区使用相近的轻量圆角；可用 1 DIP 浅蓝细边框。
@@ -303,8 +306,9 @@ implementation: implemented-awaiting-interactive-validation
   动画只作用于 Overlay 自己的 visual，不修改或动画化共享 frozen brush，也不改目标控件的业务状态。
 - 切步默认约 200 ms、ease-out：旧文案淡出、Spotlight 平滑移动/缩放、新文案淡入。
   保持同一个 Overlay 存活，不整屏隐藏重建。首次自动出现等待约 400 ms 后轻量淡入。
-- Step 2 完成定位后约 300 ms 开始 Pulse，每次约 600 ms，默认 2 次。
-  仅提供内部 1–3 次常量/参数，不增加用户设置。蓝色 ring/surface 轻微向外扩散并淡出，结束后完全移除。
+- Step 2 完成定位后约 450 ms 开始 Pulse，每次约 850 ms，中间间隔 200 ms，默认 3 次。
+  仅提供内部 1–3 次常量/参数，不增加用户设置。蓝色细圆环以说明图标为中心，从直径 24 DIP 扩散至
+  32 DIP，不填充背景；先轻量淡入再淡出，结束后完全移除，不跟随按钮的长方形点击区域拉伸。
 - 离开步骤、Skip、Esc、Finish、暂停、失败或窗口销毁立即取消延时和动画；迟到回调检查当前展示代次。
   Resize 只重定位，不重放 Pulse；从最小化恢复同一步也不重新播放，重新进入 Step 2 可再播放一次有限序列。
 - SystemParameters.ClientAreaAnimation 为 false 时无 Pulse、无移动/淡入淡出，直接切换最终布局。
@@ -360,7 +364,7 @@ CurrentStep 只存在于 MainWindow 内存，四步均由用户按钮推进，�
 | Pending 时 busy/其他 Overlay/不在 Home | 继续等待 | 不写完成，不强制抢回 Home |
 | Next / Previous | 切到相邻步骤 | 不写文件；不得越过缺失步骤 |
 | Auto 的 Skip / Esc / Finish | 清理并结束 | 实际显示后才写完成版本 |
-| Replay 的 Skip / Esc / Finish | 清理、恢复展示和 Settings | 所有 Onboarding 文件不变 |
+| Replay 的 Skip / Esc / Finish | 清理、恢复展示并留在首页 | 所有 Onboarding 文件不变 |
 | 最小化或 Hide 到托盘 | 隐藏 Overlay，取消动画，保留步骤 | 不记完成，不取消核心运行 |
 | 同窗口恢复 | 等待布局与门槛，重定位同一步 | 不重播被中断的 Pulse |
 | Showing 时开始外部 busy 操作 | 暂停并释放输入限制 | busy 结束后满足条件再恢复，不阻塞操作门 |
@@ -441,7 +445,7 @@ DPI、动画观感和真实托盘交互保留人工验收。不引入新的分�
 | A28 | 最小化/隐藏后恢复 | 同一步重定位，动画取消，无完成写入，不重放中断 Pulse |
 | A29 | 底层点击、滚轮、快捷键 | 参数、配置、Drawer、运行入口均无意外动作 |
 | A30 | Tab/Shift+Tab/Esc/关闭 | 焦点限制有效，关闭后聚焦可见控件，不留透明输入墙 |
-| A31 | Pulse 与步切/快速连续点击 | 默认最多两次，切步立即终止；旧回调不画在下一步 |
+| A31 | Pulse 与步切/快速连续点击 | 默认最多三次，切步立即终止；旧回调不画在下一步 |
 | A32 | 系统动画关闭/运行中关闭 | 无 Pulse 或移动，立即展示正确最终态，导航正常 |
 | A33 | Preview/Update/Drawer 互斥 | 不叠层；原焦点、Blur、Esc 和原生钩子行为可恢复 |
 | A34 | 原有 Active Run 或 Preview 展示 | 不产生额外 Prepare/Start/Stop/安装调用，不修改运行快照 |

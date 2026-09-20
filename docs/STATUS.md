@@ -2,6 +2,12 @@
 
 ## 当前阶段
 
+2026-09-20：按用户要求将新手指引版本 `816651c` 的 GUI 及 ProjectModel/Protocol/Updates 四个程序集
+同步至 `D:\MaaNOP-win-x86_64-v2.4.0`，逐项 SHA256 一致，目标目录 GUI 完整自检通过。
+旧程序集及原 config 已备份至 `artifacts/onboarding-first-run-backup-20260920-161713/`，配置备份哈希一致。
+目标 config 目录已移出，保留新用户首次正常启动体验；后续可恢复旧配置模拟老用户。
+interface 哈希未变，未改 Worker、任务资源或真实 Session；尚未执行首次启动的交互验收。
+
 2026-09-20：按 [新手指引规格](issues/onboarding-tour-spec.md) 接入四步 Fluent Spotlight/Popover，
 首次缺失配置预置并展开 PI 第一项，后续 `+` 仍为空；独立保存首次资格和完成版本，老用户不自动弹，
 设置 replay 不改配置或版本。支持真实 target/滚动裁剪、有限 Pulse、暂停恢复和输入/焦点限制。

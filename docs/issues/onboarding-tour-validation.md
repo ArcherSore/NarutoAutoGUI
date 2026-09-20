@@ -2,6 +2,18 @@
 
 日期：2026-09-20。规格：[四步新手指引](onboarding-tour-spec.md)。
 
+## 测试目录准备
+
+2026-09-20 16:17 按用户要求部署 `816651c`：确认 GUI/Worker 未运行后，将 GUI 主程序集和
+`libs` 中的 ProjectModel/Protocol/Updates 同步至 `D:\MaaNOP-win-x86_64-v2.4.0`，四项 SHA256 一致。
+通过 `dotnet NarutoAutoGUI.dll --self-test` 验证目标目录 GUI 完整自检。
+随后将原 config 目录移至 `artifacts/onboarding-first-run-backup-20260920-161713/config/`，
+逐文件核对备份哈希；同一备份目录还保存旧程序集和部署哈希清单。
+目标 config 不存在，下次正常启动将走新用户首次初始化；尚未启动正常 GUI 消耗首次体验。
+后续模拟老用户可在退出 GUI 后恢复该备份 config，保留新版程序集。
+interface 哈希未变，未改 Worker、MaaNOP 资源、日志或缓存，未执行真实游戏/分身操作。
+以下“未覆盖实测安装目录”描述仅对应实现阶段，部署事实以本节为准。
+
 ## 实现范围
 
 首次缺失配置由 ProjectPlanModule 预置并保存 PI 第一项，ExplicitOptions 为空，首次 GUI 渲染即展开。

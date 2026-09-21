@@ -94,14 +94,14 @@ internal static partial class SelfTestRunner
         }
         archive.Dispose();
         VerifyDiagnosticEntries(destination, ["logs/NarutoAutoGUI-recent.log"],
-            ["logs/updater.log", "debug/maa.log", "debug/maa.bak.log"], []);
+            ["logs/updater.log", "debug/maa.log", "debug/maa.bak.log", "debug/maafw.log"], []);
         File.Delete(Path.Combine(actualLogs, "NarutoAutoGUI-recent.log"));
         for (var index = 0; index < 7; index++) {
             var path = Path.Combine(actualLogs, $"NarutoAutoGUI-{index}.log");
             File.WriteAllText(path, $"GUI log {index}");
             File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddHours(-index));
         }
-        string[] optional = ["logs/updater.log", "debug/maa.log", "debug/maa.bak.log"];
+        string[] optional = ["logs/updater.log", "debug/maa.log", "debug/maa.bak.log", "debug/maafw.log"];
         string[] excluded = ["config/maanop-config.json", "cache/foo", "state/foo", "debug/screenshot.png",
             "resource/foo", "interface.json", "agent/foo", "python/foo"];
         foreach (var name in optional.Concat(excluded)) {
@@ -128,7 +128,8 @@ internal static partial class SelfTestRunner
             liveLog.WriteByte(10);
         }
         exporter.Export(destination, application, Path.Combine(application, "logs"), metadata);
-        VerifyDiagnosticEntries(destination, ["logs/NarutoAutoGUI-wrong.log", "logs/updater.log", "debug/maa.log"],
+        VerifyDiagnosticEntries(destination,
+            ["logs/NarutoAutoGUI-wrong.log", "logs/updater.log", "debug/maa.log", "debug/maafw.log"],
             ["debug/maa.bak.log"], []);
         VerifyDiagnosticFailures(exporter, root, application, actualLogs, metadata);
     }

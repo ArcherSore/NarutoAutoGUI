@@ -30,6 +30,7 @@ internal sealed class DiagnosticPackageExporter(AppLogger logger)
                 AddLog(Path.Combine(applicationDirectory, "logs", "updater.log"), "logs/updater.log");
                 AddLog(Path.Combine(applicationDirectory, "debug", "maa.log"), "debug/maa.log");
                 AddLog(Path.Combine(applicationDirectory, "debug", "maa.bak.log"), "debug/maa.bak.log");
+                AddLog(Path.Combine(applicationDirectory, "debug", "maafw.log"), "debug/maafw.log");
                 using var json = archive.CreateEntry("diagnostics.json").Open();
                 JsonSerializer.Serialize(json, new {
                     metadata.GeneratedAtUtc,

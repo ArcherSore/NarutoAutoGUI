@@ -2,6 +2,13 @@
 
 ## 当前阶段
 
+2026-09-21 10:59：修复诊断包漏收实机 MaaFramework 日志。实际 `debug/` 中为 `maafw.log`，
+首版只按 `maa.log`/`maa.bak.log` 白名单取文件，未验证实机命名；现补入明确的 `debug/maafw.log`，
+继续排除截图及其他 debug 内容。同名 fixture 先复现失败，修复后 support 定向测试与 Release GUI 构建/发布通过。
+使用真实安装目录执行 exporter，ZIP 含 56,835 字节的 `debug/maafw.log`，SHA256 与原文件一致。
+修复 GUI DLL 已同步到 `D:\MaaNOP-win-x86_64-v2.4.0`，目标 support 自检通过，config/interface 未变；
+旧 DLL 备份至 `artifacts/maafw-log-fix-backup-20260921-105954/`。双轴审查、120 列及 diff 空白检查通过。
+
 2026-09-21 10:46：按用户要求将 v1.7.1 GUI 主程序、依赖清单与三个配套程序集（共六个文件）
 同步至 `D:\MaaNOP-win-x86_64-v2.4.0`。同步前 GUI/Worker 均未运行；旧文件及日志基线保存至
 `artifacts/v1.7.1-sync-backup-20260921-104635/`，源/目标 SHA256 一致，config 与 interface 哈希未变。

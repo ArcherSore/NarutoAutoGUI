@@ -2,6 +2,11 @@
 
 ## 当前阶段
 
+2026-09-21 10:46：按用户要求将 v1.7.1 GUI 主程序、依赖清单与三个配套程序集（共六个文件）
+同步至 `D:\MaaNOP-win-x86_64-v2.4.0`。同步前 GUI/Worker 均未运行；旧文件及日志基线保存至
+`artifacts/v1.7.1-sync-backup-20260921-104635/`，源/目标 SHA256 一致，config 与 interface 哈希未变。
+目标目录 `--self-test --project-only` 通过（包含本轮 support 定向测试）；未启动实际游戏或进行 Balloon 验收。
+
 2026-09-21（v1.7.1）：实现后台任务完成/失败托盘通知与 Settings 一键导出问题诊断包。
 App 观察现有 fresh Run Snapshot；仅通知本 GUI 生命周期见过 ActiveRun 的成功/失败终态，
 取消和历史终态不通知，同 runId 去重，主窗口显示且活动时抑制，点击 Balloon 复用主窗口恢复入口。

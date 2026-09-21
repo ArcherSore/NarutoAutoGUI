@@ -2,6 +2,12 @@
 
 ## 当前阶段
 
+2026-09-21：按用户要求核对 MaaFramework v5.12.3 及其固定 MaaUtils 源码，确认轮转日志实际为
+`maafw.bak.<本地时间戳>.log`，当前仅收 `maafw.log` 的导出仍漏轮转备份；需按已确认的命名补齐。
+`vision/`、`on_error/`、`screencap/` 分别由保存绘图、错误截图及显式截图动作产生，继续受原截图排除边界约束。
+LogDir、DebugMode、SaveDraw 是不同选项；当前 Agent 只显式设置 LogDir，Worker 全局日志初始化覆盖仍需另验。
+证据与默认值见 [源码研究记录](research/maaframework-debug-outputs.md)。本轮仅研究并记录，不修改产品或开启调试。
+
 2026-09-21 11:13：按用户反馈移除诊断导出的旧 `maa.log`/`maa.bak.log` 检查，仅按实机 `maafw.log`
 采集 MaaFramework 日志，避免在 `missingOptionalFiles` 中报告不存在的旧命名。回归测试先红后绿；
 Release GUI 发布与目标 support 自检通过。真实目录导出确认 `maafw.log` 内容哈希一致，

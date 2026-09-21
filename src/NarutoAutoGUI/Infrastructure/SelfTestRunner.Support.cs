@@ -94,14 +94,14 @@ internal static partial class SelfTestRunner
         }
         archive.Dispose();
         VerifyDiagnosticEntries(destination, ["logs/NarutoAutoGUI-recent.log"],
-            ["logs/updater.log", "debug/maa.log", "debug/maa.bak.log", "debug/maafw.log"], []);
+            ["logs/updater.log", "debug/maafw.log"], []);
         File.Delete(Path.Combine(actualLogs, "NarutoAutoGUI-recent.log"));
         for (var index = 0; index < 7; index++) {
             var path = Path.Combine(actualLogs, $"NarutoAutoGUI-{index}.log");
             File.WriteAllText(path, $"GUI log {index}");
             File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddHours(-index));
         }
-        string[] optional = ["logs/updater.log", "debug/maa.log", "debug/maa.bak.log", "debug/maafw.log"];
+        string[] optional = ["logs/updater.log", "debug/maafw.log"];
         string[] excluded = ["config/maanop-config.json", "cache/foo", "state/foo", "debug/screenshot.png",
             "resource/foo", "interface.json", "agent/foo", "python/foo"];
         foreach (var name in optional.Concat(excluded)) {
@@ -114,12 +114,12 @@ internal static partial class SelfTestRunner
         string[] expected = ["logs/NarutoAutoGUI-0.log", "logs/NarutoAutoGUI-1.log", "logs/NarutoAutoGUI-2.log",
             "logs/NarutoAutoGUI-3.log", "logs/NarutoAutoGUI-4.log", .. optional];
         VerifyDiagnosticEntries(destination, expected, [], []);
-        File.Delete(Path.Combine(application, "debug", "maa.bak.log"));
-        using (var locked = new FileStream(Path.Combine(application, "debug", "maa.log"), FileMode.Open,
+        File.Delete(Path.Combine(application, "logs", "updater.log"));
+        using (var locked = new FileStream(Path.Combine(application, "debug", "maafw.log"), FileMode.Open,
                    FileAccess.ReadWrite, FileShare.None)) {
             exporter.Export(destination, application, actualLogs, metadata);
-            VerifyDiagnosticEntries(destination, expected.Except(["debug/maa.log", "debug/maa.bak.log"]).ToArray(),
-                ["debug/maa.bak.log"], ["debug/maa.log"]);
+            VerifyDiagnosticEntries(destination, expected.Except(["logs/updater.log", "debug/maafw.log"]).ToArray(),
+                ["logs/updater.log"], ["debug/maafw.log"]);
         }
         // A live writer stays open and can append after export; no logger shutdown is needed.
         using (var liveLog = new FileStream(Path.Combine(actualLogs, "NarutoAutoGUI-0.log"), FileMode.Append,
@@ -129,8 +129,7 @@ internal static partial class SelfTestRunner
         }
         exporter.Export(destination, application, Path.Combine(application, "logs"), metadata);
         VerifyDiagnosticEntries(destination,
-            ["logs/NarutoAutoGUI-wrong.log", "logs/updater.log", "debug/maa.log", "debug/maafw.log"],
-            ["debug/maa.bak.log"], []);
+            ["logs/NarutoAutoGUI-wrong.log", "debug/maafw.log"], ["logs/updater.log"], []);
         VerifyDiagnosticFailures(exporter, root, application, actualLogs, metadata);
     }
 

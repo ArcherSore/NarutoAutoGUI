@@ -2,6 +2,12 @@
 
 ## 当前阶段
 
+2026-09-21 11:13：按用户反馈移除诊断导出的旧 `maa.log`/`maa.bak.log` 检查，仅按实机 `maafw.log`
+采集 MaaFramework 日志，避免在 `missingOptionalFiles` 中报告不存在的旧命名。回归测试先红后绿；
+Release GUI 发布与目标 support 自检通过。真实目录导出确认 `maafw.log` 内容哈希一致，
+`missingOptionalFiles=[]`、`skippedFiles=[]`；修复 DLL 已同步，旧 DLL 备份位于
+`artifacts/diagnostics-metadata-backup-20260921-111331/`。双轴审查、120 列及 diff 空白检查通过。
+
 2026-09-21 10:59：修复诊断包漏收实机 MaaFramework 日志。实际 `debug/` 中为 `maafw.log`，
 首版只按 `maa.log`/`maa.bak.log` 白名单取文件，未验证实机命名；现补入明确的 `debug/maafw.log`，
 继续排除截图及其他 debug 内容。同名 fixture 先复现失败，修复后 support 定向测试与 Release GUI 构建/发布通过。

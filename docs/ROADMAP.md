@@ -3,11 +3,12 @@
 ## 已实现：v1.7.1 后台任务提醒与诊断包
 
 - 已接入 App/tray 的 fresh Run 终态提醒：成功/失败、前台抑制、历史与重复抑制、点击恢复；取消不提醒。
-- Settings 可独立后台导出近期白名单日志与安全元信息 ZIP，实际日志目录 fallback、可选日志失败继续和
-  临时文件提交已覆盖；按实机 `debug/maafw.log` 采集并生成清单，已验证包内内容哈希。未扩展通知偏好、配置导出、
-  日志上传或开机启动，也未改变核心执行链。
-- 源码核对后确认仍需补收 `maafw.bak.<时间戳>.log`，并另验 Worker/Agent 两侧日志初始化覆盖；
-  依据见 [MaaFramework 调试输出定义](research/maaframework-debug-outputs.md)，不扩大为整个 debug 目录打包。
+- Settings 独立后台导出最新五份 GUI 日志、Updater 日志、MaaFramework 主日志及全部时间戳备份。
+  按用户最新确认，还包含框架定义的 vision/on_error/screencap 调试图片，文案明确可能含游戏画面。
+  采集范围由支持的 v5.12.3 定义决定，不依赖 MaaNOP 当前开关；不扫描其他目录、不跟随目录/文件链接。
+  实际日志目录 fallback、可选文件失败继续和临时文件提交已覆盖，不扩展配置导出、上传或开机启动。
+- Worker/Agent 两侧日志初始化覆盖仍需另验，当前导出不会为了生成文件而改变执行链或开启调试选项。
+  依据见 [MaaFramework 调试输出定义](research/maaframework-debug-outputs.md)。
 - Release 构建、定向测试与最小窗口离屏布局验证已通过；完整自检结果见 [Status](STATUS.md)。
   余下仅本轮 Windows Balloon/保存对话框交互与真实 Run 并行导出人工验收；不重写此前已验收结论。
 

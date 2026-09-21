@@ -2,6 +2,21 @@
 
 ## 当前阶段
 
+2026-09-21：用户明确要求按 MaaFramework 定义准备完整诊断，并确认包含官方调试图片，覆盖初始截图排除要求。
+导出现按 v5.12.3 固定范围采集 `maafw.log`、全部 `maafw.bak.<时间戳>.log`、`vision/**/*.jpg`、
+`on_error/**/*.png`、`screencap/**/*.{png,jpg,jpeg}`；不依赖当前 MaaNOP 开关或实机恰好已有的文件。
+GUI 日志仍取实际 AppLogger 目录最新五份；不收配置、缓存、其他 debug 文件或任意录制路径。
+缺少动态备份/图片目录不虚报 missing，读取失败按文件记录并继续，不跟随 debug 目录及文件链接。
+Settings 已明确告知包内调试图片可能含游戏画面；后台独立导出、临时 ZIP 提交及核心执行链保持不变。
+
+Release GUI 构建（0 警告/错误）、完整 GUI 自检与 support 定向测试通过；fixture 覆盖九份轮转备份、
+毫秒位数、三类图片及嵌套路径、内容保留、占用备份/图片跳过、未生成目录、无关文件排除与目录链接边界。
+920×640 Settings 离屏滚动/导出测试及截图检查通过；双轴审查发现的目录链接边界已修复并回归。
+120 列、diff whitespace 检查通过。本轮没有重跑未改动的 Worker/Rust 套件，历史环境限制记录仍保留。
+11:52 已备份并同步实测目录 GUI DLL，源/目标 SHA256 一致，config/interface 未变；旧 DLL 位于
+`artifacts/framework-diagnostics-backup-20260921-115240/`。目标 support 自检通过，实际日志导出内容哈希一致，
+未生成的图片与备份未虚报 missing；尚未实机开启调试生成图片，相关采集行为由完整 fixture 验证。
+
 2026-09-21：按用户要求核对 MaaFramework v5.12.3 及其固定 MaaUtils 源码，确认轮转日志实际为
 `maafw.bak.<本地时间戳>.log`，当前仅收 `maafw.log` 的导出仍漏轮转备份；需按已确认的命名补齐。
 `vision/`、`on_error/`、`screencap/` 分别由保存绘图、错误截图及显式截图动作产生，继续受原截图排除边界约束。

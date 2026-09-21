@@ -101,9 +101,19 @@ internal static partial class SelfTestRunner
             File.WriteAllText(path, $"GUI log {index}");
             File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddHours(-index));
         }
-        string[] optional = ["logs/updater.log", "debug/maafw.log"];
+        string[] rotations = [
+            .. Enumerable.Range(1, 7).Select(day => $"debug/maafw.bak.2026.09.{day:D2}-09.35.00.1.log"),
+            "debug/maafw.bak.2026.09.21-09.35.00.12.log", "debug/maafw.bak.2026.09.21-09.35.00.123.log"
+        ];
+        string[] images = ["debug/vision/recognition.jpg", "debug/on_error/task.png",
+            "debug/screencap/task.png", "debug/screencap/task.jpg", "debug/screencap/task.jpeg",
+            "debug/screencap/nested/task.png"];
+        string[] optional = ["logs/updater.log", "debug/maafw.log", .. rotations, .. images];
         string[] excluded = ["config/maanop-config.json", "cache/foo", "state/foo", "debug/screenshot.png",
-            "resource/foo", "interface.json", "agent/foo", "python/foo"];
+            "resource/foo", "interface.json", "agent/foo", "python/foo", "debug/maafw.bak.notes.log",
+            "debug/maafw.bak.2026.09.21-09.35.00.123.log.png", "debug/other.log", "debug/vision/config.json",
+            "debug/vision/not-a-draw.png", "debug/on_error/not-an-error.jpg", "debug/screencap/not-supported.bmp",
+            "debug/unknown/task.png", "debug/crash.dmp"];
         foreach (var name in optional.Concat(excluded)) {
             var path = Path.Combine(application, name);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -114,6 +124,14 @@ internal static partial class SelfTestRunner
         string[] expected = ["logs/NarutoAutoGUI-0.log", "logs/NarutoAutoGUI-1.log", "logs/NarutoAutoGUI-2.log",
             "logs/NarutoAutoGUI-3.log", "logs/NarutoAutoGUI-4.log", .. optional];
         VerifyDiagnosticEntries(destination, expected, [], []);
+        using (var packed = ZipFile.OpenRead(destination)) {
+            foreach (var image in images) {
+                using var reader = new StreamReader(packed.GetEntry(image)!.Open());
+                if (reader.ReadToEnd() != image) {
+                    throw new InvalidOperationException("诊断图片必须按原始内容导出。");
+                }
+            }
+        }
         File.Delete(Path.Combine(application, "logs", "updater.log"));
         using (var locked = new FileStream(Path.Combine(application, "debug", "maafw.log"), FileMode.Open,
                    FileAccess.ReadWrite, FileShare.None)) {
@@ -129,8 +147,52 @@ internal static partial class SelfTestRunner
         }
         exporter.Export(destination, application, Path.Combine(application, "logs"), metadata);
         VerifyDiagnosticEntries(destination,
-            ["logs/NarutoAutoGUI-wrong.log", "debug/maafw.log"], ["logs/updater.log"], []);
+            ["logs/NarutoAutoGUI-wrong.log", "debug/maafw.log", .. rotations, .. images], ["logs/updater.log"], []);
+        using (var locked = new FileStream(Path.Combine(application, rotations[0]), FileMode.Open,
+                   FileAccess.ReadWrite, FileShare.None)) {
+            exporter.Export(destination, application, actualLogs, metadata);
+            VerifyDiagnosticEntries(destination, expected.Except(["logs/updater.log", rotations[0]]).ToArray(),
+                ["logs/updater.log"], [rotations[0]]);
+        }
+        using (var locked = new FileStream(Path.Combine(application, images[0]), FileMode.Open,
+                   FileAccess.ReadWrite, FileShare.None)) {
+            exporter.Export(destination, application, actualLogs, metadata);
+            VerifyDiagnosticEntries(destination, expected.Except(["logs/updater.log", images[0]]).ToArray(),
+                ["logs/updater.log"], [images[0]]);
+        }
         VerifyDiagnosticFailures(exporter, root, application, actualLogs, metadata);
+        VerifyDiagnosticLinks(exporter, root, actualLogs, metadata);
+    }
+
+    private static void VerifyDiagnosticLinks(DiagnosticPackageExporter exporter, string root,
+        string actualLogs, DiagnosticMetadata metadata)
+    {
+        var application = Path.Combine(root, "linked-application");
+        var outside = Path.Combine(root, "outside-debug");
+        Directory.CreateDirectory(application);
+        Directory.CreateDirectory(Path.Combine(outside, "vision"));
+        File.WriteAllText(Path.Combine(outside, "maafw.log"), "outside log");
+        File.WriteAllText(Path.Combine(outside, "vision", "outside.jpg"), "outside image");
+        var link = Path.Combine(application, "debug");
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe") {
+            Arguments = $"/d /c mklink /J \"{link}\" \"{outside}\"",
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
+        })!;
+        process.WaitForExit();
+        if (process.ExitCode != 0) {
+            throw new InvalidOperationException("无法创建目录链接测试 fixture。");
+        }
+        var destination = Path.Combine(root, "linked.zip");
+        exporter.Export(destination, application, actualLogs, metadata);
+        using var archive = ZipFile.OpenRead(destination);
+        if (archive.Entries.Any(entry => entry.FullName.StartsWith("debug/", StringComparison.Ordinal))) {
+            throw new InvalidOperationException("诊断导出不能通过 debug 目录链接读取范围外文件。");
+        }
+        using var json = JsonDocument.Parse(archive.GetEntry("diagnostics.json")!.Open());
+        if (!json.RootElement.GetProperty("skippedFiles").EnumerateArray()
+                .Any(item => item.GetString() == "debug")) {
+            throw new InvalidOperationException("跳过的 debug 目录链接必须记录到 metadata。");
+        }
     }
 
     private static void VerifyDiagnosticEntries(string path, string[] included, string[] missing, string[] skipped)

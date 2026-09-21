@@ -24,7 +24,7 @@ Runtime `v5.12.3`。因此以下规则以官方 MaaFramework `v5.12.3` 为准，
 | `debug/maafw.bak.<时间戳>.log` | 日志轮转检查时，当前日志达到 16 MiB | 是 |
 | `debug/vision/*.jpg` | `SaveDraw=true`，执行识别或相关图像比较并生成绘图 | 否，识别绘图 |
 | `debug/on_error/*.png` | `SaveOnError=true`，Pipeline 错误分支且有缓存截图 | 否，游戏截图 |
-| `debug/screencap/*.<format>` | Pipeline 显式执行 `Screencap` action，且有缓存图像 | 否，游戏截图 |
+| `debug/screencap/*.png/jpg/jpeg` | Pipeline 显式执行 `Screencap` action，且有缓存图像 | 否，游戏截图 |
 
 文件日志由 `set_log_dir` 启动；`StdoutLevel` 只控制 stdout 级别，不等同关闭文件中的调试日志。
 [设置入口][set-options] [Logger 输出通道][logger-names]
@@ -32,6 +32,7 @@ Runtime `v5.12.3`。因此以下规则以官方 MaaFramework `v5.12.3` 为准，
 `vision` 文件名由时间戳、识别节点名和 reco id 等组成；保存逻辑显式检查 `SaveDraw`。
 `on_error` 为 `<时间戳>_<节点名>.png`，覆盖动作失败、错误处理循环和没有有效识别节点的错误分支。
 `Screencap` action 可指定文件名与格式，默认名含时间戳和节点名；这不是打开 DebugMode 自动产生的文件。
+v5.12.3 Pipeline parser 只接受 `png`、`jpg`、`jpeg`，不将任意扩展名视为此动作的合法输出。[格式定义][screencap-format]
 [绘图保存][vision] [识别命名][recognizer-name] [错误截图触发][error-trigger]
 [错误截图保存][error-save] [Screencap action][screencap]
 
@@ -79,13 +80,17 @@ Runtime `v5.12.3`。因此以下规则以官方 MaaFramework `v5.12.3` 为准，
 
 ## 对诊断包的直接影响
 
-当前纯日志白名单应覆盖 `debug/maafw.log` 和 debug 顶层实际存在的
+当前日志白名单覆盖 `debug/maafw.log` 和 debug 顶层实际存在的
 `maafw.bak.<时间戳>.log`；不能仅写死当前恰好存在的 `maafw.log`。
 可按源码时间戳结构精确匹配，不应扩大成整个 debug 目录或任意文件。
 历史兼容 `maafw.bak.log` 是否有必要，应依据支持版本决定，不能把它当 v5.12.3 必然产物。
 动态轮转备份不存在时不需要虚构一个固定缺失备份文件名。
-原需求排除截图的边界仍适用，`vision/`、`on_error/`、`screencap/`、录制截图不属于本轮日志包。
-本笔记仅定义应修正的采集范围，不表示导出实现已经修正或验证了轮转文件。
+2026-09-21 用户进一步明确要求按框架定义准备，并确认包含 `vision/`、`on_error/`、`screencap/`
+官方调试图片，覆盖初始“不包含截图”要求。导出已支持这三个固定目录（含子目录）中的对应格式，
+不读取 MaaNOP 当前开关来裁剪支持范围；缺少这些动态产物时不虚构 missing 条目。
+轮转备份和调试图片全部采集，不沿用 GUI 日志的最近五份限制；配置、缓存、其他 debug 文件、
+任意录制路径仍排除。不跟随 debug 目录和采集文件链接，避免通过链接扩大范围。
+Settings 明示调试图片可能含游戏画面。fixture 已覆盖轮转命名、合法图片类型、占用跳过及排除项。
 
 补充核对：调查时可见的较新稳定 tag `v5.13.1` 使用不同 MaaUtils commit，
 但比较上述 Logger、Time 相关文件未发现差异；本文不以浮动 master 或现行网页替代 v5.12.3 证据。
@@ -104,6 +109,7 @@ Runtime `v5.12.3`。因此以下规则以官方 MaaFramework `v5.12.3` 为准，
 [error-trigger]: https://github.com/MaaXYZ/MaaFramework/blob/v5.12.3/source/MaaFramework/Task/PipelineTask.cpp#L67-L86
 [error-save]: https://github.com/MaaXYZ/MaaFramework/blob/v5.12.3/source/MaaFramework/Task/PipelineTask.cpp#L456-L478
 [screencap]: https://github.com/MaaXYZ/MaaFramework/blob/v5.12.3/source/MaaFramework/Task/Component/Actuator.cpp#L547-L573
+[screencap-format]: https://github.com/MaaXYZ/MaaFramework/blob/v5.12.3/source/MaaFramework/Resource/PipelineParser.cpp#L1481-L1497
 [record]: https://github.com/MaaXYZ/MaaFramework/blob/v5.12.3/source/MaaRecordControlUnit/RecordController.cpp#L11-L115
 [command]: https://github.com/MaaXYZ/MaaFramework/blob/v5.12.3/source/MaaFramework/Task/Component/CommandAction.cpp#L104-L114
 [toolkit-defaults]: https://github.com/MaaXYZ/MaaFramework/blob/v5.12.3/source/MaaToolkit/Config/GlobalOptionConfig.h#L22-L34

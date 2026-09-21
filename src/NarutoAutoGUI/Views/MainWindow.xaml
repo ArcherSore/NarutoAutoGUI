@@ -965,9 +965,9 @@
                                 <Border Height="1" Margin="0,24" Background="{StaticResource Brush.Border}" />
                                 <TextBlock Text="问题诊断" Style="{StaticResource SectionTitleTextStyle}" />
                                 <TextBlock Margin="0,10,0,0"
-                                           Text="打包近期运行日志和版本信息，方便反馈问题。"
+                                           Text="打包运行日志、框架调试图片和版本信息，方便反馈问题。"
                                            Style="{StaticResource SecondaryTextStyle}" />
-                                <TextBlock Text="不会包含任务配置、缓存或截图。"
+                                <TextBlock Text="调试图片可能包含游戏画面；不会包含任务配置或缓存。"
                                            Style="{StaticResource SecondaryTextStyle}" />
                                 <Button x:Name="ExportDiagnosticsButton" Content="导出诊断包"
                                         HorizontalAlignment="Left" Margin="0,12,0,0"

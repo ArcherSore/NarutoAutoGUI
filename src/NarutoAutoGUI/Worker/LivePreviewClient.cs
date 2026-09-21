@@ -36,8 +36,7 @@ internal sealed class LivePreviewClient(WorkerCoordinator coordinator, Action<Ex
                     if (!paused) {
                         presentation.Sample(buffer, response);
                     }
-                    if (pendingDisplay is { IsCompleted: true }) {
-                        var completed = pendingDisplay;
+                    if (pendingDisplay is { IsCompleted: true } completed) {
                         pendingDisplay = null;
                         await completed;
                     }

@@ -74,15 +74,16 @@ internal static class WorkerCoordinatorSelfTest
             throw new InvalidOperationException("未拒绝旧 Worker 的 Preview 响应。");
         } catch (ProtocolException) {
         }
-        // A second subscription covers restarting preview after it was hidden or minimized.
+        // Each subscription covers pause/resume; the second also covers restarting after hiding.
         for (var attempt = 0; attempt < 2; attempt++) {
-            await VerifyPreviewFirstFrameAsync(coordinator, pipe, record, cancellationToken);
+            await VerifyPreviewFirstFrameAndPauseAsync(coordinator, pipe, record, cancellationToken);
         }
         await VerifySlowPreviewUiAsync(coordinator, pipe, record, cancellationToken);
     }
 
-    private static async Task VerifyPreviewFirstFrameAsync(WorkerCoordinator coordinator, ProtocolConnection pipe,
-        WorkerAdmissionRecord record, CancellationToken cancellationToken)
+    private static async Task VerifyPreviewFirstFrameAndPauseAsync(
+        WorkerCoordinator coordinator, ProtocolConnection pipe, WorkerAdmissionRecord record,
+        CancellationToken cancellationToken)
     {
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var displayed = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -106,9 +107,11 @@ internal static class WorkerCoordinatorSelfTest
                 } else if (pauseReceived.Task.IsCompleted && request.Operation == ProtocolOperations.PreviewRenew) {
                     resumeReceived.TrySetResult();
                 }
-                await pipe.WriteAsync(WireEnvelope.Response(request.Operation, request.RequestId!.Value,
-                    new PreviewResponse(identity, starting ? PreviewState.Preparing : PreviewState.Streaming,
-                        starting ? 0 : 1, starting ? null : writer!.Descriptor)), cancellationToken);
+                var response = starting
+                    ? new PreviewResponse(identity, PreviewState.Preparing, 0, null)
+                    : new PreviewResponse(identity, PreviewState.Streaming, 1, writer!.Descriptor);
+                await pipe.WriteAsync(WireEnvelope.Response(request.Operation, request.RequestId!.Value, response),
+                    cancellationToken);
                 if (starting) {
                     writer = PreviewBuffer.Create(identity);
                     if (!writer.TryPublish(1, 1, DateTime.UtcNow, 4, 3, new byte[48])) {

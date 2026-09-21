@@ -120,15 +120,13 @@ internal sealed class WorkerPreviewService : IDisposable
         try {
             while (IsCurrent(interest)) {
                 var now = Stopwatch.GetTimestamp();
-                bool paused;
                 lock (_gate) {
-                    paused = _paused;
+                    if (wasPaused && !_paused) {
+                        nextCheck = 0;
+                        nextCapture = 0;
+                    }
+                    wasPaused = _paused;
                 }
-                if (wasPaused && !paused) {
-                    nextCheck = 0;
-                    nextCapture = 0;
-                }
-                wasPaused = paused;
                 if (now >= nextCheck) {
                     nextCheck = now + 2 * Stopwatch.Frequency;
                     if (target is not null && !_source.IsValid(target)) {

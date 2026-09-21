@@ -15,6 +15,11 @@ issue-source: local-docs/issues
 
 **Status:** awaiting-validation（发布集成完成，部分真实交互仍待验收）
 
+2026-09-21 补验：用户确认 idle/Active Run 更新、Stop → Preview cleanup → Child Session / Worker /
+Game / Agent 退出 → 替换 → relaunch，以及连续两次更新均无明显问题。
+正常链路记为通过；关闭失败阻止安装、已有 Session 恢复仍保留。见
+[统一验收记录](../../ACCEPTANCE-2026-09-21.md)。
+
 2026-09-15 最新验收：经授权发布独立测试源 v2.3.1/v2.3.2，用户完成正常 GUI 连续两次升级。
 日志确认活动任务停止至 Cancelled 后注销 Session、等待 Worker 结束、实际 Engine ready 及重启新版本；
 更新后环境重建、真实任务启动/停止、隐藏、注销和退出已有证据。
@@ -34,8 +39,9 @@ issue-source: local-docs/issues
 - [x] 发布校验使用 01–04 已实现的规则和测试；本片不新增另一份 GUI 更新逻辑或独立包验证规则来兜底。
 - [x] 用正式产物执行已存在的相关自动化和布局检查，并记录构建来源、版本及结果。
 - [x] 准备足以覆盖连续两次升级的真实 V2 完整包和隔离安装目录；记录初始版本、每次目标版本、产物来源和日志。
-- [ ] 实机覆盖空闲安装、取消确认、Active Run 停止、Preview cleanup、Worker/Child Session/游戏/Agent 退出，
-      以及最终无法确认退出时不安装；不终止无关用户进程。
+- [x] 实机覆盖空闲安装、Active Run 停止、Preview cleanup、Worker/Child Session/游戏/Agent 退出；
+      2026-09-21 用户确认通过，取消确认沿用 2026-09-15 的用户反馈。
+- [ ] 最终无法确认退出时不安装；不终止无关用户进程。
 - [x] 实机确认实际副本 ready、GUI 真正退出、根入口释放、自身替换、四目录保留、过期程序条目消失，
       并确认清理在 relaunch 前完成尝试、新 GUI 不等待旧 Engine。
 - [x] 连续两次真实 V2 升级验证运行副本和废弃缓存生命周期，不生成完成 journal、旧版恢复入口或长期备份。

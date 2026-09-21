@@ -1,37 +1,40 @@
 # Roadmap
 
-## 已实现：连续游戏画面 Preview，待实机验收
+## 已验收：连续游戏画面 Preview 主流程与长期观察
 
-- 独立 Demo 的三种截图方式均获得用户对流畅度的认可；正式实现已接入，2026-09-20 用户反馈实测
-  “没啥大问题”，随后首次订阅与任务 Stop 的 GUI 修复也获用户实测确认无明显问题。
-  逐项验收和长时间资源证据仍待补齐；Worker 简化尚未部署实机复测。
+- 2026-09-21 用户确认完整运行闭环及至少 30 分钟资源观察完成、无明显问题，
+  任务前/中/Stop 后、再次执行、隐藏分身、游戏关闭清空与重开恢复均通过。
+  GUI/Worker 内存、handle/thread、截图 Controller 无明显持续增长或积累，任务未明显退化。
+  依据用户定性反馈，具体范围见 [统一验收记录](ACCEPTANCE-2026-09-21.md)。
 - 新目标为启动运行环境完成且游戏画面可用后显示预览，覆盖任务开始前、执行与等待期间、结束后。
 - 最高约 30 fps，允许降帧，不设 CPU/内存数值门槛；截图方式遵循 MaaNOP 配置。
 - GUI 预览不可见时允许停采；游戏窗口关闭后等待，重新出现时自动恢复预览，不重跑任务。
 - 截图暂时失败保留最后一帧并低频重试，不增加暂停提示；窗口关闭仍清空。
 - 已对照 MFAAvalonia 独立截图实例和 MFW-PyQt6 共享实例，采用现有 Worker 内独立只截图 Controller，
-  跨 Session 传回主桌面 GUI，保留既有任务生命周期；双实例负载与长期内存仍待验证。
+  跨 Session 传回主桌面 GUI，保留既有任务生命周期；双实例任务负载与长期内存的定性观察已通过。
 - 暂不增加高清采集或多窗口选择；游戏最小化遵循 MaaNOP 能力，截图失败保留旧帧，成功返回黑帧则显示。
 - [可执行规格](issues/preview-live-spec.md) 已发布到本地问题跟踪器，标记 ready-for-agent；测试边界经用户确认。
 - [5 张开发工单](issues/preview-live-tickets/README.md) 的粒度与依赖已获用户确认并发布；
-  依赖为 01 → 02/03 → 04 → 05；01–04 已接入代码和自动测试，未满足实机验收前不关闭。
+  依赖为 01 → 02/03 → 04 → 05；01–04 已接入代码和自动测试，清单外专项与自动化限制继续单独跟踪。
 - 像素通过固定容量文件映射跨 Session 传输，控制 Pipe 协商带租约订阅；协议升为 2，GUI/Worker 同版发布。
   传输与释放决定见 [ADR 0025](adr/0025-separate-preview-pixels-from-control-ipc.md)。
 - 范围决定见 [ADR 0024](adr/0024-preview-is-independent-of-active-runs.md)，过程见
-  [设计讨论](issues/preview-live-discussion.md)。后续补齐真实分身任务并行和至少 30 分钟资源观察。
+  [设计讨论](issues/preview-live-discussion.md)。真实分身任务并行和至少 30 分钟定性资源观察已完成。
   2026-09-20 已完成完整前端构建并同步用户指定实测目录；
   Rust 工具链可用，发布前简化阶段已补跑 Rust tests/Clippy 通过；Worker 双进程帧测试仍超时，待定位并复验。
   具体结果见 [验收记录](issues/preview-live-validation.md)，不把早期 Demo 观感视为生产验收。
+  剩余固定后端开关量化对照、清单外窗口/重连专项及 Worker 简化版本实测身份核对继续保留。
 
-## 已实现：多份独立任务配置，待实机验收
+## 已验收：多份独立任务配置主流程
 
 - 按 [多配置规格](issues/multiple-task-configurations-spec.md) 实现 Tab 切换、新建空配置、重命名和直接删除，
   独立保存每份任务顺序与 ExplicitOptions；运行期间沿用整个配置工作区的锁定语义。
 - V1 首次加载包装为 V2，异常文件首次被用户修改替换前保留原始 bytes；复用现有 Resolver 与 RunPlan。
-- 模块自检及离屏 GUI 的失焦归属、切换失败、同名配置和小窗口布局已通过；真实游戏运行、多 DPI
-  与桌面鼠标/键盘交互仍待验收。不扩展配置复制、导入导出、调度或 Worker/Protocol。
+- 模块自检及离屏 GUI 的失焦归属、切换失败、同名配置和小窗口布局已通过；2026-09-21 用户确认
+  旧配置启动、多配置保留、切换/重命名/删除/参数保存正常，完整运行闭环通过。
+  多 DPI 等专项不在本次反馈范围内。不扩展配置复制、导入导出、调度或 Worker/Protocol。
 
-## 已实现：四步新手指引，待实机验收
+## 已验收：四步新手指引主流程
 
 - [Onboarding Tour 规格](issues/onboarding-tour-spec.md) 已发布到本地问题跟踪器，标记 ready-for-agent；
   MainWindow/WPF 与 ProjectPlanModule 的测试边界已经用户确认，首次初始化和四步 GUI 已接入。
@@ -39,16 +42,19 @@
   后续新建配置仍为空。老用户不自动弹，设置页可 replay，replay 不修改用户配置或完成版本。
 - 已接入独立首次资格/完成版本、真实 target 与滚动裁剪、暂停恢复、焦点和有限 Pulse；
   保留现有 Preview/Update 原生钩子。模块与真实离屏 WPF 自检已通过，交互边界见
-  [验证记录](issues/onboarding-tour-validation.md)；真实 DPI、原生标题栏/托盘和键盘仍待验收。
-  不改变现有 Preview/Updater 的待验收优先级。完整本地套件仍受已记录的 Worker 双进程帧测试超时影响；
+  [验证记录](issues/onboarding-tour-validation.md)。2026-09-21 用户确认首次默认任务出现并展开、四步完成、
+  Skip/Esc/replay、配置不被修改及老用户不自动弹均通过；DPI、标题栏/托盘、焦点遍历专项仍保留。
+  完整本地套件仍受已记录的 Worker 双进程帧测试超时影响；
   用户反馈该测试在 GitHub CI 可以通过，本次未独立复验线上结果。
 
-## 下一步：Updater V2 真实交互验收
+## 已验收：Updater V2 真实更新主流程；保留故障边界
 
 - NarutoAutoGUI v1.4.0 前端正式版已发布，包含新版 UI 和 Rust Updater V2；正式发布流水线及 ZIP 校验通过。
   MaaNOP 完整包与下游流水线切换仍需另行推进，不把前端 Release 视为完整产品包已发布。
 - 工单 01–04 已实现并逐张提交；05 发布集成和本地连续两轮完整包/实际进程安装通过。
 - [05](issues/maanop-updater-v2-tickets/05-release-e2e.md) 正常 GUI 连续更新及 Active Run 停止、环境退出通过；
+  2026-09-21 用户补验 idle/Active Run、Stop → Preview cleanup → Session/Worker/Game/Agent 退出
+  → 替换 → relaunch 及连续两次更新，均无明显问题。
   仍待关闭失败时阻止安装的实机证据；已有 Child Session 恢复由用户决定暂缓验收，不新增第六张工单。
 - 首个 V2 完整包手动安装，之后才进入 V2 自动链路；独立测试源 v2.3.1、v2.3.2 已发布并经用户两轮验收。
   正式 MaaNOP 发布流水线与 Release 仍需另行推进。

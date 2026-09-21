@@ -101,7 +101,7 @@ NarutoAutoGUI/
   最多一个 Dispatcher 回调在途；显示前重新检查目标代次，显示操作不持采样锁。
   GUI 复用 WriteableBitmap，放大层共用同一图像，不另采高清。身份包含 Worker、Session、订阅和目标代次，
   `sampledAtUtc` 是截图完成时间；每个目标的 revision 独立递增，不依赖 Run 或 Plan Item。
-  当前实现与未完成的实机验证见 [验收记录](issues/preview-live-validation.md)。
+  当前实现、已通过的运行闭环/至少 30 分钟观察及剩余专项见 [验收记录](issues/preview-live-validation.md)。
 - Diagnostic log 不进入 GUI 列表，继续覆盖应用/Session/RDP 生命周期、程序路径、PID、SessionId、异常堆栈
   以及 Child Session 模块返回的 Win32/COM 错误码。Preview 采样、映射或显示失败也只写限频诊断，不能改变
   Run、Worker admission、cleanup 或 Child Session 生命周期。

@@ -148,32 +148,30 @@ internal static partial class SelfTestRunner
         exporter.Export(destination, application, Path.Combine(application, "logs"), metadata);
         VerifyDiagnosticEntries(destination,
             ["logs/NarutoAutoGUI-wrong.log", "debug/maafw.log", .. rotations, .. images], ["logs/updater.log"], []);
-        using (var locked = new FileStream(Path.Combine(application, rotations[0]), FileMode.Open,
-                   FileAccess.ReadWrite, FileShare.None)) {
+        foreach (var name in new[] { rotations[0], images[0] }) {
+            using var locked = new FileStream(Path.Combine(application, name), FileMode.Open,
+                FileAccess.ReadWrite, FileShare.None);
             exporter.Export(destination, application, actualLogs, metadata);
-            VerifyDiagnosticEntries(destination, expected.Except(["logs/updater.log", rotations[0]]).ToArray(),
-                ["logs/updater.log"], [rotations[0]]);
-        }
-        using (var locked = new FileStream(Path.Combine(application, images[0]), FileMode.Open,
-                   FileAccess.ReadWrite, FileShare.None)) {
-            exporter.Export(destination, application, actualLogs, metadata);
-            VerifyDiagnosticEntries(destination, expected.Except(["logs/updater.log", images[0]]).ToArray(),
-                ["logs/updater.log"], [images[0]]);
+            VerifyDiagnosticEntries(destination, expected.Except(["logs/updater.log", name]).ToArray(),
+                ["logs/updater.log"], [name]);
         }
         VerifyDiagnosticFailures(exporter, root, application, actualLogs, metadata);
-        VerifyDiagnosticLinks(exporter, root, actualLogs, metadata);
+        foreach (var link in new[] { "debug", "debug/vision", "debug/vision/nested" }) {
+            VerifyDiagnosticLinks(exporter, root, actualLogs, metadata, link);
+        }
     }
 
     private static void VerifyDiagnosticLinks(DiagnosticPackageExporter exporter, string root,
-        string actualLogs, DiagnosticMetadata metadata)
+        string actualLogs, DiagnosticMetadata metadata, string relativeLink)
     {
-        var application = Path.Combine(root, "linked-application");
+        var application = Path.Combine(root, "linked-application", relativeLink.Replace('/', '-'));
         var outside = Path.Combine(root, "outside-debug");
-        Directory.CreateDirectory(application);
         Directory.CreateDirectory(Path.Combine(outside, "vision"));
         File.WriteAllText(Path.Combine(outside, "maafw.log"), "outside log");
+        File.WriteAllText(Path.Combine(outside, "outside.jpg"), "outside image");
         File.WriteAllText(Path.Combine(outside, "vision", "outside.jpg"), "outside image");
-        var link = Path.Combine(application, "debug");
+        var link = Path.Combine(application, relativeLink);
+        Directory.CreateDirectory(Path.GetDirectoryName(link)!);
         using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe") {
             Arguments = $"/d /c mklink /J \"{link}\" \"{outside}\"",
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
@@ -190,7 +188,7 @@ internal static partial class SelfTestRunner
         }
         using var json = JsonDocument.Parse(archive.GetEntry("diagnostics.json")!.Open());
         if (!json.RootElement.GetProperty("skippedFiles").EnumerateArray()
-                .Any(item => item.GetString() == "debug")) {
+                .Any(item => item.GetString() == relativeLink)) {
             throw new InvalidOperationException("跳过的 debug 目录链接必须记录到 metadata。");
         }
     }

@@ -30,7 +30,7 @@ internal sealed class DiagnosticPackageExporter(AppLogger logger)
                 }
                 AddFile(Path.Combine(applicationDirectory, "logs", "updater.log"), "logs/updater.log");
                 var debugDirectory = Path.Combine(applicationDirectory, "debug");
-                if (CanReadDebugDirectory(debugDirectory, skipped)) {
+                if (CanReadDebugDirectory(debugDirectory, "debug", skipped)) {
                     AddFile(Path.Combine(debugDirectory, "maafw.log"), "debug/maafw.log");
                     foreach (var file in MaaFrameworkLogBackups(debugDirectory, skipped)) {
                         AddFile(file.FullName, "debug/" + file.Name, selected: true);
@@ -156,18 +156,19 @@ internal sealed class DiagnosticPackageExporter(AppLogger logger)
         }
     }
 
-    private bool CanReadDebugDirectory(string directory, List<string> skipped)
+    private bool CanReadDebugDirectory(string directory, string entryName, List<string> skipped)
     {
         try {
             if (File.GetAttributes(directory).HasFlag(FileAttributes.ReparsePoint)) {
-                Skip("debug", new IOException("诊断采集不跟随目录链接。"), skipped);
+                Skip(entryName, new IOException("诊断采集不跟随目录链接。"), skipped);
                 return false;
             }
             return true;
         } catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException) {
+            // Let the caller handle missing files or directories according to its collection rules.
             return true;
         } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
-            Skip("debug", exception, skipped);
+            Skip(entryName, exception, skipped);
             return false;
         }
     }
@@ -181,12 +182,11 @@ internal sealed class DiagnosticPackageExporter(AppLogger logger)
             directories.Push(new DirectoryInfo(Path.Combine(applicationDirectory, "debug", folder)));
             while (directories.TryPop(out var directory)) {
                 var relative = Path.GetRelativePath(applicationDirectory, directory.FullName).Replace('\\', '/');
+                if (!CanReadDebugDirectory(directory.FullName, relative, skipped)) {
+                    continue;
+                }
                 FileSystemInfo[] entries;
                 try {
-                    if (File.GetAttributes(directory.FullName).HasFlag(FileAttributes.ReparsePoint)) {
-                        Skip(relative, new IOException("诊断采集不跟随目录链接。"), skipped);
-                        continue;
-                    }
                     entries = directory.GetFileSystemInfos();
                 } catch (Exception exception) when (
                     exception is FileNotFoundException or DirectoryNotFoundException) {

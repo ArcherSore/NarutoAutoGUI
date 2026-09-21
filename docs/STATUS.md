@@ -2,6 +2,12 @@
 
 ## 当前阶段
 
+2026-09-21：简化 `7b8a04e` 之后的诊断导出改动，debug 根目录与图片子目录复用目录链接检查，
+合并轮转日志/图片占用测试，保留采集白名单、排序、缺失/跳过记录与暂存提交语义。
+Release GUI 构建（0 警告/错误）、support 定向自检和完整 GUI 自检通过；目录链接 fixture 覆盖
+debug 根目录、vision 目录及嵌套目录。120 列与 diff 空白检查通过；`dotnet format whitespace`
+仍报告两文件原有的紧凑初始化器等格式差异，本次未扩展格式化。未重跑 Worker/Rust 或交互式实机测试。
+
 2026-09-21：用户明确要求按 MaaFramework 定义准备完整诊断，并确认包含官方调试图片，覆盖初始截图排除要求。
 导出现按 v5.12.3 固定范围采集 `maafw.log`、全部 `maafw.bak.<时间戳>.log`、`vision/**/*.jpg`、
 `on_error/**/*.png`、`screencap/**/*.{png,jpg,jpeg}`；不依赖当前 MaaNOP 开关或实机恰好已有的文件。

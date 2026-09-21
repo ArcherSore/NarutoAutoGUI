@@ -91,11 +91,15 @@ NarutoAutoGUI/
 - `WorkerPreviewService` 独立于 Run 持有一个只截图 Controller，按 MaaNOP 配置截图，最高约 30 fps，
   最多一次截图在途；游戏发现和失效检查约每 2 秒执行。窗口关闭清空，重开自动恢复；暂时截图失败保帧低频重试。
   旧截图返回后才释放 Controller，预览回收不进入任务 Stop 或 Child Session 退出的等待链。
-- 协议版本为 2，Pipe 名称不变；`preview.start/renew/stop` 仅传控制信息，2 秒续订、6 秒单调时钟租约。
+- 协议版本为 3，Pipe 名称不变；`preview.start/renew/stop` 仅传控制信息，2 秒续订、6 秒单调时钟租约。
+  `start/renew` 的 `paused` 表示保留订阅和有效 Controller、停止新截图；暂停仍续订，过期/断线仍释放。
+  尚未取得像素 buffer 时 GUI 每 100 ms 查询，暂停/恢复变化立即发送 renew。
   像素使用固定 925696 字节的文件映射与受限 Global Mutex 跨 Session 传输，GUI 只读打开。
   每帧为最大 640×360、保持比例的 BGR32；非阻塞锁保证完整提交，竞争时跳帧，清空请求持续重试。
 - GUI 只有在启动完成、Worker Ready/Fresh、Session 匹配且首页预览可见时订阅，与 Active Run 无关。
-  隐藏/最小化 GUI、离开首页、收起预览或连接失效时撤销并清空；仅隐藏 RDP 宿主继续预览。
+  最小化 GUI 时清空本地显示、暂停采集并保留实例，恢复时复用同一订阅；Worker 暂停期间继续检查窗口，
+  窗口失效清空并释放实例，恢复时再次检查。隐藏到托盘、离开首页、收起预览或连接失效仍撤销并清空。
+  仅隐藏 RDP 宿主继续预览。
   同 Worker 重连取得 Fresh Snapshot 后建立新订阅。取消后迟到控制响应沿用 requestId 消费，不误断主 Pipe。
 - `LivePreviewClient` 后台续订和读取，`PreviewPresentation` 用两个固定像素缓冲合并最新帧，
   最多一个 Dispatcher 回调在途；显示前重新检查目标代次，显示操作不持采样锁。

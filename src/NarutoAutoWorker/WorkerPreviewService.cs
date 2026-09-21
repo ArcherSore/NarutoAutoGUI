@@ -14,6 +14,7 @@ internal sealed class WorkerPreviewService : IDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task _loop;
     private Interest? _desired;
+    private bool _paused;
     private long _renewedAt;
     private PreviewResponse? _response;
     private long _nextFailureLogAt;
@@ -51,6 +52,7 @@ internal sealed class WorkerPreviewService : IDisposable
             } else if (!matches || LeaseExpired()) {
                 throw new WorkerRequestException("preview_expired", "Preview 订阅已失效。");
             }
+            _paused = request.Paused;
             _renewedAt = Stopwatch.GetTimestamp();
             return _response!;
         }
@@ -112,11 +114,21 @@ internal sealed class WorkerPreviewService : IDisposable
         PreviewTarget? target = null;
         long generation = 0, revision = 0;
         long nextCheck = 0, nextCapture = 0;
+        var wasPaused = false;
         PreviewState? pendingClear = PreviewState.WaitingForWindow;
         SetState(interest, PreviewState.WaitingForWindow, generation, buffer.Descriptor);
         try {
             while (IsCurrent(interest)) {
                 var now = Stopwatch.GetTimestamp();
+                bool paused;
+                lock (_gate) {
+                    paused = _paused;
+                }
+                if (wasPaused && !paused) {
+                    nextCheck = 0;
+                    nextCapture = 0;
+                }
+                wasPaused = paused;
                 if (now >= nextCheck) {
                     nextCheck = now + 2 * Stopwatch.Frequency;
                     if (target is not null && !_source.IsValid(target)) {
@@ -164,14 +176,18 @@ internal sealed class WorkerPreviewService : IDisposable
                     }
                 }
                 if (target is not null && pending is null && now >= nextCapture) {
-                    var captureTarget = target;
-                    nextCapture = now + (long)Math.Ceiling(Stopwatch.Frequency
-                        * ProtocolConstants.PreviewIntervalMilliseconds / 1000D);
-                    pending = Task.Run(() =>
-                    {
-                        capture ??= _source.Open(captureTarget);
-                        return capture.Capture(pixels);
-                    });
+                    lock (_gate) {
+                        if (IsCurrent(interest) && !_paused) {
+                            var captureTarget = target;
+                            nextCapture = now + (long)Math.Ceiling(Stopwatch.Frequency
+                                * ProtocolConstants.PreviewIntervalMilliseconds / 1000D);
+                            pending = Task.Run(() =>
+                            {
+                                capture ??= _source.Open(captureTarget);
+                                return capture.Capture(pixels);
+                            });
+                        }
+                    }
                 }
                 await Task.Delay(8, _shutdown.Token);
             }

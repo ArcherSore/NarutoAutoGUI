@@ -141,18 +141,38 @@ internal static class PreviewSelfTests
         if (!reader.TryRead(pixels, out var frame) || frame is not { Revision: > 0 }) {
             throw new InvalidOperationException("Idle service 未出帧。");
         }
+        var paused = request with { Paused = true };
+        service.Handle(ProtocolOperations.PreviewRenew, connection, paused);
+        await Task.Delay(100);
+        var pausedCaptures = source.Captures;
+        var pausedOpens = source.OpenCount;
+        await Task.Delay(250);
+        if (source.Captures != pausedCaptures || source.DisposedCount != 0) {
+            throw new InvalidOperationException("暂停期间必须停采并保留 Controller。");
+        }
+        service.Handle(ProtocolOperations.PreviewRenew, connection, request);
+        await WaitUntilAsync(() => source.Captures > pausedCaptures);
+        if (source.OpenCount != pausedOpens) {
+            throw new InvalidOperationException("恢复预览不应重建有效 Controller。");
+        }
         source.Fail = true;
         await Task.Delay(100);
         if (!reader.TryRead(pixels, out frame) || frame is not { Revision: > 0 }) {
             throw new InvalidOperationException("暂时截图失败未保留旧帧。");
         }
         source.Fail = false;
+        service.Handle(ProtocolOperations.PreviewRenew, connection, paused);
         source.Target = null;
-        waiting = await WaitForStateAsync(service, connection, request, PreviewState.WaitingForWindow);
+        waiting = await WaitForStateAsync(service, connection, paused, PreviewState.WaitingForWindow);
         if (waiting.Generation <= streaming.Generation) {
             throw new InvalidOperationException("窗口关闭未使目标代次失效。");
         }
+        await WaitUntilAsync(() => reader.TryRead(pixels, out var cleared) && cleared is { Revision: 0 });
         source.Target = new PreviewTarget(2, 1, 1, 1);
+        await WaitForStateAsync(service, connection, paused, PreviewState.WaitingForFrame);
+        if (source.OpenCount != pausedOpens) {
+            throw new InvalidOperationException("暂停期间为新窗口创建了截图实例。");
+        }
         await WaitForStateAsync(service, connection, request, PreviewState.Streaming);
         source.Block = true;
         await WaitUntilAsync(() => source.Entered.IsSet);
@@ -185,6 +205,7 @@ internal static class PreviewSelfTests
         var expiring = new PreviewRequest(worker, Guid.NewGuid());
         service.Handle(ProtocolOperations.PreviewStart, connection, expiring);
         await WaitForStateAsync(service, connection, expiring, PreviewState.Streaming);
+        service.Handle(ProtocolOperations.PreviewRenew, connection, expiring with { Paused = true });
         await Task.Delay(TimeSpan.FromSeconds(6.2));
         await WaitUntilAsync(() => source.DisposedCount == source.OpenCount);
         try {

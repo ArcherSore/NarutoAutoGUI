@@ -74,7 +74,92 @@ internal static class WorkerCoordinatorSelfTest
             throw new InvalidOperationException("未拒绝旧 Worker 的 Preview 响应。");
         } catch (ProtocolException) {
         }
+        // A second subscription covers restarting preview after it was hidden or minimized.
+        for (var attempt = 0; attempt < 2; attempt++) {
+            await VerifyPreviewFirstFrameAsync(coordinator, pipe, record, cancellationToken);
+        }
         await VerifySlowPreviewUiAsync(coordinator, pipe, record, cancellationToken);
+    }
+
+    private static async Task VerifyPreviewFirstFrameAsync(WorkerCoordinator coordinator, ProtocolConnection pipe,
+        WorkerAdmissionRecord record, CancellationToken cancellationToken)
+    {
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var displayed = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+        PreviewBuffer? writer = null;
+        long readyAt = 0;
+        var paused = false;
+        var pauseReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resumeReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resumedDisplay = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var displayCount = 0;
+        var producer = Task.Run(async () =>
+        {
+            while (true) {
+                var request = await pipe.ReadAsync(cancellationToken) ?? throw new EndOfStreamException();
+                var interest = ProtocolJson.Deserialize<PreviewRequest>(request.Data);
+                var identity = new PreviewIdentity(record.WorkerInstanceId,
+                    record.ChildSessionId, interest.SubscriptionId);
+                var starting = request.Operation == ProtocolOperations.PreviewStart;
+                if (interest.Paused) {
+                    pauseReceived.TrySetResult();
+                } else if (pauseReceived.Task.IsCompleted && request.Operation == ProtocolOperations.PreviewRenew) {
+                    resumeReceived.TrySetResult();
+                }
+                await pipe.WriteAsync(WireEnvelope.Response(request.Operation, request.RequestId!.Value,
+                    new PreviewResponse(identity, starting ? PreviewState.Preparing : PreviewState.Streaming,
+                        starting ? 0 : 1, starting ? null : writer!.Descriptor)), cancellationToken);
+                if (starting) {
+                    writer = PreviewBuffer.Create(identity);
+                    if (!writer.TryPublish(1, 1, DateTime.UtcNow, 4, 3, new byte[48])) {
+                        throw new InvalidOperationException("首帧 fixture 发布失败。");
+                    }
+                    readyAt = Stopwatch.GetTimestamp();
+                }
+                if (request.Operation == ProtocolOperations.PreviewStop) {
+                    return;
+                }
+            }
+        }, cancellationToken);
+        var client = new LivePreviewClient(coordinator, error => displayed.TrySetException(error));
+        var running = client.RunAsync(record.WorkerInstanceId, action =>
+        {
+            action();
+            return Task.CompletedTask;
+        }, (frame, _) =>
+        {
+            if (frame is { State: PreviewState.Streaming, Revision: > 0 }) {
+                Interlocked.Increment(ref displayCount);
+                displayed.TrySetResult(Stopwatch.GetTimestamp());
+                if (resumeReceived.Task.IsCompleted) {
+                    resumedDisplay.TrySetResult();
+                }
+            }
+        }, lifetime.Token, () => Volatile.Read(ref paused));
+        try {
+            var displayedAt = await displayed.Task.WaitAsync(TimeSpan.FromSeconds(4), cancellationToken);
+            var delay = Stopwatch.GetElapsedTime(readyAt, displayedAt);
+            if (delay >= TimeSpan.FromSeconds(1)) {
+                throw new InvalidOperationException($"可用首帧仍等待续订周期：{delay.TotalMilliseconds:F0} ms。");
+            }
+            Console.WriteLine($"Preview first frame ready-to-display: {delay.TotalMilliseconds:F0} ms");
+            Volatile.Write(ref paused, true);
+            await pauseReceived.Task.WaitAsync(TimeSpan.FromSeconds(1), cancellationToken);
+            await Task.Delay(100, cancellationToken);
+            var pausedDisplays = Volatile.Read(ref displayCount);
+            await Task.Delay(150, cancellationToken);
+            if (Volatile.Read(ref displayCount) != pausedDisplays) {
+                throw new InvalidOperationException("暂停期间仍向 UI 提交预览帧。");
+            }
+            Volatile.Write(ref paused, false);
+            await resumeReceived.Task.WaitAsync(TimeSpan.FromSeconds(1), cancellationToken);
+            await resumedDisplay.Task.WaitAsync(TimeSpan.FromSeconds(1), cancellationToken);
+        } finally {
+            lifetime.Cancel();
+            await running;
+            await producer;
+            writer?.Dispose();
+        }
     }
 
     private static async Task VerifySlowPreviewUiAsync(WorkerCoordinator coordinator, ProtocolConnection pipe,

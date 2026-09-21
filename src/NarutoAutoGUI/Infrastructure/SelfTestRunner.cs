@@ -51,6 +51,7 @@ internal static partial class SelfTestRunner
             VerifyProtocolFrame();
             VerifyPreviewProtocol();
             PreviewPresentationSelfTest.Run();
+            VerifyMinimizedPreview(logger, testDirectory);
             VerifyWorkerLogSequenceTracker();
             VerifyRunLogRouting(logger);
             VerifyHomePresentation();

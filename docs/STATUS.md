@@ -2,6 +2,28 @@
 
 ## 当前阶段
 
+2026-09-21：用户实测首轮查询优化后，最小化恢复仍约 5 秒；此前失败时预览消失未再次复现。
+真实 FramePool 静态窗口复现再次订阅到首帧 4273 ms，主要为 Controller 重建和首张截图各约 2 秒。
+按用户选择，最小化改为暂停新截图并保留订阅/有效 Controller，继续续订和窗口检查；恢复复用实例。
+隐藏到托盘/切页及断线、租约过期、退出仍释放。新增 `paused` 控制字段，协议升为 3，两端同版同步。
+暂停回归先红后绿；真实离屏 MainWindow + Pipe + FramePool 最小化 9 秒不增截图，恢复显示 190 ms，
+实例与订阅各始终一个，随后继续截图、隐藏后释放。用户随后反馈实测“没有太大的问题”，并要求提交；
+记录为本轮恢复体验的定性实测反馈，不扩展为全部边界或长期资源观察通过。
+GUI/Worker self-contained 发布通过；15:13 已备份同步六个配套文件，哈希一致、config/interface 未变，
+备份在 `artifacts/preview-pause-backup-20260921-151304/`。Worker 完整自检仍在已有双进程帧测试超时，
+不能记为完整套件通过；目标目录完整 GUI 自检与 Worker 除已知双进程测试外的定向方法均通过。
+诊断、旧版测试范围与本轮边界见 [记录](issues/preview-failure-20260921.md)。
+
+2026-09-21：排查用户登录任务超时及失败时 Preview 短暂清空。四次 `AccountClaims` 均在
+`Login` 等待 `ReChooseServer`/`RefreshPage` 模板匹配失败；现场未保存截图，具体不匹配原因未定。
+已复现预览首帧就绪后仍等待 2 秒续订周期，并仅将取得 buffer 前的查询间隔缩短到 100 ms。
+Named Pipe 首次/再次订阅测试从 2006 ms 降至 132/136 ms，完整 GUI 自检及 Release 构建通过。
+隔离 MainWindow 的 Failed 终态测试保持同一位图/订阅，未复现用户的失败时清空；该问题仍需实机证据。
+未修改 Worker、MaaNOP 或 Child Session。14:53 用户退出程序后已备份并同步测试目录主 GUI DLL，
+源/目标 SHA256 一致，config/interface 未变；备份在 `artifacts/preview-restore-backup-20260921-145324/`。
+目标目录完整 GUI 自检通过，首帧等待为 136/132 ms，实际恢复体验待用户复验。详见
+[本次诊断与验证范围](issues/preview-failure-20260921.md)。
+
 2026-09-21：简化 `7b8a04e` 之后的诊断导出改动，debug 根目录与图片子目录复用目录链接检查，
 合并轮转日志/图片占用测试，保留采集白名单、排序、缺失/跳过记录与暂存提交语义。
 Release GUI 构建（0 警告/错误）、support 定向自检和完整 GUI 自检通过；目录链接 fixture 覆盖

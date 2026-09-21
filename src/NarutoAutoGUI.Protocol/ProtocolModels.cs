@@ -5,7 +5,7 @@ namespace NarutoAutoGUI.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int ProtocolVersion = 2;
+    public const int ProtocolVersion = 3;
     public const int SnapshotVersion = 1;
     public const int LaunchContextVersion = 1;
     public const int PlanVersion = 1;

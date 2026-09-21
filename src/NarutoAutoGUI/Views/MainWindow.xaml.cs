@@ -78,6 +78,7 @@ public partial class MainWindow : FluentWindow
     private Task? _previewPollingTask;
     private Guid? _previewWorkerInstanceId;
     private int _previewPollingGeneration;
+    private volatile bool _previewPaused;
     private bool _allowClose;
     private bool _busy;
     private string _operationStatus = string.Empty;
@@ -1330,6 +1331,11 @@ public partial class MainWindow : FluentWindow
 
     private void UpdatePreviewPolling()
     {
+        var paused = WindowState == WindowState.Minimized;
+        if (paused && !_previewPaused) {
+            ShowPreviewPlaceholder("等待游戏画面");
+        }
+        _previewPaused = paused;
         if (!TryGetPreviewTarget(out var workerId)) {
             StopPreviewPolling();
             return;
@@ -1351,7 +1357,8 @@ public partial class MainWindow : FluentWindow
                     action => Dispatcher.InvokeAsync(action, DispatcherPriority.Background, cancellation.Token).Task,
                     (frame, pixels) =>
                     {
-                        if (_previewPollingGeneration != generation || cancellation.IsCancellationRequested
+                        if (_previewPaused || _previewPollingGeneration != generation
+                            || cancellation.IsCancellationRequested
                             || !TryGetPreviewTarget(out var current) || current != workerId) {
                             return;
                         }
@@ -1361,7 +1368,7 @@ public partial class MainWindow : FluentWindow
                             ShowPreviewPlaceholder(frame?.State == PreviewState.WaitingForWindow
                                 ? "等待游戏窗口" : "等待游戏画面");
                         }
-                    }, cancellation.Token);
+                    }, cancellation.Token, () => _previewPaused);
             } catch (OperationCanceledException) when (cancellation.IsCancellationRequested) {
             } finally {
                 cancellation.Dispose();
@@ -1374,7 +1381,7 @@ public partial class MainWindow : FluentWindow
         var worker = _workerSnapshot.WorkerSnapshot;
         var preparing = _busy && _operationStatus.StartsWith("正在准备运行环境", StringComparison.Ordinal);
         if (!_exitInProgress && !_environmentPreparationFailed && !preparing && IsVisible
-            && WindowState != WindowState.Minimized && HomeView.Visibility == Visibility.Visible
+            && HomeView.Visibility == Visibility.Visible
             && (PreviewCardContent.Visibility == Visibility.Visible || PreviewOverlay.Visibility == Visibility.Visible)
             && _sessionSnapshot.State is ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden
             && _workerSnapshot.Observation == WorkerObservation.Connected && _workerSnapshot.SnapshotFresh

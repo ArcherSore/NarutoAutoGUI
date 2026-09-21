@@ -3,7 +3,7 @@ namespace NarutoAutoGUI.Protocol;
 public enum PreviewState { Preparing, WaitingForWindow, WaitingForFrame, Streaming, Retiring, Unavailable }
 
 public sealed record PreviewIdentity(Guid WorkerInstanceId, uint ChildSessionId, Guid SubscriptionId);
-public sealed record PreviewRequest(Guid WorkerInstanceId, Guid SubscriptionId);
+public sealed record PreviewRequest(Guid WorkerInstanceId, Guid SubscriptionId, bool Paused = false);
 public sealed record PreviewDescriptor(
     PreviewIdentity Identity, int OwnerPid, long OwnerStartedAtUtc, int FormatVersion);
 public sealed record PreviewResponse(

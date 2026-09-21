@@ -963,6 +963,20 @@
                                            Text="关闭主窗口时会隐藏到系统托盘，任务与桌面分身继续运行。请使用托盘菜单中的“退出程序”完成清理。"
                                            Style="{StaticResource SecondaryTextStyle}" />
                                 <Border Height="1" Margin="0,24" Background="{StaticResource Brush.Border}" />
+                                <TextBlock Text="问题诊断" Style="{StaticResource SectionTitleTextStyle}" />
+                                <TextBlock Margin="0,10,0,0"
+                                           Text="打包近期运行日志和版本信息，方便反馈问题。"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                                <TextBlock Text="不会包含任务配置、缓存或截图。"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                                <Button x:Name="ExportDiagnosticsButton" Content="导出诊断包"
+                                        HorizontalAlignment="Left" Margin="0,12,0,0"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Click="ExportDiagnostics_Click" />
+                                <TextBlock x:Name="DiagnosticsStatusText" Margin="0,8,0,0" TextWrapping="Wrap"
+                                           AutomationProperties.LiveSetting="Polite"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                                <Border Height="1" Margin="0,24" Background="{StaticResource Brush.Border}" />
                                 <TextBlock Text="帮助" Style="{StaticResource SectionTitleTextStyle}" />
                                 <TextBlock Text="新手指引" FontWeight="SemiBold" Margin="0,12,0,4" />
                                 <TextBlock Text="快速了解任务配置、运行控制和实时截图。"

@@ -12,7 +12,7 @@ namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
-    internal static int Run(bool projectOnly = false)
+    internal static int Run(bool projectOnly = false, bool supportOnly = false)
     {
         var testDirectory = Path.Combine(Path.GetTempPath(), $"NarutoAutoGUI-self-test-{Guid.NewGuid():N}");
 
@@ -20,6 +20,13 @@ internal static partial class SelfTestRunner
             Directory.CreateDirectory(testDirectory);
             var logDirectory = Path.Combine(testDirectory, "logs");
             using var logger = new AppLogger(logDirectory);
+            VerifyTerminalNotifications();
+            VerifyDiagnosticPackage(logger, testDirectory);
+            VerifyDiagnosticSettings(logger, testDirectory);
+            if (supportOnly) {
+                Console.WriteLine("SUPPORT SELF-TEST PASS");
+                return 0;
+            }
             var projectDirectory = CreateProjectFixture(testDirectory);
             VerifyFirstConfiguration(testDirectory, projectDirectory);
             VerifyConfigurationMigration(testDirectory, projectDirectory);

@@ -2,6 +2,29 @@
 
 ## 当前阶段
 
+2026-09-21（v1.7.1）：实现后台任务完成/失败托盘通知与 Settings 一键导出问题诊断包。
+App 观察现有 fresh Run Snapshot；仅通知本 GUI 生命周期见过 ActiveRun 的成功/失败终态，
+取消和历史终态不通知，同 runId 去重，主窗口显示且活动时抑制，点击 Balloon 复用主窗口恢复入口。
+导出使用实际 AppLogger.LogDirectory 中按修改时间最新五份 GUI 日志，以及可用的 updater.log、
+debug/maa.log、debug/maa.bak.log；JSON 仅显式选取版本、系统和运行状态元信息，不包含配置或 RunPlan。
+可选日志缺失/读取失败分别记录并继续；独立后台压缩、同目录临时 ZIP 完成后替换，不获取应用操作门。
+不新增依赖、设置开关，不修改 Worker、Protocol、Preview、Updater Engine 或 Child Session 产品语义。
+
+本轮 Windows x64 Release 完整构建/发布（`build.ps1 -Configuration Release -Version 1.7.1 -Locked`）
+通过，GUI/Worker 均 0 警告、0 错误。新增 `--self-test --support-only` 通过，覆盖通知成功/失败/取消、
+历史终态/重复/重连/断线恢复、失败标签与后备文案；诊断实际目录、最新五份、日志白名单、元信息、
+缺失/独占文件跳过、并行日志写入、失败清理与已有目标保护。真实离屏 WPF 的 920×640 Settings 滚动、
+后台导出状态与 Dispatcher 响应通过，已检查上下滚动截图；Standards/Spec 双轴代码审查无代码发现。
+既有 `test-automated.ps1` 的 GUI 完整套件通过；Worker 仍在已记录的 Preview 双进程完整帧测试超时，
+脚本因此提前退出，未将整套标记通过。单独补跑 .NET Updater tests 通过；Rust tests 已通过 22 项后，
+`prepare_process_abandons_work_when_gui_pipe_closes` 启动子进程被 Windows 拒绝（OS error 225：
+系统报告文件包含病毒或潜在垃圾软件），1 项失败。单独 Rust Clippy（all-targets、warnings-as-errors）通过。
+未修改相关生产代码或系统防护设置；120 列、diff whitespace、依赖与改动范围检查通过。
+
+本轮仍需人工：Windows Balloon 的前台抑制、后台/托盘成功与失败标签、点击恢复、Stop 不通知与重连去重；
+标准保存对话框操作，以及真实 Run 运行中导出时 UI 响应、任务继续和最终 ZIP/状态检查。
+本轮测试时未运行真实 GUI/Worker，不将离屏测试或代码边界检查当作真实任务并行验收。
+
 2026-09-21：用户明确确认五组实机验收全部完成、无明显问题：新用户默认任务与四步 Tour（含
 Skip/Esc/replay 和配置不变）、老用户配置保留与管理、完整任务/连续 Preview 闭环、至少 30 分钟
 Preview 资源观察，以及 idle/Active Run 更新和连续两次更新。上述范围记为用户实机验收通过。

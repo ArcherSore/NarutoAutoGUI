@@ -13,7 +13,13 @@ Windows x64 / .NET 10 WPF 程序。需要管理员权限和交互式桌面。
 .\src\NarutoAutoGUI\scripts\test-automated.ps1
 ```
 
-发布目录为 `artifacts\NarutoAutoGUI\win-x64`，并包含 `worker\NarutoAutoWorker.exe` 及固定 runtime。自检通过 `dotnet NarutoAutoGUI.dll --self-test` 运行，不触发 apphost 的 UAC manifest，也不初始化 RDP；它只验证配置与文件日志。
+发布目录为 `artifacts\NarutoAutoGUI\win-x64`，并包含 `worker\NarutoAutoWorker.exe` 及固定 runtime。
+自检通过 `dotnet NarutoAutoGUI.dll --self-test` 运行，不触发 apphost 的 UAC manifest，也不初始化 RDP。
+通知 tracker、诊断 ZIP 与 Settings 离屏布局可定向验证：
+
+```powershell
+dotnet .\src\NarutoAutoGUI\bin\x64\Release\net10.0-windows\win-x64\NarutoAutoGUI.dll --self-test --support-only
+```
 
 ## 运行时文件
 

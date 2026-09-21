@@ -12,6 +12,7 @@ namespace NarutoAutoGUI;
 public partial class App : System.Windows.Application
 {
     private readonly SemaphoreSlim _operationGate = new(1, 1);
+    private readonly RunTerminalNotificationTracker _terminalNotifications = new();
     private AppLogger? _logger;
     private ChildSessionManager? _sessionManager;
     private WorkerCoordinator? _workerCoordinator;
@@ -27,7 +28,9 @@ public partial class App : System.Windows.Application
         base.OnStartup(e);
 
         if (e.Args.Contains("--self-test", StringComparer.OrdinalIgnoreCase)) {
-            Environment.ExitCode = SelfTestRunner.Run(e.Args.Contains("--project-only", StringComparer.Ordinal));
+            Environment.ExitCode = SelfTestRunner.Run(
+                e.Args.Contains("--project-only", StringComparer.Ordinal),
+                e.Args.Contains("--support-only", StringComparer.Ordinal));
             Shutdown(Environment.ExitCode);
             return;
         }
@@ -49,6 +52,7 @@ public partial class App : System.Windows.Application
         _workerCoordinator = new WorkerCoordinator(
             _logger, Path.Combine(AppContext.BaseDirectory, "state"),
             Path.Combine(AppContext.BaseDirectory, "worker", "NarutoAutoWorker.exe"));
+        _workerCoordinator.StateChanged += WorkerCoordinator_StateChanged;
         var programService = new ChildSessionProgramService(_logger);
         _mainWindow = new MainWindow(
             _logger, _sessionManager, programService,
@@ -136,6 +140,7 @@ public partial class App : System.Windows.Application
             _trayIcon = null;
             _sessionManager.Dispose();
             if (_workerCoordinator is not null) {
+                _workerCoordinator.StateChanged -= WorkerCoordinator_StateChanged;
                 await _workerCoordinator.DisposeAsync();
                 _workerCoordinator = null;
             }
@@ -180,6 +185,24 @@ public partial class App : System.Windows.Application
             ContextMenuStrip = menu
         };
         _trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(ShowMainWindow);
+        _trayIcon.BalloonTipClicked += (_, _) => Dispatcher.Invoke(ShowMainWindow);
+    }
+
+    private void WorkerCoordinator_StateChanged(object? sender, WorkerCoordinatorSnapshot snapshot)
+    {
+        Dispatcher.BeginInvoke(() => {
+            var notification = _terminalNotifications.Observe(snapshot);
+            if (notification is null || _isExiting || _trayIcon is null
+                || _mainWindow is { IsVisible: true, IsActive: true, WindowState: not WindowState.Minimized }) {
+                return;
+            }
+            try {
+                _trayIcon.ShowBalloonTip(5000, notification.Title, notification.Message,
+                    notification.Failed ? Forms.ToolTipIcon.Error : Forms.ToolTipIcon.Info);
+            } catch (System.ComponentModel.Win32Exception exception) {
+                _logger?.Warn("显示任务通知失败。", exception);
+            }
+        });
     }
 
     private static System.Drawing.Icon LoadTrayIcon()

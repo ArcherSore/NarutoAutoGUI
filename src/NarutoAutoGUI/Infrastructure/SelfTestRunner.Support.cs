@@ -304,8 +304,14 @@ internal static partial class SelfTestRunner
                     throw new InvalidOperationException("Settings 导出结果必须是有效诊断 ZIP。");
                 }
             }
+            var updateAction = SettingsActionFor(window, "update.check");
+            updateAction.Status = string.Join("\n", Enumerable.Repeat("更新检查失败，请稍后重试。", 12));
+            PumpOnboarding();
             settings.ScrollToEnd();
             PumpOnboarding();
+            if (settings.ScrollableHeight <= 0 || settings.VerticalOffset <= 0) {
+                throw new InvalidOperationException("最小窗口中较长的 Settings 状态必须可以向下滚动。");
+            }
             AssertVisible(button);
             AssertVisible(SettingsButtonFor(window, "onboarding.replay"));
             if (settings.ExtentWidth > settings.ViewportWidth + 1) {

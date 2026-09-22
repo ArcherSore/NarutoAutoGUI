@@ -11,6 +11,7 @@ public partial class MainWindow
     {
         var dialog = new SaveFileDialog {
             Title = "导出诊断包",
+            InitialDirectory = _applicationDirectory,
             FileName = $"NarutoAutoGUI-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip",
             Filter = "ZIP 压缩文件 (*.zip)|*.zip", DefaultExt = ".zip", AddExtension = true
         };

@@ -1,12 +1,16 @@
 {
   "title": "设置",
-  "description": "管理 MaaNOP 更新与应用行为。",
   "sections": [
     {
       "id": "updates",
       "title": "更新",
       "items": [
-        { "id": "current-version", "type": "info", "valueKey": "update.currentVersion" },
+        {
+          "id": "current-version",
+          "type": "info",
+          "valueKey": "update.currentVersion",
+          "title": "当前版本"
+        },
         {
           "id": "startup-update-check",
           "type": "toggle",
@@ -16,48 +20,36 @@
         {
           "id": "check-update",
           "type": "action",
-          "title": "检查更新",
+          "title": "检查 MaaNOP 更新",
           "buttonText": "检查更新",
           "actionId": "update.check"
         }
       ]
     },
     {
-      "id": "application",
-      "title": "应用行为",
-      "items": [
-        {
-          "id": "close-to-tray",
-          "type": "info",
-          "description": "关闭主窗口时会隐藏到系统托盘，任务与桌面分身继续运行。请使用托盘菜单中的“退出程序”完成清理。"
-        }
-      ]
-    },
-    {
-      "id": "diagnostics",
-      "title": "问题诊断",
+      "id": "support",
+      "title": "帮助与诊断",
       "items": [
         {
           "id": "export-diagnostics",
           "type": "action",
-          "title": "导出诊断包",
-          "description": "打包运行日志、框架调试图片和版本信息，方便反馈问题。\n调试图片可能包含游戏画面；不会包含任务配置或缓存。",
+          "title": "问题诊断",
+          "description": "打包运行日志、框架调试图片和版本信息，方便反馈问题。",
           "buttonText": "导出诊断包",
           "actionId": "diagnostics.export"
-        }
-      ]
-    },
-    {
-      "id": "help",
-      "title": "帮助",
-      "items": [
+        },
         {
           "id": "replay-onboarding",
           "type": "action",
           "title": "新手指引",
           "description": "快速了解任务配置、运行控制和实时截图。",
-          "buttonText": "查看新手指引",
+          "buttonText": "查看指引",
           "actionId": "onboarding.replay"
+        },
+        {
+          "id": "close-to-tray",
+          "type": "info",
+          "description": "关闭主窗口时会隐藏到系统托盘，任务与桌面分身继续运行。请使用托盘菜单中的“退出程序”完成清理。"
         }
       ]
     }

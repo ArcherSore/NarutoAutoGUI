@@ -1,6 +1,43 @@
 # Status
 
 ## 当前阶段
+2026-09-22：用户查看同步后的 Settings 页面反馈“看着没啥问题”，确认提交本轮布局与诊断导出默认目录调整。
+该反馈记录为页面观感确认，不扩展为保存对话框、托盘或游戏交互的专项验收。
+
+2026-09-22：已将诊断文案精简及默认保存到程序目录的 GUI DLL 同步至
+`D:\Automation Script\MaaNOP-win-x86_64-v2.4.0`；SHA256 一致，config/interface 哈希未变。
+备份位于 `artifacts/diagnostics-default-sync-backup-20260922-222803/`；目标 DLL Settings/support 自检通过，
+沿用独立测试 runtimeconfig、构建 depsfile 和目标 libloader，未修改目标运行时配置；保存对话框待实机验证。
+
+2026-09-22：按用户反馈删除诊断说明中的“调试图片可能包含游戏画面；不会包含任务配置或缓存。”，
+保存对话框 InitialDirectory 默认指向程序目录，仍允许另选保存位置；诊断包采集范围与导出流程不变。
+Release GUI 构建 0 警告/错误，Settings/support 自检通过，diff 空白检查通过。
+未执行原生保存对话框交互验证；检测到 GUI 正在运行，本次尚未同步测试目录。
+
+2026-09-22：已将本轮 Settings 横向行布局 GUI DLL 备份同步至
+`D:\Automation Script\MaaNOP-win-x86_64-v2.4.0`，源/目标 SHA256 一致，config/interface 哈希未变。
+备份位于 `artifacts/settings-rows-sync-backup-20260922-221921/`；目标 DLL Settings/support 自检通过。
+目标包直接 dotnet 启动无法定位 CoreCLR、EXE 要求 UAC；自检使用备份目录内独立 framework runtimeconfig、
+构建 depsfile 和目标 libloader 加载目标 DLL，未修改目标运行时配置。未执行实机交互验收。
+
+2026-09-22：Settings 收敛为“更新”和“帮助与诊断”两组，移除页面说明，保留原六项及其绑定。
+每组一张无阴影卡片，行间使用轻分隔线；toggle/action/info 均改为左侧文字、右侧控件或值，
+开关复用 WPF UI ToggleSwitch，动作状态位于左侧说明下方。删除同名动作隐藏标题的旧展示逻辑，
+版本标签放入定义，绑定值只保留版本号；不修改 Settings schema、Registry 及业务流程。
+Release GUI 构建 0 警告/错误，Settings/support 与完整 GUI 自检通过（含指引 replay）。
+完整自检首次被沙箱阻止设置 Preview 目录 ACL，提升权限重跑通过；未修改 Preview。
+920×640 离屏截图确认正常内容完整显示，
+补充长状态撑高页面后的滚动断言与截图，底部按钮完整可见且无横向溢出。
+已检查 diff、120 列及空白；未执行真实保存对话框、托盘或游戏交互验收。
+
+2026-09-22：重新编译用户调整的 Settings JSON（合并帮助/诊断分组与修改文案），同步测试目录 GUI DLL。
+自检旧四分组预期随定义改为 updates/support；Release 构建 0 警告/错误，构建与目标 Settings/support 自检通过。
+目标仍为 `D:\Automation Script\MaaNOP-win-x86_64-v2.4.0`，DLL SHA256 一致，config/interface 未变；
+备份在 `artifacts/settings-json-sync-backup-20260922-220603/`。未执行实机交互验收。
+2026-09-22：已将 setting 分支 8784c31 的 GUI DLL 备份同步至
+`D:\Automation Script\MaaNOP-win-x86_64-v2.4.0`，SHA256 一致，config/interface 未变。
+旧文件及哈希清单保存在 `artifacts/setting-sync-backup-20260922-215254/`。
+本轮 Release 构建 0 警告/错误，构建目录与目标目录 Settings/support 自检均通过；未进行实机交互验收。
 
 2026-09-22：将 Settings 页面迁移为内置 `Assets/settings.json` 声明与独立 `SettingsView`。
 `SettingsDefinition` 只定义 section/toggle/action/info；`SettingsRegistry` 显式绑定有限的开关、动作和版本值，

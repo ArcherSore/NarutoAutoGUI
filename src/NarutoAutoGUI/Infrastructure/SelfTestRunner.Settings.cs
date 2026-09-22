@@ -22,7 +22,7 @@ internal static partial class SelfTestRunner
         var page = settings.Page;
         var items = page.Sections.SelectMany(section => section.Items).ToArray();
         if (!page.Sections.Select(section => section.Definition.Id)
-                .SequenceEqual(["updates", "application", "diagnostics", "help"])
+                .SequenceEqual(["updates", "support"])
             || items.Count(item => item.Definition.Type == SettingsItemKind.Toggle) != 1
             || items.Count(item => item.Definition.Type == SettingsItemKind.Action) != 3
             || items.Count(item => item.Definition.Type == SettingsItemKind.Info) != 2
@@ -126,7 +126,7 @@ internal static partial class SelfTestRunner
             var page = SettingsPageFor(window);
             var version = page.Sections.SelectMany(section => section.Items)
                 .Single(item => item.Definition.ValueKey == "update.currentVersion").Value!;
-            var toggle = SettingsVisualDescendants(view).OfType<System.Windows.Controls.CheckBox>().Single();
+            var toggle = SettingsVisualDescendants(view).OfType<Wpf.Ui.Controls.ToggleSwitch>().Single();
             toggle.IsChecked = true;
             if (File.ReadAllText(Path.Combine(directory, "config", "update-check.txt")) != "true") {
                 throw new InvalidOperationException("Toggle renderer 必须将选择传给持久化 seam。");
@@ -134,7 +134,7 @@ internal static partial class SelfTestRunner
             toggle.IsChecked = false;
             var action = SettingsActionFor(window, "update.check");
             var button = SettingsButtonFor(window, "update.check");
-            if (version.Text == "当前版本：—" || button.Command != action) {
+            if (version.Text == "—" || button.Command != action) {
                 throw new InvalidOperationException("初始项目版本与检查更新 command 绑定不能丢失。");
             }
             button.Command.Execute(null);
@@ -149,7 +149,7 @@ internal static partial class SelfTestRunner
             }
             check.SetResult(new EngineCheckResult("7.8.9", new EngineUpdate("8.0.0", "notes", "opaque")));
             PumpOnboarding();
-            if (version.Text != "当前版本：7.8.9" || action.Status != "发现新版本，可查看更新。"
+            if (version.Text != "7.8.9" || action.Status != "发现新版本，可查看更新。"
                 || !action.IsEnabled || !SettingsVisualDescendants(view).OfType<TextBlock>()
                     .Any(text => text.Text == version.Text)
                 || !SettingsVisualDescendants(view).OfType<TextBlock>().Any(text => text.Text == action.Status)) {

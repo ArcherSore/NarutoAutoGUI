@@ -27,7 +27,7 @@ public partial class MainWindow
 
     private void InitializeUpdates()
     {
-        _settings.CurrentVersion.Text = $"当前版本：{_projectPlan?.ProjectVersion ?? "—"}";
+        _settings.CurrentVersion.Text = _projectPlan?.ProjectVersion ?? "—";
         try {
             _settings.LoadUpdatePreference();
             if (_settings.CheckOnStartup.Value) {
@@ -72,7 +72,7 @@ public partial class MainWindow
                 return;
             }
             _updateCheck = result;
-            _settings.CurrentVersion.Text = $"当前版本：{result.CurrentVersion}";
+            _settings.CurrentVersion.Text = result.CurrentVersion;
             _updateCheckState = result.Update is null
                 ? UpdateCheckState.UpToDate : UpdateCheckState.UpdateAvailable;
             _settings.CheckUpdate.Status = result.Update is null ? "当前已是最新版本" : "发现新版本，可查看更新。";

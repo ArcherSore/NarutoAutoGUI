@@ -35,7 +35,7 @@ internal sealed class ApplicationSettings
     internal SettingsAction CheckUpdate { get; }
     internal SettingsAction ExportDiagnostics { get; }
     internal SettingsAction ReplayOnboarding { get; }
-    internal SettingsValue CurrentVersion { get; } = new() { Text = "当前版本：—" };
+    internal SettingsValue CurrentVersion { get; } = new() { Text = "—" };
 
     internal void LoadUpdatePreference() => CheckOnStartup.Initialize(!File.Exists(_updatePreferencePath)
         || File.ReadAllText(_updatePreferencePath) != "false");

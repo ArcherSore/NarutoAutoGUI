@@ -95,8 +95,4 @@ internal sealed record SettingsSectionModel(
     SettingsSectionDefinition Definition, IReadOnlyList<SettingsItemModel> Items);
 
 internal sealed record SettingsItemModel(SettingsItemDefinition Definition,
-    SettingsToggle? Toggle = null, SettingsAction? Action = null, SettingsValue? Value = null)
-{
-    public string? Heading => Definition.Type == SettingsItemKind.Action && Definition.Title == Definition.ButtonText
-        ? null : Definition.Title;
-}
+    SettingsToggle? Toggle = null, SettingsAction? Action = null, SettingsValue? Value = null);

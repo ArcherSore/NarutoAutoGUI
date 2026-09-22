@@ -1,6 +1,15 @@
 # Status
 
 ## 当前阶段
+2026-09-22：Settings 居中布局合入 main，保留 main 已有的侧栏状态记忆修复；仅 STATUS 新增记录发生冲突，
+已保留双方记录。合并版本 Release GUI 构建 0 警告/错误，Settings/Navigation/support 自检通过。
+
+2026-09-22：Settings 按方案一将宽度上限移到整体容器，在主内容区水平居中，保留 820 DIP 上限、
+24 DIP 页边距和顶部对齐；小窗口自动收窄，标题、分组和卡片保持统一对齐。仅调整 SettingsView XAML。
+Release GUI 构建 0 警告/错误，构建与目标 DLL Settings/support 自检通过；最小窗口离屏截图及滚动检查通过。
+已备份同步至 `D:\Automation Script\MaaNOP-win-x86_64-v2.4.0`，DLL 哈希一致，config/interface 未变。
+备份位于 `artifacts/settings-center-sync-backup-20260922-224806/`；用户实测反馈“没问题”，确认提交并合入 main。
+
 2026-09-22：侧栏状态记忆修复已备份同步至 `D:\Automation Script\MaaNOP-win-x86_64-v2.4.0`，
 源/目标 GUI DLL SHA256 一致，config/interface 哈希未变；目标 Settings/Navigation/support 自检通过。
 备份位于 `artifacts/navigation-state-sync-backup-20260922-223731/`，自检沿用独立测试启动配置。

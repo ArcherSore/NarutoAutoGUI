@@ -1,6 +1,12 @@
 # Status
 
 ## 当前阶段
+2026-09-22：Settings 按方案一将宽度上限移到整体容器，在主内容区水平居中，保留 820 DIP 上限、
+24 DIP 页边距和顶部对齐；小窗口自动收窄，标题、分组和卡片保持统一对齐。仅调整 SettingsView XAML。
+Release GUI 构建 0 警告/错误，构建与目标 DLL Settings/support 自检通过；最小窗口离屏截图及滚动检查通过。
+已备份同步至 `D:\Automation Script\MaaNOP-win-x86_64-v2.4.0`，DLL 哈希一致，config/interface 未变。
+备份位于 `artifacts/settings-center-sync-backup-20260922-224806/`；用户实测反馈“没问题”，确认提交并合入 main。
+
 2026-09-22：用户查看同步后的 Settings 页面反馈“看着没啥问题”，确认提交本轮布局与诊断导出默认目录调整。
 该反馈记录为页面观感确认，不扩展为保存对话框、托盘或游戏交互的专项验收。
 

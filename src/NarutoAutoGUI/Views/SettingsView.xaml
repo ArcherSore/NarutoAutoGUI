@@ -101,10 +101,7 @@
         </Style>
     </UserControl.Resources>
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-        <Grid Margin="24">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MaxWidth="820" />
-            </Grid.ColumnDefinitions>
+        <Grid Margin="24" MaxWidth="820">
             <StackPanel>
                 <TextBlock Text="{Binding Definition.Title}" Style="{StaticResource WindowTitleTextStyle}" />
                 <TextBlock Text="{Binding Definition.Description}" Style="{StaticResource OptionalText}"

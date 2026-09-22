@@ -59,6 +59,8 @@ NarutoAutoGUI/
 
 ## 配置与日志
 
+- 侧栏展开状态保存在 `<程序目录>\config\navigation-pane.txt`，默认展开；首次加载只读取，切换时保存，
+  重建窗口时恢复。读写失败只记录日志，不阻止切换；不属于 Settings Definition 或 MaaNOP 配置。
 - 配置：MaaNOP project payload 与 NarutoAutoGUI 一同打包，Project root 固定为 application base directory，
   `interface.json` 位于 `NarutoAutoGUI.exe` 同级目录。火影忍者 Online 使用固定 launch profile：
   `NarutoGameLaunchProfile` 从当前用户 `%APPDATA%\Tencent\QQMicroGameBox\Launch.exe` 推导启动器路径，AppId

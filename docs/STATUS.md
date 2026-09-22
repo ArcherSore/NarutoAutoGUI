@@ -1,6 +1,18 @@
 # Status
 
 ## 当前阶段
+2026-09-22：侧栏状态记忆修复已备份同步至 `D:\Automation Script\MaaNOP-win-x86_64-v2.4.0`，
+源/目标 GUI DLL SHA256 一致，config/interface 哈希未变；目标 Settings/Navigation/support 自检通过。
+备份位于 `artifacts/navigation-state-sync-backup-20260922-223731/`，自检沿用独立测试启动配置。
+用户重启实测后反馈“没问题”，确认提交本轮侧栏状态记忆修复。
+
+2026-09-22：修复侧栏重启后总是展开的问题，菜单切换时保存 `config/navigation-pane.txt`，
+首次加载恢复上次状态；无偏好时默认展开且不写文件。读写失败只记录日志，不阻止当前侧栏切换。
+不修改 Settings Definition、MaaNOP 配置或托盘生命周期。Release GUI 构建 0 警告/错误，
+Settings/support 与新增 Navigation 自检通过，覆盖真实菜单按钮切换、窗口重建恢复展开/折叠、
+隐藏再显示保持状态及写入失败保护；diff 空白与受影响代码 120 列检查通过。
+本轮未重跑完整 GUI/Worker 自检；检测到测试程序运行，尚未同步测试目录，也未提交。
+
 2026-09-22：用户查看同步后的 Settings 页面反馈“看着没啥问题”，确认提交本轮布局与诊断导出默认目录调整。
 该反馈记录为页面观感确认，不扩展为保存对话框、托盘或游戏交互的专项验收。
 

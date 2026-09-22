@@ -24,6 +24,7 @@ internal static partial class SelfTestRunner
             VerifyDiagnosticPackage(logger, testDirectory);
             VerifyDeclarativeSettings(logger, testDirectory);
             VerifyDiagnosticSettings(logger, testDirectory);
+            VerifyNavigationPreference(logger, testDirectory);
             if (supportOnly) {
                 Console.WriteLine("SUPPORT SELF-TEST PASS");
                 return 0;

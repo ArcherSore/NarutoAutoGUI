@@ -91,6 +91,7 @@ public partial class MainWindow : FluentWindow
     private bool _projectConfigurationValid;
     private bool _updatingOptionEditors;
     private bool _taskShelfExpanded = true;
+    private bool _navigationPreferenceLoaded;
     private string? _expandedTaskName;
     private string? _dragTaskName;
     private WpfPoint _dragStartPoint;
@@ -235,10 +236,34 @@ public partial class MainWindow : FluentWindow
 
     private void MainNavigation_Loaded(object sender, RoutedEventArgs e)
     {
+        if (!_navigationPreferenceLoaded) {
+            try {
+                if (File.Exists(NavigationPreferencePath)) {
+                    MainNavigation.IsPaneOpen = File.ReadAllText(NavigationPreferencePath) != "false";
+                }
+            } catch (Exception exception) {
+                _logger.Warn("读取侧栏展开状态失败，保留默认状态。", exception);
+            }
+            _navigationPreferenceLoaded = true;
+            MainNavigation.PaneOpened += MainNavigation_PaneStateChanged;
+            MainNavigation.PaneClosed += MainNavigation_PaneStateChanged;
+        }
         if (MainNavigation.Template.FindName("PART_ToggleButton", MainNavigation)
             is Wpf.Ui.Controls.Button { Content: TextBlock title }) {
             // WPF-UI 4.3 places the pane title 6 DIP to the right of navigation item labels.
             title.Margin = new Thickness(-6, 0, 0, 0);
+        }
+    }
+
+    private string NavigationPreferencePath => Path.Combine(_applicationDirectory, "config", "navigation-pane.txt");
+
+    private void MainNavigation_PaneStateChanged(object sender, RoutedEventArgs e)
+    {
+        try {
+            Directory.CreateDirectory(Path.GetDirectoryName(NavigationPreferencePath)!);
+            File.WriteAllText(NavigationPreferencePath, MainNavigation.IsPaneOpen ? "true" : "false");
+        } catch (Exception exception) {
+            _logger.Warn("保存侧栏展开状态失败。", exception);
         }
     }
 

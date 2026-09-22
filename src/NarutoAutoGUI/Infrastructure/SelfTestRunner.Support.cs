@@ -276,9 +276,10 @@ internal static partial class SelfTestRunner
             window.Width = window.MinWidth;
             window.Height = window.MinHeight;
             ClickOnboarding(window, "SettingsNavigationItem");
-            var settings = (ScrollViewer)window.FindName("SettingsView");
-            var button = (System.Windows.Controls.Button)window.FindName("ExportDiagnosticsButton");
-            var status = (TextBlock)window.FindName("DiagnosticsStatusText");
+            var settingsView = (Views.SettingsView)window.FindName("SettingsView");
+            var settings = ConfigurationDescendants(settingsView).OfType<ScrollViewer>().First();
+            var button = SettingsButtonFor(window, "diagnostics.export");
+            var action = SettingsActionFor(window, "diagnostics.export");
             CaptureSettings("top");
             button.BringIntoView();
             PumpOnboarding();
@@ -287,14 +288,14 @@ internal static partial class SelfTestRunner
             var method = typeof(Views.MainWindow).GetMethod("ExportDiagnosticsAsync",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
             var task = (Task)method.Invoke(window, [path])!;
-            if (button.IsEnabled || status.Text != "正在导出…") {
+            if (button.IsEnabled || action.Status != "正在导出…") {
                 throw new InvalidOperationException("导出在后台执行期间须禁用按钮并显示状态。");
             }
             var deadline = DateTime.UtcNow.AddSeconds(10);
             while (!task.IsCompleted && DateTime.UtcNow < deadline) {
                 PumpOnboarding();
             }
-            if (!task.IsCompleted || !button.IsEnabled || status.Text != "诊断包已导出") {
+            if (!task.IsCompleted || !button.IsEnabled || action.Status != "诊断包已导出") {
                 throw new InvalidOperationException("后台导出应完成并恢复按钮，Dispatcher 可继续处理消息。");
             }
             task.GetAwaiter().GetResult();
@@ -306,7 +307,7 @@ internal static partial class SelfTestRunner
             settings.ScrollToEnd();
             PumpOnboarding();
             AssertVisible(button);
-            AssertVisible((FrameworkElement)window.FindName("ReplayOnboardingButton"));
+            AssertVisible(SettingsButtonFor(window, "onboarding.replay"));
             if (settings.ExtentWidth > settings.ViewportWidth + 1) {
                 throw new InvalidOperationException("最小窗口的 Settings 不能横向溢出。");
             }

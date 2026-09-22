@@ -49,7 +49,7 @@ public partial class MainWindow
         && TaskDescriptionOverlay.Visibility != Visibility.Visible
         && _sessionSnapshot.State is not (ChildSessionState.Connecting or ChildSessionState.Disconnecting);
 
-    private void ReplayOnboarding_Click(object sender, RoutedEventArgs e)
+    private void ReplayOnboarding()
     {
         if (_projectPlan is null || _busy || _exitInProgress || IsGlobalModalOpen || _onboardingActive) {
             return;
@@ -72,7 +72,7 @@ public partial class MainWindow
             _onboardingPaused = false;
             _onboardingShown = false;
             _onboardingStep = 0;
-            OnboardingStatusText.Text = string.Empty;
+            _settings.ReplayOnboarding.Status = string.Empty;
             SwitchSection(MainSection.Home);
             WindowOverlayRoot.LayoutUpdated += Onboarding_LayoutUpdated;
             PreviewGotKeyboardFocus += Onboarding_PreviewGotKeyboardFocus;
@@ -447,7 +447,7 @@ public partial class MainWindow
     {
         _logger.Warn($"新手指引已取消：mode={(_onboardingReplay ? "replay" : "auto")}，step={_onboardingStep + 1}。",
             exception);
-        OnboardingStatusText.Text = "暂时无法显示新手指引，请稍后重试。";
+        _settings.ReplayOnboarding.Status = "暂时无法显示新手指引，请稍后重试。";
         EndOnboarding(handled: false);
     }
 
@@ -494,7 +494,7 @@ public partial class MainWindow
             _onboardingPreviousFocus = null;
         }
         if (markHandled && _onboardingPreferences?.MarkHandled() == false) {
-            OnboardingStatusText.Text = "未能保存新手指引状态，下次启动可能再次显示。";
+            _settings.ReplayOnboarding.Status = "未能保存新手指引状态，下次启动可能再次显示。";
         }
         ReevaluateOnboarding();
     }
@@ -525,12 +525,12 @@ public partial class MainWindow
 
     private void ReevaluateOnboarding()
     {
-        if (_logger is null || ReplayOnboardingButton is null || _onboardingClosed) {
+        if (_logger is null || _settings is null || _onboardingClosed) {
             return;
         }
-        ReplayOnboardingButton.IsEnabled = _projectPlan is not null && !_busy && !_exitInProgress
+        _settings.ReplayOnboarding.IsEnabled = _projectPlan is not null && !_busy && !_exitInProgress
             && !_onboardingActive && !IsGlobalModalOpen;
-        ReplayOnboardingButton.ToolTip = _projectPlan is null ? "项目加载后可查看新手指引"
+        _settings.ReplayOnboarding.ToolTip = _projectPlan is null ? "项目加载后可查看新手指引"
             : _busy || _exitInProgress ? "当前操作完成后可查看新手指引" : null;
         if (_onboardingActive) {
             if (!CanPresentOnboarding) {

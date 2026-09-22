@@ -15,6 +15,8 @@ using NarutoAutoGUI.Infrastructure;
 using NarutoAutoGUI.Models;
 using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
+using NarutoAutoGUI.Settings;
+using NarutoAutoGUI.Updates;
 using NarutoAutoGUI.Worker;
 using WpfBrush = System.Windows.Media.Brush;
 using WpfBrushes = System.Windows.Media.Brushes;
@@ -62,6 +64,7 @@ public partial class MainWindow : FluentWindow
 
     private sealed record PrimaryActionState(PrimaryActionMode Mode, bool CanExecute);
     private readonly AppLogger _logger;
+    private readonly ApplicationSettings _settings;
     private readonly string _applicationDirectory;
     private readonly ChildSessionManager _sessionManager;
     private readonly ChildSessionProgramService _programService;
@@ -104,12 +107,17 @@ public partial class MainWindow : FluentWindow
         AppLogger logger,
         ChildSessionManager sessionManager, ChildSessionProgramService programService,
         WorkerCoordinator workerCoordinator, Func<Func<Task>, Task> runApplicationOperationAsync,
-        Func<Task> requestExitAsync, string? applicationDirectory = null)
+        Func<Task> requestExitAsync, string? applicationDirectory = null,
+        Func<CancellationToken, Task<EngineCheckResult>>? checkForUpdate = null)
     {
         InitializeComponent();
         DataContext = this;
         _logger = logger;
         _applicationDirectory = applicationDirectory ?? AppContext.BaseDirectory;
+        _checkForUpdate = checkForUpdate ?? CheckWithEngineAsync;
+        _settings = new ApplicationSettings(_applicationDirectory, logger,
+            CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding);
+        SettingsView.DataContext = _settings.Page;
         _sessionManager = sessionManager;
         _programService = programService;
         _workerCoordinator = workerCoordinator;

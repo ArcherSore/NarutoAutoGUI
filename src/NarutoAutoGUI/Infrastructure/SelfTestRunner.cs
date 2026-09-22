@@ -22,6 +22,7 @@ internal static partial class SelfTestRunner
             using var logger = new AppLogger(logDirectory);
             VerifyTerminalNotifications();
             VerifyDiagnosticPackage(logger, testDirectory);
+            VerifyDeclarativeSettings(logger, testDirectory);
             VerifyDiagnosticSettings(logger, testDirectory);
             if (supportOnly) {
                 Console.WriteLine("SUPPORT SELF-TEST PASS");

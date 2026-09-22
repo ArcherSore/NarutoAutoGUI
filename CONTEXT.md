@@ -63,8 +63,12 @@ NarutoAutoGUI 首版完整支持的 Project Interface v2 执行语义，仅覆�
 _Avoid_: 通用 Project Interface V2 客户端、猜测兼容
 
 **Application Settings**:
-NarutoAutoGUI 拥有并以 SchemaVersion 2 保存在 `config/settings.json` 的应用级环境设置，包括 launch-only 的游戏启动入口/参数和直接包含 `interface.json` 的 MaaNOP Project Directory；它不包含 MaaNOP task/option 选择。项目目录影响 desired runtime profile，游戏启动入口可能是 launcher且不等同于 Controller 目标进程。
-_Avoid_: MaaNOP Config、Run Plan
+NarutoAutoGUI 自身的应用偏好，例如是否在启动时检查更新；不包含 MaaNOP task/option 选择或运行计划。
+_Avoid_: MaaNOP Config、Run Plan、Settings Definition
+
+**Settings Definition**:
+NarutoAutoGUI 声明自身设置页面分组、设置项、动作入口和说明的定义；它描述页面上有什么，不保存用户选择或业务状态。
+_Avoid_: Application Settings、Project Interface、MaaNOP Config
 
 **Game Launch Entry**:
 主 GUI 在 Child Session 中启动游戏环境时使用的 executable 和参数；它可能是 launcher，只负责启动，不约束最终拥有目标 HWND 的进程路径。

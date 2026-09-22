@@ -415,7 +415,7 @@
 
             <ui:NavigationView.ContentOverlay>
                 <Grid Background="{StaticResource Brush.Canvas}">
-                    <!-- Home and Settings intentionally remain in this single XAML namescope. -->
+                    <!-- Settings owns its definition-driven view and namescope. -->
                     <Grid x:Name="HomeView">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MinWidth="320" />
@@ -928,68 +928,7 @@
                         </Grid>
                     </Grid>
 
-                    <ScrollViewer x:Name="SettingsView"
-                                  Visibility="Collapsed"
-                                  HorizontalContentAlignment="Stretch"
-                                  HorizontalScrollBarVisibility="Disabled"
-                                  VerticalScrollBarVisibility="Auto">
-                        <Grid Margin="24" MaxWidth="820" HorizontalAlignment="Left">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-
-                            <StackPanel Grid.Row="0">
-                                <TextBlock Text="设置" Style="{StaticResource WindowTitleTextStyle}" />
-                                <TextBlock Margin="0,4,0,0"
-                                           Text="管理 MaaNOP 更新与应用行为。"
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                            </StackPanel>
-
-                            <StackPanel Grid.Row="1" Margin="0,24,0,24">
-                                <TextBlock Text="更新" Style="{StaticResource SectionTitleTextStyle}" />
-                                <TextBlock x:Name="UpdateCurrentVersionText" Margin="0,12,0,12" Text="当前版本：—" />
-                                <CheckBox x:Name="StartupUpdateCheck" Content="启动时检查更新" IsChecked="True"
-                                          Click="StartupUpdateCheck_Click" Margin="0,0,0,12" />
-                                <Button x:Name="CheckUpdateButton" Content="检查更新" HorizontalAlignment="Left"
-                                        Click="CheckUpdate_Click" Style="{StaticResource SecondaryButtonStyle}" />
-                                <TextBlock x:Name="UpdateCheckStatus" Margin="0,12,0,24" TextWrapping="Wrap" />
-                                <Border Height="1"
-                                        Margin="0,0,0,24"
-                                        Background="{StaticResource Brush.Border}"
-                                        SnapsToDevicePixels="True" />
-                                <TextBlock Text="应用行为" Style="{StaticResource SectionTitleTextStyle}" />
-                                <TextBlock Margin="0,10,0,0"
-                                           Text="关闭主窗口时会隐藏到系统托盘，任务与桌面分身继续运行。请使用托盘菜单中的“退出程序”完成清理。"
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                                <Border Height="1" Margin="0,24" Background="{StaticResource Brush.Border}" />
-                                <TextBlock Text="问题诊断" Style="{StaticResource SectionTitleTextStyle}" />
-                                <TextBlock Margin="0,10,0,0"
-                                           Text="打包运行日志、框架调试图片和版本信息，方便反馈问题。"
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                                <TextBlock Text="调试图片可能包含游戏画面；不会包含任务配置或缓存。"
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                                <Button x:Name="ExportDiagnosticsButton" Content="导出诊断包"
-                                        HorizontalAlignment="Left" Margin="0,12,0,0"
-                                        Style="{StaticResource SecondaryButtonStyle}"
-                                        Click="ExportDiagnostics_Click" />
-                                <TextBlock x:Name="DiagnosticsStatusText" Margin="0,8,0,0" TextWrapping="Wrap"
-                                           AutomationProperties.LiveSetting="Polite"
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                                <Border Height="1" Margin="0,24" Background="{StaticResource Brush.Border}" />
-                                <TextBlock Text="帮助" Style="{StaticResource SectionTitleTextStyle}" />
-                                <TextBlock Text="新手指引" FontWeight="SemiBold" Margin="0,12,0,4" />
-                                <TextBlock Text="快速了解任务配置、运行控制和实时截图。"
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                                <Button x:Name="ReplayOnboardingButton" Content="查看新手指引"
-                                        HorizontalAlignment="Left" Margin="0,12,0,0"
-                                        Style="{StaticResource SecondaryButtonStyle}"
-                                        AutomationProperties.Name="查看新手指引" Click="ReplayOnboarding_Click" />
-                                <TextBlock x:Name="OnboardingStatusText" Margin="0,8,0,0" TextWrapping="Wrap"
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                            </StackPanel>
-                        </Grid>
-                    </ScrollViewer>
+                    <views:SettingsView x:Name="SettingsView" Visibility="Collapsed" />
 
                     <Grid x:Name="TaskDescriptionOverlay"
                           Panel.ZIndex="100"

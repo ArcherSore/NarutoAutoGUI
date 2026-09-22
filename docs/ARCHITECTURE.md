@@ -110,6 +110,18 @@ NarutoAutoGUI/
   以及 Child Session 模块返回的 Win32/COM 错误码。Preview 采样、映射或显示失败也只写限频诊断，不能改变
   Run、Worker admission、cleanup 或 Child Session 生命周期。
 
+## 应用设置页面
+
+`Assets/settings.json` 是随 GUI 程序集嵌入发布的内部 Settings Definition；它不属于 MaaNOP Project Interface，
+不读取或保存用户状态。`SettingsDefinition` 解析并校验 section/toggle/action/info，`SettingsRegistry` 只解析显式
+注册的 setting/action/value 引用，`SettingsView` 用三种通用行模板渲染，MainWindow 只挂载 View 与接入原业务入口。
+定义或绑定错误记录资产路径及异常并抛出，不静默回退到空页面。
+
+`ApplicationSettings` 注册当前的一个开关、三个动作和一个版本值；动作自带 C# 更新的状态文本、可用性和提示。
+偏好继续用 `config/update-check.txt`，指引继续使用原完成版本和首次资格文件；不恢复旧 `config/settings.json`，
+不合并 MaaNOP 配置。Updater/diagnostics/onboarding 的原流程只将 Settings 控件引用改为绑定对象，详情和扩展方式见
+[Settings Definition](SETTINGS.md)。
+
 ## MaaNOP 完整包更新
 
 V2 以独立 Rust Update Engine 集中 check/prepare/install。GUI 经 JSONL 短命进程调用，只保存 opaque descriptor/reference，

@@ -40,7 +40,7 @@ internal static partial class SelfTestRunner
             ClickOnboarding(window, "OnboardingSkip");
             if (File.ReadAllText(Path.Combine(directory, "config", "onboarding.txt")) != "1"
                 || File.Exists(Path.Combine(directory, "config", "onboarding-new-user.pending"))
-                || !((WpfButton)window.FindName("ReplayOnboardingButton")).IsEnabled) {
+                || !SettingsActionFor(window, "onboarding.replay").IsEnabled) {
                 throw new InvalidOperationException("自动跳过须记录完成、清理资格，并允许从设置页 replay。");
             }
         });
@@ -52,7 +52,8 @@ internal static partial class SelfTestRunner
             var versionPath = Path.Combine(directory, "config", "onboarding.txt");
             File.WriteAllText(versionPath, "9");
             ClickOnboarding(window, "SettingsNavigationItem");
-            ClickOnboarding(window, "ReplayOnboardingButton");
+            SettingsActionFor(window, "onboarding.replay").Execute(null);
+            PumpOnboarding();
             AssertOnboardingStep(window, 1, "配置自动化任务");
             ClickOnboarding(window, "OnboardingNext");
             AssertOnboardingStep(window, 2, "查看说明并设置参数");
@@ -104,7 +105,8 @@ internal static partial class SelfTestRunner
             SetOnboardingField(window, "_projectPlan", project);
             InvokeOnboarding(window, "RenderTaskPlan");
             before = File.ReadAllBytes(path);
-            ClickOnboarding(window, "ReplayOnboardingButton");
+            SettingsActionFor(window, "onboarding.replay").Execute(null);
+            PumpOnboarding();
             ClickOnboarding(window, "OnboardingNext");
             AssertOnboardingStep(window, 2, "查看说明并设置参数");
             if (!((TextBlock)window.FindName("OnboardingDescription")).Text.StartsWith("添加任务后")) {
@@ -199,7 +201,7 @@ internal static partial class SelfTestRunner
             Directory.CreateDirectory(Path.Combine(directory, "config", "onboarding.txt"));
             ClickOnboarding(window, "OnboardingSkip");
             if (((UIElement)window.FindName("OnboardingOverlay")).Visibility != Visibility.Collapsed
-                || !((TextBlock)window.FindName("OnboardingStatusText")).Text.Contains("未能保存")
+                || !SettingsActionFor(window, "onboarding.replay").Status.Contains("未能保存")
                 || !File.Exists(Path.Combine(directory, "config", "onboarding-new-user.pending"))) {
                 throw new InvalidOperationException("完成版本保存失败必须关闭、提示并保留首次资格。");
             }
@@ -236,7 +238,8 @@ internal static partial class SelfTestRunner
     }
 
     private static void RunOnboardingScenario(AppLogger logger, string directory,
-        Action<MainWindow, string> verify, Action<string>? beforeLoad = null, bool recoveryCompleted = false)
+        Action<MainWindow, string> verify, Action<string>? beforeLoad = null, bool recoveryCompleted = false,
+        Func<CancellationToken, Task<Updates.EngineCheckResult>>? checkForUpdate = null)
     {
         var projectDirectory = CreateProjectFixture(directory);
         beforeLoad?.Invoke(projectDirectory);
@@ -246,7 +249,7 @@ internal static partial class SelfTestRunner
         var coordinator = new WorkerCoordinator(logger, Path.Combine(directory, "tour-state"), "unused.exe",
             $"NarutoAutoGUI.Tour.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
         var window = new MainWindow(logger, session, new ChildSessionProgramService(logger), coordinator,
-            operation => operation(), () => Task.CompletedTask, projectDirectory);
+            operation => operation(), () => Task.CompletedTask, projectDirectory, checkForUpdate);
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var loaded = typeof(MainWindow).GetMethod("MainWindow_Loaded", flags)!;
         window.Loaded -= (RoutedEventHandler)loaded.CreateDelegate(typeof(RoutedEventHandler), window);
@@ -269,7 +272,8 @@ internal static partial class SelfTestRunner
             PumpOnboarding();
             Func<Task> restoreSession = () => {
                 if (((UIElement)window.FindName("TaskWorkspacePanel")).Visibility != Visibility.Visible
-                    || ((System.Windows.Controls.CheckBox)window.FindName("StartupUpdateCheck")).IsChecked != false) {
+                    || SettingsPageFor(window).Sections.SelectMany(section => section.Items)
+                        .Single(item => item.Definition.SettingKey == "update.checkOnStartup").Toggle!.Value) {
                     throw new InvalidOperationException("必须先完成 Project 与更新偏好初始化，再等待 Session 恢复。");
                 }
                 return recovery.Task;

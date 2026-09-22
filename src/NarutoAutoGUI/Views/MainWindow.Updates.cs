@@ -8,6 +8,7 @@ namespace NarutoAutoGUI.Views;
 
 public partial class MainWindow
 {
+    private readonly Func<CancellationToken, Task<EngineCheckResult>> _checkForUpdate;
     private CancellationTokenSource? _updateCancellation;
     private EngineCheckResult? _updateCheck;
     private string? _preparedReference;
@@ -24,37 +25,26 @@ public partial class MainWindow
         Idle, Checking, UpToDate, UpdateAvailable, CheckFailed
     }
 
-    private string UpdatePreferencePath => Path.Combine(_applicationDirectory, "config", "update-check.txt");
-
     private void InitializeUpdates()
     {
-        UpdateCurrentVersionText.Text = $"当前版本：{_projectPlan?.ProjectVersion ?? "—"}";
+        _settings.CurrentVersion.Text = $"当前版本：{_projectPlan?.ProjectVersion ?? "—"}";
         try {
-            StartupUpdateCheck.IsChecked = !File.Exists(UpdatePreferencePath)
-                || File.ReadAllText(UpdatePreferencePath) != "false";
-            if (StartupUpdateCheck.IsChecked == true) {
+            _settings.LoadUpdatePreference();
+            if (_settings.CheckOnStartup.Value) {
                 _ = CheckUpdateAsync();
             }
         } catch (Exception exception) {
             _logger.Warn("更新初始化不可用。", exception);
             _updateCheckState = UpdateCheckState.CheckFailed;
-            UpdateCheckStatus.Text = "暂时无法检查更新，请确认使用完整发布包后重试。";
+            _settings.CheckUpdate.Status = "暂时无法检查更新，请确认使用完整发布包后重试。";
         }
         UpdateUpdaterControls();
     }
 
-    private void StartupUpdateCheck_Click(object sender, RoutedEventArgs e)
-    {
-        try {
-            Directory.CreateDirectory(Path.GetDirectoryName(UpdatePreferencePath)!);
-            File.WriteAllText(UpdatePreferencePath, StartupUpdateCheck.IsChecked == true ? "true" : "false");
-        } catch (Exception exception) {
-            UpdateCheckStatus.Text = "无法保存更新设置，请重试。";
-            _logger.Warn("保存更新设置失败。", exception);
-        }
-    }
-
     private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
+        => await _settings.CheckUpdate.ExecuteAsync();
+
+    private async Task CheckUpdateFromSettingsAsync()
     {
         OpenUpdateDialog();
         await CheckUpdateAsync();
@@ -74,22 +64,18 @@ public partial class MainWindow
         UpdateDownloadStatus.Visibility = Visibility.Collapsed;
         RefreshUpdateNotes();
         UpdateUpdaterControls();
-        UpdateCheckStatus.Text = "正在检查更新…";
+        _settings.CheckUpdate.Status = "正在检查更新…";
         try {
-            var executable = Path.Combine(AppContext.BaseDirectory, "maanop-update-engine.exe");
-            var engine = new UpdateEngineClient(new ProcessStartInfo(executable) {
-                WorkingDirectory = AppContext.BaseDirectory
-            });
-            var result = await engine.CheckAsync(AppContext.BaseDirectory, _updateCancellation.Token);
+            var result = await _checkForUpdate(_updateCancellation.Token);
             if (_exitInProgress) {
                 _updateCheckState = UpdateCheckState.Idle;
                 return;
             }
             _updateCheck = result;
-            UpdateCurrentVersionText.Text = $"当前版本：{result.CurrentVersion}";
+            _settings.CurrentVersion.Text = $"当前版本：{result.CurrentVersion}";
             _updateCheckState = result.Update is null
                 ? UpdateCheckState.UpToDate : UpdateCheckState.UpdateAvailable;
-            UpdateCheckStatus.Text = result.Update is null ? "当前已是最新版本" : "发现新版本，可查看更新。";
+            _settings.CheckUpdate.Status = result.Update is null ? "当前已是最新版本" : "发现新版本，可查看更新。";
             RefreshUpdateNotes();
         } catch (OperationCanceledException) when (_exitInProgress) {
             // Exiting cancels this optional operation; it does not alter the runtime shutdown path.
@@ -98,7 +84,7 @@ public partial class MainWindow
             _logger.Warn("检查更新失败。", exception);
             _updateCheckState = UpdateCheckState.CheckFailed;
             if (!_exitInProgress) {
-                UpdateCheckStatus.Text = exception is IOException or InvalidDataException
+                _settings.CheckUpdate.Status = exception is IOException or InvalidDataException
                     ? exception.Message : "检查更新失败，请确认 Update Engine 可运行后重试。";
             }
         } finally {
@@ -107,6 +93,15 @@ public partial class MainWindow
             _updateBusy = false;
             UpdateUpdaterControls();
         }
+    }
+
+    private static Task<EngineCheckResult> CheckWithEngineAsync(CancellationToken cancellation)
+    {
+        var executable = Path.Combine(AppContext.BaseDirectory, "maanop-update-engine.exe");
+        var engine = new UpdateEngineClient(new ProcessStartInfo(executable) {
+            WorkingDirectory = AppContext.BaseDirectory
+        });
+        return engine.CheckAsync(AppContext.BaseDirectory, cancellation);
     }
 
     private void RefreshUpdateNotes()
@@ -251,8 +246,8 @@ public partial class MainWindow
 
     private void UpdateUpdaterControls()
     {
-        CheckUpdateButton.IsEnabled = !_updateBusy && !_exitInProgress;
-        DialogCheckUpdateButton.IsEnabled = CheckUpdateButton.IsEnabled;
+        _settings.CheckUpdate.IsEnabled = !_updateBusy && !_exitInProgress;
+        DialogCheckUpdateButton.IsEnabled = _settings.CheckUpdate.IsEnabled;
         CloseUpdateButton.IsEnabled = !_exitInProgress;
         CancelDownloadButton.IsEnabled = !_exitInProgress;
         DownloadUpdateButton.IsEnabled = !_updateBusy && !_exitInProgress && _updateCheck?.Update is not null;
@@ -299,7 +294,7 @@ public partial class MainWindow
         UpdateInstalledVersionText.Text = available ? $"当前版本：{CurrentUpdateVersion}" : "";
         UpdateInstalledVersionText.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
         UpdateResultMessage.Text = ready ? "安装将关闭桌面分身并重启，配置会保留。" : _updateCheckState switch {
-            UpdateCheckState.CheckFailed => UpdateCheckStatus.Text,
+            UpdateCheckState.CheckFailed => _settings.CheckUpdate.Status,
             UpdateCheckState.UpToDate => "当前已是最新版本，感谢使用！",
             UpdateCheckState.UpdateAvailable => "",
             _ => "查看是否有可用的新版本。"

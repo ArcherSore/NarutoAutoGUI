@@ -1,0 +1,126 @@
+<UserControl x:Class="NarutoAutoGUI.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:settings="clr-namespace:NarutoAutoGUI.Settings">
+    <UserControl.Resources>
+        <Style x:Key="OptionalText" TargetType="TextBlock" BasedOn="{StaticResource SecondaryTextStyle}">
+            <Style.Triggers>
+                <Trigger Property="Text" Value="">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </Trigger>
+                <Trigger Property="Text" Value="{x:Null}">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ItemHeading" TargetType="TextBlock" BasedOn="{StaticResource OptionalText}">
+            <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Body}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+        <DataTemplate x:Key="ToggleRow">
+            <StackPanel>
+                <CheckBox IsChecked="{Binding Toggle.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.AutomationId="{Binding Definition.Id}"
+                          AutomationProperties.Name="{Binding Definition.Title}">
+                    <TextBlock Text="{Binding Definition.Title}" TextWrapping="Wrap" />
+                </CheckBox>
+                <TextBlock Text="{Binding Definition.Description}" Style="{StaticResource OptionalText}"
+                           Margin="0,4,0,0" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="ActionRow">
+            <StackPanel>
+                <TextBlock Text="{Binding Heading}" Style="{StaticResource ItemHeading}" />
+                <TextBlock Text="{Binding Definition.Description}" Style="{StaticResource OptionalText}"
+                           Margin="0,0,0,12" />
+                <Button Content="{Binding Definition.ButtonText}" Command="{Binding Action}"
+                        ToolTip="{Binding Action.ToolTip}" HorizontalAlignment="Left"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        AutomationProperties.AutomationId="{Binding Definition.Id}"
+                        AutomationProperties.Name="{Binding Definition.ButtonText}" />
+                <TextBlock Text="{Binding Action.Status}" Margin="0,8,0,0"
+                           AutomationProperties.LiveSetting="Polite" Style="{StaticResource OptionalText}" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="InfoRow">
+            <StackPanel>
+                <TextBlock Text="{Binding Heading}" Style="{StaticResource ItemHeading}" />
+                <TextBlock Text="{Binding Definition.Description}" Style="{StaticResource OptionalText}" />
+                <TextBlock Text="{Binding Value.Text}" TextWrapping="Wrap">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Value}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24" MaxWidth="820" HorizontalAlignment="Left">
+            <TextBlock Text="{Binding Definition.Title}" Style="{StaticResource WindowTitleTextStyle}" />
+            <TextBlock Text="{Binding Definition.Description}" Style="{StaticResource OptionalText}"
+                       Margin="0,4,0,24" />
+            <ItemsControl ItemsSource="{Binding Sections}" AlternationCount="2147483647">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel>
+                            <Border Height="1" Margin="0,12,0,24" Background="{StaticResource Brush.Border}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <DataTrigger Value="0" Binding="{Binding (ItemsControl.AlternationIndex),
+                                                RelativeSource={RelativeSource AncestorType=ContentPresenter}}">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                            </Border>
+                            <TextBlock Text="{Binding Definition.Title}"
+                                       Style="{StaticResource SectionTitleTextStyle}" />
+                            <TextBlock Text="{Binding Definition.Description}" Margin="0,10,0,0"
+                                       Style="{StaticResource OptionalText}" />
+                            <ItemsControl ItemsSource="{Binding Items}" Margin="0,12,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <ContentControl Content="{Binding}" Margin="0,0,0,12"
+                                                        HorizontalContentAlignment="Stretch">
+                                            <ContentControl.Style>
+                                                <Style TargetType="ContentControl">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Definition.Type}"
+                                                            Value="{x:Static settings:SettingsItemKind.Toggle}">
+                                                            <Setter Property="ContentTemplate"
+                                                                    Value="{StaticResource ToggleRow}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Definition.Type}"
+                                                            Value="{x:Static settings:SettingsItemKind.Action}">
+                                                            <Setter Property="ContentTemplate"
+                                                                    Value="{StaticResource ActionRow}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Definition.Type}"
+                                                                     Value="{x:Static settings:SettingsItemKind.Info}">
+                                                            <Setter Property="ContentTemplate"
+                                                                    Value="{StaticResource InfoRow}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ContentControl.Style>
+                                        </ContentControl>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

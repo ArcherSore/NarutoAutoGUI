@@ -2,6 +2,22 @@
 
 ## 当前阶段
 
+2026-09-22：将 Settings 页面迁移为内置 `Assets/settings.json` 声明与独立 `SettingsView`。
+`SettingsDefinition` 只定义 section/toggle/action/info；`SettingsRegistry` 显式绑定有限的开关、动作和版本值，
+`ApplicationSettings` 适配原 `config/update-check.txt`，状态与定义分离。MainWindow 删除具体 Settings 布局和
+更新偏好读写，只保留原更新弹窗、诊断导出、指引及窗口生命周期的入口/状态衔接。
+原指引文件、MaaNOP 配置/PI/RunPlan、诊断包内容、Rust Engine 和 tray 流程均保持；协议详见 [Settings](SETTINGS.md)。
+
+本轮执行 `build.ps1 -Configuration Release -Locked -OutputDirectory artifacts/settings-refactor` 完整构建/发布通过，
+GUI/Worker 均 0 警告、0 错误。`test-automated.ps1` 的完整 GUI 自检通过，包括新增 Settings seam 测试、
+原配置/Home/RunPlan、指引和 Preview 回归；Worker 仍在已记录的双进程完整帧测试超时，脚本提前退出，
+不能记为完整套件通过。单独补跑 .NET Updater 测试、Rust 23 项测试及 all-targets Clippy 均通过。
+最终基本校验补充后再次 GUI Release 构建及 `--self-test --support-only` 通过。
+新测试覆盖解析/错误绑定、开关原格式读写及失败提示、三个动作路由、真实 View 的开关/动态版本/状态绑定、
+原更新弹窗的检查中/发现更新/失败和退出禁用，以及 Home/PI/配置/RunPlan 隔离。
+既有诊断导出与指引 replay 测试已适配新 seam；已检查 920×640 离屏 Settings 上下滚动截图。
+规范/规格双轴 diff 审查无遗留发现，120 列和空白检查通过；未执行真实保存对话框、游戏或桌面交互验收。
+
 2026-09-21：简化 `028eec1` 的预览暂停改动：Worker 在同一锁内读取并处理暂停变化，
 客户端用属性模式取得已完成的显示任务；首帧/暂停自检改为整体选择响应，并明确测试命名和注释。
 GUI/Worker Release 构建均 0 警告/错误，完整 GUI 自检通过，首帧就绪到显示为 126/112 ms。

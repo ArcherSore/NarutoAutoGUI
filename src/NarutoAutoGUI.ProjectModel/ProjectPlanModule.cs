@@ -3,7 +3,12 @@ using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoGUI.ProjectModel;
 
-public sealed record ProjectTaskChoice(string Name, string Label, string Description);
+public sealed record ProjectTaskChoice(string Name, string Label, string Description)
+{
+    public IReadOnlyList<string> Groups { get; init; } = [];
+}
+
+public sealed record ProjectTaskGroup(string Name, string Label, string Description, string? Icon, bool DefaultExpand);
 
 public sealed record RunStartAttempt(Guid RunId, RunPlan Plan, string PlanDigest);
 
@@ -19,7 +24,7 @@ public sealed class ProjectPlanModule
         _project = project;
         _configStore = configStore;
         Tasks = project.Tasks
-            .Select(task => new ProjectTaskChoice(task.Name, task.Label, task.Description))
+            .Select(task => new ProjectTaskChoice(task.Name, task.Label, task.Description) { Groups = task.Groups })
             .ToArray();
 
         _config = configStore.Load();
@@ -38,6 +43,7 @@ public sealed class ProjectPlanModule
     public string RuntimeProfileDigest => _project.RuntimeProfileDigest;
     public string SourceInterfaceDigest => _project.Provenance.SourceInterfaceDigest;
     public IReadOnlyList<ProjectTaskChoice> Tasks { get; }
+    public IReadOnlyList<ProjectTaskGroup> Groups => _project.Groups;
     public IReadOnlyList<string> SelectedTaskNames => LoadConfig().SelectedTasks;
     public Guid ActiveConfigurationId => _config.ActiveConfigurationId;
     public string? LoadWarning => _initializationWarning ?? _configStore.LoadWarning;

@@ -67,7 +67,7 @@ public partial class MainWindow
             _onboardingPreviousExpandedTask = _expandedTaskName;
             _onboardingPreviousShelfExpanded = _taskShelfExpanded;
             _onboardingPreviousPreviewExpanded = PreviewCardContent.Visibility == Visibility.Visible;
-            _onboardingPreviousScroll = TaskWorkspacePanel.VerticalOffset;
+            _onboardingPreviousScroll = PlanScroll.VerticalOffset;
             _onboardingActive = true;
             _onboardingPaused = false;
             _onboardingShown = false;
@@ -97,7 +97,7 @@ public partial class MainWindow
             }
             if (_onboardingStep == 0 || _onboardingStep == 1 && _projectPlan!.SelectedTaskNames.Count == 0) {
                 SetTaskShelfExpanded(true);
-                TaskWorkspacePanel.ScrollToTop();
+                AvailableTasksScroll.ScrollToTop();
             }
             if (_onboardingReplay && _onboardingStep == 1 && _projectPlan!.SelectedTaskNames.Count > 0) {
                 _expandedTaskName = _projectPlan.SelectedTaskNames[0];
@@ -111,7 +111,7 @@ public partial class MainWindow
                 var card = ResolveOnboardingTarget(1);
                 // A card taller than the viewport should retain its title and description entry.
                 card.BringIntoView(new Rect(0, 0, card.ActualWidth,
-                    Math.Min(card.ActualHeight, TaskWorkspacePanel.ViewportHeight)));
+                    Math.Min(card.ActualHeight, PlanScroll.ViewportHeight)));
             }
             await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Loaded, cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
@@ -476,7 +476,7 @@ public partial class MainWindow
                 if (_projectPlan is not null) {
                     RenderTaskPlan();
                 }
-                TaskWorkspacePanel.ScrollToVerticalOffset(_onboardingPreviousScroll);
+                PlanScroll.ScrollToVerticalOffset(_onboardingPreviousScroll);
                 SwitchSection(MainSection.Home);
             }
             if (!_onboardingClosed && !_exitInProgress) {

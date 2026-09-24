@@ -478,101 +478,145 @@
                             </StackPanel>
                         </Border>
 
-                        <ScrollViewer x:Name="TaskWorkspacePanel"
-                                      Grid.Row="2"
-                                      Margin="0,12,0,0"
-                                      HorizontalScrollBarVisibility="Disabled"
-                                      VerticalScrollBarVisibility="Auto"
-                                      Visibility="Collapsed">
-                            <StackPanel Margin="0,0,8,24">
-                                <Grid Margin="0,0,0,12">
-                                    <Border Height="1" Margin="0,37,0,0" VerticalAlignment="Top"
-                                            Background="{StaticResource Brush.Border}" />
-                                    <DockPanel HorizontalAlignment="Left"
-                                               PreviewMouseDown="ConfigurationActions_PreviewMouseDown"
-                                               PreviewKeyDown="ConfigurationActions_PreviewKeyDown">
-                                        <Button x:Name="NewConfigurationButton" DockPanel.Dock="Right"
-                                                VerticalAlignment="Top" Style="{StaticResource Configuration.Add}"
-                                                ToolTip="新建空配置" AutomationProperties.Name="新建空配置"
-                                                Click="NewConfigurationButton_Click">
-                                            <ui:SymbolIcon Symbol="Add24" FontSize="16" />
-                                        </Button>
-                                        <TabControl x:Name="ConfigurationTabs" BorderThickness="0"
-                                                    Background="Transparent"
-                                                    SelectionChanged="ConfigurationTabs_SelectionChanged"
-                                                    AutomationProperties.Name="任务配置">
-                                            <TabControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <StackPanel Orientation="Horizontal" />
-                                                </ItemsPanelTemplate>
-                                            </TabControl.ItemsPanel>
-                                            <TabControl.Template>
-                                                <ControlTemplate TargetType="TabControl">
-                                                    <ScrollViewer x:Name="ConfigurationScroll"
-                                                                  Template="{StaticResource Configuration.Scroll}"
-                                                                  HorizontalScrollBarVisibility="Auto"
-                                                                  VerticalScrollBarVisibility="Disabled"
-                                                        PreviewMouseWheel="ConfigurationScroll_PreviewMouseWheel"
-                                                                  CanContentScroll="False" Focusable="False">
-                                                        <ItemsPresenter KeyboardNavigation.TabNavigation="Once" />
-                                                    </ScrollViewer>
+                        <Grid x:Name="TaskWorkspacePanel"
+                              Grid.Row="2"
+                              Margin="0,12,0,0"
+                              SizeChanged="TaskWorkspacePanel_SizeChanged"
+                              Visibility="Collapsed">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0" Margin="0,0,8,12">
+                                <Border Height="1" Margin="0,37,0,0" VerticalAlignment="Top"
+                                        Background="{StaticResource Brush.Border}" />
+                                <DockPanel HorizontalAlignment="Left"
+                                           PreviewMouseDown="ConfigurationActions_PreviewMouseDown"
+                                           PreviewKeyDown="ConfigurationActions_PreviewKeyDown">
+                                    <Button x:Name="NewConfigurationButton" DockPanel.Dock="Right"
+                                            VerticalAlignment="Top" Style="{StaticResource Configuration.Add}"
+                                            ToolTip="新建空配置" AutomationProperties.Name="新建空配置"
+                                            Click="NewConfigurationButton_Click">
+                                        <ui:SymbolIcon Symbol="Add24" FontSize="16" />
+                                    </Button>
+                                    <TabControl x:Name="ConfigurationTabs" BorderThickness="0"
+                                                Background="Transparent"
+                                                SelectionChanged="ConfigurationTabs_SelectionChanged"
+                                                AutomationProperties.Name="任务配置">
+                                        <TabControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </TabControl.ItemsPanel>
+                                        <TabControl.Template>
+                                            <ControlTemplate TargetType="TabControl">
+                                                <ScrollViewer x:Name="ConfigurationScroll"
+                                                              Template="{StaticResource Configuration.Scroll}"
+                                                              HorizontalScrollBarVisibility="Auto"
+                                                              VerticalScrollBarVisibility="Disabled"
+                                                    PreviewMouseWheel="ConfigurationScroll_PreviewMouseWheel"
+                                                              CanContentScroll="False" Focusable="False">
+                                                    <ItemsPresenter KeyboardNavigation.TabNavigation="Once" />
+                                                </ScrollViewer>
                                             </ControlTemplate>
                                         </TabControl.Template>
                                     </TabControl>
                                 </DockPanel>
+                            </Grid>
+                            <Grid Grid.Row="1" Margin="0,0,8,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                            <Button x:Name="TaskShelfHeaderButton"
+                                    Style="{StaticResource TaskShelfHeaderButtonStyle}"
+                                    AutomationProperties.Name="展开或收起可用任务"
+                                    Click="TaskShelfHeaderButton_Click">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="可用任务" Style="{StaticResource SectionTitleTextStyle}" />
+                                    <TextBlock x:Name="AvailableTaskCountText"
+                                               Grid.Column="1"
+                                               Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Style="{StaticResource MutedTextStyle}" />
                                 </Grid>
-                                <Button x:Name="TaskShelfHeaderButton"
-                                        Style="{StaticResource TaskShelfHeaderButtonStyle}"
-                                        AutomationProperties.Name="展开或收起可用任务"
-                                        Click="TaskShelfHeaderButton_Click">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="可用任务" Style="{StaticResource SectionTitleTextStyle}" />
-                                        <TextBlock x:Name="AvailableTaskCountText"
-                                                   Grid.Column="1"
-                                                   Margin="8,0,0,0"
-                                                   VerticalAlignment="Center"
-                                                   Style="{StaticResource MutedTextStyle}" />
-                                        <ui:SymbolIcon x:Name="TaskShelfChevronIcon"
-                                                       Grid.Column="2"
-                                                       Width="16"
-                                                       Height="16"
-                                                       Symbol="ChevronUp16" />
-                                    </Grid>
+                            </Button>
+                                <Button x:Name="TaskSearchToggleButton" Grid.Column="1" Margin="8,0,0,0"
+                                        Style="{StaticResource CompactIconButtonStyle}"
+                                        ToolTip="搜索任务" AutomationProperties.Name="展开任务搜索"
+                                        Click="TaskSearchToggleButton_Click">
+                                    <ui:SymbolIcon x:Name="TaskSearchToggleIcon" Symbol="Search16" FontSize="16" />
                                 </Button>
+                                <Button Grid.Column="3" Style="{StaticResource CompactIconButtonStyle}"
+                                        ToolTip="展开或收起可用任务" AutomationProperties.Name="展开或收起可用任务"
+                                        Click="TaskShelfHeaderButton_Click">
+                                    <ui:SymbolIcon x:Name="TaskShelfChevronIcon" Width="16" Height="16"
+                                                   Symbol="ChevronUp16" />
+                                </Button>
+                            </Grid>
 
-                                <Border x:Name="TaskShelfContent"
-                                        Margin="0,4,0,0"
-                                        Padding="0,2,0,0"
-                                        Style="{StaticResource TaskShelfSurfaceStyle}">
-                                    <WrapPanel x:Name="AvailableTasksPanel" Orientation="Horizontal" />
-                                </Border>
+                            <Border x:Name="TaskShelfContent"
+                                    Grid.Row="2" MaxHeight="280"
+                                    Margin="0,4,0,0"
+                                    Padding="0,2,0,0"
+                                    Style="{StaticResource TaskShelfSurfaceStyle}">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <ui:TextBox x:Name="TaskSearchBox" Margin="0,0,8,8"
+                                                PlaceholderText="搜索任务" MinHeight="32"
+                                                Visibility="Collapsed"
+                                                AutomationProperties.Name="搜索可用任务"
+                                                PreviewKeyDown="TaskSearchBox_PreviewKeyDown"
+                                                TextChanged="TaskSearchBox_TextChanged" />
+                                    <ScrollViewer x:Name="AvailableTasksScroll" Grid.Row="1"
+                                                  VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Disabled"
+                                                  CanContentScroll="False">
+                                        <StackPanel x:Name="AvailableTasksPanel" Margin="0,0,8,0" />
+                                    </ScrollViewer>
+                                </Grid>
+                            </Border>
 
-                                <Border Height="1"
-                                        Margin="0,10,0,14"
-                                        Background="{StaticResource Brush.Border}"
-                                        SnapsToDevicePixels="True" />
+                            <Border Grid.Row="3" Height="1"
+                                    Margin="0,10,0,14"
+                                    Background="{StaticResource Brush.Border}"
+                                    SnapsToDevicePixels="True" />
 
-                                <TextBlock Text="执行计划" Style="{StaticResource SectionTitleTextStyle}" />
-                                <StackPanel x:Name="PlanItemsPanel"
-                                            Margin="0,10,0,0"
-                                            AllowDrop="True"
-                                            DragLeave="PlanItemsPanel_DragLeave"
-                                            DragOver="PlanItemsPanel_DragOver"
-                                            Drop="PlanItemsPanel_Drop" />
+                            <TextBlock Grid.Row="4" Text="执行计划"
+                                       Style="{StaticResource SectionTitleTextStyle}" />
+                            <ScrollViewer x:Name="PlanScroll" Grid.Row="5"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+                                <StackPanel Margin="0,0,8,24">
+                                    <StackPanel x:Name="PlanItemsPanel"
+                                                Margin="0,10,0,0"
+                                                AllowDrop="True"
+                                                DragLeave="PlanItemsPanel_DragLeave"
+                                                DragOver="PlanItemsPanel_DragOver"
+                                                Drop="PlanItemsPanel_Drop" />
 
-                                <StackPanel x:Name="EmptyPlanPanel" Margin="0,16,0,0">
-                                    <TextBlock Text="执行计划为空" FontWeight="SemiBold" />
-                                    <TextBlock Margin="0,4,0,0"
-                                               Text="从上方可用任务中点击 + 添加任务"
-                                               Style="{StaticResource SecondaryTextStyle}" />
+                                    <StackPanel x:Name="EmptyPlanPanel" Margin="0,16,0,0">
+                                        <TextBlock Text="执行计划为空" FontWeight="SemiBold" />
+                                        <TextBlock Margin="0,4,0,0"
+                                                   Text="从上方可用任务中点击 + 添加任务"
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
                                 </StackPanel>
-                            </StackPanel>
-                        </ScrollViewer>
+                            </ScrollViewer>
+                        </Grid>
                     </Grid>
 
                         </Grid>

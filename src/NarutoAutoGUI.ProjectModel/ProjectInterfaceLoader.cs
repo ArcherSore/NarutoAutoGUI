@@ -9,7 +9,7 @@ internal static class ProjectInterfaceLoader
     private static readonly HashSet<string> AllowedTopLevelProperties = new(StringComparer.Ordinal)
     {
         "interface_version", "name", "label", "version", "description", "icon", "github",
-        "controller", "resource", "agent", "global_option", "task", "option"
+        "controller", "resource", "agent", "global_option", "task", "option", "group"
     };
 
     private static readonly HashSet<string> AllowedControllerProperties = new(StringComparer.Ordinal)
@@ -47,7 +47,12 @@ internal static class ProjectInterfaceLoader
 
     private static readonly HashSet<string> AllowedTaskProperties = new(StringComparer.Ordinal)
     {
-        "name", "label", "description", "icon", "entry", "option", "pipeline_override"
+        "name", "label", "description", "icon", "entry", "option", "pipeline_override", "group"
+    };
+
+    private static readonly HashSet<string> AllowedGroupProperties = new(StringComparer.Ordinal)
+    {
+        "name", "label", "description", "icon", "default_expand"
     };
 
     private static readonly HashSet<string> AllowedOptionProperties = new(StringComparer.Ordinal)
@@ -101,6 +106,7 @@ internal static class ProjectInterfaceLoader
         var (agentExec, agentArgs) = ParseAgent(RequireProperty(root, "agent", "$"));
         var agent = new AgentDefinition(agentExec, agentArgs, projectRoot);
         var tasks = ParseTasks(RequireArray(root, "task", "$"));
+        var groups = ParseGroups(root);
         var options = ParseOptions(RequireProperty(root, "option", "$"));
         var globalOptions = ReadStringArray(root, "global_option", required: false, "$");
         ValidateReferences(globalOptions, tasks, options);
@@ -115,7 +121,7 @@ internal static class ProjectInterfaceLoader
             projectRoot, controller, resources, agent);
         return new ProjectDefinition(
             projectRoot, provenance, controller, resources, agent, runtimeProfileDigest,
-            globalOptions, tasks, options);
+            globalOptions, tasks, options, groups);
     }
 
     private static Win32ControllerDefinition ParseController(JsonElement element)
@@ -166,6 +172,38 @@ internal static class ProjectInterfaceLoader
             ReadStringArray(obj, "child_args", required: false, "$.agent"));
     }
 
+    private static IReadOnlyList<ProjectTaskGroup> ParseGroups(JsonElement root)
+    {
+        if (!root.TryGetProperty("group", out var array)) {
+            return [];
+        }
+        RequireArrayValue(array, "$.group");
+        var groups = new List<ProjectTaskGroup>();
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        var index = 0;
+        foreach (var element in array.EnumerateArray()) {
+            var path = $"$.group[{index++}]";
+            var obj = RequireObject(element, path);
+            RejectUnknownProperties(obj, AllowedGroupProperties, path);
+            var name = RequireString(obj, "name", path);
+            if (!names.Add(name)) {
+                throw new InvalidDataException($"重复 group.name：{name}。 ");
+            }
+            var defaultExpand = true;
+            if (obj.TryGetProperty("default_expand", out var expand)) {
+                if (expand.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) {
+                    throw new InvalidDataException($"{path}.default_expand 必须是 boolean。 ");
+                }
+                defaultExpand = expand.GetBoolean();
+            }
+            groups.Add(new ProjectTaskGroup(
+                name, OptionalString(obj, "label") ?? name,
+                ReadOptionalDescription(obj, "description") ?? string.Empty,
+                ReadDisplayString(obj, "icon"), defaultExpand));
+        }
+        return groups;
+    }
+
     private static IReadOnlyList<TaskDefinition> ParseTasks(JsonElement array)
     {
         var tasks = new List<TaskDefinition>();
@@ -184,7 +222,8 @@ internal static class ProjectInterfaceLoader
                 ReadOptionalDescription(obj, "description") ?? string.Empty,
                 RequireString(obj, "entry", path),
                 ReadStringArray(obj, "option", required: false, path),
-                ReadObjectOrEmpty(obj, "pipeline_override", path)));
+                ReadObjectOrEmpty(obj, "pipeline_override", path),
+                ReadStringArray(obj, "group", required: false, path)));
         }
         if (tasks.Count == 0) {
             throw new InvalidDataException("PI 至少需要一个 task。 ");

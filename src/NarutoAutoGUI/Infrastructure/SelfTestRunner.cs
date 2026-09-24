@@ -38,6 +38,8 @@ internal static partial class SelfTestRunner
             VerifyConfigurationTabs(logger, testDirectory, projectDirectory);
             VerifyProjectPlan(testDirectory, projectDirectory);
             VerifyTaskCatalogVariants(testDirectory, projectDirectory);
+            VerifyTaskGroups(testDirectory, projectDirectory);
+            VerifyTaskShelfLayout(logger, testDirectory);
             VerifyOnboarding(logger, testDirectory);
             if (projectOnly) {
                 Console.WriteLine("PROJECT SELF-TEST PASS");
@@ -401,6 +403,210 @@ internal static partial class SelfTestRunner
         if (!persisted.SequenceEqual(new[] { "WhitespaceDescriptionTask", "RealTask", "LongLabelTask" })) {
             throw new InvalidOperationException("SelectedTasks 持久化顺序验证失败。");
         }
+    }
+
+    private static void VerifyTaskGroups(string testDirectory, string sourceProjectDirectory)
+    {
+        var source = File.ReadAllText(Path.Combine(sourceProjectDirectory, "interface.json"));
+        var directory = Path.Combine(testDirectory, "task-groups");
+        Directory.CreateDirectory(directory);
+        var interfacePath = Path.Combine(directory, "interface.json");
+        var configPath = Path.Combine(directory, "config.json");
+        File.WriteAllText(interfacePath, source);
+        var baseline = ProjectPlanModule.Open(directory, configPath);
+        if (baseline.Groups.Count != 0 || baseline.Tasks.Any(task => task.Groups.Count != 0)) {
+            throw new InvalidOperationException("未声明 group 的 PI 应提供空分组。");
+        }
+        var before = baseline.CreateRunStartAttempt().Plan;
+        var savedConfig = File.ReadAllText(configPath);
+        var root = JsonNode.Parse(source)!.AsObject();
+        root["group"] = new JsonArray(
+            new JsonObject {
+                ["name"] = "daily", ["label"] = "日常", ["description"] = "日常任务说明",
+                ["icon"] = "groups/daily.png", ["default_expand"] = false
+            },
+            new JsonObject { ["name"] = "battle" });
+        root["task"]![0]!["group"] = new JsonArray("daily", "battle", "unknown");
+        File.WriteAllText(interfacePath, root.ToJsonString());
+        var grouped = ProjectPlanModule.Open(directory, configPath);
+        if (!grouped.Groups.Select(group => group.Name).SequenceEqual(["daily", "battle"])
+            || grouped.Groups[0] != new ProjectTaskGroup("daily", "日常", "日常任务说明", "groups/daily.png", false)
+            || grouped.Groups[1] != new ProjectTaskGroup("battle", "battle", "", null, true)
+            || !grouped.Tasks[0].Groups.SequenceEqual(["daily", "battle", "unknown"])) {
+            throw new InvalidOperationException("group 展示元数据、默认值、顺序或多组引用丢失。");
+        }
+        var after = grouped.CreateRunStartAttempt().Plan;
+        if (before.RuntimeProfileDigest != after.RuntimeProfileDigest
+            || before.Items[0].TaskName != after.Items[0].TaskName
+            || before.Items[0].Entry != after.Items[0].Entry
+            || before.Items[0].PipelineOverride.GetRawText() != after.Items[0].PipelineOverride.GetRawText()
+            || File.ReadAllText(configPath) != savedConfig) {
+            throw new InvalidOperationException("分组元数据不应改变执行内容或用户配置。");
+        }
+        root["group"] = new JsonArray();
+        root["task"]![0]!["group"] = new JsonArray();
+        File.WriteAllText(interfacePath, root.ToJsonString());
+        var empty = ProjectPlanModule.Open(directory, configPath);
+        if (empty.Groups.Count != 0 || empty.Tasks[0].Groups.Count != 0) {
+            throw new InvalidOperationException("空 group 数组解析失败。");
+        }
+
+        VerifyRejectedProjectInterface(testDirectory, source, "invalid-group-array", "$.group",
+            node => node["group"] = "daily");
+        VerifyRejectedProjectInterface(testDirectory, source, "invalid-group-name", "name",
+            node => node["group"] = new JsonArray(new JsonObject { ["name"] = "" }));
+        VerifyRejectedProjectInterface(testDirectory, source, "duplicate-group", "重复 group.name",
+            node => node["group"] = new JsonArray(
+                new JsonObject { ["name"] = "daily" }, new JsonObject { ["name"] = "daily" }));
+        VerifyRejectedProjectInterface(testDirectory, source, "invalid-group-expand", "default_expand",
+            node => node["group"] = new JsonArray(
+                new JsonObject { ["name"] = "daily", ["default_expand"] = "false" }));
+        VerifyRejectedProjectInterface(testDirectory, source, "invalid-task-group", "$.task[0].group",
+            node => node["task"]![0]!["group"] = "daily");
+        VerifyRejectedProjectInterface(testDirectory, source, "invalid-task-group-item", "$.task[0].group",
+            node => node["task"]![0]!["group"] = new JsonArray(123));
+    }
+
+    private static void VerifyTaskShelfLayout(AppLogger logger, string testDirectory)
+    {
+        RunOnboardingScenario(logger, Path.Combine(testDirectory, "grouped-shelf"), (window, directory) => {
+            var workspace = (System.Windows.FrameworkElement)window.FindName("TaskWorkspacePanel");
+            var shelf = (System.Windows.FrameworkElement)window.FindName("TaskShelfContent");
+            var catalog = (System.Windows.Controls.StackPanel)window.FindName("AvailableTasksPanel");
+            var catalogScroll = (System.Windows.Controls.ScrollViewer)window.FindName("AvailableTasksScroll");
+            var planScroll = (System.Windows.Controls.ScrollViewer)window.FindName("PlanScroll");
+            var search = (System.Windows.Controls.TextBox)window.FindName("TaskSearchBox");
+            if (search.Visibility != System.Windows.Visibility.Collapsed) {
+                throw new InvalidOperationException("搜索框默认不应占据任务区空间。");
+            }
+            foreach (var width in new[] { 1440, 920 }) {
+                window.Width = width;
+                window.Height = width == 920 ? 640 : 900;
+                PumpOnboarding();
+                if (shelf.ActualHeight > Math.Min(280, workspace.ActualHeight / 3) + 1
+                    || catalogScroll.ScrollableHeight <= 0 || planScroll.ViewportHeight < 100
+                    || catalogScroll.ExtentWidth > catalogScroll.ViewportWidth + 1) {
+                    throw new InvalidOperationException("分类任务区必须限高、可滚动，并为执行计划保留空间。");
+                }
+                var planTop = planScroll.TranslatePoint(new System.Windows.Point(), workspace).Y;
+                var planOffset = planScroll.VerticalOffset;
+                catalogScroll.ScrollToBottom();
+                PumpOnboarding();
+                if (catalogScroll.VerticalOffset <= 0 || planScroll.VerticalOffset != planOffset
+                    || Math.Abs(planScroll.TranslatePoint(new System.Windows.Point(), workspace).Y - planTop) > 1) {
+                    throw new InvalidOperationException("滚动可用任务不得移动执行计划。");
+                }
+                catalogScroll.ScrollToTop();
+                if (width == 920) {
+                    planScroll.ScrollToBottom();
+                    PumpOnboarding();
+                    if (planScroll.VerticalOffset <= 0 || catalogScroll.VerticalOffset != 0) {
+                        throw new InvalidOperationException("执行计划必须独立滚动。");
+                    }
+                    planScroll.ScrollToTop();
+                }
+            }
+            var first = catalog.Children.OfType<System.Windows.Controls.Expander>().First();
+            if (first.IsExpanded) {
+                throw new InvalidOperationException("分类应遵循 default_expand=false。");
+            }
+            ClickOnboarding(window, "TaskSearchToggleButton");
+            if (search.Visibility != System.Windows.Visibility.Visible) {
+                throw new InvalidOperationException("点击搜索入口应展开输入框。");
+            }
+            search.Text = "RealTask";
+            PumpOnboarding();
+            var matches = catalog.Children.OfType<System.Windows.Controls.Expander>().ToArray();
+            if (matches.Length != 2 || matches.Any(section => !section.IsExpanded)
+                || ConfigurationDescendants(catalog).OfType<System.Windows.Controls.Button>()
+                    .Any(button => button.Tag is ProjectTaskChoice && button.IsEnabled)) {
+                throw new InvalidOperationException("搜索应展开所有匹配分类，多组任务共享已添加状态。");
+            }
+            search.Text = "no-such-task";
+            PumpOnboarding();
+            if (catalog.Children.Count != 1 || catalog.Children[0] is not System.Windows.Controls.TextBlock) {
+                throw new InvalidOperationException("无搜索结果应显示空态。");
+            }
+            search.RaiseEvent(new System.Windows.Input.KeyEventArgs(
+                System.Windows.Input.Keyboard.PrimaryDevice, System.Windows.PresentationSource.FromVisual(window),
+                0, System.Windows.Input.Key.Escape) {
+                RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent
+            });
+            PumpOnboarding();
+            if (search.Visibility != System.Windows.Visibility.Collapsed || search.Text.Length != 0) {
+                throw new InvalidOperationException("Esc 应清空并关闭任务搜索。");
+            }
+            first = catalog.Children.OfType<System.Windows.Controls.Expander>().First();
+            if (first.IsExpanded) {
+                throw new InvalidOperationException("清空搜索应恢复分类展开状态。");
+            }
+            first.IsExpanded = true;
+            InvokeOnboarding(window, "RenderTaskPlan");
+            PumpOnboarding();
+            if (!catalog.Children.OfType<System.Windows.Controls.Expander>().First().IsExpanded) {
+                throw new InvalidOperationException("刷新任务计划不应重置分类展开状态。");
+            }
+            catalog.Children.OfType<System.Windows.Controls.Expander>().First().IsExpanded = false;
+            ClickOnboarding(window, "TaskSearchToggleButton");
+            search.Text = "RealTask";
+            ClickOnboarding(window, "TaskSearchToggleButton");
+            if (search.Visibility != System.Windows.Visibility.Collapsed || search.Text.Length != 0) {
+                throw new InvalidOperationException("关闭搜索按钮应清空并收起输入框。");
+            }
+            ClickOnboarding(window, "TaskShelfHeaderButton");
+            ClickOnboarding(window, "TaskSearchToggleButton");
+            if (shelf.Visibility != System.Windows.Visibility.Visible
+                || search.Visibility != System.Windows.Visibility.Visible) {
+                throw new InvalidOperationException("可用任务收起时，搜索入口应同时展开任务区。");
+            }
+            search.Text = "RealTask";
+            ClickOnboarding(window, "TaskShelfHeaderButton");
+            if (search.Text.Length != 0 || search.Visibility != System.Windows.Visibility.Collapsed) {
+                throw new InvalidOperationException("收起任务区不得遗留隐藏的搜索筛选。");
+            }
+            ClickOnboarding(window, "TaskShelfHeaderButton");
+            var screenshotDirectory = Environment.GetEnvironmentVariable("NARUTO_TASK_SCREENSHOTS");
+            if (!string.IsNullOrEmpty(screenshotDirectory)) {
+                Directory.CreateDirectory(screenshotDirectory);
+                foreach (var width in new[] { 920, 1440 }) {
+                    window.Width = width;
+                    window.Height = width == 920 ? 640 : 900;
+                    PumpOnboarding();
+                    var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                        (int)window.ActualWidth, (int)window.ActualHeight, 96, 96,
+                        System.Windows.Media.PixelFormats.Pbgra32);
+                    bitmap.Render(window);
+                    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                    using var stream = File.Create(Path.Combine(screenshotDirectory, $"task-shelf-{width}.png"));
+                    encoder.Save(stream);
+                }
+            }
+        }, directory => {
+            var path = Path.Combine(directory, "interface.json");
+            var root = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var groups = new JsonArray();
+            for (var index = 0; index < 12; index++) {
+                groups.Add(new JsonObject {
+                    ["name"] = $"group{index}", ["label"] = $"任务分类 {index + 1}",
+                    ["default_expand"] = index != 0
+                });
+            }
+            root["group"] = groups;
+            root["task"]![0]!["group"] = new JsonArray("group0", "group1");
+            for (var index = 0; index < 36; index++) {
+                root["task"]!.AsArray().Add(new JsonObject {
+                    ["name"] = $"Task{index}", ["entry"] = $"Entry{index}",
+                    ["label"] = index == 0 ? new string('长', 60) : $"日常任务 {index + 1}",
+                    ["group"] = new JsonArray($"group{index % 12}")
+                });
+            }
+            root["task"]!.AsArray().Add(new JsonObject {
+                ["name"] = "Ungrouped", ["label"] = "未分组任务", ["entry"] = "Ungrouped",
+                ["group"] = new JsonArray("unknown")
+            });
+            File.WriteAllText(path, root.ToJsonString());
+        });
     }
 
     private static void VerifyTaskDescriptionMarkup()

@@ -91,6 +91,7 @@ public partial class MainWindow : FluentWindow
     private bool _projectConfigurationValid;
     private bool _updatingOptionEditors;
     private bool _taskShelfExpanded = true;
+    private readonly Dictionary<string, bool> _taskGroupExpanded = new(StringComparer.Ordinal);
     private bool _navigationPreferenceLoaded;
     private string? _expandedTaskName;
     private string? _dragTaskName;
@@ -490,6 +491,9 @@ public partial class MainWindow : FluentWindow
 
     private void SetTaskShelfExpanded(bool expanded)
     {
+        if (!expanded) {
+            SetTaskSearchVisible(false);
+        }
         _taskShelfExpanded = expanded;
         TaskShelfContent.Visibility = _taskShelfExpanded ? Visibility.Visible : Visibility.Collapsed;
         TaskShelfChevronIcon.Symbol = _taskShelfExpanded
@@ -686,16 +690,71 @@ public partial class MainWindow : FluentWindow
 
     private void RenderAvailableTaskShelf(ProjectPlanModule project)
     {
-        AvailableTaskCountText.Text = project.Tasks.Count.ToString();
+        var query = TaskSearchBox.Text.Trim();
+        var tasks = project.Tasks.Where(task => task.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || task.Label.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        AvailableTaskCountText.Text = query.Length == 0
+            ? project.Tasks.Count.ToString() : $"{tasks.Length} / {project.Tasks.Count}";
         AvailableTasksPanel.Children.Clear();
-        foreach (var task in project.Tasks) {
-            var label = new TextBlock { Text = task.Label, VerticalAlignment = VerticalAlignment.Center };
+        if (tasks.Length == 0) {
+            AvailableTasksPanel.Children.Add(new TextBlock {
+                Text = "没有匹配的任务", Margin = new Thickness(2, 8, 0, 12),
+                Style = (Style)FindResource("SecondaryTextStyle")
+            });
+        } else if (project.Groups.Count == 0) {
+            AvailableTasksPanel.Children.Add(CreateTaskChipPanel(project, tasks));
+        } else {
+            var knownGroups = project.Groups.Select(group => group.Name).ToHashSet(StringComparer.Ordinal);
+            foreach (var group in project.Groups) {
+                AddTaskGroup(project, group.Name, group.Label, group.DefaultExpand,
+                    tasks.Where(task => task.Groups.Contains(group.Name, StringComparer.Ordinal)).ToArray(),
+                    query.Length != 0);
+            }
+            AddTaskGroup(project, string.Empty, "未分组", true,
+                tasks.Where(task => !task.Groups.Any(knownGroups.Contains)).ToArray(), query.Length != 0);
+        }
+    }
+
+    private void AddTaskGroup(ProjectPlanModule project, string name, string label, bool defaultExpand,
+        IReadOnlyList<ProjectTaskChoice> tasks, bool searching)
+    {
+        if (tasks.Count == 0) {
+            return;
+        }
+        var section = new Expander {
+            Header = $"{label}  {tasks.Count}", Tag = name, Margin = new Thickness(0, 0, 0, 8),
+            Style = (Style)FindResource("TaskGroupExpanderStyle"),
+            IsExpanded = searching || _taskGroupExpanded.GetValueOrDefault(name, defaultExpand),
+            Content = CreateTaskChipPanel(project, tasks),
+            HorizontalContentAlignment = System.Windows.HorizontalAlignment.Stretch
+        };
+        AutomationProperties.SetName(section, $"{label}，{tasks.Count} 个任务");
+        if (!searching) {
+            section.Expanded += (_, _) => _taskGroupExpanded[name] = true;
+            section.Collapsed += (_, _) => _taskGroupExpanded[name] = false;
+        }
+        AvailableTasksPanel.Children.Add(section);
+    }
+
+    private WrapPanel CreateTaskChipPanel(ProjectPlanModule project, IEnumerable<ProjectTaskChoice> tasks)
+    {
+        var panel = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
+        panel.SizeChanged += (_, args) => {
+            foreach (WpfButton button in panel.Children) {
+                button.MaxWidth = Math.Max(0, args.NewSize.Width - 8);
+            }
+        };
+        foreach (var task in tasks) {
+            var label = new TextBlock {
+                Text = task.Label, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap
+            };
             var icon = CreateSymbolIcon(WpfSymbolRegular.Add16);
             icon.Margin = new Thickness(8, 0, 0, 0);
             icon.Foreground = (WpfBrush)FindResource("Brush.TasksAccent");
-            var content = new StackPanel { Orientation = WpfOrientation.Horizontal };
-            content.Children.Add(label);
+            var content = new DockPanel();
+            DockPanel.SetDock(icon, Dock.Right);
             content.Children.Add(icon);
+            content.Children.Add(label);
             var button = new WpfButton {
                 Content = content,
                 Tag = task,
@@ -704,8 +763,48 @@ public partial class MainWindow : FluentWindow
             };
             AutomationProperties.SetName(button, $"添加任务：{task.Label}");
             button.Click += AddTaskButton_Click;
-            AvailableTasksPanel.Children.Add(button);
+            panel.Children.Add(button);
         }
+        return panel;
+    }
+
+    private void TaskSearchToggleButton_Click(object sender, RoutedEventArgs e)
+        => SetTaskSearchVisible(TaskSearchBox.Visibility != Visibility.Visible);
+
+    private void SetTaskSearchVisible(bool visible)
+    {
+        TaskSearchBox.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        TaskSearchToggleIcon.Symbol = visible ? WpfSymbolRegular.Dismiss16 : WpfSymbolRegular.Search16;
+        TaskSearchToggleButton.ToolTip = visible ? "关闭搜索（Esc）" : "搜索任务";
+        AutomationProperties.SetName(TaskSearchToggleButton, visible ? "关闭任务搜索" : "展开任务搜索");
+        if (visible) {
+            SetTaskShelfExpanded(true);
+            TaskSearchBox.Focus();
+        } else {
+            TaskSearchBox.Clear();
+        }
+    }
+
+    private void TaskSearchBox_PreviewKeyDown(object sender, WpfKeyEventArgs e)
+    {
+        if (e.Key == Key.Escape) {
+            SetTaskSearchVisible(false);
+            TaskSearchToggleButton.Focus();
+            e.Handled = true;
+        }
+    }
+
+    private void TaskSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_projectPlan is not null) {
+            RenderAvailableTaskShelf(_projectPlan);
+            AvailableTasksScroll.ScrollToTop();
+        }
+    }
+
+    private void TaskWorkspacePanel_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        TaskShelfContent.MaxHeight = Math.Min(280, Math.Max(0, e.NewSize.Height / 3));
     }
 
     private void RenderPlanItems(ProjectPlanModule project)

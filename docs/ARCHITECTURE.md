@@ -77,6 +77,13 @@ NarutoAutoGUI/
 - 工作目录不提供配置字段，统一自动使用启动器所在目录。
 - 首次配置：Store 确认原文件不存在时，由 ProjectPlanModule 预置 PI 第一项到“配置 1”并原子保存，
   ExplicitOptions 为空，GUI 首次渲染即展开。已有空配置、损坏 fallback、迁移及用户新增配置不补任务。
+- 可用任务：ProjectInterfaceLoader 解析顶层 group 和 task.group，ProjectPlanModule 暴露有序分类元数据。
+  GUI 按组提供折叠标题和换行按钮，未匹配组引用归入“未分组”；无组声明时保持平铺。
+  分类折叠状态只保留在窗口内，搜索按 task name/label 匹配并临时展开命中分类，不写入用户配置。
+  标题固定，搜索框默认隐藏，由标题旁放大镜按需展开并聚焦；关闭或 Esc 清空查询并收起，
+  整体收起任务区也清空搜索，避免隐藏筛选。展开的搜索框不随分类滚动。
+  可用任务内容限高为工作区三分之一且最多 280 DIP，执行计划在独立区域滚动。
+  group 不进入 Worker/IPC 或改变执行顺序，仍以 task name 标识任务；暂不加载分类图标或解析国际化字符串。
 - 新手指引：MainWindow 内单层四步 Spotlight/Popover，设置页可 replay；真实控件定位、滚动裁剪、
   键盘限制和有限 Pulse 均由 GUI 管理。Tour 单独拦截输入，不使用 Preview/Update 的原生模态钩子，
   因而保留最小化/隐藏到托盘后的同一步恢复。启动完成信号位于 Project、更新偏好和 Session 恢复之后。

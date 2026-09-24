@@ -21,11 +21,11 @@ internal sealed record ProjectDefinition(
     string ProjectRoot, ProjectProvenance Provenance, Win32ControllerDefinition Controller,
     IReadOnlyList<ResourceDefinition> Resources, AgentDefinition Agent, string RuntimeProfileDigest,
     IReadOnlyList<string> GlobalOptions, IReadOnlyList<TaskDefinition> Tasks,
-    IReadOnlyDictionary<string, OptionDefinition> Options);
+    IReadOnlyDictionary<string, OptionDefinition> Options, IReadOnlyList<ProjectTaskGroup> Groups);
 
 internal sealed record TaskDefinition(
     string Name, string Label, string Description, string Entry,
-    IReadOnlyList<string> Options, JsonElement PipelineOverride);
+    IReadOnlyList<string> Options, JsonElement PipelineOverride, IReadOnlyList<string> Groups);
 
 internal sealed record OptionDefinition(
     string Name, string Label, string Description,

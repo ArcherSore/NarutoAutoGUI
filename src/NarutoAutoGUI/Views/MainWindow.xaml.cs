@@ -117,7 +117,7 @@ public partial class MainWindow : FluentWindow
         _applicationDirectory = applicationDirectory ?? AppContext.BaseDirectory;
         _checkForUpdate = checkForUpdate ?? CheckWithEngineAsync;
         _settings = new ApplicationSettings(_applicationDirectory, logger,
-            CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding);
+            CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding, OpenAfdianAsync);
         SettingsView.DataContext = _settings.Page;
         _sessionManager = sessionManager;
         _programService = programService;
@@ -229,6 +229,12 @@ public partial class MainWindow : FluentWindow
         }
 
         e.Cancel = true;
+        if (_exitInProgress) { return; }
+        if (!_settings.CloseToTray.Value) {
+            // Defer until Closing returns; the exit flow may synchronously call Close again.
+            Dispatcher.InvokeAsync(async () => await _requestExitAsync());
+            return;
+        }
         Hide();
         _logger.Info("主窗口已隐藏到托盘。");
         HiddenToTray?.Invoke(this, EventArgs.Empty);
@@ -722,6 +728,21 @@ public partial class MainWindow : FluentWindow
             PlanItemsPanel.Children.Add(container);
         }
         AddDropIndicator();
+    }
+
+    private Task OpenAfdianAsync()
+    {
+        const string address = "https://afdian.com/a/archersore";
+        try {
+            Process.Start(new ProcessStartInfo(address) { UseShellExecute = true });
+            _settings.OpenAfdian.Status = string.Empty;
+        } catch (Exception exception) {
+            _settings.OpenAfdian.Status = "无法打开爱发电，请检查默认浏览器设置。";
+            _logger.Warn("打开爱发电赞助页面失败。", exception);
+            WpfMessageBox.Show(this, $"请手动访问：{address}\n\n按 Ctrl+C 可复制此提示中的网址。",
+                "无法打开爱发电", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        return Task.CompletedTask;
     }
 
     private void OpenTaskDescriptionLink(Uri uri)

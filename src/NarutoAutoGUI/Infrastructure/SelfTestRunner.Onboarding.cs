@@ -239,7 +239,8 @@ internal static partial class SelfTestRunner
 
     private static void RunOnboardingScenario(AppLogger logger, string directory,
         Action<MainWindow, string> verify, Action<string>? beforeLoad = null, bool recoveryCompleted = false,
-        Func<CancellationToken, Task<Updates.EngineCheckResult>>? checkForUpdate = null)
+        Func<CancellationToken, Task<Updates.EngineCheckResult>>? checkForUpdate = null,
+        Func<Task>? requestExit = null)
     {
         var projectDirectory = CreateProjectFixture(directory);
         beforeLoad?.Invoke(projectDirectory);
@@ -249,7 +250,7 @@ internal static partial class SelfTestRunner
         var coordinator = new WorkerCoordinator(logger, Path.Combine(directory, "tour-state"), "unused.exe",
             $"NarutoAutoGUI.Tour.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
         var window = new MainWindow(logger, session, new ChildSessionProgramService(logger), coordinator,
-            operation => operation(), () => Task.CompletedTask, projectDirectory, checkForUpdate);
+            operation => operation(), requestExit ?? (() => Task.CompletedTask), projectDirectory, checkForUpdate);
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var loaded = typeof(MainWindow).GetMethod("MainWindow_Loaded", flags)!;
         window.Loaded -= (RoutedEventHandler)loaded.CreateDelegate(typeof(RoutedEventHandler), window);

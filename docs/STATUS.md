@@ -1,6 +1,20 @@
 # Status
 
 ## 当前阶段
+
+2026-09-24：将关闭窗口说明改为“关闭窗口时隐藏到托盘”开关，默认开启，偏好存入
+`config/close-to-tray.txt`；关闭后点 X 延迟调用既有安全退出入口，保留分身确认与清理流程。
+读取失败默认隐藏并提示，保存失败恢复原值并提示。未更改 Child Session 内部或托盘退出实现。
+Release GUI 自包含发布及 Settings/Navigation/support 自检通过；新增默认值、重启恢复、保存失败恢复、
+隐藏/退出路由和退出中重复关闭验证。真实分身确认与清理交互本轮未重跑。
+已同步至 `D:\MaaNOP-win-x86_64-v2.4.0`，480 个 GUI 发布文件哈希校验一致。
+
+
+2026-09-24：在最新 main 的居中设置页底部新增“支持项目”，默认浏览器打开爱发电赞助入口；
+失败时显示状态及可用 Ctrl+C 复制的网址提示。沿用现有 action 模板，保留侧栏状态记忆和设置页布局。
+Release GUI 自包含发布、Settings/Navigation/support 自检、120 列与 diff 空白检查通过。
+已重新同步至 `D:\MaaNOP-win-x86_64-v2.4.0` 并校验 GUI 文件哈希；实际界面与跳转待用户确认。
+
 2026-09-22：Settings 居中布局合入 main，保留 main 已有的侧栏状态记忆修复；仅 STATUS 新增记录发生冲突，
 已保留双方记录。合并版本 Release GUI 构建 0 警告/错误，Settings/Navigation/support 自检通过。
 

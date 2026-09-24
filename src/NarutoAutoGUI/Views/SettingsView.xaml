@@ -29,6 +29,8 @@
                     <TextBlock Text="{Binding Definition.Title}" Style="{StaticResource ItemHeading}" />
                     <TextBlock Text="{Binding Definition.Description}" Style="{StaticResource OptionalText}"
                                Margin="0,4,0,0" />
+                    <TextBlock Text="{Binding Toggle.Status}" Style="{StaticResource OptionalText}"
+                               Margin="0,4,0,0" AutomationProperties.LiveSetting="Polite" />
                 </StackPanel>
                 <ui:ToggleSwitch Grid.Column="1" Margin="24,0,0,0" VerticalAlignment="Center"
                                  OnContent="{x:Null}" OffContent="{x:Null}"

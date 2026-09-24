@@ -13,19 +13,74 @@ namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
+    private static void VerifyClosePreference(AppLogger logger, string testDirectory)
+    {
+        var directory = Path.Combine(testDirectory, "close-preference");
+        var path = Path.Combine(directory, "config", "close-to-tray.txt");
+        ApplicationSettings Create()
+        {
+            return new ApplicationSettings(directory, logger, () => Task.CompletedTask,
+                () => Task.CompletedTask, () => { }, () => Task.CompletedTask);
+        }
+        var settings = Create();
+        if (!settings.CloseToTray.Value || File.Exists(path)) {
+            throw new InvalidOperationException("关闭偏好默认隐藏到托盘，读取不得创建文件。");
+        }
+        settings.CloseToTray.Value = false;
+        if (Create().CloseToTray.Value || File.ReadAllText(path) != "false") {
+            throw new InvalidOperationException("重启必须恢复直接退出偏好。");
+        }
+        using (var locked = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+            settings.CloseToTray.Value = true;
+            if (settings.CloseToTray.Value || string.IsNullOrEmpty(settings.CloseToTray.Status)) {
+                throw new InvalidOperationException("关闭偏好保存失败必须恢复原值并提示。");
+            }
+        }
+        settings.CloseToTray.Value = true;
+        if (!Create().CloseToTray.Value || settings.CloseToTray.Status != "") {
+            throw new InvalidOperationException("隐藏到托盘偏好必须持久化，重试成功清除错误。");
+        }
+        var exits = 0;
+        RunOnboardingScenario(logger, Path.Combine(testDirectory, "close-routing"), (window, _) => {
+            var toggle = SettingsPageFor(window).Sections.SelectMany(section => section.Items)
+                .Single(item => item.Definition.SettingKey == "application.closeToTray").Toggle!;
+            window.Close();
+            PumpOnboarding();
+            if (window.IsVisible || exits != 0) {
+                throw new InvalidOperationException("默认关闭只能隐藏到托盘。");
+            }
+            window.Show();
+            toggle.Value = false;
+            window.Close();
+            PumpOnboarding();
+            if (!window.IsVisible || exits != 1) {
+                throw new InvalidOperationException("直接关闭必须请求安全退出，取消退出时保留窗口。");
+            }
+            window.SetExitInProgress(true);
+            window.Close();
+            PumpOnboarding();
+            if (!window.IsVisible || exits != 1) {
+                throw new InvalidOperationException("退出期间不能重复请求退出或隐藏窗口。");
+            }
+            window.SetExitInProgress(false);
+        }, requestExit: () => { exits++; return Task.CompletedTask; });
+        Console.WriteLine("CLOSE PREFERENCE SELF-TEST PASS: persistence, failure, hide and safe exit routing.");
+    }
+
     private static void VerifyDeclarativeSettings(AppLogger logger, string testDirectory)
     {
         var directory = Path.Combine(testDirectory, "settings-bindings");
         var calls = new List<string>();
         var settings = new ApplicationSettings(directory, logger,
-            () => Called("update.check"), () => Called("diagnostics.export"), () => calls.Add("onboarding.replay"));
+            () => Called("update.check"), () => Called("diagnostics.export"), () => calls.Add("onboarding.replay"),
+            () => Called("support.openAfdian"));
         var page = settings.Page;
         var items = page.Sections.SelectMany(section => section.Items).ToArray();
         if (!page.Sections.Select(section => section.Definition.Id)
-                .SequenceEqual(["updates", "support"])
-            || items.Count(item => item.Definition.Type == SettingsItemKind.Toggle) != 1
-            || items.Count(item => item.Definition.Type == SettingsItemKind.Action) != 3
-            || items.Count(item => item.Definition.Type == SettingsItemKind.Info) != 2
+                .SequenceEqual(["updates", "support", "sponsorship"])
+            || items.Count(item => item.Definition.Type == SettingsItemKind.Toggle) != 2
+            || items.Count(item => item.Definition.Type == SettingsItemKind.Action) != 4
+            || items.Count(item => item.Definition.Type == SettingsItemKind.Info) != 1
             || items.Single(item => item.Definition.SettingKey == "update.checkOnStartup").Toggle
                 != settings.CheckOnStartup
             || items.Single(item => item.Definition.ValueKey == "update.currentVersion").Value
@@ -35,12 +90,12 @@ internal static partial class SelfTestRunner
         foreach (var item in items.Where(item => item.Action is not null)) {
             item.Action!.ExecuteAsync().GetAwaiter().GetResult();
         }
-        if (!calls.SequenceEqual(["update.check", "diagnostics.export", "onboarding.replay"])) {
+        if (!calls.SequenceEqual(["update.check", "diagnostics.export", "onboarding.replay", "support.openAfdian"])) {
             throw new InvalidOperationException("Settings action 必须只调用对应的已注册业务入口。");
         }
         settings.CheckUpdate.IsEnabled = false;
         settings.CheckUpdate.ExecuteAsync().GetAwaiter().GetResult();
-        if (calls.Count != 3 || settings.CheckUpdate.CanExecute(null)) {
+        if (calls.Count != 4 || settings.CheckUpdate.CanExecute(null)) {
             throw new InvalidOperationException("禁用的 Settings action 不能执行。");
         }
 
@@ -51,7 +106,7 @@ internal static partial class SelfTestRunner
         }
         settings.CheckOnStartup.Value = false;
         var reopened = new ApplicationSettings(directory, logger, () => Task.CompletedTask,
-            () => Task.CompletedTask, () => { });
+            () => Task.CompletedTask, () => { }, () => Task.CompletedTask);
         reopened.LoadUpdatePreference();
         if (File.ReadAllText(preference) != "false" || reopened.CheckOnStartup.Value) {
             throw new InvalidOperationException("Toggle 必须以原有格式持久化，并在重新加载后保留选择。");
@@ -90,6 +145,7 @@ internal static partial class SelfTestRunner
         ExpectInvalid(valid.Replace("\"id\":\"i\"", "\"id\":\"t\""));
         ExpectInvalid(valid.Replace("\"description\":\"Static\"", "\"valueKey\":\"unknown.value\""));
         VerifySettingsUpdateIntegration(logger, testDirectory);
+        VerifyClosePreference(logger, testDirectory);
         Console.WriteLine("SETTINGS SELF-TEST PASS: definition, registry, preference, actions, "
             + "dynamic state and isolation.");
 
@@ -126,7 +182,9 @@ internal static partial class SelfTestRunner
             var page = SettingsPageFor(window);
             var version = page.Sections.SelectMany(section => section.Items)
                 .Single(item => item.Definition.ValueKey == "update.currentVersion").Value!;
-            var toggle = SettingsVisualDescendants(view).OfType<Wpf.Ui.Controls.ToggleSwitch>().Single();
+            var toggle = SettingsVisualDescendants(view).OfType<Wpf.Ui.Controls.ToggleSwitch>()
+                .Single(control => System.Windows.Automation.AutomationProperties.GetAutomationId(control)
+                    == "startup-update-check");
             toggle.IsChecked = true;
             if (File.ReadAllText(Path.Combine(directory, "config", "update-check.txt")) != "true") {
                 throw new InvalidOperationException("Toggle renderer 必须将选择传给持久化 seam。");

@@ -54,7 +54,7 @@ NarutoAutoGUI/
    GUI 或自动清理仍可用的 Session。
    固定微端 profile 同时接受 `Launch.exe` 或 `QQMicroGameBox.exe`，用于兼容启动器交接后快速退出，
    启动前幂等检查采用同一规则。这里只确认进程存在，游戏窗口和登录状态仍由后续运行检查确认。
-7. 主窗口和托盘的 Session/程序操作共用一个应用级操作门。退出在入口立即禁止新操作并等待在途操作完成，然后在门内重新查询 Session、按原行为确认、调用 Manager 注销，并在释放资源前再次确认 Session 已不存在。Manager 内部仍先断开 ActiveX，再同步调用 `WTSLogoffSession`；主窗口 X 只隐藏到托盘。
+7. 主窗口和托盘的 Session/程序操作共用一个应用级操作门。退出在入口立即禁止新操作并等待在途操作完成，然后在门内重新查询 Session、按原行为确认、调用 Manager 注销，并在释放资源前再次确认 Session 已不存在。Manager 内部仍先断开 ActiveX，再同步调用 `WTSLogoffSession`；主窗口 X 默认隐藏到托盘，关闭该设置后复用同一安全退出入口。
 8. Worker 启动先写入 Pending Admission，再通过 Worker 专用 Task Scheduler 路径等待新 PID/Session 验证；验证成功后将 PID 写回 Admission 并继续等待 Pipe admission 与 fresh Snapshot。`RunEx` 未真正生成进程时在 10 秒内携带 Task State/`LastTaskResult` 失败并清理；60 秒 admission 超时且没有存活的已验证 Worker 时自动回滚 `worker.json` 与 launch manifest，存活 Worker 则保留 Admission 供重连。
 
 ## 配置与日志
@@ -119,7 +119,7 @@ NarutoAutoGUI/
 注册的 setting/action/value 引用，`SettingsView` 用三种通用行模板渲染，MainWindow 只挂载 View 与接入原业务入口。
 定义或绑定错误记录资产路径及异常并抛出，不静默回退到空页面。
 
-`ApplicationSettings` 注册当前的一个开关、三个动作和一个版本值；动作自带 C# 更新的状态文本、可用性和提示。
+`ApplicationSettings` 注册当前的两个开关、四个动作和一个版本值；动作自带 C# 更新的状态文本、可用性和提示。
 偏好继续用 `config/update-check.txt`，指引继续使用原完成版本和首次资格文件；不恢复旧 `config/settings.json`，
 不合并 MaaNOP 配置。Updater/diagnostics/onboarding 的原流程只将 Settings 控件引用改为绑定对象，详情和扩展方式见
 [Settings Definition](SETTINGS.md)。

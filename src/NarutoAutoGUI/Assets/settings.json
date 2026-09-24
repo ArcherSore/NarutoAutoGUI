@@ -48,8 +48,24 @@
         },
         {
           "id": "close-to-tray",
-          "type": "info",
-          "description": "关闭主窗口时会隐藏到系统托盘，任务与桌面分身继续运行。请使用托盘菜单中的“退出程序”完成清理。"
+          "type": "toggle",
+          "title": "关闭窗口时隐藏到托盘",
+          "description": "开启后任务与桌面分身继续运行；关闭后退出程序。桌面分身仍在运行时会先确认退出。",
+          "settingKey": "application.closeToTray"
+        }
+      ]
+    },
+    {
+      "id": "sponsorship",
+      "title": "支持项目",
+      "items": [
+        {
+          "id": "open-afdian",
+          "type": "action",
+          "title": "支持 MaaNOP",
+          "description": "如果 MaaNOP 对你有帮助，欢迎通过爱发电支持项目的持续开发与维护。感谢支持！",
+          "buttonText": "前往爱发电 ↗",
+          "actionId": "support.openAfdian"
         }
       ]
     }

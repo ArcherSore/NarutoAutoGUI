@@ -54,9 +54,11 @@ section 与 item 的 `id` 在整个定义内唯一。
 | 类型 | 注册 key | 代码来源 / 入口 |
 | --- | --- | --- |
 | setting | `update.checkOnStartup` | `ApplicationSettings` 读写原更新偏好 |
+| setting | `application.closeToTray` | 关闭时隐藏到托盘；关闭开关则调用原安全退出流程 |
 | action | `update.check` | 原更新弹窗 + `CheckUpdateAsync` |
 | action | `diagnostics.export` | 原 SaveFileDialog + `ExportDiagnosticsAsync` |
 | action | `onboarding.replay` | 原 `ReplayOnboarding` 流程 |
+| action | `support.openAfdian` | 默认浏览器打开爱发电；失败提示及可复制网址 |
 | value | `update.currentVersion` | 启动时的项目版本、随后 Engine 检查结果 |
 
 更新检查结果、导出结果和指引错误分别写入对应 action 的 `Status`，不需要再声明 status provider。
@@ -64,6 +66,9 @@ section 与 item 的 `id` 在整个定义内唯一。
 但不再拥有 Settings 的具体行布局或更新偏好文件读写。
 
 ## 状态存储
+
+- `config/close-to-tray.txt`：缺失或非精确 `false` 时默认隐藏到托盘；关闭开关后点 X 请求安全退出。
+  保存失败恢复原选择并在开关下提示；读取失败默认隐藏到托盘并提示。退出确认与清理沿用托盘流程。
 
 - `config/update-check.txt`：保持原格式；缺失或内容不是精确 `false` 时开启，用户修改写 `true` / `false`。
   读取错误由原更新初始化报告，保存错误继续显示“无法保存更新设置，请重试。”并写日志。

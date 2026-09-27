@@ -527,45 +527,31 @@
                                     </TabControl>
                                 </DockPanel>
                             </Grid>
-                            <Grid Grid.Row="1" Margin="0,0,8,0">
+                            <Grid Grid.Row="1" Margin="-8,0,8,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                            <Button x:Name="TaskShelfHeaderButton"
-                                    Style="{StaticResource TaskShelfHeaderButtonStyle}"
-                                    AutomationProperties.Name="展开或收起可用任务"
-                                    Click="TaskShelfHeaderButton_Click">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="可用任务" Style="{StaticResource SectionTitleTextStyle}" />
-                                    <TextBlock x:Name="AvailableTaskCountText"
-                                               Grid.Column="1"
-                                               Margin="8,0,0,0"
-                                               VerticalAlignment="Center"
-                                               Style="{StaticResource MutedTextStyle}" />
-                                </Grid>
-                            </Button>
-                                <Button x:Name="TaskSearchToggleButton" Grid.Column="1" Margin="8,0,0,0"
+                                <ToggleButton x:Name="TaskShelfHeaderButton" Grid.ColumnSpan="3" MinHeight="40"
+                                              Style="{StaticResource CollapsibleHeaderToggleStyle}"
+                                              AutomationProperties.Name="展开或收起可用任务"
+                                              Click="TaskShelfHeaderButton_Click" />
+                                <StackPanel Margin="8,0,0,0" Orientation="Horizontal" IsHitTestVisible="False">
+                                    <TextBlock Text="可用任务" VerticalAlignment="Center"
+                                               Style="{StaticResource SectionTitleTextStyle}" />
+                                    <TextBlock x:Name="AvailableTaskCountText" Margin="8,0,0,0"
+                                               VerticalAlignment="Center" Style="{StaticResource MutedTextStyle}" />
+                                </StackPanel>
+                                <Button x:Name="TaskSearchToggleButton" Grid.Column="1" Margin="4,0,0,0"
                                         Style="{StaticResource CompactIconButtonStyle}"
                                         ToolTip="搜索任务" AutomationProperties.Name="展开任务搜索"
                                         Click="TaskSearchToggleButton_Click">
                                     <ui:SymbolIcon x:Name="TaskSearchToggleIcon" Symbol="Search16" FontSize="16" />
                                 </Button>
-                                <Button Grid.Column="3" Style="{StaticResource CompactIconButtonStyle}"
-                                        ToolTip="展开或收起可用任务" AutomationProperties.Name="展开或收起可用任务"
-                                        Click="TaskShelfHeaderButton_Click">
-                                    <ui:SymbolIcon x:Name="TaskShelfChevronIcon" Width="16" Height="16"
-                                                   Symbol="ChevronUp16" />
-                                </Button>
                             </Grid>
 
-                            <Border x:Name="TaskShelfContent"
+                            <Border x:Name="TaskShelfContent" Visibility="Collapsed"
                                     Grid.Row="2" MaxHeight="280"
                                     Margin="0,4,0,0"
                                     Padding="0,2,0,0"

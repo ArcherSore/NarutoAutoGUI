@@ -55,7 +55,7 @@ NarutoAutoGUI/
    固定微端 profile 同时接受 `Launch.exe` 或 `QQMicroGameBox.exe`，用于兼容启动器交接后快速退出，
    启动前幂等检查采用同一规则。这里只确认进程存在，游戏窗口和登录状态仍由后续运行检查确认。
 7. 主窗口和托盘的 Session/程序操作共用一个应用级操作门。退出在入口立即禁止新操作并等待在途操作完成，然后在门内重新查询 Session、按原行为确认、调用 Manager 注销，并在释放资源前再次确认 Session 已不存在。Manager 内部仍先断开 ActiveX，再同步调用 `WTSLogoffSession`；主窗口 X 默认隐藏到托盘，关闭该设置后复用同一安全退出入口。
-8. Worker 启动先写入 Pending Admission，再通过 Worker 专用 Task Scheduler 路径等待新 PID/Session 验证；验证成功后将 PID 写回 Admission 并继续等待 Pipe admission 与 fresh Snapshot。`RunEx` 未真正生成进程时在 10 秒内携带 Task State/`LastTaskResult` 失败并清理；60 秒 admission 超时且没有存活的已验证 Worker 时自动回滚 `worker.json` 与 launch manifest，存活 Worker 则保留 Admission 供重连。
+8. Worker 以 WinExe 构建，Child Session 内不显示控制台窗口；日志仍经 IPC 与文件记录。Worker 启动先写入 Pending Admission，再通过 Worker 专用 Task Scheduler 路径等待新 PID/Session 验证；验证成功后将 PID 写回 Admission 并继续等待 Pipe admission 与 fresh Snapshot。`RunEx` 未真正生成进程时在 10 秒内携带 Task State/`LastTaskResult` 失败并清理；60 秒 admission 超时且没有存活的已验证 Worker 时自动回滚 `worker.json` 与 launch manifest，存活 Worker 则保留 Admission 供重连。
 
 ## 配置与日志
 
@@ -78,7 +78,8 @@ NarutoAutoGUI/
 - 首次配置：Store 确认原文件不存在时，由 ProjectPlanModule 预置 PI 第一项到“配置 1”并原子保存，
   ExplicitOptions 为空，GUI 首次渲染即展开。已有空配置、损坏 fallback、迁移及用户新增配置不补任务。
 - 可用任务：ProjectInterfaceLoader 解析顶层 group 和 task.group，ProjectPlanModule 暴露有序分类元数据。
-  GUI 按组提供折叠标题和换行按钮，未匹配组引用归入“未分组”；无组声明时保持平铺。
+  GUI 按组提供整行可点的折叠标题（与“可用任务”标题同一交互样式）和换行按钮，未匹配组引用归入“未分组”；无组声明时保持平铺。
+  PI 未声明 default_expand 时分类默认收起，“未分组”同样默认收起；“可用任务”标题行整行即折叠按钮，默认收起且不记忆用户选择。
   分类折叠状态只保留在窗口内，搜索按 task name/label 匹配并临时展开命中分类，不写入用户配置。
   标题固定，搜索框默认隐藏，由标题旁放大镜按需展开并聚焦；关闭或 Esc 清空查询并收起，
   整体收起任务区也清空搜索，避免隐藏筛选。展开的搜索框不随分类滚动。

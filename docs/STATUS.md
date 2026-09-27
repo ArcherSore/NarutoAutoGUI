@@ -2,6 +2,16 @@
 
 ## 当前阶段
 
+2026-09-27：Worker 改为 WinExe，Child Session 内不再弹出控制台窗口；自检仍经 `dotnet` 宿主输出。
+任务分类在 PI 未声明 default_expand 时默认收起（含“未分组”）；“可用任务”整体也默认收起。
+两者折叠状态只存于当前窗口内存，从不写入配置，每次启动都恢复收起；
+按用户“丑且不统一”反馈统一两级标题：“可用任务”与分类标题均为整行单一点击区，右侧箭头同列对齐，
+同用中性灰 hover/pressed、无边框和绿色填充；移除独立折叠按钮，分类名加粗、数量弱化，分类与任务同缩进。
+Release GUI/Worker 自包含发布（Version 1.8.0）与 GUI、Worker 自检通过，920/1440 离屏截图检查通过。
+已备份并同步 GUI DLL/deps 与 Worker exe/dll/deps/Protocol 至 `D:\Automation Script\MaaNOP-win-x86_64-v2.4.0`，
+哈希一致，Worker PE 子系统为 GUI，config/interface 未变；备份在 `artifacts/worker-hide-group-bar-sync-backup-20260927-214428`。
+未编译 Rust Engine；真实分身内 Worker 无窗口运行与点击手感待用户实测。
+
 2026-09-24：按用户反馈将搜索入口移至“可用任务”标题及数量旁，图标为 16 DIP，右侧只保留折叠箭头。
 Release 自包含发布、project-only 自检及窄窗口离屏截图检查通过；备份后同步测试目录 GUI DLL，
 源/目标 SHA256 一致，interface（含 group）、原始备份及 config 哈希不变。真实观感待用户确认。

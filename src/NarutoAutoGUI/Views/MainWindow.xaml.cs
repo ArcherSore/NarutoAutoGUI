@@ -90,7 +90,7 @@ public partial class MainWindow : FluentWindow
     private bool _followLogs = true;
     private bool _projectConfigurationValid;
     private bool _updatingOptionEditors;
-    private bool _taskShelfExpanded = true;
+    private bool _taskShelfExpanded;
     private readonly Dictionary<string, bool> _taskGroupExpanded = new(StringComparer.Ordinal);
     private bool _navigationPreferenceLoaded;
     private string? _expandedTaskName;
@@ -496,9 +496,7 @@ public partial class MainWindow : FluentWindow
         }
         _taskShelfExpanded = expanded;
         TaskShelfContent.Visibility = _taskShelfExpanded ? Visibility.Visible : Visibility.Collapsed;
-        TaskShelfChevronIcon.Symbol = _taskShelfExpanded
-            ? WpfSymbolRegular.ChevronUp16
-            : WpfSymbolRegular.ChevronDown16;
+        TaskShelfHeaderButton.IsChecked = _taskShelfExpanded;
         AutomationProperties.SetHelpText(
             TaskShelfHeaderButton, _taskShelfExpanded ? "可用任务已展开" : "可用任务已收起");
     }
@@ -710,7 +708,7 @@ public partial class MainWindow : FluentWindow
                     tasks.Where(task => task.Groups.Contains(group.Name, StringComparer.Ordinal)).ToArray(),
                     query.Length != 0);
             }
-            AddTaskGroup(project, string.Empty, "未分组", true,
+            AddTaskGroup(project, string.Empty, "未分组", false,
                 tasks.Where(task => !task.Groups.Any(knownGroups.Contains)).ToArray(), query.Length != 0);
         }
     }
@@ -721,8 +719,16 @@ public partial class MainWindow : FluentWindow
         if (tasks.Count == 0) {
             return;
         }
+        var header = new StackPanel { Orientation = WpfOrientation.Horizontal };
+        header.Children.Add(new TextBlock {
+            Text = label, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center
+        });
+        header.Children.Add(new TextBlock {
+            Text = tasks.Count.ToString(), Margin = new Thickness(8, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center, Style = (Style)FindResource("MutedTextStyle")
+        });
         var section = new Expander {
-            Header = $"{label}  {tasks.Count}", Tag = name, Margin = new Thickness(0, 0, 0, 8),
+            Header = header, Tag = name, Margin = new Thickness(0, 0, 0, 2),
             Style = (Style)FindResource("TaskGroupExpanderStyle"),
             IsExpanded = searching || _taskGroupExpanded.GetValueOrDefault(name, defaultExpand),
             Content = CreateTaskChipPanel(project, tasks),

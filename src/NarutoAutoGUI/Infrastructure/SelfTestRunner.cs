@@ -431,7 +431,7 @@ internal static partial class SelfTestRunner
         var grouped = ProjectPlanModule.Open(directory, configPath);
         if (!grouped.Groups.Select(group => group.Name).SequenceEqual(["daily", "battle"])
             || grouped.Groups[0] != new ProjectTaskGroup("daily", "日常", "日常任务说明", "groups/daily.png", false)
-            || grouped.Groups[1] != new ProjectTaskGroup("battle", "battle", "", null, true)
+            || grouped.Groups[1] != new ProjectTaskGroup("battle", "battle", "", null, false)
             || !grouped.Tasks[0].Groups.SequenceEqual(["daily", "battle", "unknown"])) {
             throw new InvalidOperationException("group 展示元数据、默认值、顺序或多组引用丢失。");
         }
@@ -479,6 +479,10 @@ internal static partial class SelfTestRunner
             if (search.Visibility != System.Windows.Visibility.Collapsed) {
                 throw new InvalidOperationException("搜索框默认不应占据任务区空间。");
             }
+            if (shelf.Visibility != System.Windows.Visibility.Collapsed) {
+                throw new InvalidOperationException("可用任务应默认收起。");
+            }
+            ClickOnboarding(window, "TaskShelfHeaderButton");
             foreach (var width in new[] { 1440, 920 }) {
                 window.Width = width;
                 window.Height = width == 920 ? 640 : 900;

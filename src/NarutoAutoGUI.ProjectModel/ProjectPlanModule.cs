@@ -165,6 +165,19 @@ public sealed class ProjectPlanModule
         return BuildConfiguration(config, taskName);
     }
 
+    // Checks only the edited value, so a typo can be shown at its field instead of as a whole-config failure.
+    public string? CheckInputValue(string optionName, string inputName, string value)
+    {
+        var input = FindOption(optionName).Inputs.SingleOrDefault(item => item.Name == inputName)
+            ?? throw new ArgumentException($"option {optionName} 不包含 input {inputName}。", nameof(inputName));
+        try {
+            _ = ProjectInputValue.Parse(input, value, $"option {optionName} input {inputName} 的值");
+            return null;
+        } catch (InvalidDataException exception) {
+            return exception.Message;
+        }
+    }
+
     public ProjectConfigurationView SetInputValue(string optionName, string inputName, string value)
         => SetInputValue(ActiveConfigurationId, optionName, inputName, value);
 

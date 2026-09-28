@@ -122,16 +122,104 @@ internal static partial class SelfTestRunner
                 || project.Configurations[1].ExplicitOptions.Count != 0) {
                 throw new InvalidOperationException("旧控件失焦只能写回其来源配置。");
             }
-            typeof(Views.MainWindow).GetField("_busy", flags)!.SetValue(window, true);
-            typeof(Views.MainWindow).GetMethod("UpdateCommandAvailability", flags)!.Invoke(window, null);
+            tabs.SelectedIndex = 0;
+            VerifyInlineOptionEditing(window, project, items);
+            void SetBusy(bool busy)
+            {
+                SetOnboardingField(window, "_busy", busy);
+                InvokeOnboarding(window, "UpdateCommandAvailability");
+            }
+            bool LockBadgeShown() => ((System.Windows.UIElement)window.FindName("ConfigurationLockBadge")).Visibility
+                == System.Windows.Visibility.Visible;
+            var editors = ConfigurationDescendants(items).OfType<System.Windows.Controls.Control>()
+                .Where(editor => editor is System.Windows.Controls.TextBox or System.Windows.Controls.ComboBox
+                    or Wpf.Ui.Controls.ToggleSwitch).ToArray();
+            SetBusy(true);
             add.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             if (tabs.IsEnabled || add.IsEnabled || project.Configurations.Count != 2) {
                 throw new InvalidOperationException("Start in-flight 必须锁住新增和 Tab 操作。");
+            }
+            var buttons = ConfigurationDescendants(items).OfType<System.Windows.Controls.Button>().ToArray();
+            string NameOf(System.Windows.DependencyObject element) =>
+                System.Windows.Automation.AutomationProperties.GetName(element);
+            if (!((System.Windows.UIElement)window.FindName("TaskWorkspacePanel")).IsEnabled
+                || !((System.Windows.UIElement)window.FindName("PlanScroll")).IsEnabled
+                || !buttons.Single(button => NameOf(button).StartsWith("Real task，", StringComparison.Ordinal))
+                    .IsEnabled
+                || buttons.Single(button => NameOf(button) == "拖动以调整顺序").IsEnabled
+                || buttons.Single(button => NameOf(button).StartsWith("从执行计划移除", StringComparison.Ordinal))
+                    .IsEnabled
+                || editors.Length < 3 || editors.Any(editor => editor.IsEnabled) || !LockBadgeShown()) {
+                throw new InvalidOperationException("运行锁只能禁用编辑，查看、展开与滚动必须保留，并显示锁定说明。");
+            }
+            SetBusy(false);
+            if (!editors.All(editor => editor.IsEnabled) || LockBadgeShown()) {
+                throw new InvalidOperationException("解除运行锁后必须恢复编辑并隐藏锁定说明。");
             }
         } finally {
             window.AllowClose();
             window.Close();
             Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
+        }
+    }
+
+    private static void VerifyInlineOptionEditing(
+        Views.MainWindow window, ProjectPlanModule project, System.Windows.DependencyObject items)
+    {
+        System.Windows.Controls.TextBox Server() => ConfigurationDescendants(items)
+            .OfType<System.Windows.Controls.TextBox>()
+            .Single(item => System.Windows.Automation.AutomationProperties.GetName(item) == "Server");
+        System.Windows.Controls.TextBlock? Hint() => ConfigurationDescendants(items)
+            .OfType<System.Windows.Controls.TextBlock>()
+            .SingleOrDefault(item => item.Text == "Use ranges such as 978 or 978-1012"
+                && item.Visibility == System.Windows.Visibility.Visible);
+        bool RevealDraft() => (bool)typeof(Views.MainWindow).GetMethod("RevealInvalidInputDraft",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null)!;
+        string SavedServer() => project.Configurations[0].ExplicitOptions["ServerRange"].GetProperty("Inputs")
+            .GetProperty("server_range").GetString()!;
+
+        SetOnboardingField(window, "_expandedTaskName", "RealTask");
+        InvokeOnboarding(window, "RenderTaskPlan");
+        var input = Server();
+        if (input is not Wpf.Ui.Controls.TextBox) {
+            throw new InvalidOperationException("参数输入框应与下拉框使用同一套 WPF UI 样式。");
+        }
+        input.Text = "978-,";
+        input.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(
+            System.Windows.Input.Keyboard.PrimaryDevice, 0, input, null) {
+            RoutedEvent = System.Windows.Input.Keyboard.LostKeyboardFocusEvent
+        });
+        if (input.Text != "978-," || Hint() is null || SavedServer() != "979"
+            || ((System.Windows.UIElement)window.FindName("ProjectValidationBorder")).Visibility
+                == System.Windows.Visibility.Visible) {
+            throw new InvalidOperationException("非法输入应保留原文并在字段下提示，不得保存或弹出页面级错误。");
+        }
+        InvokeOnboarding(window, "RenderTaskPlan");
+        input = Server();
+        if (input.Text != "978-," || Hint() is null || !RevealDraft()) {
+            throw new InvalidOperationException("未修正的非法输入在重绘后必须保留，并阻止开始任务。");
+        }
+        input = Server();
+        using (var source = new System.Windows.Interop.HwndSource(
+            new System.Windows.Interop.HwndSourceParameters("self-test"))) {
+            input.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,
+                source, 0, System.Windows.Input.Key.Escape) {
+                RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent
+            });
+        }
+        if (input.Text != "979" || Hint() is not null || RevealDraft()) {
+            throw new InvalidOperationException("Esc 必须恢复已保存值并清除字段错误。");
+        }
+
+        var toggle = ConfigurationDescendants(items).OfType<Wpf.Ui.Controls.ToggleSwitch>()
+            .Single(item => System.Windows.Automation.AutomationProperties.GetName(item) == "Nested");
+        if (toggle.IsChecked != true || !Equals(toggle.OnContent, "On") || !Equals(toggle.OffContent, "Off")) {
+            throw new InvalidOperationException("switch option 应显示为开关，并用 case label 标注开/关。");
+        }
+        toggle.IsChecked = false;
+        toggle.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        if (project.Configurations[0].ExplicitOptions["Nested"].GetProperty("SelectedCase").GetString() != "Off") {
+            throw new InvalidOperationException("关闭开关必须保存 switch 的另一个 case。");
         }
     }
 

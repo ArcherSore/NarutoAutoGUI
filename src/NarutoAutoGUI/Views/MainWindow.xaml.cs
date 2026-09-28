@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -100,10 +101,20 @@ public partial class MainWindow : FluentWindow
     private readonly List<Border> _dropIndicators = [];
     private readonly Dictionary<string, Border> _planItemContainers = new(StringComparer.Ordinal);
 
-    private sealed record OptionInputTag(
-        Guid ConfigurationId, string OptionName, string InputName, string Value, bool Submitted = false);
+    private readonly Dictionary<(Guid, string, string), (string Text, string Message)> _invalidInputDrafts = new();
+    private readonly Dictionary<(Guid, string, string), WpfTextBox> _optionInputEditors = new();
+    private System.Windows.Data.Binding? _configurationEditableBinding;
+    private static readonly string[] SwitchOnCaseNames = ["Yes", "Y", "On", "True", "Enable", "Enabled"];
 
-    private sealed record OptionCaseTag(Guid ConfigurationId, string OptionName);
+    // Edit controls bind IsEnabled to this, so a run lock blocks edits while scrolling, expanding and help stay usable.
+    private static readonly DependencyProperty ConfigurationEditableProperty = DependencyProperty.Register(
+        "ConfigurationEditable", typeof(bool), typeof(MainWindow), new PropertyMetadata(true));
+
+    private sealed record OptionInputTag(Guid ConfigurationId, string OptionName, string InputName, string Value,
+        TextBlock Error, string? PatternMessage, bool Submitted = false)
+    {
+        internal (Guid, string, string) Key => (ConfigurationId, OptionName, InputName);
+    }
 
     internal MainWindow(
         AppLogger logger,
@@ -114,6 +125,8 @@ public partial class MainWindow : FluentWindow
     {
         InitializeComponent();
         DataContext = this;
+        BindConfigurationEditable(ConfigurationTabs);
+        BindConfigurationEditable(NewConfigurationButton);
         _logger = logger;
         _applicationDirectory = applicationDirectory ?? AppContext.BaseDirectory;
         _checkForUpdate = checkForUpdate ?? CheckWithEngineAsync;
@@ -430,7 +443,7 @@ public partial class MainWindow : FluentWindow
 
     private async void StartRunButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!CommitFocusedConfigurationInput()) {
+        if (!CommitFocusedConfigurationInput() || RevealInvalidInputDraft()) {
             return;
         }
         if (DerivePrimaryAction() is not { Mode: PrimaryActionMode.Start, CanExecute: true }) {
@@ -503,7 +516,7 @@ public partial class MainWindow : FluentWindow
 
     private void AddTaskButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not WpfButton { Tag: ProjectTaskChoice task }) {
+        if (!CanEditConfiguration || sender is not WpfButton { Tag: ProjectTaskChoice task }) {
             return;
         }
         try {
@@ -521,6 +534,76 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private void LocatePlanItemButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is WpfButton { Tag: ProjectTaskChoice task }
+            && _planItemContainers.TryGetValue(task.Name, out var card)) {
+            BringIntoPlanView(card);
+            FlashPlanItem(card);
+        }
+    }
+
+    // Pads by the edge fade so the target never stops under it, and caps a tall card so its header stays visible.
+    private void BringIntoPlanView(FrameworkElement element)
+    {
+        var fade = (double)FindResource("Height.ScrollFade");
+        var height = Math.Min(element.ActualHeight, Math.Max(0, PlanScroll.ViewportHeight - fade * 2));
+        element.BringIntoView(new Rect(0, -fade, element.ActualWidth, height + fade * 2));
+    }
+
+    // Tints the located card with the task accent for a moment, then fades back to the colours of its style.
+    private void FlashPlanItem(Border card)
+    {
+        if (!SystemParameters.ClientAreaAnimation) {
+            return;
+        }
+        var restoreBorder = ((SolidColorBrush)card.BorderBrush).Color;
+        var restoreSurface = ((SolidColorBrush)card.Background).Color;
+        var border = new SolidColorBrush(((SolidColorBrush)FindResource("Brush.TasksAccent")).Color);
+        var surface = new SolidColorBrush(((SolidColorBrush)FindResource("Brush.TasksAccent.Surface")).Color);
+        card.BorderBrush = border;
+        card.Background = surface;
+        var delay = TimeSpan.FromMilliseconds(700);
+        var duration = TimeSpan.FromMilliseconds(600);
+        var borderFade = new ColorAnimation(restoreBorder, duration) { BeginTime = delay };
+        borderFade.Completed += (_, _) => {
+            card.ClearValue(Border.BorderBrushProperty);
+            card.ClearValue(Border.BackgroundProperty);
+        };
+        border.BeginAnimation(SolidColorBrush.ColorProperty, borderFade);
+        surface.BeginAnimation(SolidColorBrush.ColorProperty,
+            new ColorAnimation(restoreSurface, duration) { BeginTime = delay });
+    }
+
+    // A field holding an invalid, unsaved value blocks Start: show that field instead of running the saved value.
+    private bool RevealInvalidInputDraft()
+    {
+        if (_projectPlan is not { } project
+            || !_invalidInputDrafts.Keys.Any(key => key.Item1 == project.ActiveConfigurationId)) {
+            return false;
+        }
+        var match = project.SelectedTaskNames.OrderBy(name => name == _expandedTaskName ? 0 : 1)
+            .SelectMany(taskName => EnumerateOptions(GetConfigurationOrEmpty(taskName)).SelectMany(option =>
+                option.Inputs.Select(input => (Task: taskName, Option: option.Name,
+                    Key: (project.ActiveConfigurationId, option.Name, input.Name)))))
+            .FirstOrDefault(item => _invalidInputDrafts.ContainsKey(item.Key));
+        if (match.Task is null) {
+            return false;
+        }
+        if (_expandedTaskName != match.Task || !_optionInputEditors.ContainsKey(match.Key)) {
+            _expandedTaskName = match.Task;
+            RenderTaskPlan();
+        }
+        if (_optionInputEditors.TryGetValue(match.Key, out var editor)) {
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => {
+                BringIntoPlanView(editor);
+                editor.Focus();
+            });
+        }
+        _logger.Info($"参数 {match.Option} 未通过校验，已阻止开始任务。 ");
+        return true;
+    }
+
     private void PlanItemHeader_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not WpfButton { Tag: ProjectTaskChoice task }) {
@@ -532,7 +615,7 @@ public partial class MainWindow : FluentWindow
 
     private void RemovePlanItemButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not WpfButton { Tag: ProjectTaskChoice task }) {
+        if (!CanEditConfiguration || sender is not WpfButton { Tag: ProjectTaskChoice task }) {
             return;
         }
         try {
@@ -625,22 +708,45 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void OptionCaseComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    // Esc abandons an unsaved or invalid edit and puts the saved value back.
+    private void OptionInputTextBox_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
-        if (_updatingOptionEditors || !CanEditConfiguration
-            || sender is not WpfComboBox {
-                Tag: OptionCaseTag tag,
-                SelectedItem: ProjectCaseEditor selected
-            }) {
+        if (e.Key != Key.Escape || sender is not WpfTextBox { Tag: OptionInputTag tag } editor
+            || editor.Text == tag.Value && !_invalidInputDrafts.ContainsKey(tag.Key)) {
+            return;
+        }
+        _invalidInputDrafts.Remove(tag.Key);
+        editor.Text = tag.Value;
+        editor.SelectAll();
+        ShowOptionInputError(editor, tag.Error, null);
+        e.Handled = true;
+    }
+
+    private void ShowOptionInputError(WpfTextBox editor, TextBlock error, string? message)
+    {
+        if (message is null) {
+            editor.ClearValue(BorderBrushProperty);
+            error.Visibility = Visibility.Collapsed;
+        } else {
+            editor.BorderBrush = (WpfBrush)FindResource("Brush.Error");
+            error.Text = message;
+            error.Visibility = Visibility.Visible;
+        }
+        AutomationProperties.SetItemStatus(editor, message ?? string.Empty);
+    }
+
+    private void SaveSelectedCase(Guid configurationId, string optionName, string caseName)
+    {
+        if (_updatingOptionEditors || !CanEditConfiguration) {
             return;
         }
 
         try {
             _ = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
-                .SetSelectedCase(tag.ConfigurationId, tag.OptionName, selected.Name);
+                .SetSelectedCase(configurationId, optionName, caseName);
             _pendingStartAttempt = null;
             RenderTaskPlan();
-            _logger.Info($"已保存 MaaNOP explicit case：option={tag.OptionName}。 ");
+            _logger.Info($"已保存 MaaNOP explicit case：option={optionName}。 ");
             UpdateCommandAvailability();
         } catch (Exception exception) {
             HandleOperationError("保存 MaaNOP select/switch option 失败", exception);
@@ -751,10 +857,11 @@ public partial class MainWindow : FluentWindow
             }
         };
         foreach (var task in tasks) {
+            var added = project.SelectedTaskNames.Contains(task.Name, StringComparer.Ordinal);
             var label = new TextBlock {
                 Text = task.Label, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap
             };
-            var icon = CreateSymbolIcon(WpfSymbolRegular.Add16);
+            var icon = CreateSymbolIcon(added ? WpfSymbolRegular.Checkmark16 : WpfSymbolRegular.Add16);
             icon.Margin = new Thickness(8, 0, 0, 0);
             icon.Foreground = (WpfBrush)FindResource("Brush.TasksAccent");
             var content = new DockPanel();
@@ -764,11 +871,21 @@ public partial class MainWindow : FluentWindow
             var button = new WpfButton {
                 Content = content,
                 Tag = task,
-                IsEnabled = !project.SelectedTaskNames.Contains(task.Name, StringComparer.Ordinal),
-                Style = (Style)FindResource("TaskChipButtonStyle")
+                Style = (Style)FindResource(added ? "TaskChipAddedButtonStyle" : "TaskChipButtonStyle")
             };
-            AutomationProperties.SetName(button, $"添加任务：{task.Label}");
-            button.Click += AddTaskButton_Click;
+            // The implicit TextBlock style would pin the label colour; follow the chip style instead.
+            label.SetBinding(TextBlock.ForegroundProperty,
+                new System.Windows.Data.Binding(nameof(Foreground)) { Source = button });
+            if (added) {
+                // A planned task is not added twice; its chip points to the plan card instead of doing nothing.
+                button.ToolTip = "已在执行计划中，点击定位";
+                AutomationProperties.SetName(button, $"已添加：{task.Label}，定位到执行计划");
+                button.Click += LocatePlanItemButton_Click;
+            } else {
+                BindConfigurationEditable(button);
+                AutomationProperties.SetName(button, $"添加任务：{task.Label}");
+                button.Click += AddTaskButton_Click;
+            }
             panel.Children.Add(button);
         }
         return panel;
@@ -819,6 +936,7 @@ public partial class MainWindow : FluentWindow
         _dropIndicators.Clear();
         _planItemContainers.Clear();
         _taskDescriptionButtons.Clear();
+        _optionInputEditors.Clear();
         EmptyPlanPanel.Visibility = project.SelectedTaskNames.Count == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -860,15 +978,19 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private ProjectConfigurationView GetConfigurationOrEmpty(string taskName)
+    {
+        try {
+            return (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
+                .GetConfiguration(taskName);
+        } catch (Exception exception) when (exception is InvalidDataException or ArgumentException) {
+            return new ProjectConfigurationView([], []);
+        }
+    }
+
     private Border CreatePlanItem(ProjectTaskChoice task, bool expanded)
     {
-        ProjectConfigurationView configuration;
-        try {
-            configuration = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
-                .GetConfiguration(task.Name);
-        } catch (Exception exception) when (exception is InvalidDataException or ArgumentException) {
-            configuration = new ProjectConfigurationView([], []);
-        }
+        var configuration = GetConfigurationOrEmpty(task.Name);
         var hasParameters = EnumerateOptions(configuration)
             .Any(option => option.Kind != ProjectOptionKind.Input || option.Inputs.Count != 0);
         var container = new Border {
@@ -928,6 +1050,7 @@ public partial class MainWindow : FluentWindow
         dragHandle.PreviewMouseLeftButtonDown += PlanDragHandle_PreviewMouseLeftButtonDown;
         dragHandle.PreviewMouseMove += PlanDragHandle_PreviewMouseMove;
         dragHandle.PreviewKeyDown += PlanDragHandle_PreviewKeyDown;
+        BindConfigurationEditable(dragHandle);
         header.Children.Add(dragHandle);
 
         var label = new TextBlock {
@@ -989,6 +1112,7 @@ public partial class MainWindow : FluentWindow
         var remove = CreateIconButton(WpfSymbolRegular.Dismiss16, $"从执行计划移除 {task.Label}");
         remove.Tag = task;
         remove.Click += RemovePlanItemButton_Click;
+        BindConfigurationEditable(remove);
         Grid.SetColumn(remove, 3);
         header.Children.Add(remove);
         return header;
@@ -1036,10 +1160,21 @@ public partial class MainWindow : FluentWindow
         var description = string.IsNullOrWhiteSpace(input.Description) ? option.Description : input.Description;
         var content = new StackPanel();
         content.Children.Add(CreateParameterLabel(label, description));
-        var editor = new WpfTextBox {
+        // MaxWidth is the minimum tile width minus padding, so a long hint never forces a full-width row.
+        var error = new TextBlock {
+            Margin = new Thickness(0, 4, 0, 0), MaxWidth = 212,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+            Style = (Style)FindResource("SecondaryTextStyle"),
+            Foreground = (WpfBrush)FindResource("Brush.Error.Foreground"), Visibility = Visibility.Collapsed
+        };
+        AutomationProperties.SetLiveSetting(error, AutomationLiveSetting.Polite);
+        var tag = new OptionInputTag(
+            _projectPlan!.ActiveConfigurationId, option.Name, input.Name, input.Value, error, input.PatternMessage);
+        var editor = new Wpf.Ui.Controls.TextBox {
             Margin = new Thickness(0, 5, 0, 0),
+            Style = (Style)FindResource("Option.TextBox"),
             Text = input.Value,
-            Tag = new OptionInputTag(_projectPlan!.ActiveConfigurationId, option.Name, input.Name, input.Value),
+            Tag = tag,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
             ToolTip = input.PatternMessage
         };
@@ -1048,7 +1183,15 @@ public partial class MainWindow : FluentWindow
             AutomationProperties.SetHelpText(editor, description);
         }
         editor.LostKeyboardFocus += OptionInputTextBox_LostKeyboardFocus;
+        editor.PreviewKeyDown += OptionInputTextBox_PreviewKeyDown;
+        BindConfigurationEditable(editor);
         content.Children.Add(editor);
+        content.Children.Add(error);
+        _optionInputEditors[tag.Key] = editor;
+        if (_invalidInputDrafts.TryGetValue(tag.Key, out var draft)) {
+            editor.Text = draft.Text;
+            ShowOptionInputError(editor, error, draft.Message);
+        }
         return new Border { Style = (Style)FindResource("OptionTileStyle"), Child = content };
     }
 
@@ -1057,29 +1200,69 @@ public partial class MainWindow : FluentWindow
         var label = string.IsNullOrWhiteSpace(option.Label) ? option.Name : option.Label;
         var content = new StackPanel();
         content.Children.Add(CreateParameterLabel(label, option.Description));
-        var selector = new WpfComboBox {
-            Margin = new Thickness(0, 5, 0, 0),
-            ItemsSource = option.Cases,
-            DisplayMemberPath = nameof(ProjectCaseEditor.Label),
-            SelectedItem = option.Cases.Single(item => item.Name == option.SelectedCase),
-            Tag = new OptionCaseTag(_projectPlan!.ActiveConfigurationId, option.Name),
-            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
-            ToolTip = option.IsExplicit
-                ? "当前值由用户显式设置"
-                : $"当前跟随项目默认：{option.DefaultCase}"
-        };
+        var configurationId = _projectPlan!.ActiveConfigurationId;
+        System.Windows.Controls.Control selector;
+        FrameworkElement field;
+        if (option.Kind == ProjectOptionKind.Switch) {
+            // One click flips a switch; the on/off captions keep the PI case labels visible.
+            var (on, off) = GetSwitchCases(option);
+            var toggle = new Wpf.Ui.Controls.ToggleSwitch {
+                IsChecked = option.SelectedCase == on.Name, OnContent = on.Label, OffContent = off.Label,
+                Style = (Style)FindResource("Option.ToggleSwitch"),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            toggle.Click += (_, _) =>
+                SaveSelectedCase(configurationId, option.Name, toggle.IsChecked == true ? on.Name : off.Name);
+            selector = toggle;
+            field = new Grid { Height = (double)FindResource("Height.OptionEditor"), Children = { toggle } };
+        } else {
+            var comboBox = new WpfComboBox {
+                ItemsSource = option.Cases,
+                DisplayMemberPath = nameof(ProjectCaseEditor.Label),
+                SelectedItem = option.Cases.Single(item => item.Name == option.SelectedCase),
+                Style = (Style)FindResource("Option.ComboBox"),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch
+            };
+            comboBox.SelectionChanged += (_, _) => {
+                if (comboBox.SelectedItem is ProjectCaseEditor selected) {
+                    SaveSelectedCase(configurationId, option.Name, selected.Name);
+                }
+            };
+            selector = comboBox;
+            field = comboBox;
+        }
+        field.Margin = new Thickness(0, 5, 0, 0);
+        selector.ToolTip = option.IsExplicit
+            ? "当前值由用户显式设置"
+            : $"当前跟随项目默认：{option.Cases.Single(item => item.Name == option.DefaultCase).Label}";
         AutomationProperties.SetName(selector, label);
         if (!string.IsNullOrWhiteSpace(option.Description)) {
             AutomationProperties.SetHelpText(selector, option.Description);
         }
-        selector.SelectionChanged += OptionCaseComboBox_SelectionChanged;
-        content.Children.Add(selector);
+        BindConfigurationEditable(selector);
+        content.Children.Add(field);
         return new Border { Style = (Style)FindResource("OptionTileStyle"), Child = content };
     }
 
+    // PI switch cases carry no on/off flag; MaaNOP names them Yes/No, so an affirmative name marks "on",
+    // otherwise the first case does.
+    private static (ProjectCaseEditor On, ProjectCaseEditor Off) GetSwitchCases(ProjectOptionEditor option)
+    {
+        var on = option.Cases.FirstOrDefault(
+            item => SwitchOnCaseNames.Contains(item.Name, StringComparer.OrdinalIgnoreCase)) ?? option.Cases[0];
+        return (on, option.Cases.First(item => item.Name != on.Name));
+    }
+
+    private void BindConfigurationEditable(UIElement element) => System.Windows.Data.BindingOperations.SetBinding(
+        element, IsEnabledProperty, _configurationEditableBinding ??= new System.Windows.Data.Binding {
+            Path = new PropertyPath(ConfigurationEditableProperty), Source = this
+        });
+
     private Grid CreateParameterLabel(string label, string? description)
     {
-        var header = new Grid();
+        // Same height with or without the info button, so editors in one row start on the same line.
+        var header = new Grid { MinHeight = 20 };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.Children.Add(new TextBlock {
@@ -1187,7 +1370,7 @@ public partial class MainWindow : FluentWindow
 
     private void PlanDragHandle_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
-        if ((Keyboard.Modifiers & ModifierKeys.Alt) == 0
+        if (!CanEditConfiguration || (Keyboard.Modifiers & ModifierKeys.Alt) == 0
             || sender is not WpfButton { Tag: ProjectTaskChoice task }
             || e.Key is not (Key.Up or Key.Down)) {
             return;
@@ -1227,7 +1410,7 @@ public partial class MainWindow : FluentWindow
 
     private void PlanItemsPanel_Drop(object sender, WpfDragEventArgs e)
     {
-        if (e.Data.GetData(PlanItemDragDataFormat) is not string taskName) {
+        if (!CanEditConfiguration || e.Data.GetData(PlanItemDragDataFormat) is not string taskName) {
             return;
         }
         try {
@@ -1360,6 +1543,7 @@ public partial class MainWindow : FluentWindow
         }
         var project = ProjectPlanModule.Open(_applicationDirectory, configPath);
         _projectPlan = project;
+        _invalidInputDrafts.Clear();
         _pendingStartAttempt = null;
         _expandedTaskName = project.InitializedTaskName
             ?? (_onboardingPreferences.ShouldOfferAutomatically && !_onboardingAutoEnded
@@ -1384,6 +1568,7 @@ public partial class MainWindow : FluentWindow
         string emptyStateDetail)
     {
         _projectPlan = null;
+        _invalidInputDrafts.Clear();
         _pendingStartAttempt = null;
         _projectConfigurationValid = false;
         _expandedTaskName = null;
@@ -1845,11 +2030,13 @@ public partial class MainWindow : FluentWindow
         var projectReady = _projectPlan is not null;
         var worker = RuntimeControlWorker;
         UpdateRuntimeHeader(canStartCommand, projectReady, sessionConnected);
-        TaskWorkspacePanel.IsEnabled = CanEditConfiguration;
-        ConfigurationTabs.IsEnabled = CanEditConfiguration;
-        NewConfigurationButton.IsEnabled = CanEditConfiguration;
-
+        var editable = CanEditConfiguration;
+        SetValue(ConfigurationEditableProperty, editable);
         var active = worker?.ActiveRun;
+        ConfigurationLockBadge.Visibility = projectReady && !editable ? Visibility.Visible : Visibility.Collapsed;
+        ConfigurationLockText.Text = active is not null
+            || _busy && _operationStatus.StartsWith("正在开始任务", StringComparison.Ordinal)
+                ? "任务运行中，配置已锁定" : "运行环境处理中，配置暂时锁定";
         var isRunning = active?.State is RunState.Starting or RunState.Running;
         if (isRunning) {
             if (!_elapsedTimer.IsEnabled) {

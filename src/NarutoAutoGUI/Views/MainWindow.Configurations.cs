@@ -271,7 +271,17 @@ public partial class MainWindow
         }
         _committingConfigurationInput = true;
         try {
-            _projectPlan!.SetInputValue(tag.ConfigurationId, tag.OptionName, tag.InputName, textBox.Text);
+            if (_projectPlan!.CheckInputValue(tag.OptionName, tag.InputName, textBox.Text) is { } problem) {
+                // A rejected value is a typo, not a failure: keep the text and explain it under the field.
+                // The saved value is unchanged; the draft survives re-rendering until it is fixed or Esc restores it.
+                var message = tag.PatternMessage ?? problem;
+                _invalidInputDrafts[tag.Key] = (textBox.Text, message);
+                ShowOptionInputError(textBox, tag.Error, message);
+                _logger.Info($"MaaNOP input 未通过校验，未保存：option={tag.OptionName}，input={tag.InputName}。 ");
+                return false;
+            }
+            _projectPlan.SetInputValue(tag.ConfigurationId, tag.OptionName, tag.InputName, textBox.Text);
+            _invalidInputDrafts.Remove(tag.Key);
             textBox.Tag = tag with { Value = textBox.Text, Submitted = true };
             _pendingStartAttempt = null;
             TryRenderTaskPlan();
@@ -281,7 +291,7 @@ public partial class MainWindow
             textBox.Tag = tag with { Submitted = true };
             HandleOperationError("保存 MaaNOP input option 失败", exception);
             ShowProjectValidationError(exception);
-            return exception is InvalidDataException;
+            return false;
         } finally {
             _committingConfigurationInput = false;
         }

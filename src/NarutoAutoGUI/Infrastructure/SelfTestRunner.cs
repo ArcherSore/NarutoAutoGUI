@@ -494,11 +494,17 @@ internal static partial class SelfTestRunner
                 }
                 var planTop = planScroll.TranslatePoint(new System.Windows.Point(), workspace).Y;
                 var planOffset = planScroll.VerticalOffset;
+                if (!EdgeFadesAre(catalogScroll, top: false, bottom: true)) {
+                    throw new InvalidOperationException("可用任务未滚动时只应在底部裁切处淡出。");
+                }
                 catalogScroll.ScrollToBottom();
                 PumpOnboarding();
                 if (catalogScroll.VerticalOffset <= 0 || planScroll.VerticalOffset != planOffset
                     || Math.Abs(planScroll.TranslatePoint(new System.Windows.Point(), workspace).Y - planTop) > 1) {
                     throw new InvalidOperationException("滚动可用任务不得移动执行计划。");
+                }
+                if (!EdgeFadesAre(catalogScroll, top: true, bottom: false)) {
+                    throw new InvalidOperationException("可用任务滚动到底后只应在顶部裁切处淡出。");
                 }
                 catalogScroll.ScrollToTop();
                 if (width == 920) {
@@ -521,10 +527,20 @@ internal static partial class SelfTestRunner
             search.Text = "RealTask";
             PumpOnboarding();
             var matches = catalog.Children.OfType<System.Windows.Controls.Expander>().ToArray();
-            if (matches.Length != 2 || matches.Any(section => !section.IsExpanded)
-                || ConfigurationDescendants(catalog).OfType<System.Windows.Controls.Button>()
-                    .Any(button => button.Tag is ProjectTaskChoice && button.IsEnabled)) {
+            var chips = ConfigurationDescendants(catalog).OfType<System.Windows.Controls.Button>()
+                .Where(button => button.Tag is ProjectTaskChoice).ToArray();
+            if (matches.Length != 2 || matches.Any(section => !section.IsExpanded) || chips.Length != 2
+                || chips.Any(chip => !chip.IsEnabled || !System.Windows.Automation.AutomationProperties.GetName(chip)
+                    .StartsWith("已添加", StringComparison.Ordinal))) {
                 throw new InvalidOperationException("搜索应展开所有匹配分类，多组任务共享已添加状态。");
+            }
+            var planItems = (System.Windows.Controls.Panel)window.FindName("PlanItemsPanel");
+            var cards = planItems.Children.Count;
+            chips[0].RaiseEvent(new System.Windows.RoutedEventArgs(
+                System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            PumpOnboarding();
+            if (planItems.Children.Count != cards) {
+                throw new InvalidOperationException("点击已添加任务只应定位执行计划卡片，不能重复添加。");
             }
             search.Text = "no-such-task";
             PumpOnboarding();
@@ -613,6 +629,13 @@ internal static partial class SelfTestRunner
         });
     }
 
+    private static bool EdgeFadesAre(System.Windows.Controls.ScrollViewer scroll, bool top, bool bottom)
+    {
+        bool Visible(string name) => ((System.Windows.UIElement)scroll.Template.FindName(name, scroll)).Visibility
+            == System.Windows.Visibility.Visible;
+        return Visible("TopFade") == top && Visible("BottomFade") == bottom;
+    }
+
     private static void VerifyTaskDescriptionMarkup()
     {
         var document = MarkdownDocument.Create(
@@ -655,6 +678,9 @@ internal static partial class SelfTestRunner
 
     private static void VerifyRejectedInputEdit(ProjectPlanModule project, string inputName, string invalidValue)
     {
+        if (project.CheckInputValue("ServerRange", inputName, invalidValue) is null) {
+            throw new InvalidOperationException($"PI input {inputName} 的单字段检查未拒绝非法值。");
+        }
         try {
             project.SetInputValue("ServerRange", inputName, invalidValue);
             throw new InvalidOperationException($"PI input {inputName} 未拒绝非法显式值。");
@@ -807,6 +833,12 @@ internal static partial class SelfTestRunner
             Refresh();
             if (stop.Visibility != System.Windows.Visibility.Visible || !stop.IsEnabled) {
                 throw new InvalidOperationException("运行中应显示可点击的停止按钮。");
+            }
+            if (((System.Windows.UIElement)window.FindName("ConfigurationLockBadge")).Visibility
+                    != System.Windows.Visibility.Visible
+                || ((System.Windows.Controls.TextBlock)window.FindName("ConfigurationLockText")).Text
+                    != "任务运行中，配置已锁定") {
+                throw new InvalidOperationException("运行中应在任务标题旁说明配置已锁定。");
             }
             SetField("_workerSnapshot", new WorkerCoordinatorSnapshot(
                 WorkerObservation.IpcDisconnected, false, worker, "暂时断线"));

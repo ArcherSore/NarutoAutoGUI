@@ -282,7 +282,8 @@ public partial class MainWindow
             _invalidInputDrafts.Remove(tag.Key);
             textBox.Tag = tag with { Value = textBox.Text, Submitted = true };
             _pendingStartAttempt = null;
-            TryRenderTaskPlan();
+            ShowOptionInputError(textBox, tag.Error, null);
+            RefreshAfterOptionSaved(rebuildCards: false);
             return true;
         } catch (Exception exception) {
             textBox.Text = tag.Value;

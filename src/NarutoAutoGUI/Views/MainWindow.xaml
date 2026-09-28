@@ -449,15 +449,7 @@
                             <ColumnDefinition x:Name="RuntimeSidebarColumn" Width="392" />
                         </Grid.ColumnDefinitions>
                         <Grid Grid.Column="0">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-                            <StackPanel Visibility="Collapsed">
-                                <TextBlock x:Name="HomeRunContextTitleText" />
-                                <TextBlock x:Name="HomeRunContextSubText" />
-                            </StackPanel>
-                    <Grid x:Name="TasksView" Grid.Row="1" Margin="16,12,16,12">
+                    <Grid x:Name="TasksView" Margin="16,12,16,12">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -823,14 +815,6 @@
                                                             VerticalAlignment="Center" />
                                             </StackPanel>
                                         </Button>
-                                    </StackPanel>
-                                    <StackPanel Visibility="Collapsed">
-                                        <TextBlock x:Name="HomeSessionStatusText" />
-                                        <StackPanel x:Name="HomeSessionStatusPanel">
-                                            <Ellipse x:Name="HomeSessionStatusIndicator" Width="6" Height="6" />
-                                        </StackPanel>
-                                        <TextBlock x:Name="HomeSessionHintText" />
-                                        <MenuItem x:Name="HomeTerminateSessionMenuItem" />
                                     </StackPanel>
                                 </StackPanel>
                             </Border>

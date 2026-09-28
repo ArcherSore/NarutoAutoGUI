@@ -2,7 +2,6 @@
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
-using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Worker;
 using WpfButton = System.Windows.Controls.Button;
 using WpfTextBox = System.Windows.Controls.TextBox;
@@ -14,11 +13,9 @@ public partial class MainWindow
     private bool _committingConfigurationInput;
     private WpfTextBox? _configurationNameEditor;
 
-    private bool CanEditConfiguration => _projectPlan is not null && !_busy && !_exitInProgress
-        && _sessionSnapshot.State is not (ChildSessionState.Connecting or ChildSessionState.Disconnecting)
+    private bool CanEditConfiguration => _projectPlan is not null && CanRunCommand
         && (_workerSnapshot.Observation is WorkerObservation.WorkerNotStarted or WorkerObservation.ChildSessionEnded
-            || _workerSnapshot.Observation == WorkerObservation.Connected && _workerSnapshot.SnapshotFresh
-            && RuntimeControlWorker is { ActiveRun: null, RunState: Protocol.RunState.Idle });
+            || WorkerFresh && RuntimeControlWorker is { ActiveRun: null, RunState: Protocol.RunState.Idle });
 
     private void RenderConfigurationTabs()
     {

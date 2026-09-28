@@ -6,7 +6,6 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
-using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Infrastructure;
 using WpfPoint = System.Windows.Point;
 using WpfSize = System.Windows.Size;
@@ -42,12 +41,11 @@ public partial class MainWindow
     private bool IsOnboardingVisible => _onboardingActive && !_onboardingPaused
         && OnboardingOverlay.Visibility == Visibility.Visible;
 
-    private bool CanPresentOnboarding => !_onboardingClosed && !_exitInProgress && !_busy
+    private bool CanPresentOnboarding => !_onboardingClosed && CanRunCommand
         && IsLoaded && IsVisible && WindowState != WindowState.Minimized
         && HomeView.Visibility == Visibility.Visible && _projectPlan is not null
         && TaskWorkspacePanel.Visibility == Visibility.Visible && !IsGlobalModalOpen
-        && TaskDescriptionOverlay.Visibility != Visibility.Visible
-        && _sessionSnapshot.State is not (ChildSessionState.Connecting or ChildSessionState.Disconnecting);
+        && TaskDescriptionOverlay.Visibility != Visibility.Visible;
 
     private void ReplayOnboarding()
     {

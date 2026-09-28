@@ -58,7 +58,6 @@ internal static partial class SelfTestRunner
             VerifyMinimizedPreview(logger, testDirectory);
             VerifyWorkerLogSequenceTracker();
             VerifyRunLogRouting(logger);
-            VerifyHomePresentation();
             VerifyEndedSessionControls(logger, testDirectory, projectDirectory);
             Task.Run(() => WorkerCoordinatorSelfTest.RunAsync(
                 logger, testDirectory, projectDirectory,
@@ -855,13 +854,9 @@ internal static partial class SelfTestRunner
                     WorkerObservation.ChildSessionEnded, false, stale, "Child Session 已结束"));
                 Refresh();
                 var ring = (System.Windows.UIElement)window.FindName("RuntimeHeaderProgressRing");
-                var timer = (System.Windows.Threading.DispatcherTimer)
-                    typeof(MainWindow).GetField("_elapsedTimer", flags)!.GetValue(window)!;
-                var title = (System.Windows.Controls.TextBlock)window.FindName("HomeRunContextTitleText");
                 if (stop.Visibility != System.Windows.Visibility.Collapsed
                     || prepare.Visibility != System.Windows.Visibility.Visible || !prepare.IsEnabled
-                    || ring.Visibility != System.Windows.Visibility.Collapsed || timer.IsEnabled
-                    || !title.Text.StartsWith("执行计划已配置", StringComparison.Ordinal)) {
+                    || ring.Visibility != System.Windows.Visibility.Collapsed) {
                     throw new InvalidOperationException($"分身结束后仍显示 {state} 控件，未恢复准备运行环境入口。");
                 }
                 var retained = (WorkerCoordinatorSnapshot)
@@ -874,39 +869,6 @@ internal static partial class SelfTestRunner
             window.AllowClose();
             window.Close();
             Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
-        }
-    }
-
-    private static void VerifyHomePresentation()
-    {
-        if (MainWindow.FormatElapsedTime(TimeSpan.Zero) != "00:00:00"
-            || MainWindow.FormatElapsedTime(TimeSpan.FromSeconds(65)) != "00:01:05"
-            || MainWindow.FormatElapsedTime(TimeSpan.FromSeconds(3661)) != "01:01:01") {
-            throw new InvalidOperationException("Home elapsed time 格式化验证失败。 ");
-        }
-
-        var planItemId1 = Guid.NewGuid();
-        var planItemId2 = Guid.NewGuid();
-        var item1 = new PlanItemSnapshot(
-            planItemId1, "TaskA", "任务 A", "EntryA",
-            ProtocolJson.ToElement(new { }), ProtocolJson.ToElement(new[] { new { } }),
-            PlanItemState.Succeeded, DateTime.UtcNow.AddMinutes(-2), DateTime.UtcNow.AddMinutes(-1), null, null, null);
-        var item2 = new PlanItemSnapshot(
-            planItemId2, "TaskB", "任务 B", "EntryB",
-            ProtocolJson.ToElement(new { }), ProtocolJson.ToElement(new[] { new { } }),
-            PlanItemState.Running, DateTime.UtcNow.AddMinutes(-1), null, null, null, null);
-
-        var runPlan = new RunPlan(
-            1, DateTime.UtcNow, new ProjectProvenance("P", "1.0", 2, "d"), "r",
-            ProtocolJson.ToElement(new { }), []);
-        var run = new RunSnapshot(
-            Guid.NewGuid(), "digest", RunState.Running, DateTime.UtcNow.AddMinutes(-2),
-            DateTime.UtcNow.AddMinutes(-2), null, null, planItemId2, 1, runPlan,
-            [item1, item2], null, null);
-
-        var (curIdx, total, label) = MainWindow.GetCurrentRunProgress(run, null);
-        if (curIdx != 2 || total != 2 || label != "任务 B") {
-            throw new InvalidOperationException($"Home 当前任务 X/N 进度计算验证失败：({curIdx}/{total}, {label})。 ");
         }
     }
 

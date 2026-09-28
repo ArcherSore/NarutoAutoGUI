@@ -31,7 +31,6 @@ using WpfKeyEventArgs = System.Windows.Input.KeyEventArgs;
 using WpfMessageBox = System.Windows.MessageBox;
 using WpfMouseEventArgs = System.Windows.Input.MouseEventArgs;
 using WpfPoint = System.Windows.Point;
-using WpfSize = System.Windows.Size;
 using WpfTextBox = System.Windows.Controls.TextBox;
 using WpfToolTip = System.Windows.Controls.ToolTip;
 using FluentWindow = Wpf.Ui.Controls.FluentWindow;
@@ -54,16 +53,6 @@ public partial class MainWindow : FluentWindow
         Settings
     }
 
-    private enum PrimaryActionMode
-    {
-        ConfigureTasks,
-        Prepare,
-        Start,
-        Stop,
-        Transition
-    }
-
-    private sealed record PrimaryActionState(PrimaryActionMode Mode, bool CanExecute);
     private readonly AppLogger _logger;
     private readonly ApplicationSettings _settings;
     private readonly string _applicationDirectory;
@@ -72,7 +61,6 @@ public partial class MainWindow : FluentWindow
     private readonly WorkerCoordinator _workerCoordinator;
     private readonly Func<Func<Task>, Task> _runApplicationOperationAsync;
     private readonly Func<Task> _requestExitAsync;
-    private readonly DispatcherTimer _elapsedTimer;
     private ChildSessionSnapshot _sessionSnapshot = ChildSessionSnapshot.Empty;
     private WorkerCoordinatorSnapshot _workerSnapshot = WorkerCoordinatorSnapshot.Empty;
     private ProjectPlanModule? _projectPlan;
@@ -139,10 +127,6 @@ public partial class MainWindow : FluentWindow
         _runApplicationOperationAsync = runApplicationOperationAsync;
         _requestExitAsync = requestExitAsync;
         _sessionSnapshot = sessionManager.Snapshot;
-        _elapsedTimer = new DispatcherTimer(DispatcherPriority.Normal) {
-            Interval = TimeSpan.FromSeconds(1)
-        };
-        _elapsedTimer.Tick += ElapsedTimer_Tick;
         HomeLogListBox.AddHandler(
             ScrollViewer.ScrollChangedEvent,
             new ScrollChangedEventHandler(LogListBox_ScrollChanged));
@@ -156,7 +140,6 @@ public partial class MainWindow : FluentWindow
         IsVisibleChanged += MainWindow_IsVisibleChanged;
         StateChanged += MainWindow_StateChanged;
         SwitchSection(MainSection.Home);
-        UpdateWorkerPresentation(_workerSnapshot);
         UpdateCommandAvailability();
     }
 
@@ -232,7 +215,6 @@ public partial class MainWindow : FluentWindow
             EndOnboarding(handled: false);
             RemovePreviewWindowHook();
             _updateCancellation?.Cancel();
-            _elapsedTimer.Stop();
             StopPreviewPolling();
             _sessionManager.StateChanged -= OnSessionStateChanged;
             _workerCoordinator.StateChanged -= OnWorkerStateChanged;
@@ -330,27 +312,6 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private async void TerminateSessionButton_Click(object sender, RoutedEventArgs e)
-    {
-        var answer = WpfMessageBox.Show(
-            "结束桌面分身将注销 Session，并结束其中运行的程序。确认继续吗？",
-            "结束桌面分身", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
-        if (answer != MessageBoxResult.Yes) {
-            return;
-        }
-
-        await RunOperationAsync(
-            "正在结束桌面分身...",
-            async () =>
-            {
-                await _sessionManager.TerminateAsync();
-                _workerCoordinator.ChildSessionEnded();
-            });
-    }
-
-    private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
-        => TryOpenLogsDirectory();
-
     private void TryOpenLogsDirectory()
     {
         try {
@@ -368,23 +329,6 @@ public partial class MainWindow : FluentWindow
                 "请确认 Windows 资源管理器可用，并检查日志目录访问权限后重试。",
                 offerLogDirectory: false);
         }
-    }
-
-    private void HomeSessionMoreButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is WpfButton button && button.ContextMenu is not null) {
-            button.ContextMenu.PlacementTarget = button;
-            button.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Custom;
-            button.ContextMenu.CustomPopupPlacementCallback = PlaceSessionMenu;
-            button.ContextMenu.IsOpen = true;
-        }
-    }
-
-    private static System.Windows.Controls.Primitives.CustomPopupPlacement[] PlaceSessionMenu(
-        WpfSize popupSize, WpfSize targetSize, WpfPoint offset)
-    {
-        var point = new WpfPoint(targetSize.Width - popupSize.Width, targetSize.Height + 2);
-        return [new(point, System.Windows.Controls.Primitives.PopupPrimaryAxis.Horizontal)];
     }
 
     private void HomeDesktopVisibilityButton_Click(object sender, RoutedEventArgs e)
@@ -417,8 +361,7 @@ public partial class MainWindow : FluentWindow
                 try {
                     LoadProject();
                     var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
-                    await _workerCoordinator.PrepareWorkerAsync(
-                        sessionId, _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"));
+                    await _workerCoordinator.PrepareWorkerAsync(sessionId, RequireProject());
                     var game = NarutoGameLaunchProfile.ResolveExisting(_logger);
                     await _programService.LaunchIfNeededAsync(
                         sessionId, game.ExecutablePath, game.Arguments,
@@ -434,7 +377,7 @@ public partial class MainWindow : FluentWindow
 
     private void RetryRuntimeHeaderButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_environmentPreparationFailed || DerivePrimaryAction().Mode != PrimaryActionMode.Start) {
+        if (_environmentPreparationFailed || !IsRunReadyToStart) {
             PrepareEnvironmentButton_Click(sender, e);
         } else {
             StartRunButton_Click(sender, e);
@@ -446,19 +389,17 @@ public partial class MainWindow : FluentWindow
         if (!CommitFocusedConfigurationInput() || RevealInvalidInputDraft()) {
             return;
         }
-        if (DerivePrimaryAction() is not { Mode: PrimaryActionMode.Start, CanExecute: true }) {
+        if (!CanStartRun) {
             return;
         }
         await RunOperationAsync(
             "正在开始任务...",
             async () =>
             {
-                if (_sessionSnapshot.State is not (ChildSessionState.ConnectedVisible
-                    or ChildSessionState.ConnectedHidden)) {
+                if (!SessionConnected) {
                     throw new InvalidOperationException("Child Session 尚未连接，当前不能开始任务。 ");
                 }
-                var project = _projectPlan
-                              ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 ");
+                var project = RequireProject();
                 if (!_projectConfigurationValid) {
                     throw new InvalidOperationException(
                         "当前 MaaNOP Config 尚未通过正式 PI Resolver 校验。 ");
@@ -477,7 +418,7 @@ public partial class MainWindow : FluentWindow
 
     private async void StopRunButton_Click(object sender, RoutedEventArgs e)
     {
-        if (DerivePrimaryAction() is not { Mode: PrimaryActionMode.Stop, CanExecute: true }) {
+        if (!CanStopRun) {
             return;
         }
         await RunOperationAsync(
@@ -486,8 +427,7 @@ public partial class MainWindow : FluentWindow
             {
                 var activeRun = _workerSnapshot.WorkerSnapshot?.ActiveRun
                                 ?? throw new InvalidOperationException("Worker 当前没有 active Run。 ");
-                if (activeRun.State != RunState.Running
-                    || !activeRun.Items.Any(item => item.State is PlanItemState.Starting or PlanItemState.Running)) {
+                if (!IsStoppable(activeRun)) {
                     throw new InvalidOperationException("当前执行计划尚未进入可停止状态。 ");
                 }
                 var response = await _workerCoordinator.StopRunAsync(activeRun.RunId);
@@ -520,15 +460,13 @@ public partial class MainWindow : FluentWindow
             return;
         }
         try {
-            var project = _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 ");
-            if (!project.AddTask(task.Name)) {
+            if (!RequireProject().AddTask(task.Name)) {
                 return;
             }
             _expandedTaskName = task.Name;
             _pendingStartAttempt = null;
             RenderTaskPlan();
             _logger.Info($"已添加执行计划任务：{task.Name}。 ");
-            UpdateCommandAvailability();
         } catch (Exception exception) {
             HandleProjectEditError("添加执行计划任务失败", exception);
         }
@@ -619,8 +557,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
         try {
-            var project = _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 ");
-            if (!project.RemoveTask(task.Name)) {
+            if (!RequireProject().RemoveTask(task.Name)) {
                 return;
             }
             if (_expandedTaskName == task.Name) {
@@ -630,7 +567,6 @@ public partial class MainWindow : FluentWindow
             _pendingStartAttempt = null;
             RenderTaskPlan();
             _logger.Info($"已从执行计划移除任务：{task.Name}。 ");
-            UpdateCommandAvailability();
         } catch (Exception exception) {
             HandleProjectEditError("移除执行计划任务失败", exception);
         }
@@ -742,12 +678,10 @@ public partial class MainWindow : FluentWindow
         }
 
         try {
-            _ = (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
-                .SetSelectedCase(configurationId, optionName, caseName);
+            _ = RequireProject().SetSelectedCase(configurationId, optionName, caseName);
             _pendingStartAttempt = null;
             RenderTaskPlan();
             _logger.Info($"已保存 MaaNOP explicit case：option={optionName}。 ");
-            UpdateCommandAvailability();
         } catch (Exception exception) {
             HandleOperationError("保存 MaaNOP select/switch option 失败", exception);
             TryRenderTaskPlan();
@@ -769,8 +703,7 @@ public partial class MainWindow : FluentWindow
 
     private void RenderTaskPlan()
     {
-        var project = _projectPlan
-                      ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 ");
+        var project = RequireProject();
         _updatingOptionEditors = true;
         try {
             RenderConfigurationTabs();
@@ -786,7 +719,7 @@ public partial class MainWindow : FluentWindow
                 _projectConfigurationValid = false;
                 ShowProjectValidationError(exception);
             }
-            UpdatePlanSummary(project);
+            UpdateCommandAvailability();
         } finally {
             _updatingOptionEditors = false;
         }
@@ -981,8 +914,7 @@ public partial class MainWindow : FluentWindow
     private ProjectConfigurationView GetConfigurationOrEmpty(string taskName)
     {
         try {
-            return (_projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。"))
-                .GetConfiguration(taskName);
+            return RequireProject().GetConfiguration(taskName);
         } catch (Exception exception) when (exception is InvalidDataException or ArgumentException) {
             return new ProjectConfigurationView([], []);
         }
@@ -1049,7 +981,6 @@ public partial class MainWindow : FluentWindow
         dragHandle.Cursor = WpfCursors.SizeAll;
         dragHandle.PreviewMouseLeftButtonDown += PlanDragHandle_PreviewMouseLeftButtonDown;
         dragHandle.PreviewMouseMove += PlanDragHandle_PreviewMouseMove;
-        dragHandle.PreviewKeyDown += PlanDragHandle_PreviewKeyDown;
         BindConfigurationEditable(dragHandle);
         header.Children.Add(dragHandle);
 
@@ -1368,31 +1299,6 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void PlanDragHandle_PreviewKeyDown(object sender, WpfKeyEventArgs e)
-    {
-        if (!CanEditConfiguration || (Keyboard.Modifiers & ModifierKeys.Alt) == 0
-            || sender is not WpfButton { Tag: ProjectTaskChoice task }
-            || e.Key is not (Key.Up or Key.Down)) {
-            return;
-        }
-        var project = _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 ");
-        var currentIndex = project.SelectedTaskNames.ToList().IndexOf(task.Name);
-        var targetIndex = e.Key == Key.Up ? currentIndex - 1 : currentIndex + 1;
-        if (targetIndex < 0 || targetIndex >= project.SelectedTaskNames.Count) {
-            return;
-        }
-        try {
-            _expandedTaskName = null;
-            _ = project.MoveTask(task.Name, targetIndex);
-            _pendingStartAttempt = null;
-            RenderTaskPlan();
-            UpdateCommandAvailability();
-            e.Handled = true;
-        } catch (Exception exception) {
-            HandleProjectEditError("调整执行计划顺序失败", exception);
-        }
-    }
-
     private void PlanItemsPanel_DragOver(object sender, WpfDragEventArgs e)
     {
         if (!e.Data.GetDataPresent(PlanItemDragDataFormat)) {
@@ -1414,7 +1320,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
         try {
-            var project = _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。 ");
+            var project = RequireProject();
             var currentIndex = project.SelectedTaskNames.ToList().IndexOf(taskName);
             var boundary = CalculateDropBoundary(e.GetPosition(PlanItemsPanel).Y);
             var targetIndex = boundary > currentIndex ? boundary - 1 : boundary;
@@ -1425,7 +1331,6 @@ public partial class MainWindow : FluentWindow
                 _logger.Info($"已调整执行计划顺序：{taskName} -> {targetIndex}。 ");
             }
             RenderTaskPlan();
-            UpdateCommandAvailability();
             e.Effects = WpfDragDropEffects.Move;
             e.Handled = true;
         } catch (Exception exception) {
@@ -1463,8 +1368,6 @@ public partial class MainWindow : FluentWindow
             indicator.Background = WpfBrushes.Transparent;
         }
     }
-
-    private void UpdatePlanSummary(ProjectPlanModule project) => UpdateCommandAvailability();
 
     private void HandleProjectEditError(string operation, Exception exception)
     {
@@ -1560,8 +1463,10 @@ public partial class MainWindow : FluentWindow
             $"已加载 MaaNOP Project Interface：{project.ProjectName} {project.ProjectVersion}；"
             + $"interfaceDigest={project.SourceInterfaceDigest}；"
             + $"runtimeProfileDigest={project.RuntimeProfileDigest}。 ");
-        UpdateCommandAvailability();
     }
+
+    private ProjectPlanModule RequireProject() =>
+        _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。");
 
     private void ShowProjectUnavailableState(
         string emptyStateTitle,
@@ -1597,27 +1502,8 @@ public partial class MainWindow : FluentWindow
             workerEntry.Message);
     }
 
-    internal static void WriteWorkerDiagnosticLog(AppLogger logger, WorkerLogEntry entry)
-    {
-        var message = $"Worker #{entry.Sequence} [{entry.Source}] {entry.Message}";
-        switch (ParseWorkerLogLevel(entry.Level)) {
-            case LogLevel.Critical:
-                logger.Critical(message);
-                break;
-            case LogLevel.Error:
-                logger.Error(message);
-                break;
-            case LogLevel.Warn:
-                logger.Warn(message);
-                break;
-            case LogLevel.Debug:
-                logger.Debug(message);
-                break;
-            default:
-                logger.Info(message);
-                break;
-        }
-    }
+    internal static void WriteWorkerDiagnosticLog(AppLogger logger, WorkerLogEntry entry) =>
+        logger.Write(ParseWorkerLogLevel(entry.Level), $"Worker #{entry.Sequence} [{entry.Source}] {entry.Message}");
 
     private void AddRunLogEntry(WorkerLogEntry workerEntry)
     {
@@ -1656,7 +1542,6 @@ public partial class MainWindow : FluentWindow
         }
 
         _workerSnapshot = snapshot;
-        UpdateWorkerPresentation(snapshot);
         UpdateCommandAvailability();
         UpdatePreviewPolling();
     }
@@ -1727,9 +1612,7 @@ public partial class MainWindow : FluentWindow
         if (!_exitInProgress && !_environmentPreparationFailed && !preparing && IsVisible
             && HomeView.Visibility == Visibility.Visible
             && (PreviewCardContent.Visibility == Visibility.Visible || PreviewOverlay.Visibility == Visibility.Visible)
-            && _sessionSnapshot.State is ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden
-            && _workerSnapshot.Observation == WorkerObservation.Connected && _workerSnapshot.SnapshotFresh
-            && worker is { WorkerState: WorkerState.Ready }
+            && SessionConnected && WorkerFresh && worker is { WorkerState: WorkerState.Ready }
             && worker.ChildSessionId == _sessionSnapshot.ChildSessionId) {
             workerId = worker.WorkerInstanceId;
             return true;
@@ -1882,11 +1765,6 @@ public partial class MainWindow : FluentWindow
         _ => LogLevel.Info
     };
 
-    private void UpdateWorkerPresentation(WorkerCoordinatorSnapshot snapshot)
-    {
-        UpdateCommandAvailability();
-    }
-
     private void LogListBox_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         if (e.OriginalSource is ScrollViewer scrollViewer && ReferenceEquals(sender, HomeLogListBox)) {
@@ -1907,11 +1785,8 @@ public partial class MainWindow : FluentWindow
     private bool IsLogNearTop()
     {
         _homeLogScrollViewer ??= FindVisualChild<ScrollViewer>(HomeLogListBox);
-        return IsScrollViewerNearTop(_homeLogScrollViewer);
+        return _homeLogScrollViewer is null || _homeLogScrollViewer.VerticalOffset <= 0.1;
     }
-
-    private static bool IsScrollViewerNearTop(ScrollViewer? scrollViewer) =>
-        scrollViewer is null || scrollViewer.VerticalOffset <= 0.1;
 
     private void ScrollLogsToLatest()
     {
@@ -1946,63 +1821,42 @@ public partial class MainWindow : FluentWindow
         _workerSnapshot.Observation is WorkerObservation.ChildSessionEnded or WorkerObservation.WorkerExited
             ? null : _workerSnapshot.WorkerSnapshot;
 
-    private PrimaryActionState DerivePrimaryAction()
-    {
-        var state = _sessionSnapshot.State;
-        var canStartCommand = !_busy && !_exitInProgress
-            && state is not ChildSessionState.Connecting && state is not ChildSessionState.Disconnecting;
-        var projectReady = _projectPlan is not null;
-        var taskCount = _projectPlan?.SelectedTaskNames.Count ?? 0;
+    // No busy operation, exit, or session connect/disconnect is in progress.
+    private bool CanRunCommand => !_busy && !_exitInProgress
+        && _sessionSnapshot.State is not (ChildSessionState.Connecting or ChildSessionState.Disconnecting);
 
-        if (!projectReady || taskCount == 0) {
-            return new PrimaryActionState(PrimaryActionMode.ConfigureTasks, canStartCommand);
-        }
+    private bool SessionConnected =>
+        _sessionSnapshot.State is ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden;
 
-        var worker = RuntimeControlWorker;
-        var workerIdleFresh = _workerSnapshot.Observation == WorkerObservation.Connected
-            && _workerSnapshot.SnapshotFresh
-            && worker is not null && worker.ActiveRun is null && worker.RunState == RunState.Idle;
-        var selectedTaskValid = _projectConfigurationValid;
-        var environmentReady = workerIdleFresh && worker!.WorkerState == WorkerState.Ready && projectReady
-            && selectedTaskValid && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
-        var active = worker?.ActiveRun;
-        var hasActiveRun = active is not null;
-        var runningRun = active?.State == RunState.Running
-            && active.Items.Any(item => item.State is PlanItemState.Starting or PlanItemState.Running);
-        var readyToStart = !hasActiveRun && environmentReady
-            && state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
+    private bool WorkerFresh => _workerSnapshot is { Observation: WorkerObservation.Connected, SnapshotFresh: true };
 
-        if (runningRun) {
-            var canStop = canStartCommand && _workerSnapshot.Observation == WorkerObservation.Connected
-                && _workerSnapshot.SnapshotFresh;
-            return new PrimaryActionState(PrimaryActionMode.Stop, canStop);
-        }
-        if (hasActiveRun) {
-            return new PrimaryActionState(PrimaryActionMode.Transition, false);
-        }
-        if (readyToStart) {
-            return new PrimaryActionState(PrimaryActionMode.Start, canStartCommand);
-        }
-        var canPrepare = canStartCommand && projectReady && !environmentReady;
-        return new PrimaryActionState(PrimaryActionMode.Prepare, canPrepare);
-    }
+    private static bool IsStoppable(RunSnapshot run) => run.State == RunState.Running
+        && run.Items.Any(item => item.State is PlanItemState.Starting or PlanItemState.Running);
+
+    // The plan and runtime state allow a run; CanStartRun additionally applies the temporary command gate.
+    private bool IsRunReadyToStart => _projectPlan is { SelectedTaskNames.Count: > 0 } project
+        && _projectConfigurationValid && SessionConnected && WorkerFresh
+        && RuntimeControlWorker is { ActiveRun: null, RunState: RunState.Idle, WorkerState: WorkerState.Ready } worker
+        && worker.RuntimeProfileDigest == project.RuntimeProfileDigest;
+
+    private bool CanStartRun => CanRunCommand && IsRunReadyToStart;
+
+    private bool CanStopRun => CanRunCommand && WorkerFresh && _projectPlan is { SelectedTaskNames.Count: > 0 }
+        && RuntimeControlWorker?.ActiveRun is { } run && IsStoppable(run);
 
     private void UpdateCommandAvailability()
     {
         ReevaluateOnboarding();
         var state = _sessionSnapshot.State;
-        var canStartCommand = !_busy && !_exitInProgress
-            && state is not ChildSessionState.Connecting && state is not ChildSessionState.Disconnecting;
-
-        var sessionConnected = state is (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden);
-        var hasSession = _sessionSnapshot.ChildSessionId is not null;
+        var canRunCommand = CanRunCommand;
+        var sessionConnected = SessionConnected;
 
         HomeDesktopVisibilityButton.Tag = state == ChildSessionState.ConnectedVisible ? "True" : "False";
         if (sessionConnected) {
             HomeDesktopVisibilityText.Text = state == ChildSessionState.ConnectedVisible
                 ? "隐藏分身"
                 : "显示分身";
-            HomeDesktopVisibilityButton.IsEnabled = canStartCommand;
+            HomeDesktopVisibilityButton.IsEnabled = canRunCommand;
         } else {
             HomeDesktopVisibilityText.Text = "显示分身";
             HomeDesktopVisibilityButton.IsEnabled = false;
@@ -2010,52 +1864,21 @@ public partial class MainWindow : FluentWindow
 
         HomeDesktopVisibilityButton.ToolTip = HomeDesktopVisibilityText.Text;
         AutomationProperties.SetName(HomeDesktopVisibilityButton, HomeDesktopVisibilityText.Text);
-        HomeTerminateSessionMenuItem.IsEnabled = canStartCommand && hasSession;
-
-        HomeSessionHintText.Visibility = hasSession ? Visibility.Collapsed : Visibility.Visible;
-
-        if (hasSession && sessionConnected) {
-            HomeSessionStatusPanel.Visibility = Visibility.Visible;
-            HomeSessionStatusText.Text = $"Session {_sessionSnapshot.ChildSessionId}";
-            HomeSessionStatusIndicator.Fill = (WpfBrush)FindResource("Brush.Success");
-        } else if (_sessionSnapshot.State is ChildSessionState.Connecting or ChildSessionState.Existing
-            or ChildSessionState.Disconnecting or ChildSessionState.Faulted) {
-            HomeSessionStatusPanel.Visibility = Visibility.Visible;
-            HomeSessionStatusText.Text = GetStateBadgeText(_sessionSnapshot.State);
-            HomeSessionStatusIndicator.Fill = (WpfBrush)FindResource(GetSessionStatusBrushKey(_sessionSnapshot.State));
-        } else {
-            HomeSessionStatusPanel.Visibility = Visibility.Collapsed;
-        }
 
         var projectReady = _projectPlan is not null;
-        var worker = RuntimeControlWorker;
-        UpdateRuntimeHeader(canStartCommand, projectReady, sessionConnected);
+        UpdateRuntimeHeader(canRunCommand, projectReady, sessionConnected);
         var editable = CanEditConfiguration;
         SetValue(ConfigurationEditableProperty, editable);
-        var active = worker?.ActiveRun;
         ConfigurationLockBadge.Visibility = projectReady && !editable ? Visibility.Visible : Visibility.Collapsed;
-        ConfigurationLockText.Text = active is not null
+        ConfigurationLockText.Text = RuntimeControlWorker?.ActiveRun is not null
             || _busy && _operationStatus.StartsWith("正在开始任务", StringComparison.Ordinal)
                 ? "任务运行中，配置已锁定" : "运行环境处理中，配置暂时锁定";
-        var isRunning = active?.State is RunState.Starting or RunState.Running;
-        if (isRunning) {
-            if (!_elapsedTimer.IsEnabled) {
-                _elapsedTimer.Start();
-            }
-        } else {
-            if (_elapsedTimer.IsEnabled) {
-                _elapsedTimer.Stop();
-            }
-        }
-
-        UpdateRunContextPresentation();
     }
 
-    private void UpdateRuntimeHeader(bool canStartCommand, bool projectReady, bool sessionConnected)
+    private void UpdateRuntimeHeader(bool canRunCommand, bool projectReady, bool sessionConnected)
     {
         var worker = RuntimeControlWorker;
         var active = worker?.ActiveRun;
-        var primary = DerivePrimaryAction();
         var preparing = _busy && _operationStatus.StartsWith("正在准备运行环境", StringComparison.Ordinal)
             || _sessionSnapshot.State is ChildSessionState.Connecting or ChildSessionState.Existing
             || _workerSnapshot.Observation == WorkerObservation.WorkerStarting
@@ -2065,8 +1888,7 @@ public partial class MainWindow : FluentWindow
                 or WorkerObservation.WorkerRecoveryConflict
             || worker?.WorkerState == WorkerState.Faulted;
         var runFaulted = active is null && worker?.LastRun?.State == RunState.Failed;
-        var ready = sessionConnected && projectReady && _workerSnapshot.Observation == WorkerObservation.Connected
-            && _workerSnapshot.SnapshotFresh && worker?.WorkerState == WorkerState.Ready
+        var ready = sessionConnected && projectReady && WorkerFresh && worker?.WorkerState == WorkerState.Ready
             && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
         var running = active?.State is RunState.Starting or RunState.Running or RunState.Stopping;
         var faulted = !running && (runtimeFaulted || runFaulted);
@@ -2078,165 +1900,20 @@ public partial class MainWindow : FluentWindow
 
         PrepareEnvironmentButton.Visibility = !transitioning && !running && !faulted && !ready
             ? Visibility.Visible : Visibility.Collapsed;
-        PrepareEnvironmentButton.IsEnabled = canStartCommand && projectReady;
+        PrepareEnvironmentButton.IsEnabled = canRunCommand && projectReady;
         RetryEnvironmentButton.Visibility = !transitioning && faulted ? Visibility.Visible : Visibility.Collapsed;
-        RetryEnvironmentButton.IsEnabled = canStartCommand && projectReady;
+        RetryEnvironmentButton.IsEnabled = canRunCommand && projectReady;
         StartTaskHeaderButton.Visibility = !transitioning && !running && ready && !faulted
             ? Visibility.Visible : Visibility.Collapsed;
-        StartTaskHeaderButton.IsEnabled = primary is { Mode: PrimaryActionMode.Start, CanExecute: true };
+        StartTaskHeaderButton.IsEnabled = CanStartRun;
         StopTaskHeaderButton.Visibility = !transitioning && active?.State == RunState.Running
             ? Visibility.Visible : Visibility.Collapsed;
-        StopTaskHeaderButton.IsEnabled = primary is { Mode: PrimaryActionMode.Stop, CanExecute: true };
+        StopTaskHeaderButton.IsEnabled = CanStopRun;
         RuntimeHeaderProgressRing.Visibility = transitioning ? Visibility.Visible : Visibility.Collapsed;
         var progressText = stopping ? "正在停止任务" : starting ? "正在开始任务" : "正在准备运行环境";
         RuntimeHeaderProgressRing.ToolTip = progressText;
         System.Windows.Automation.AutomationProperties.SetName(RuntimeHeaderProgressRing, progressText);
     }
-
-    private void ElapsedTimer_Tick(object? sender, EventArgs e) => UpdateRunContextPresentation();
-
-    private void UpdateRunContextPresentation()
-    {
-        var primary = DerivePrimaryAction();
-        var taskCount = _projectPlan?.SelectedTaskNames.Count ?? 0;
-        var projectReady = _projectPlan is not null;
-        var worker = RuntimeControlWorker;
-        var activeRun = worker?.ActiveRun;
-
-        if (_busy) {
-            HomeRunContextSubText.Text = "当前操作正在进行，请稍候。";
-            return;
-        }
-
-        switch (primary.Mode) {
-            case PrimaryActionMode.ConfigureTasks:
-                HomeRunContextTitleText.Text = "执行计划为空";
-                HomeRunContextSubText.Text = !projectReady
-                    ? "MaaNOP 项目尚未加载，请确认安装目录包含 interface.json。"
-                    : "请先配置需要执行的任务";
-                break;
-
-            case PrimaryActionMode.Prepare:
-                HomeRunContextTitleText.Text = $"执行计划已配置 · {taskCount} 个任务";
-                HomeRunContextSubText.Text = "请先准备运行环境。";
-                break;
-
-            case PrimaryActionMode.Start:
-                HomeRunContextTitleText.Text = "运行环境已就绪";
-                HomeRunContextSubText.Text = "请登录游戏后开始任务";
-                break;
-
-            case PrimaryActionMode.Stop:
-                if (activeRun is not null) {
-                    var (curIdx, total, label) = GetCurrentRunProgress(activeRun, _projectPlan);
-                    var elapsed = GetRunElapsedTime(activeRun);
-                    HomeRunContextTitleText.Text = $"正在执行 {curIdx} / {total}";
-                    HomeRunContextSubText.Text = $"{label} · 已运行 {FormatElapsedTime(elapsed)}";
-                } else {
-                    HomeRunContextTitleText.Text = "任务正在运行";
-                    HomeRunContextSubText.Text = "可随时停止任务。";
-                }
-                break;
-
-            case PrimaryActionMode.Transition:
-                if (activeRun?.State == RunState.Starting) {
-                    HomeRunContextTitleText.Text = "正在启动任务…";
-                    HomeRunContextSubText.Text = "正在初始化运行环境与 Python 代理。";
-                } else if (activeRun?.State == RunState.Stopping) {
-                    HomeRunContextTitleText.Text = "正在停止任务…";
-                    HomeRunContextSubText.Text = "正在等待 Worker 清理与确认。";
-                } else {
-                    HomeRunContextTitleText.Text = "任务状态切换中";
-                    HomeRunContextSubText.Text = "请稍候。";
-                }
-                break;
-        }
-    }
-
-    internal static (int CurrentIndex, int TotalCount, string TaskLabel) GetCurrentRunProgress(
-        RunSnapshot run, ProjectPlanModule? projectPlan)
-    {
-        var total = run.Items.Count > 0 ? run.Items.Count : (projectPlan?.SelectedTaskNames.Count ?? 1);
-        var item = GetCurrentPlanItem(run);
-        var currentIndex = 1;
-        if (item is not null) {
-            var index = run.Items.ToList().IndexOf(item);
-            if (index >= 0) {
-                currentIndex = index + 1;
-            } else if (run.CurrentPlanItemIndex is int idx && idx >= 0) {
-                currentIndex = idx + 1;
-            }
-        } else if (run.CurrentPlanItemIndex is int idx && idx >= 0) {
-            currentIndex = idx + 1;
-        }
-
-        currentIndex = Math.Clamp(currentIndex, 1, Math.Max(1, total));
-        var label = item?.TaskLabel;
-        if (string.IsNullOrWhiteSpace(label)) {
-            var taskName = item?.TaskName ?? projectPlan?.SelectedTaskNames.ElementAtOrDefault(currentIndex - 1);
-            if (taskName is not null) {
-                label = projectPlan?.Tasks.FirstOrDefault(t => t.Name == taskName)?.Label ?? taskName;
-            }
-        }
-        label = string.IsNullOrWhiteSpace(label) ? "当前任务" : label;
-        return (currentIndex, total, label);
-    }
-
-    internal static string FormatElapsedTime(TimeSpan elapsed) =>
-        $"{(int)elapsed.TotalHours:D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
-
-    private static TimeSpan GetRunElapsedTime(RunSnapshot? run)
-    {
-        if (run is null) {
-            return TimeSpan.Zero;
-        }
-        var startedAt = run.StartedAtUtc ?? run.CreatedAtUtc;
-        var now = DateTime.UtcNow;
-        return now > startedAt ? now - startedAt : TimeSpan.Zero;
-    }
-
-    private static PlanItemSnapshot? GetCurrentPlanItem(RunSnapshot run)
-    {
-        if (run.CurrentPlanItemId is Guid currentId) {
-            return run.Items.FirstOrDefault(item => item.PlanItemId == currentId);
-        }
-
-        if (run.CurrentPlanItemIndex is int currentIndex
-            && currentIndex >= 0 && currentIndex < run.Items.Count) {
-            return run.Items[currentIndex];
-        }
-
-        return run.Items.Count == 1 ? run.Items[0] : null;
-    }
-
-    private static string GetPlanItemStateText(PlanItemState state) => state switch {
-        PlanItemState.Pending => "等待执行",
-        PlanItemState.Starting => "正在启动",
-        PlanItemState.Running => "正在执行",
-        PlanItemState.Succeeded => "已完成",
-        PlanItemState.Failed => "执行失败",
-        PlanItemState.Cancelled => "已停止",
-        _ => "状态未知"
-    };
-
-    private static string GetSessionStatusBrushKey(ChildSessionState state) => state switch {
-        ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden => "Brush.Success",
-        ChildSessionState.Connecting or ChildSessionState.Existing => "Brush.Primary",
-        ChildSessionState.Disconnecting => "Brush.Warning",
-        ChildSessionState.Faulted => "Brush.Error",
-        _ => "Brush.Text.Muted"
-    };
-
-    private static string GetStateBadgeText(ChildSessionState state) => state switch {
-        ChildSessionState.NotRunning => "未运行",
-        ChildSessionState.Existing => "已检测",
-        ChildSessionState.Connecting => "连接中",
-        ChildSessionState.ConnectedVisible => "可见",
-        ChildSessionState.ConnectedHidden => "已隐藏",
-        ChildSessionState.Disconnecting => "正在结束",
-        ChildSessionState.Faulted => "连接失败",
-        _ => "未知状态"
-    };
 
     private void ShowActionableError(string title, Exception exception, string recovery, bool offerLogDirectory)
     {

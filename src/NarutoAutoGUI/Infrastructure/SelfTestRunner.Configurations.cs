@@ -199,6 +199,15 @@ internal static partial class SelfTestRunner
         if (input.Text != "978-," || Hint() is null || !RevealDraft()) {
             throw new InvalidOperationException("未修正的非法输入在重绘后必须保留，并阻止开始任务。");
         }
+        SetOnboardingField(window, "_expandedTaskName", null!);
+        InvokeOnboarding(window, "RenderTaskPlan");
+        var draftSummary = ConfigurationDescendants(items).OfType<System.Windows.Documents.Run>()
+            .SingleOrDefault(run => run.Text == "Server：978-,");
+        if (draftSummary?.Foreground != window.FindResource("Brush.Error.Foreground")) {
+            throw new InvalidOperationException("折叠摘要必须以错误色显示未保存的非法输入，而非已保存值。");
+        }
+        SetOnboardingField(window, "_expandedTaskName", "RealTask");
+        InvokeOnboarding(window, "RenderTaskPlan");
         input = Server();
         using (var source = new System.Windows.Interop.HwndSource(
             new System.Windows.Interop.HwndSourceParameters("self-test"))) {
@@ -251,9 +260,61 @@ internal static partial class SelfTestRunner
             }
             SetOnboardingField(window, "_expandedTaskName", null!);
             InvokeOnboarding(window, "RenderTaskPlan");
-            if (!ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBlock>()
-                .Any(item => item.Text.StartsWith("ServerRange：978-1012 · Retry count：3", StringComparison.Ordinal))) {
+            if (!ConfigurationDescendants(items).OfType<System.Windows.Documents.Run>()
+                .Any(run => run.Text == "ServerRange：978-1012")) {
                 throw new InvalidOperationException("option 与 input label 均为空时，折叠摘要应显示 option 名称。");
+            }
+        } finally {
+            window.AllowClose();
+            window.Close();
+            Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
+        }
+    }
+
+    private static void VerifyDraftSummarySync(AppLogger logger, string testDirectory)
+    {
+        var projectDirectory = CreateProjectFixture(Path.Combine(testDirectory, "draft-summary"));
+        var interfacePath = Path.Combine(projectDirectory, "interface.json");
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(interfacePath))!;
+        var other = json["task"]![0]!.DeepClone();
+        other["name"] = "OtherTask";
+        json["task"]!.AsArray().Add(other);
+        File.WriteAllText(interfacePath, json.ToJsonString());
+        using var session = new ChildSession.ChildSessionManager(logger);
+        var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "draft-summary-state"),
+            "unused.exe", $"NarutoAutoGUI.DraftSummary.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
+        var window = new Views.MainWindow(logger, session, new ChildSession.ChildSessionProgramService(logger),
+            coordinator, operation => operation(), () => Task.CompletedTask);
+        try {
+            var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "config.json"));
+            project.AddTask("OtherTask");
+            var items = (System.Windows.DependencyObject)window.FindName("PlanItemsPanel");
+            SetOnboardingField(window, "_projectPlan", project);
+            SetOnboardingField(window, "_expandedTaskName", "RealTask");
+            InvokeOnboarding(window, "RenderTaskPlan");
+            System.Windows.Documents.Run? OtherSummary(string text) => ConfigurationDescendants(items)
+                .OfType<System.Windows.Documents.Run>().SingleOrDefault(run => run.Text == text);
+            var input = ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
+                .Single(item => System.Windows.Automation.AutomationProperties.GetName(item) == "Server");
+            input.Text = "978-,";
+            input.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(
+                System.Windows.Input.Keyboard.PrimaryDevice, 0, input, null) {
+                RoutedEvent = System.Windows.Input.Keyboard.LostKeyboardFocusEvent
+            });
+            if (OtherSummary("Server：978-,")?.Foreground != window.FindResource("Brush.Error.Foreground")) {
+                throw new InvalidOperationException("共享参数的非法草稿必须立即以错误色同步到其他折叠任务摘要。");
+            }
+            using (var source = new System.Windows.Interop.HwndSource(
+                new System.Windows.Interop.HwndSourceParameters("self-test"))) {
+                input.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,
+                    source, 0, System.Windows.Input.Key.Escape) {
+                    RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent
+                });
+            }
+            if (OtherSummary("Server：978-1012") is not { } restored
+                || restored.Foreground == window.FindResource("Brush.Error.Foreground")
+                || !ConfigurationDescendants(items).Contains(input)) {
+                throw new InvalidOperationException("Esc 必须立即恢复其他摘要的已保存值，且不重建正在编辑的输入框。");
             }
         } finally {
             window.AllowClose();

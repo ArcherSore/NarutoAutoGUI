@@ -274,6 +274,7 @@ public partial class MainWindow
                 var message = tag.PatternMessage ?? problem;
                 _invalidInputDrafts[tag.Key] = (textBox.Text, message);
                 ShowOptionInputError(textBox, tag.Error, message);
+                RefreshParameterSummaries();
                 _logger.Info($"MaaNOP input 未通过校验，未保存：option={tag.OptionName}，input={tag.InputName}。 ");
                 return false;
             }

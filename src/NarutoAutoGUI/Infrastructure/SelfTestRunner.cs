@@ -37,6 +37,7 @@ internal static partial class SelfTestRunner
             VerifyInvalidConfigurationIsolation(testDirectory, projectDirectory);
             VerifyConfigurationTabs(logger, testDirectory, projectDirectory);
             VerifyBlankParameterLabels(logger, testDirectory);
+            VerifyDraftSummarySync(logger, testDirectory);
             VerifyProjectPlan(testDirectory, projectDirectory);
             VerifyTaskCatalogVariants(testDirectory, projectDirectory);
             VerifyTaskGroups(testDirectory, projectDirectory);

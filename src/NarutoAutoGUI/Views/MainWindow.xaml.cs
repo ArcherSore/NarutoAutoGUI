@@ -88,6 +88,7 @@ public partial class MainWindow : FluentWindow
     private IInputElement? _descriptionDrawerPreviousFocus;
     private readonly List<Border> _dropIndicators = [];
     private readonly Dictionary<string, Border> _planItemContainers = new(StringComparer.Ordinal);
+    private readonly List<(TextBlock Summary, ProjectConfigurationView Configuration)> _planItemSummaries = [];
 
     private readonly Dictionary<(Guid, string, string), (string Text, string Message)> _invalidInputDrafts = new();
     private readonly Dictionary<(Guid, string, string), WpfTextBox> _optionInputEditors = new();
@@ -660,6 +661,7 @@ public partial class MainWindow : FluentWindow
         editor.Text = tag.Value;
         editor.SelectAll();
         ShowOptionInputError(editor, tag.Error, null);
+        RefreshParameterSummaries();
         e.Handled = true;
     }
 
@@ -873,6 +875,7 @@ public partial class MainWindow : FluentWindow
         PlanItemsPanel.Children.Clear();
         _dropIndicators.Clear();
         _planItemContainers.Clear();
+        _planItemSummaries.Clear();
         _taskDescriptionButtons.Clear();
         _optionInputEditors.Clear();
         EmptyPlanPanel.Visibility = project.SelectedTaskNames.Count == 0
@@ -950,8 +953,7 @@ public partial class MainWindow : FluentWindow
             layout.Children.Add(accentLine);
         }
 
-        var summary = expanded ? string.Empty : CreateParameterSummary(configuration);
-        layout.Children.Add(CreatePlanItemHeader(task, expanded, hasParameters, summary));
+        layout.Children.Add(CreatePlanItemHeader(task, expanded, hasParameters, configuration));
 
         if (expanded && hasParameters) {
             var editor = CreateParameterEditor(configuration);
@@ -969,7 +971,8 @@ public partial class MainWindow : FluentWindow
         return container;
     }
 
-    private Grid CreatePlanItemHeader(ProjectTaskChoice task, bool expanded, bool hasParameters, string summary)
+    private Grid CreatePlanItemHeader(ProjectTaskChoice task, bool expanded, bool hasParameters,
+        ProjectConfigurationView configuration)
     {
         var header = new Grid {
             MinHeight = 44,
@@ -998,7 +1001,8 @@ public partial class MainWindow : FluentWindow
         title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         title.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        if (summary.Length != 0) {
+        var showSummary = !expanded && hasParameters;
+        if (showSummary) {
             label.TextWrapping = TextWrapping.NoWrap;
             title.Children.Add(label);
             var separator = new Border {
@@ -1012,19 +1016,20 @@ public partial class MainWindow : FluentWindow
             Grid.SetColumn(separator, 1);
             title.Children.Add(separator);
             var summaryText = new TextBlock {
-                Text = summary,
                 FontWeight = FontWeights.Normal,
                 Foreground = (WpfBrush)FindResource("Brush.Text.Secondary"),
                 TextWrapping = TextWrapping.NoWrap,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            _planItemSummaries.Add((summaryText, configuration));
+            FillParameterSummary(summaryText, configuration);
             Grid.SetColumn(summaryText, 2);
             title.Children.Add(summaryText);
         }
         var main = new WpfButton {
             Tag = task,
-            Content = summary.Length == 0 ? label : title,
+            Content = showSummary ? title : label,
             Style = (Style)FindResource("PlanHeaderButtonStyle")
         };
         var state = hasParameters ? (expanded ? "已展开" : "已折叠") : (expanded ? "已选中" : "未选中");
@@ -1053,10 +1058,37 @@ public partial class MainWindow : FluentWindow
         return header;
     }
 
-    private static string CreateParameterSummary(ProjectConfigurationView configuration) =>
-        string.Join(" · ", EnumerateFields(configuration).Select(field => field.Input is { } input
-            ? $"{field.Label}：{input.Value}"
-            : $"{field.Label}：{field.Option.Cases.Single(item => item.Name == field.Option.SelectedCase).Label}"));
+    // An unfixed invalid draft replaces the saved value in red, so folded cards agree with the field and Start block.
+    private void FillParameterSummary(TextBlock summary, ProjectConfigurationView configuration)
+    {
+        var configurationId = RequireProject().ActiveConfigurationId;
+        summary.Inlines.Clear();
+        foreach (var field in EnumerateFields(configuration)) {
+            if (summary.Inlines.Count != 0) {
+                summary.Inlines.Add(new System.Windows.Documents.Run(" · "));
+            }
+            var run = new System.Windows.Documents.Run();
+            if (field.Input is not { } input) {
+                var selected = field.Option.Cases.Single(item => item.Name == field.Option.SelectedCase);
+                run.Text = $"{field.Label}：{selected.Label}";
+            } else if (_invalidInputDrafts.TryGetValue(
+                (configurationId, field.Option.Name, input.Name), out var draft)) {
+                run.Text = $"{field.Label}：{draft.Text}";
+                run.Foreground = (WpfBrush)FindResource("Brush.Error.Foreground");
+            } else {
+                run.Text = $"{field.Label}：{input.Value}";
+            }
+            summary.Inlines.Add(run);
+        }
+    }
+
+    // Drafts change without saving, so only the folded summaries are refreshed; the focused editor stays in place.
+    private void RefreshParameterSummaries()
+    {
+        foreach (var (summary, configuration) in _planItemSummaries) {
+            FillParameterSummary(summary, configuration);
+        }
+    }
 
     private FrameworkElement CreateParameterEditor(ProjectConfigurationView configuration)
     {

@@ -35,7 +35,8 @@
 .\src\NarutoAutoGUI\scripts\test-automated.ps1
 ```
 
-详细说明见 [开发文档](src/NarutoAutoGUI/README.md)与[架构设计](docs/ARCHITECTURE.md)。
+开发入口：[领域术语](CONTEXT.md)、[当前架构](docs/ARCHITECTURE.md)、[架构决策](docs/adr/)、
+[GUI 开发说明](src/NarutoAutoGUI/README.md)。当前工作与验收条件在 [GitHub Issues](https://github.com/ArcherSore/NarutoAutoGUI/issues)。
 
 ## 鸣谢
 

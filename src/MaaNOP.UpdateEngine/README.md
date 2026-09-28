@@ -8,7 +8,8 @@ Rust 1.98.1 MSVC 与 Cargo.lock 固定工具链/依赖，Windows CRT 静态链�
 - 正式 baseline：`src/NarutoAutoGUI/scripts/build.ps1 -Locked`。
 - 开发 GUI：`src/NarutoAutoGUI/scripts/build-development.ps1 -Configuration Release`。
 - 自动化：`src/NarutoAutoGUI/scripts/test-automated.ps1`，含 GUI、Worker、进程适配、Rust tests 和 Clippy。
-- 完整包集成与实机边界见 `docs/UPDATER-V2-VALIDATION.md`。baseline 不包含 MaaNOP/Python。
+- 完整包集成和真实 Windows 验收条件见 [GitHub Issues](https://github.com/ArcherSore/NarutoAutoGUI/issues)；
+  本仓库的前端 baseline 不包含 MaaNOP/Python 项目内容。
 
 ## JSONL v1
 

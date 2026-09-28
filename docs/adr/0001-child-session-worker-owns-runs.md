@@ -1,3 +1,3 @@
-# Child Session Worker 独占并持有 MaaNOP Run
+# Child Session Worker 持有 MaaNOP Run
 
-NarutoAutoGUI 的正常执行链路固定为主 GUI → Child Session Worker → MaaFramework → MaaNOP，MFAAvalonia 仅作为人工诊断后备且不得与 Worker 并行执行。Worker 是运行状态的唯一真相来源：接受带唯一 Run ID 的启动后，即使主 GUI 崩溃或本机 IPC 断开也继续执行并保留有界日志，重连后通过 Run Snapshot 恢复观察；停止当前 Run 不退出 Worker、游戏或 Child Session。该保证不跨 Worker 进程退出。显式结束桌面分身时，有活动 Run 且 IPC 可用则先发出 `run.stop` 并做有界等待；若停止未确认，GUI 明确警告后仍按用户结束整个环境的意图继续 WTS Logoff。只有 WTS Logoff 失败才保持结束错误状态。
+MaaNOP 自动化由 Child Session 中的 Worker 执行并拥有权威 Run 状态，主 GUI 只负责提交意图和观察。若由 GUI 或 MFAAvalonia 直接持有任务，主桌面关闭、IPC 断线或 UI 生命周期就会牵连游戏自动化；独立 Worker 增加了进程通信和接纳成本，却让运行在 GUI 重启后仍可继续观察。此保证止于 Worker 进程退出，不承诺持久化作业恢复。

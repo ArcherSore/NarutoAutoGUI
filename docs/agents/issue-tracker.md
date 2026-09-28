@@ -1,51 +1,24 @@
-# 问题跟踪器：本地 Issues
+# Issue tracker: GitHub
 
-当前仓库暂时没有远端 GitHub Issues。`docs/issues/` 是本阶段问题、规格和切片工单的权威本地记录；不要运行 `gh issue`，也不要把本地文件描述成已经发布到远端。
+本仓库使用 [GitHub Issues](https://github.com/ArcherSore/NarutoAutoGUI/issues) 作为唯一问题跟踪器。spec、tickets、当前状态、未完成验收与后续工作均在此记录；仓库内不维护第二套 docs/issues/。
 
-如果未来配置了远端 GitHub Issues，需要先把本地文件迁移并补充 Issue 编号/链接，再启用下面的 GitHub 操作约定。
+## 操作
 
-下面的 GitHub 操作约定仅适用于未来启用远端 Issue 的情况。
+- 读取与列出：gh issue view <number> --comments；gh issue list --state open --json number,title,body,labels,comments。
+- 创建：gh issue create --title ... --body-file <path>。多行正文写入临时文件，不在命令行拼接正文。
+- 更新：gh issue edit <number> --add-label ... / --remove-label ...；进度与验收结果用评论补充。
+- 完成：验收条件满足后 gh issue close <number>，或在 PR/commit 中引用 Issue 关闭。
+- 仓库由当前 git remote 确定；在本仓库目录运行 gh。
+- 如有依赖，优先使用 GitHub 原生 issue blocking 关系；不可用时在票据中写明 Blocked by: #<number>。依赖只记录真正阻塞开工的工作。
 
-## 操作约定
+**PRs as a request surface: no.** 外部 PR 不自动加入 Issue 分诊队列。GitHub 的 Issue 与 PR 共用编号；单独的 #<number> 先确认对象类型。
 
-- **创建问题**：`gh issue create --title "..." --body "..."`。多行正文使用 `--body-file <path>`。
-- **读取问题**：`gh issue view <number> --comments`，同时获取标签，并根据需要使用 `jq` 筛选评论。
-- **列出问题**：`gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'`，并根据需要添加 `--label` 和 `--state` 筛选条件。
-- **评论问题**：`gh issue comment <number> --body "..."`
-- **添加或移除标签**：`gh issue edit <number> --add-label "..."` / `--remove-label "..."`
-- **关闭问题**：`gh issue close <number> --comment "..."`
+## 工程 skills
 
-仓库信息从 `git remote -v` 推断；在仓库克隆目录中运行时，`gh` 会自动完成此操作。
+- grill-with-docs 用于尚未决定的设计讨论；只把形成的领域术语写入 CONTEXT.md，符合标准的长期架构取舍写入 ADR。
+- to-spec 仅在工作需要跨多个会话时，将已决定的内容发布为单个 GitHub Issue；应用 ready-for-agent，不把 spec 存到 docs。
+- to-tickets 将跨会话工作拆成可独立演示的纵向切片，按依赖顺序发布 GitHub Issues。发布前按该 skill 的要求确认粒度与阻塞关系。完成的票据关闭。
+- 单个会话能完成的改动直接实施；tdd 依其测试边界和逐个 red→green 规则执行，不为每个改动生成 spec/tickets。
+- triage 的标签词汇见 [triage-labels.md](triage-labels.md)。需要真实 Windows 桌面或用户设备的验收用 ready-for-human。
 
-## 是否将拉取请求作为分诊入口
-
-**PRs as a request surface: no.**
-
-该行是供技能读取的机器配置，保持原样。若本仓库以后将外部拉取请求视为功能请求，可将 `no` 改为 `yes`。
-
-设置为 `yes` 后，拉取请求与问题使用相同的标签和状态，并通过对应的 `gh pr` 命令操作：
-
-- **读取拉取请求**：使用 `gh pr view <number> --comments` 读取详情，并使用 `gh pr diff <number>` 查看差异。
-- **列出待分诊的外部拉取请求**：运行 `gh pr list --state open --json number,title,body,labels,author,authorAssociation,comments`，只保留 `authorAssociation` 为 `CONTRIBUTOR`、`FIRST_TIME_CONTRIBUTOR` 或 `NONE` 的项目，排除 `OWNER`、`MEMBER` 和 `COLLABORATOR`。
-- **评论、添加标签或关闭**：分别使用 `gh pr comment`、`gh pr edit --add-label`、`gh pr edit --remove-label` 和 `gh pr close`。
-
-GitHub Issues 和拉取请求共用同一编号空间，因此单独出现的 `#42` 可能指向其中任意一种。先运行 `gh pr view 42`，若不存在，再运行 `gh issue view 42`。
-
-## 当技能要求“发布到问题跟踪器”时
-
-创建一个 GitHub Issue。
-
-## 当技能要求“获取相关工单”时
-
-运行 `gh issue view <number> --comments`。
-
-## Wayfinder 操作
-
-供 `/wayfinder` 使用。一个 **map** 是包含多个子问题工单的单一问题。
-
-- **Map**：使用标签 `wayfinder:map` 的单一问题，其正文包含 Notes、Decisions-so-far 和 Fog。创建命令为 `gh issue create --label wayfinder:map`。
-- **子工单**：作为 map 的 GitHub 子问题，通过子问题 API 使用 `gh api` 关联。如果仓库未启用子问题，则将子工单加入 map 正文的任务列表，并在子工单正文顶部写入 `Part of #<map>`。标签使用 `wayfinder:<type>`，其中类型为 `research`、`prototype`、`grilling` 或 `task`。认领后，将工单分配给负责推进的开发者。
-- **阻塞关系**：优先使用 GitHub 原生问题依赖关系，确保阻塞信息可在界面中查看。添加依赖边时运行 `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`。其中 `<blocker-db-id>` 是阻塞问题的数字数据库 ID，可通过 `gh api repos/<owner>/<repo>/issues/<n> --jq .id` 获取，不是问题编号或 `node_id`。GitHub 通过 `issue_dependencies_summary.blocked_by` 报告仍未关闭的阻塞项。如果依赖功能不可用，则在子工单正文顶部添加 `Blocked by: #<n>, #<n>`。所有阻塞问题关闭后，该工单视为解除阻塞。
-- **前沿查询**：列出 map 下仍然开放的子工单，排除存在开放阻塞项或已有负责人者，然后选择 map 顺序中的第一个。
-- **认领**：运行 `gh issue edit <n> --add-assignee @me`。这是会话中的第一次写操作。
-- **解决**：先运行 `gh issue comment <n> --body "<answer>"`，再运行 `gh issue close <n>`，最后在 map 的 Decisions-so-far 中追加上下文指针和链接。
+GitHub Issues 的关闭记录和 Git history 保存工作过程；长期文档只保留仍成立的系统知识。

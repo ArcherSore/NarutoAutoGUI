@@ -189,7 +189,7 @@ internal static class ProjectInterfaceLoader
             if (!names.Add(name)) {
                 throw new InvalidDataException($"重复 group.name：{name}。 ");
             }
-            var defaultExpand = false;
+            var defaultExpand = true;
             if (obj.TryGetProperty("default_expand", out var expand)) {
                 if (expand.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) {
                     throw new InvalidDataException($"{path}.default_expand 必须是 boolean。 ");

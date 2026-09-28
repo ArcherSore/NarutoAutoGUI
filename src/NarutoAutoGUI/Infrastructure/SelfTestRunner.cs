@@ -425,13 +425,15 @@ internal static partial class SelfTestRunner
                 ["name"] = "daily", ["label"] = "日常", ["description"] = "日常任务说明",
                 ["icon"] = "groups/daily.png", ["default_expand"] = false
             },
-            new JsonObject { ["name"] = "battle" });
+            new JsonObject { ["name"] = "battle" },
+            new JsonObject { ["name"] = "expanded", ["default_expand"] = true });
         root["task"]![0]!["group"] = new JsonArray("daily", "battle", "unknown");
         File.WriteAllText(interfacePath, root.ToJsonString());
         var grouped = ProjectPlanModule.Open(directory, configPath);
-        if (!grouped.Groups.Select(group => group.Name).SequenceEqual(["daily", "battle"])
+        if (!grouped.Groups.Select(group => group.Name).SequenceEqual(["daily", "battle", "expanded"])
             || grouped.Groups[0] != new ProjectTaskGroup("daily", "日常", "日常任务说明", "groups/daily.png", false)
-            || grouped.Groups[1] != new ProjectTaskGroup("battle", "battle", "", null, false)
+            || grouped.Groups[1] != new ProjectTaskGroup("battle", "battle", "", null, true)
+            || grouped.Groups[2] != new ProjectTaskGroup("expanded", "expanded", "", null, true)
             || !grouped.Tasks[0].Groups.SequenceEqual(["daily", "battle", "unknown"])) {
             throw new InvalidOperationException("group 展示元数据、默认值、顺序或多组引用丢失。");
         }

@@ -2,6 +2,14 @@
 
 ## 当前阶段
 
+2026-09-28：修复 d383d46 将 group.default_expand 缺省值改为 false 的协议回归；
+恢复未声明时默认展开，显式 true/false 继续生效。“可用任务”整体与合成“未分组”默认收起保持不变。
+分组自检覆盖缺省、显式 true/false，修复前失败、修复后 project-only 自检通过；Release 构建 0 警告/错误，
+GUI 1.8.0 自包含发布成功。备份后同步 GUI DLL 与 ProjectModel DLL 至 `D:\MaaNOP-win-x86_64-v2.4.0`，
+两项 SHA256 一致，config/interface 哈希未变；备份为 `artifacts/group-default-backup-20260928-094614/`。
+使用目标程序集读取实际 interface，AltAccount/LimitedEvent 的缺省展开值均由 false 恢复为 true。
+未启动真实窗口做交互验证；本次代码改动行符合 120 列要求，diff 空白检查通过。
+
 2026-09-27：按用户选定的七项调整首页 UI。已添加任务显示勾选与弱化文字，点击定位并短暂高亮执行计划卡片；
 运行锁只禁用编辑控件（添加、拖动、移除、参数、配置 Tab），滚动、展开与说明保持可用，禁用时明显淡化；
 任务标题旁显示锁定说明，锁定时当前 Tab 保留下划线。非法参数保留原文、字段标红并在下方提示格式，

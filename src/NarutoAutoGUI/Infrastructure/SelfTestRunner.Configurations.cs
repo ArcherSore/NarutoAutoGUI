@@ -223,6 +223,45 @@ internal static partial class SelfTestRunner
         }
     }
 
+    private static void VerifyBlankParameterLabels(AppLogger logger, string testDirectory)
+    {
+        var projectDirectory = CreateProjectFixture(Path.Combine(testDirectory, "blank-labels"));
+        var interfacePath = Path.Combine(projectDirectory, "interface.json");
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(interfacePath))!;
+        var option = json["option"]!["ServerRange"]!;
+        option["label"] = "";
+        option["inputs"]![0]!["label"] = "";
+        File.WriteAllText(interfacePath, json.ToJsonString());
+        using var session = new ChildSession.ChildSessionManager(logger);
+        var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "blank-labels-state"),
+            "unused.exe", $"NarutoAutoGUI.BlankLabels.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
+        var window = new Views.MainWindow(logger, session, new ChildSession.ChildSessionProgramService(logger),
+            coordinator, operation => operation(), () => Task.CompletedTask);
+        try {
+            var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "config.json"));
+            var items = (System.Windows.DependencyObject)window.FindName("PlanItemsPanel");
+            SetOnboardingField(window, "_projectPlan", project);
+            SetOnboardingField(window, "_expandedTaskName", "RealTask");
+            InvokeOnboarding(window, "RenderTaskPlan");
+            if (!ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
+                    .Any(item => System.Windows.Automation.AutomationProperties.GetName(item) == "ServerRange")
+                || !ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBlock>()
+                    .Any(item => item.Text == "ServerRange")) {
+                throw new InvalidOperationException("option 与 input label 均为空时，参数字段应显示 option 名称。");
+            }
+            SetOnboardingField(window, "_expandedTaskName", null!);
+            InvokeOnboarding(window, "RenderTaskPlan");
+            if (!ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBlock>()
+                .Any(item => item.Text.StartsWith("ServerRange：978-1012 · Retry count：3", StringComparison.Ordinal))) {
+                throw new InvalidOperationException("option 与 input label 均为空时，折叠摘要应显示 option 名称。");
+            }
+        } finally {
+            window.AllowClose();
+            window.Close();
+            Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
+        }
+    }
+
     private static IEnumerable<System.Windows.DependencyObject> ConfigurationDescendants(
         System.Windows.DependencyObject parent)
     {

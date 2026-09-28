@@ -104,6 +104,10 @@ public partial class MainWindow : FluentWindow
         internal (Guid, string, string) Key => (ConfigurationId, OptionName, InputName);
     }
 
+    // One parameter tile: an input of an input option, or a whole select/switch option.
+    private sealed record ParameterField(
+        ProjectOptionEditor Option, ProjectInputEditor? Input, string Label, string Description);
+
     internal MainWindow(
         AppLogger logger,
         ChildSessionManager sessionManager, ChildSessionProgramService programService,
@@ -521,9 +525,10 @@ public partial class MainWindow : FluentWindow
             return false;
         }
         var match = project.SelectedTaskNames.OrderBy(name => name == _expandedTaskName ? 0 : 1)
-            .SelectMany(taskName => EnumerateOptions(GetConfigurationOrEmpty(taskName)).SelectMany(option =>
-                option.Inputs.Select(input => (Task: taskName, Option: option.Name,
-                    Key: (project.ActiveConfigurationId, option.Name, input.Name)))))
+            .SelectMany(taskName => EnumerateFields(GetConfigurationOrEmpty(taskName))
+                .Where(field => field.Input is not null)
+                .Select(field => (Task: taskName, Option: field.Option.Name,
+                    Key: (project.ActiveConfigurationId, field.Option.Name, field.Input!.Name))))
             .FirstOrDefault(item => _invalidInputDrafts.ContainsKey(item.Key));
         if (match.Task is null) {
             return false;
@@ -923,8 +928,7 @@ public partial class MainWindow : FluentWindow
     private Border CreatePlanItem(ProjectTaskChoice task, bool expanded)
     {
         var configuration = GetConfigurationOrEmpty(task.Name);
-        var hasParameters = EnumerateOptions(configuration)
-            .Any(option => option.Kind != ProjectOptionKind.Input || option.Inputs.Count != 0);
+        var hasParameters = EnumerateFields(configuration).Any();
         var container = new Border {
             Tag = task,
             Style = (Style)FindResource(expanded ? "PlanItemExpandedStyle" : "PlanItemStyle")
@@ -1049,48 +1053,24 @@ public partial class MainWindow : FluentWindow
         return header;
     }
 
-    private static string CreateParameterSummary(ProjectConfigurationView configuration)
-    {
-        var parameters = new List<string>();
-        foreach (var option in EnumerateOptions(configuration)) {
-            var label = string.IsNullOrWhiteSpace(option.Label) ? option.Name : option.Label;
-            if (option.Kind == ProjectOptionKind.Input) {
-                foreach (var input in option.Inputs) {
-                    var inputLabel = string.IsNullOrWhiteSpace(input.Label) ? label : input.Label;
-                    parameters.Add($"{inputLabel}：{input.Value}");
-                }
-            } else {
-                var selected = option.Cases.Single(item => item.Name == option.SelectedCase);
-                parameters.Add($"{label}：{selected.Label}");
-            }
-        }
-        return string.Join(" · ", parameters);
-    }
+    private static string CreateParameterSummary(ProjectConfigurationView configuration) =>
+        string.Join(" · ", EnumerateFields(configuration).Select(field => field.Input is { } input
+            ? $"{field.Label}：{input.Value}"
+            : $"{field.Label}：{field.Option.Cases.Single(item => item.Name == field.Option.SelectedCase).Label}"));
 
     private FrameworkElement CreateParameterEditor(ProjectConfigurationView configuration)
     {
         var panel = new ResponsiveWrapPanel();
-        foreach (var option in EnumerateOptions(configuration)) {
-            if (option.Kind == ProjectOptionKind.Input) {
-                foreach (var input in option.Inputs) {
-                    panel.Children.Add(CreateInputEditor(option, input));
-                }
-            } else {
-                panel.Children.Add(CreateCaseEditor(option));
-            }
+        foreach (var field in EnumerateFields(configuration)) {
+            panel.Children.Add(field.Input is { } input ? CreateInputEditor(field, input) : CreateCaseEditor(field));
         }
-
         return panel;
     }
 
-    private Border CreateInputEditor(ProjectOptionEditor option, ProjectInputEditor input)
+    private Border CreateInputEditor(ParameterField parameter, ProjectInputEditor input)
     {
-        var label = string.IsNullOrWhiteSpace(input.Label)
-            ? string.IsNullOrWhiteSpace(option.Label) ? option.Name : option.Label
-            : input.Label;
-        var description = string.IsNullOrWhiteSpace(input.Description) ? option.Description : input.Description;
         var content = new StackPanel();
-        content.Children.Add(CreateParameterLabel(label, description));
+        content.Children.Add(CreateParameterLabel(parameter.Label, parameter.Description));
         // MaxWidth is the minimum tile width minus padding, so a long hint never forces a full-width row.
         var error = new TextBlock {
             Margin = new Thickness(0, 4, 0, 0), MaxWidth = 212,
@@ -1100,7 +1080,8 @@ public partial class MainWindow : FluentWindow
         };
         AutomationProperties.SetLiveSetting(error, AutomationLiveSetting.Polite);
         var tag = new OptionInputTag(
-            _projectPlan!.ActiveConfigurationId, option.Name, input.Name, input.Value, error, input.PatternMessage);
+            _projectPlan!.ActiveConfigurationId, parameter.Option.Name, input.Name, input.Value, error,
+            input.PatternMessage);
         var editor = new Wpf.Ui.Controls.TextBox {
             Margin = new Thickness(0, 5, 0, 0),
             Style = (Style)FindResource("Option.TextBox"),
@@ -1109,9 +1090,9 @@ public partial class MainWindow : FluentWindow
             HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
             ToolTip = input.PatternMessage
         };
-        AutomationProperties.SetName(editor, label);
-        if (!string.IsNullOrWhiteSpace(description)) {
-            AutomationProperties.SetHelpText(editor, description);
+        AutomationProperties.SetName(editor, parameter.Label);
+        if (!string.IsNullOrWhiteSpace(parameter.Description)) {
+            AutomationProperties.SetHelpText(editor, parameter.Description);
         }
         editor.LostKeyboardFocus += OptionInputTextBox_LostKeyboardFocus;
         editor.PreviewKeyDown += OptionInputTextBox_PreviewKeyDown;
@@ -1126,11 +1107,11 @@ public partial class MainWindow : FluentWindow
         return new Border { Style = (Style)FindResource("OptionTileStyle"), Child = content };
     }
 
-    private Border CreateCaseEditor(ProjectOptionEditor option)
+    private Border CreateCaseEditor(ParameterField parameter)
     {
-        var label = string.IsNullOrWhiteSpace(option.Label) ? option.Name : option.Label;
+        var option = parameter.Option;
         var content = new StackPanel();
-        content.Children.Add(CreateParameterLabel(label, option.Description));
+        content.Children.Add(CreateParameterLabel(parameter.Label, parameter.Description));
         var configurationId = _projectPlan!.ActiveConfigurationId;
         System.Windows.Controls.Control selector;
         FrameworkElement field;
@@ -1167,9 +1148,9 @@ public partial class MainWindow : FluentWindow
         selector.ToolTip = option.IsExplicit
             ? "当前值由用户显式设置"
             : $"当前跟随项目默认：{option.Cases.Single(item => item.Name == option.DefaultCase).Label}";
-        AutomationProperties.SetName(selector, label);
-        if (!string.IsNullOrWhiteSpace(option.Description)) {
-            AutomationProperties.SetHelpText(selector, option.Description);
+        AutomationProperties.SetName(selector, parameter.Label);
+        if (!string.IsNullOrWhiteSpace(parameter.Description)) {
+            AutomationProperties.SetHelpText(selector, parameter.Description);
         }
         BindConfigurationEditable(selector);
         content.Children.Add(field);
@@ -1382,6 +1363,23 @@ public partial class MainWindow : FluentWindow
         ProjectValidationBorder.Visibility = Visibility.Visible;
     }
 
+    // Labels fall back from input to option to option name; a PI may declare either label as "".
+    private static IEnumerable<ParameterField> EnumerateFields(ProjectConfigurationView configuration)
+    {
+        foreach (var option in EnumerateOptions(configuration)) {
+            var label = string.IsNullOrWhiteSpace(option.Label) ? option.Name : option.Label;
+            if (option.Kind != ProjectOptionKind.Input) {
+                yield return new ParameterField(option, null, label, option.Description);
+            } else {
+                foreach (var input in option.Inputs) {
+                    yield return new ParameterField(option, input,
+                        string.IsNullOrWhiteSpace(input.Label) ? label : input.Label,
+                        string.IsNullOrWhiteSpace(input.Description) ? option.Description : input.Description);
+                }
+            }
+        }
+    }
+
     private static IEnumerable<ProjectOptionEditor> EnumerateOptions(ProjectConfigurationView configuration) =>
         configuration.GlobalOptions.SelectMany(Flatten)
             .Concat(configuration.TaskOptions.SelectMany(Flatten));
@@ -1446,7 +1444,8 @@ public partial class MainWindow : FluentWindow
         }
         var project = ProjectPlanModule.Open(_applicationDirectory, configPath);
         _projectPlan = project;
-        _invalidInputDrafts.Clear();
+        // Preparing the environment reloads the project; an unfixed invalid draft must survive it and keep blocking
+        // Start. Drafts for inputs the reloaded PI no longer has are never rendered or matched.
         _pendingStartAttempt = null;
         _expandedTaskName = project.InitializedTaskName
             ?? (_onboardingPreferences.ShouldOfferAutomatically && !_onboardingAutoEnded

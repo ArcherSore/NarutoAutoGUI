@@ -103,7 +103,9 @@ public sealed class PreviewBuffer : IDisposable
         if (!_writer) {
             throw new InvalidOperationException("Preview reader 不能写入。");
         }
-        if (!TryLock()) {
+        // Readers poll on the same timer tick as the writer; waiting out an in-flight copy for at most one interval
+        // keeps a polling reader from starving the writer. Readers never wait for the writer.
+        if (!TryLock(ProtocolConstants.PreviewIntervalMilliseconds)) {
             return false;
         }
         try {
@@ -137,7 +139,7 @@ public sealed class PreviewBuffer : IDisposable
         if (pixels is not null && pixels.Length < MaximumPixelBytes) {
             throw new ArgumentOutOfRangeException(nameof(pixels));
         }
-        if (!TryLock()) {
+        if (!TryLock(0)) {
             return false;
         }
         try {
@@ -218,10 +220,10 @@ public sealed class PreviewBuffer : IDisposable
     private int GetInt(int offset) => BinaryPrimitives.ReadInt32LittleEndian(_header.AsSpan(offset));
     private long GetLong(int offset) => BinaryPrimitives.ReadInt64LittleEndian(_header.AsSpan(offset));
 
-    private bool TryLock()
+    private bool TryLock(int timeoutMilliseconds)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var result = WaitForSingleObject(_mutex, 0);
+        var result = WaitForSingleObject(_mutex, checked((uint)timeoutMilliseconds));
         if (result == 0x80) {
             ReleaseMutex(_mutex);
             throw new IOException("Preview Mutex abandoned，丢弃可能不完整的画面。");

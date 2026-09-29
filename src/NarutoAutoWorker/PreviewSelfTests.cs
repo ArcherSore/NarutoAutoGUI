@@ -77,16 +77,26 @@ internal static class PreviewSelfTests
         var error = child.StandardError.ReadToEndAsync();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var pixels = new byte[PreviewBuffer.MaximumPixelBytes];
+        var attempts = 0;
+        var skipped = 0;
         try {
             for (var revision = 1; !child.HasExited; revision++) {
                 timeout.Token.ThrowIfCancellationRequested();
                 Array.Fill(pixels, (byte)(revision % 251));
-                writer.TryPublish(1, revision, DateTime.UtcNow, 640, 360, pixels);
+                attempts++;
+                if (!writer.TryPublish(1, revision, DateTime.UtcNow, 640, 360, pixels)) {
+                    skipped++;
+                }
                 await Task.Delay(10, timeout.Token);
             }
             await child.WaitForExitAsync(timeout.Token);
             if (child.ExitCode != 0 || !(await output).Contains("PREVIEW READER PASS", StringComparison.Ordinal)) {
-                throw new InvalidOperationException($"双进程完整帧验证失败：{await error}");
+                throw new InvalidOperationException(
+                    $"双进程完整帧验证失败（写入 {attempts} 次，跳过 {skipped} 次）：{await error}");
+            }
+            // Both loops wake on the same timer tick, so a polling reader must not keep the writer from publishing.
+            if (skipped * 10 > attempts) {
+                throw new InvalidOperationException($"读者轮询挤占了写入：{attempts} 次写入中跳过 {skipped} 次。");
             }
         } finally {
             if (!child.HasExited) {

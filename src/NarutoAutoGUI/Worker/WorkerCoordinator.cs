@@ -417,11 +417,9 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
                                                      or UnauthorizedAccessException
                                                      or InvalidOperationException) {
                 _logger.Warn($"Worker IPC connection 结束：{exception.GetBaseException().Message}");
-                MarkDisconnected();
             } catch (Exception exception) {
                 // An admitted Worker's unexpected failure ends its connection, never the long-lived server.
                 _logger.Error("Worker IPC connection 异常结束。", exception);
-                MarkDisconnected();
             }
         }
     }
@@ -477,16 +475,23 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             await reader;
         } finally {
             connectionLifetime.Cancel();
+            WorkerAdmissionRecord? detached = null;
             lock (_logDispatchGate) {
                 lock (_gate) {
                     if (ReferenceEquals(_connection, connection)) {
                         _connection = null;
                         _logRecoveryGeneration++;
                         _logRecoveryTask = null;
+                        detached = _admission;
                     }
                 }
             }
             CancelPendingRequests();
+            // A killed Worker ends the pipe with a plain EOF, so every end of an admitted connection is observed here.
+            // It runs after detaching so ClassifyAdmission inspects the recorded PID instead of trusting the pipe.
+            if (detached is not null && !cancellationToken.IsCancellationRequested) {
+                MarkDisconnected(detached);
+            }
         }
     }
 
@@ -946,16 +951,9 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         }
     }
 
-    // Presentation only: a disconnect never deletes the Admission.
-    private void MarkDisconnected()
+    // Presentation only: a disconnect never deletes the Admission, and it is dropped once the record is replaced.
+    private void MarkDisconnected(WorkerAdmissionRecord admission)
     {
-        WorkerAdmissionRecord? admission;
-        lock (_gate) {
-            admission = _admission;
-        }
-        if (admission is null) {
-            return;
-        }
         if (admission.WorkerPid is null) {
             SetDisconnectedObservation(admission, WorkerObservation.WorkerStarting, "等待 Worker 连接");
             return;

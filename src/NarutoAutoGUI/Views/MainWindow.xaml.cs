@@ -46,6 +46,10 @@ public partial class MainWindow : FluentWindow
     private const int MaximumGuiLogEntries = 1000;
     private HwndSource? _previewWindowSource;
     private const string PlanItemDragDataFormat = "NarutoAutoGUI.PlanItem";
+    // Busy status prefixes that also drive preview gating, the runtime header and the configuration lock text.
+    private const string PreparingEnvironmentStatus = "正在准备运行环境";
+    private const string StartingRunStatus = "正在开始任务";
+    private const string StoppingRunStatus = "正在停止任务";
 
     private enum MainSection
     {
@@ -360,7 +364,7 @@ public partial class MainWindow : FluentWindow
         }
         _environmentPreparationFailed = false;
         await RunOperationAsync(
-            "正在准备运行环境...",
+            $"{PreparingEnvironmentStatus}...",
             async () =>
             {
                 try {
@@ -398,7 +402,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
         await RunOperationAsync(
-            "正在开始任务...",
+            $"{StartingRunStatus}...",
             async () =>
             {
                 if (!SessionConnected) {
@@ -427,7 +431,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
         await RunOperationAsync(
-            "正在停止任务...",
+            $"{StoppingRunStatus}...",
             async () =>
             {
                 var activeRun = _workerSnapshot.WorkerSnapshot?.ActiveRun
@@ -1385,7 +1389,6 @@ public partial class MainWindow : FluentWindow
     private void HandleProjectEditError(string operation, Exception exception)
     {
         HandleOperationError(operation, exception);
-        ShowProjectValidationError(exception);
         TryRenderTaskPlan();
     }
 
@@ -1455,10 +1458,6 @@ public partial class MainWindow : FluentWindow
 
     private static string GetRecoveryGuidance(string operation)
     {
-        if (operation.Contains("启动", StringComparison.Ordinal)) {
-            return "请检查桌面分身连接状态后重试；若微端启动器缺失，请先通过 QQ 游戏平台安装火影忍者 Online。";
-        }
-
         if (operation.Contains("桌面分身", StringComparison.Ordinal)
             || operation.Contains("子桌面", StringComparison.Ordinal)) {
             return "请确认程序以管理员权限运行，并检查桌面分身状态后重试。";
@@ -1639,7 +1638,7 @@ public partial class MainWindow : FluentWindow
     private bool TryGetPreviewTarget(out Guid workerId)
     {
         var worker = _workerSnapshot.WorkerSnapshot;
-        var preparing = _busy && _operationStatus.StartsWith("正在准备运行环境", StringComparison.Ordinal);
+        var preparing = IsBusyWith(PreparingEnvironmentStatus);
         if (!_exitInProgress && !_environmentPreparationFailed && !preparing && IsVisible
             && HomeView.Visibility == Visibility.Visible
             && (PreviewCardContent.Visibility == Visibility.Visible || PreviewOverlay.Visibility == Visibility.Visible)
@@ -1798,7 +1797,7 @@ public partial class MainWindow : FluentWindow
 
     private void LogListBox_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
-        if (e.OriginalSource is ScrollViewer scrollViewer && ReferenceEquals(sender, HomeLogListBox)) {
+        if (e.OriginalSource is ScrollViewer scrollViewer) {
             _homeLogScrollViewer = scrollViewer;
         }
 
@@ -1846,6 +1845,8 @@ public partial class MainWindow : FluentWindow
         UpdateCommandAvailability();
         UpdatePreviewPolling();
     }
+
+    private bool IsBusyWith(string status) => _busy && _operationStatus.StartsWith(status, StringComparison.Ordinal);
 
     // Keep the stale snapshot for diagnostics, but a confirmed ended runtime cannot own current controls.
     private WorkerSnapshot? RuntimeControlWorker =>
@@ -1902,15 +1903,14 @@ public partial class MainWindow : FluentWindow
         SetValue(ConfigurationEditableProperty, editable);
         ConfigurationLockBadge.Visibility = projectReady && !editable ? Visibility.Visible : Visibility.Collapsed;
         ConfigurationLockText.Text = RuntimeControlWorker?.ActiveRun is not null
-            || _busy && _operationStatus.StartsWith("正在开始任务", StringComparison.Ordinal)
-                ? "任务运行中，配置已锁定" : "运行环境处理中，配置暂时锁定";
+            || IsBusyWith(StartingRunStatus) ? "任务运行中，配置已锁定" : "运行环境处理中，配置暂时锁定";
     }
 
     private void UpdateRuntimeHeader(bool canRunCommand, bool projectReady, bool sessionConnected)
     {
         var worker = RuntimeControlWorker;
         var active = worker?.ActiveRun;
-        var preparing = _busy && _operationStatus.StartsWith("正在准备运行环境", StringComparison.Ordinal)
+        var preparing = IsBusyWith(PreparingEnvironmentStatus)
             || _sessionSnapshot.State is ChildSessionState.Connecting or ChildSessionState.Existing
             || _workerSnapshot.Observation == WorkerObservation.WorkerStarting
             || worker?.WorkerState == WorkerState.Starting;
@@ -1923,10 +1923,8 @@ public partial class MainWindow : FluentWindow
             && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
         var running = active?.State is RunState.Starting or RunState.Running or RunState.Stopping;
         var faulted = !running && (runtimeFaulted || runFaulted);
-        var starting = active?.State == RunState.Starting
-            || _busy && _operationStatus.StartsWith("正在开始任务", StringComparison.Ordinal);
-        var stopping = active?.State == RunState.Stopping
-            || _busy && _operationStatus.StartsWith("正在停止任务", StringComparison.Ordinal);
+        var starting = active?.State == RunState.Starting || IsBusyWith(StartingRunStatus);
+        var stopping = active?.State == RunState.Stopping || IsBusyWith(StoppingRunStatus);
         var transitioning = preparing || starting || stopping;
 
         PrepareEnvironmentButton.Visibility = !transitioning && !running && !faulted && !ready
@@ -1941,7 +1939,7 @@ public partial class MainWindow : FluentWindow
             ? Visibility.Visible : Visibility.Collapsed;
         StopTaskHeaderButton.IsEnabled = CanStopRun;
         RuntimeHeaderProgressRing.Visibility = transitioning ? Visibility.Visible : Visibility.Collapsed;
-        var progressText = stopping ? "正在停止任务" : starting ? "正在开始任务" : "正在准备运行环境";
+        var progressText = stopping ? StoppingRunStatus : starting ? StartingRunStatus : PreparingEnvironmentStatus;
         RuntimeHeaderProgressRing.ToolTip = progressText;
         System.Windows.Automation.AutomationProperties.SetName(RuntimeHeaderProgressRing, progressText);
     }

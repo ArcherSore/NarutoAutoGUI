@@ -867,6 +867,24 @@ internal static partial class SelfTestRunner
                     throw new InvalidOperationException("运行控件刷新不应修改最后已知快照。");
                 }
             }
+            var progress = (System.Windows.FrameworkElement)window.FindName("RuntimeHeaderProgressRing");
+            var lockText = (System.Windows.Controls.TextBlock)window.FindName("ConfigurationLockText");
+            foreach (var (status, progressText, expectedLock) in new[] {
+                ("正在开始任务...", "正在开始任务", "任务运行中，配置已锁定"),
+                ("正在准备运行环境...", "正在准备运行环境", "运行环境处理中，配置暂时锁定")
+            }) {
+                SetField("_busy", true);
+                SetField("_operationStatus", status);
+                Refresh();
+                if (progress.Visibility != System.Windows.Visibility.Visible
+                    || !Equals(progress.ToolTip, progressText)
+                    || System.Windows.Automation.AutomationProperties.GetName(progress) != progressText
+                    || prepare.Visibility != System.Windows.Visibility.Collapsed || lockText.Text != expectedLock) {
+                    throw new InvalidOperationException($"{status} 期间应显示对应进度与配置锁定说明。");
+                }
+            }
+            SetField("_busy", false);
+            SetField("_operationStatus", string.Empty);
         } finally {
             window.AllowClose();
             window.Close();

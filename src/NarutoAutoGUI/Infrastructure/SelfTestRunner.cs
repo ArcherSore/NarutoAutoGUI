@@ -88,7 +88,7 @@ internal static partial class SelfTestRunner
                 + "task catalog/description; ordered task plan persistence; responsive option layout; "
                 + "MaaNOP Config v2/migration/independent tabs; onboarding tour; RunPlan digest; "
                 + "IPC framing; preview schema; "
-                + "log sequence tracking/recovery; Worker Instance replacement; "
+                + "log sequence tracking/recovery; Worker Instance replacement; stale Admission recovery; "
                 + "run-log routing; DEBUG+ file logging");
             return 0;
         } catch (Exception exception) {

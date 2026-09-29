@@ -92,7 +92,7 @@ public partial class MainWindow : FluentWindow
     private IInputElement? _descriptionDrawerPreviousFocus;
     private readonly List<Border> _dropIndicators = [];
     private readonly Dictionary<string, Border> _planItemContainers = new(StringComparer.Ordinal);
-    private readonly List<(TextBlock Summary, ProjectConfigurationView Configuration)> _planItemSummaries = [];
+    private readonly List<(TextBlock Summary, string TaskName)> _planItemSummaries = [];
 
     private readonly Dictionary<(Guid, string, string), (string Text, string Message)> _invalidInputDrafts = new();
     private readonly Dictionary<(Guid, string, string), WpfTextBox> _optionInputEditors = new();
@@ -682,16 +682,22 @@ public partial class MainWindow : FluentWindow
         AutomationProperties.SetItemStatus(editor, message ?? string.Empty);
     }
 
-    private void SaveSelectedCase(Guid configurationId, string optionName, string caseName)
+    private void SaveSelectedCase(Guid configurationId, string optionName, string caseName, FrameworkElement selector)
     {
         if (_updatingOptionEditors || !CanEditConfiguration) {
             return;
         }
 
         try {
+            var before = GetExpandedOptions();
             _ = RequireProject().SetSelectedCase(configurationId, optionName, caseName);
             _pendingStartAttempt = null;
-            RenderTaskPlan();
+            var after = GetExpandedOptions();
+            var optionsChanged = !before.Select(item => item.Name).SequenceEqual(after.Select(item => item.Name));
+            if (!optionsChanged) {
+                selector.ToolTip = GetCaseToolTip(after.First(item => item.Name == optionName));
+            }
+            RefreshAfterOptionSaved(optionsChanged);
             _logger.Info($"已保存 MaaNOP explicit case：option={optionName}。 ");
         } catch (Exception exception) {
             HandleOperationError("保存 MaaNOP select/switch option 失败", exception);
@@ -720,21 +726,47 @@ public partial class MainWindow : FluentWindow
             RenderConfigurationTabs();
             RenderAvailableTaskShelf(project);
             RenderPlanItems(project);
-            try {
-                project.ValidateConfiguration();
-                _projectConfigurationValid = true;
-                ProjectValidationText.Text = project.LoadWarning ?? string.Empty;
-                ProjectValidationBorder.Visibility = project.LoadWarning is null
-                    ? Visibility.Collapsed : Visibility.Visible;
-            } catch (Exception exception) {
-                _projectConfigurationValid = false;
-                ShowProjectValidationError(exception);
-            }
-            UpdateCommandAvailability();
+            RefreshConfigurationValidity(project);
         } finally {
             _updatingOptionEditors = false;
         }
     }
+
+    private void RefreshConfigurationValidity(ProjectPlanModule project)
+    {
+        try {
+            project.ValidateConfiguration();
+            _projectConfigurationValid = true;
+            ProjectValidationText.Text = project.LoadWarning ?? string.Empty;
+            ProjectValidationBorder.Visibility = project.LoadWarning is null
+                ? Visibility.Collapsed : Visibility.Visible;
+        } catch (Exception exception) {
+            _projectConfigurationValid = false;
+            ShowProjectValidationError(exception);
+        }
+        UpdateCommandAvailability();
+    }
+
+    // Option edits never change the task shelf or tabs. Plan cards are rebuilt only when nested options appear or
+    // vanish; otherwise the edited control stays in place and keeps its animation and focus.
+    private void RefreshAfterOptionSaved(bool rebuildCards)
+    {
+        var project = RequireProject();
+        if (rebuildCards) {
+            _updatingOptionEditors = true;
+            try {
+                RenderPlanItems(project);
+            } finally {
+                _updatingOptionEditors = false;
+            }
+        } else {
+            RefreshParameterSummaries();
+        }
+        RefreshConfigurationValidity(project);
+    }
+
+    private ProjectOptionEditor[] GetExpandedOptions() => _expandedTaskName is not { } taskName ? []
+        : EnumerateOptions(GetConfigurationOrEmpty(taskName)).ToArray();
 
     private void RenderAvailableTaskShelf(ProjectPlanModule project)
     {
@@ -1026,7 +1058,7 @@ public partial class MainWindow : FluentWindow
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            _planItemSummaries.Add((summaryText, configuration));
+            _planItemSummaries.Add((summaryText, task.Name));
             FillParameterSummary(summaryText, configuration);
             Grid.SetColumn(summaryText, 2);
             title.Children.Add(summaryText);
@@ -1089,8 +1121,8 @@ public partial class MainWindow : FluentWindow
     // Drafts change without saving, so only the folded summaries are refreshed; the focused editor stays in place.
     private void RefreshParameterSummaries()
     {
-        foreach (var (summary, configuration) in _planItemSummaries) {
-            FillParameterSummary(summary, configuration);
+        foreach (var (summary, taskName) in _planItemSummaries) {
+            FillParameterSummary(summary, GetConfigurationOrEmpty(taskName));
         }
     }
 
@@ -1161,7 +1193,7 @@ public partial class MainWindow : FluentWindow
                 VerticalAlignment = VerticalAlignment.Center
             };
             toggle.Click += (_, _) =>
-                SaveSelectedCase(configurationId, option.Name, toggle.IsChecked == true ? on.Name : off.Name);
+                SaveSelectedCase(configurationId, option.Name, toggle.IsChecked == true ? on.Name : off.Name, toggle);
             selector = toggle;
             field = new Grid { Height = (double)FindResource("Height.OptionEditor"), Children = { toggle } };
         } else {
@@ -1174,16 +1206,14 @@ public partial class MainWindow : FluentWindow
             };
             comboBox.SelectionChanged += (_, _) => {
                 if (comboBox.SelectedItem is ProjectCaseEditor selected) {
-                    SaveSelectedCase(configurationId, option.Name, selected.Name);
+                    SaveSelectedCase(configurationId, option.Name, selected.Name, comboBox);
                 }
             };
             selector = comboBox;
             field = comboBox;
         }
         field.Margin = new Thickness(0, 5, 0, 0);
-        selector.ToolTip = option.IsExplicit
-            ? "当前值由用户显式设置"
-            : $"当前跟随项目默认：{option.Cases.Single(item => item.Name == option.DefaultCase).Label}";
+        selector.ToolTip = GetCaseToolTip(option);
         AutomationProperties.SetName(selector, parameter.Label);
         if (!string.IsNullOrWhiteSpace(parameter.Description)) {
             AutomationProperties.SetHelpText(selector, parameter.Description);
@@ -1192,6 +1222,9 @@ public partial class MainWindow : FluentWindow
         content.Children.Add(field);
         return new Border { Style = (Style)FindResource("OptionTileStyle"), Child = content };
     }
+
+    private static string GetCaseToolTip(ProjectOptionEditor option) => option.IsExplicit ? "当前值由用户显式设置"
+        : $"当前跟随项目默认：{option.Cases.Single(item => item.Name == option.DefaultCase).Label}";
 
     // PI switch cases carry no on/off flag; MaaNOP names them Yes/No, so an affirmative name marks "on",
     // otherwise the first case does.

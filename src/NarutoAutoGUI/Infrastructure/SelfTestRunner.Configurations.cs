@@ -230,6 +230,9 @@ internal static partial class SelfTestRunner
         if (project.Configurations[0].ExplicitOptions["Nested"].GetProperty("SelectedCase").GetString() != "Off") {
             throw new InvalidOperationException("关闭开关必须保存 switch 的另一个 case。");
         }
+        if (!ConfigurationDescendants(items).OfType<Wpf.Ui.Controls.ToggleSwitch>().Contains(toggle)) {
+            throw new InvalidOperationException("不改变参数字段的 switch 不应重绘参数卡片，以免打断开关动画。");
+        }
     }
 
     private static void VerifyBlankParameterLabels(AppLogger logger, string testDirectory)

@@ -8,7 +8,7 @@ using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoGUI.Worker;
 
-internal static class WorkerCoordinatorSelfTest
+internal static partial class WorkerCoordinatorSelfTest
 {
     internal static async Task RunAsync(
         AppLogger logger, string testDirectory, string projectDirectory, string configPath)
@@ -43,6 +43,7 @@ internal static class WorkerCoordinatorSelfTest
         await VerifySameInstanceReconnectAndTeardownAsync(coordinator, pipeName, record, received, timeout.Token);
         await VerifyWorkerInstanceReplacementAsync(
             logger, stateDirectory, executablePath, childSessionId, received, timeout.Token);
+        await VerifyAdmissionRecoveryAsync(logger, testDirectory, executablePath, childSessionId, project);
     }
 
     private static async Task VerifyPreviewRequestAsync(

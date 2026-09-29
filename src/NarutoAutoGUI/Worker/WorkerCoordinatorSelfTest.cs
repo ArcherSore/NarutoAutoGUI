@@ -44,6 +44,7 @@ internal static partial class WorkerCoordinatorSelfTest
         await VerifyWorkerInstanceReplacementAsync(
             logger, stateDirectory, executablePath, childSessionId, received, timeout.Token);
         await VerifyAdmissionRecoveryAsync(logger, testDirectory, executablePath, childSessionId, project);
+        await VerifyConnectionOpenRejectionAsync(logger, testDirectory, executablePath, childSessionId);
     }
 
     private static async Task VerifyPreviewRequestAsync(

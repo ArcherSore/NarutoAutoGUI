@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
@@ -417,6 +418,10 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
                                                      or InvalidOperationException) {
                 _logger.Warn($"Worker IPC connection 结束：{exception.GetBaseException().Message}");
                 MarkDisconnected();
+            } catch (Exception exception) {
+                // An admitted Worker's unexpected failure ends its connection, never the long-lived server.
+                _logger.Error("Worker IPC connection 异常结束。", exception);
+                MarkDisconnected();
             }
         }
     }
@@ -447,53 +452,10 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     private async Task ServeConnectionAsync(NamedPipeServerStream server, CancellationToken cancellationToken)
     {
         await using var connection = new ProtocolConnection(server);
-        var open = await connection.ReadAsync(cancellationToken)
-                   ?? throw new EndOfStreamException("Worker 未发送 connection.open。 ");
-        var requestId = open.RequestId
-                        ?? throw new ProtocolException("connection.open 缺少 requestId。 ");
-        if (open.ProtocolVersion != ProtocolConstants.ProtocolVersion
-            || open.MessageType != ProtocolMessageTypes.Request
-            || open.Operation != ProtocolOperations.ConnectionOpen) {
-            await connection.WriteAsync(
-                WireEnvelope.Failure(
-                    ProtocolOperations.ConnectionOpen, requestId, "protocol_version_mismatch",
-                    "connection.open envelope 不兼容。 "),
-                cancellationToken);
+        if (await AdmitConnectionAsync(server, connection, cancellationToken) is not { } admitted) {
             return;
         }
-
-        var payload = ProtocolJson.Deserialize<ConnectionOpenRequest>(open.Data);
-        var clientPid = GetClientPid(server);
-        var admission = ValidateAdmission(payload, clientPid);
-        // Validation ran outside the gate; a record removed or replaced meanwhile is never acknowledged or revived.
-        lock (_gate) {
-            _ = RequireCurrentAdmissionLocked(admission, clientPid);
-        }
-        await connection.WriteAsync(
-            WireEnvelope.Response(
-                ProtocolOperations.ConnectionOpen, requestId,
-                new { }),
-            cancellationToken);
-
-        int logRecoveryGeneration;
-        lock (_logDispatchGate) {
-            lock (_gate) {
-                admission = RequireCurrentAdmissionLocked(admission, clientPid);
-                if (admission.WorkerPid != clientPid) {
-                    admission = admission with { WorkerPid = clientPid };
-                    _admission = admission;
-                    _store.SaveRecord(admission);
-                }
-                _connection = connection;
-                _logSequence.BeginWorkerInstance(admission.WorkerInstanceId);
-                _logRecoveryGeneration++;
-                _logRecoveryTask = null;
-                logRecoveryGeneration = _logRecoveryGeneration;
-                UpdateSnapshotLocked(new WorkerCoordinatorSnapshot(
-                    WorkerObservation.Connected, false, Snapshot.WorkerSnapshot,
-                    "Worker 已接纳，正在同步 Snapshot"));
-            }
-        }
+        var (admission, logRecoveryGeneration) = admitted;
         RaiseStateChanged();
 
         using var connectionLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -525,6 +487,75 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
                 }
             }
             CancelPendingRequests();
+        }
+    }
+
+    // Returns null after rejecting the client. Any local process can open the pipe, so a rejection ends only this
+    // connection and leaves the Admission and the observed state untouched.
+    private async Task<(WorkerAdmissionRecord Admission, int LogRecoveryGeneration)?> AdmitConnectionAsync(
+        NamedPipeServerStream server, ProtocolConnection connection, CancellationToken cancellationToken)
+    {
+        try {
+            var open = await connection.ReadAsync(cancellationToken)
+                       ?? throw new EndOfStreamException("Worker 未发送 connection.open。 ");
+            var requestId = open.RequestId
+                            ?? throw new ProtocolException("connection.open 缺少 requestId。 ");
+            if (open.ProtocolVersion != ProtocolConstants.ProtocolVersion
+                || open.MessageType != ProtocolMessageTypes.Request
+                || open.Operation != ProtocolOperations.ConnectionOpen) {
+                await connection.WriteAsync(
+                    WireEnvelope.Failure(
+                        ProtocolOperations.ConnectionOpen, requestId, "protocol_version_mismatch",
+                        "connection.open envelope 不兼容。 "),
+                    cancellationToken);
+                return null;
+            }
+
+            ConnectionOpenRequest payload;
+            try {
+                payload = ProtocolJson.Deserialize<ConnectionOpenRequest>(open.Data);
+            } catch (JsonException) {
+                await connection.WriteAsync(
+                    WireEnvelope.Failure(
+                        ProtocolOperations.ConnectionOpen, requestId, "invalid_request", "connection.open 数据无效。 "),
+                    cancellationToken);
+                throw;
+            }
+            var clientPid = GetClientPid(server);
+            var admission = ValidateAdmission(payload, clientPid);
+            // Validation ran outside the gate; a record removed or replaced meanwhile is never acknowledged or revived.
+            lock (_gate) {
+                _ = RequireCurrentAdmissionLocked(admission, clientPid);
+            }
+            await connection.WriteAsync(
+                WireEnvelope.Response(
+                    ProtocolOperations.ConnectionOpen, requestId,
+                    new { }),
+                cancellationToken);
+
+            lock (_logDispatchGate) {
+                lock (_gate) {
+                    admission = RequireCurrentAdmissionLocked(admission, clientPid);
+                    if (admission.WorkerPid != clientPid) {
+                        admission = admission with { WorkerPid = clientPid };
+                        _admission = admission;
+                        _store.SaveRecord(admission);
+                    }
+                    _connection = connection;
+                    _logSequence.BeginWorkerInstance(admission.WorkerInstanceId);
+                    _logRecoveryGeneration++;
+                    _logRecoveryTask = null;
+                    UpdateSnapshotLocked(new WorkerCoordinatorSnapshot(
+                        WorkerObservation.Connected, false, Snapshot.WorkerSnapshot,
+                        "Worker 已接纳，正在同步 Snapshot"));
+                    return (admission, _logRecoveryGeneration);
+                }
+            }
+        } catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+            throw;
+        } catch (Exception exception) {
+            _logger.Warn($"已拒绝 Worker 连接：{exception.GetBaseException().Message}");
+            return null;
         }
     }
 
@@ -592,12 +623,23 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         if (admission.WorkerPid is not null && admission.WorkerPid != clientPid) {
             throw new UnauthorizedAccessException("Pipe client PID 与 Admission Record 不匹配。 ");
         }
-        using var process = Process.GetProcessById(clientPid);
-        if ((uint)process.SessionId != admission.ChildSessionId) {
+        uint sessionId;
+        string? imagePath;
+        try {
+            using var process = Process.GetProcessById(clientPid);
+            sessionId = (uint)process.SessionId;
+            imagePath = process.MainModule?.FileName;
+        } catch (Exception exception) when (exception is ArgumentException or InvalidOperationException
+            or Win32Exception or NotSupportedException) {
+            // A client that exited or cannot be inspected has no verifiable identity.
+            throw new UnauthorizedAccessException($"无法核验 Worker 进程身份：PID={clientPid}。 ", exception);
+        }
+        if (sessionId != admission.ChildSessionId) {
             throw new UnauthorizedAccessException("Worker 真实 SessionId 不匹配。 ");
         }
-        var imagePath = process.MainModule?.FileName
-                        ?? throw new UnauthorizedAccessException("无法取得 Worker 映像路径。 ");
+        if (imagePath is null) {
+            throw new UnauthorizedAccessException("无法取得 Worker 映像路径。 ");
+        }
         if (!string.Equals(Path.GetFullPath(imagePath), _workerExecutablePath, StringComparison.OrdinalIgnoreCase)) {
             throw new UnauthorizedAccessException("Worker 映像不来自当前 NarutoAutoGUI 发布包。 ");
         }

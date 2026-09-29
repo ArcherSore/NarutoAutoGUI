@@ -50,6 +50,7 @@ internal static partial class SelfTestRunner
             VerifyGameLaunchProfile(logger, testDirectory);
             VerifyLauncherHandoff();
             VerifyRdpClientClsid();
+            VerifyChildSessionPresence(logger);
             VerifyTaskDescriptionMarkup();
             VerifyResponsiveOptionLayout();
             VerifyUnsupportedProjectConstraints(testDirectory, projectDirectory);

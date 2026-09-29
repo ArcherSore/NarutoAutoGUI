@@ -49,6 +49,9 @@ internal sealed class ChildSessionService
     public static uint? TryGetChildSessionId() =>
         ChildSessionNativeMethods.TryGetChildSessionId();
 
+    public static IReadOnlyCollection<uint> EnumerateSessionIds() =>
+        ChildSessionNativeMethods.EnumerateSessionIds();
+
     public static int GetRdpPort() =>
         ChildSessionNativeMethods.GetConfiguredRdpPort();
 

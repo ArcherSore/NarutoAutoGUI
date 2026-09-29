@@ -10,8 +10,8 @@ namespace NarutoAutoGUI.ChildSession;
 // Native helpers adapted (trimmed) from BetterGI 0.63.0 ChildSessionNativeMethods.cs.
 // The original BetterGI code is licensed under GPL-3.0; see THIRD_PARTY_NOTICES.md.
 // This file has been modified and is distributed as part of NarutoAutoGUI (GPL-3.0-only).
-// Edition-agnostic surface only: enable / query / logoff Child Session + cross-session
-// process lookup for verification. Per MS Child Sessions docs, Child Session is a special
+// Edition-agnostic surface only: enable / query / logoff Child Session + session enumeration and
+// cross-session process lookup for verification. Per MS Child Sessions docs, Child Session is a special
 // LOOPBACK Remote Desktop session supported on Windows 8+ (excluded only: Windows RT,
 // Server 2012 Server Core, Hyper-V Server 2012). It does NOT require the Remote Interactive
 // right / RDP host to be enabled, so no fDenyTSConnections / RDP-host / TermService-restart
@@ -43,6 +43,14 @@ internal static class ChildSessionNativeMethods
     [DllImport("wtsapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool WTSLogoffSession(IntPtr serverHandle, uint sessionId, [MarshalAs(UnmanagedType.Bool)] bool wait);
+
+    [DllImport("wtsapi32.dll", SetLastError = true, EntryPoint = "WTSEnumerateSessionsW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool WTSEnumerateSessions(
+        IntPtr serverHandle, int reserved, int version, out IntPtr sessions, out int count);
+
+    [DllImport("wtsapi32.dll")]
+    private static extern void WTSFreeMemory(IntPtr memory);
 
     // Returns false when WTS reports no Child Session, either as a successful ULONG(-1)
     // result or as ERROR_NOT_FOUND on Windows builds that use that native result shape.
@@ -107,6 +115,27 @@ internal static class ChildSessionNativeMethods
         }
 
         return childSessionId;
+    }
+
+    // Every Windows Session WTS currently knows, in any connect state. WTSGetChildSessionId can keep
+    // reporting a Child Session that is already gone; this list no longer contains such a session.
+    internal static IReadOnlyCollection<uint> EnumerateSessionIds()
+    {
+        if (!WTSEnumerateSessions(CurrentServerHandle, 0, 1, out var buffer, out var count)) {
+            throw CreateLastWin32Exception("无法枚举 Windows Session");
+        }
+
+        try {
+            var size = Marshal.SizeOf<WtsSessionInfo>();
+            var sessions = new HashSet<uint>();
+            for (var index = 0; index < count; index++) {
+                sessions.Add(Marshal.PtrToStructure<WtsSessionInfo>(buffer + index * size).SessionId);
+            }
+
+            return sessions;
+        } finally {
+            WTSFreeMemory(buffer);
+        }
     }
 
     // Read the configured RDP-Tcp port (default 3389). Informational: fed to AdvancedSettings7.RDPPort.
@@ -200,5 +229,13 @@ internal static class ChildSessionNativeMethods
     {
         var error = Marshal.GetLastPInvokeError();
         return new Win32Exception(error, $"{operation}（Win32 错误 {error}）");
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WtsSessionInfo
+    {
+        public uint SessionId;
+        public IntPtr WinStationName;
+        public int State;
     }
 }

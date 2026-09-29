@@ -6,26 +6,35 @@ namespace NarutoAutoGUI.ChildSession;
 internal sealed class ChildSessionManager : IDisposable
 {
     private readonly AppLogger _logger;
+    private readonly Func<uint?> _getChildSessionId;
+    private readonly Func<IReadOnlyCollection<uint>> _enumerateSessions;
+    private readonly Func<uint?> _terminateChildSession;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
     private RdpPreviewForm? _previewForm;
     private ChildSessionService? _service;
     private bool _disposed;
 
-    internal ChildSessionManager(AppLogger logger)
+    // The optional delegates are self-test seams; production always queries and logs off through WTS.
+    internal ChildSessionManager(
+        AppLogger logger, Func<uint?>? getChildSessionId = null,
+        Func<IReadOnlyCollection<uint>>? enumerateSessions = null, Func<uint?>? terminateChildSession = null)
     {
         _logger = logger;
+        _getChildSessionId = getChildSessionId ?? ChildSessionService.TryGetChildSessionId;
+        _enumerateSessions = enumerateSessions ?? ChildSessionService.EnumerateSessionIds;
+        _terminateChildSession = terminateChildSession ?? (() => ChildSessionService.TerminateChildSession(wait: true));
     }
 
     internal event EventHandler<ChildSessionSnapshot>? StateChanged;
 
     internal ChildSessionSnapshot Snapshot { get; private set; } = ChildSessionSnapshot.Empty;
 
-    internal bool HasChildSession => ChildSessionService.TryGetChildSessionId() is not null;
+    internal bool HasChildSession => QueryChildSessionId() is not null;
 
     internal uint? DetectExistingSession()
     {
         try {
-            var sessionId = ChildSessionService.TryGetChildSessionId();
+            var sessionId = QueryChildSessionId();
             if (sessionId is null) {
                 UpdateState(ChildSessionState.NotRunning, null, 0, "未检测到桌面分身");
                 _logger.Info("启动检测：当前没有 Child Session。");
@@ -49,7 +58,7 @@ internal sealed class ChildSessionManager : IDisposable
             ThrowIfDisposed();
             uint? currentSessionId = null;
             try {
-                currentSessionId = ChildSessionService.TryGetChildSessionId();
+                currentSessionId = QueryChildSessionId();
                 var connectedState = SafeConnectedState();
                 if (_service?.ChildSessionId is uint connectedId && currentSessionId == connectedId
                     && Snapshot.State is (ChildSessionState.ConnectedVisible
@@ -140,14 +149,14 @@ internal sealed class ChildSessionManager : IDisposable
         uint? sessionId = null;
         try {
             ThrowIfDisposed();
-            sessionId = ChildSessionService.TryGetChildSessionId();
+            sessionId = _getChildSessionId();
             UpdateState(ChildSessionState.Disconnecting, sessionId, SafeConnectedState(), "正在结束桌面分身");
             _logger.Info(sessionId is null
                 ? "结束请求：当前没有 Child Session。"
                 : $"正在断开 RDP 并注销 Child Session {sessionId}。");
 
             DisposePreview(disconnect: true);
-            var terminatedId = ChildSessionService.TerminateChildSession(wait: true);
+            var terminatedId = TerminateChildSession();
             _logger.Info(terminatedId is null
                 ? "当前无 Child Session 需要注销。"
                 : $"已注销 Child Session {terminatedId.Value}。");
@@ -272,10 +281,60 @@ internal sealed class ChildSessionManager : IDisposable
     private uint? SafeChildSessionId(uint? fallback)
     {
         try {
-            return ChildSessionService.TryGetChildSessionId();
+            return QueryChildSessionId();
         } catch (Exception exception) {
             _logger.Warn("读取 Child Session ID 失败，状态展示保留最近一次已知值。", exception);
             return fallback;
+        }
+    }
+
+    // WTSGetChildSessionId can keep reporting a Child Session whose RDP logon failed after that session is gone.
+    // Such an ID counts as absent only when a successful session enumeration omits it; otherwise it still counts.
+    private uint? QueryChildSessionId()
+    {
+        if (_getChildSessionId() is not uint sessionId) {
+            return null;
+        }
+
+        IReadOnlyCollection<uint> sessions;
+        try {
+            sessions = _enumerateSessions();
+        } catch (Exception exception) {
+            _logger.Warn($"无法枚举 Windows Session，按 Child Session {sessionId} 仍存在处理。", exception);
+            return sessionId;
+        }
+
+        if (sessions.Contains(sessionId)) {
+            return sessionId;
+        }
+
+        _logger.Warn($"WTS 仍报告 Child Session {sessionId}，但 Windows 中已没有该 Session，按不存在处理。");
+        return null;
+    }
+
+    // Logoff targets whatever WTS reports. Its failure is accepted only once Windows proves no Child Session
+    // remains, e.g. a failed RDP logon already ended the reported session and logoff returns "not found".
+    private uint? TerminateChildSession()
+    {
+        try {
+            return _terminateChildSession();
+        } catch (Exception exception) {
+            if (!IsChildSessionProvenAbsent()) {
+                throw;
+            }
+
+            _logger.Warn("注销 Child Session 失败，但 Windows 已确认没有 Child Session，按已结束处理。", exception);
+            return null;
+        }
+    }
+
+    private bool IsChildSessionProvenAbsent()
+    {
+        try {
+            return QueryChildSessionId() is null;
+        } catch (Exception exception) {
+            _logger.Warn("注销失败后无法重新读取 Child Session ID。", exception);
+            return false;
         }
     }
 

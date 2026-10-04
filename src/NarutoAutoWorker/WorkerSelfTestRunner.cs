@@ -18,6 +18,7 @@ internal static class WorkerSelfTestRunner
             VerifyAcceptedStopWinsTerminalRace();
             VerifyStopCleanupRaceAsync().GetAwaiter().GetResult();
             VerifyTaskerTaskCallbackCompletion();
+            FrameworkOptionsSelfTests.Run();
             Console.WriteLine(
                 "WORKER SELF-TEST PASS: MaaNOP string focus projection; Callback adapter; "
                 + "log response budget; preview shared buffer; "

@@ -370,7 +370,8 @@ public partial class MainWindow : FluentWindow
                 try {
                     LoadProject();
                     var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
-                    await _workerCoordinator.PrepareWorkerAsync(sessionId, RequireProject());
+                    await _workerCoordinator.PrepareWorkerAsync(sessionId, RequireProject(),
+                        frameworkOptions: _settings.CreateFrameworkOptions());
                     var game = NarutoGameLaunchProfile.ResolveExisting(_logger);
                     await _programService.LaunchIfNeededAsync(
                         sessionId, game.ExecutablePath, game.Arguments,

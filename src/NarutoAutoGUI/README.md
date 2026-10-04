@@ -25,6 +25,17 @@ dotnet .\src\NarutoAutoGUI\bin\x64\Release\net10.0-windows\win-x64\NarutoAutoGUI
 
 - MaaNOP 用户配置：`<程序目录>\config\maanop-config.json`
 - 滚动日志：`<程序目录>\logs\NarutoAutoGUI-yyyyMMdd[.序号].log`
+- 框架日志与图片：`<程序目录>\debug`，失败截图位于 `on_error`，识别可视化图片位于 `vision`
+- 框架偏好：`<程序目录>\config\maa-{save-on-error,save-draw,debug-mode}.txt`
+
+设置页提供三个独立开关：SaveOnError 默认开启，SaveDraw 和 DebugMode 默认关闭。
+更改后结束桌面分身并重新准备运行环境生效；Worker 在创建控制器和任务前应用配置。
+
+验证打包后的原生 runtime 图片保存（不启动游戏或 RDP）：
+
+```powershell
+.\src\NarutoAutoGUI\scripts\test-framework-diagnostics.ps1 -PackageDirectory artifacts\NarutoAutoGUI\win-x64
+```
 
 MaaNOP 项目根目录固定为应用程序目录，`interface.json` 直接从 `NarutoAutoGUI.exe` 同级目录读取。游戏启动器固定从当前用户的 `%APPDATA%\Tencent\QQMicroGameBox\Launch.exe` 推导，AppId 和启动参数不由用户配置。日志按天和 10 MB 滚动，保留 14 天，可从主窗口直接打开当前日志目录。若程序目录不可写，日志会回退到 LocalAppData 或临时目录并记录 WARN。
 

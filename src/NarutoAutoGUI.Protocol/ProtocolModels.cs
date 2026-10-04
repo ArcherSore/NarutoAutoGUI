@@ -128,10 +128,15 @@ public sealed record ResourceDefinition(string Name, IReadOnlyList<string> Paths
 
 public sealed record AgentDefinition(string ChildExec, IReadOnlyList<string> ChildArgs, string WorkingDirectory);
 
+public sealed record MaaFrameworkOptions(bool SaveOnError = true, bool SaveDraw = false, bool DebugMode = false);
+
 public sealed record LaunchManifest(
     int LaunchContextVersion, Guid WorkerInstanceId, string RuntimeProfileDigest,
     string ProjectRoot, ProjectProvenance Project, Win32ControllerDefinition Controller,
-    IReadOnlyList<ResourceDefinition> Resources, AgentDefinition Agent);
+    IReadOnlyList<ResourceDefinition> Resources, AgentDefinition Agent)
+{
+    public MaaFrameworkOptions FrameworkOptions { get; init; } = new();
+}
 
 public sealed record RunPlan(
     int PlanVersion, DateTime CreatedAtUtc, ProjectProvenance Project,

@@ -22,6 +22,11 @@ GUI 使用 Pipe 对端真实 PID、Windows Session ID、Worker 映像和 Admissi
 
 Worker Launch Context 在单个 Worker 实例内固定；GUI 为其写入有界 Launch Manifest。Run Plan 描述一次任务执行，不重复环境配置。双方核对 Runtime Profile Digest；Worker 对 Run Plan 自行计算 Plan Digest。同一 Run ID 的传输重试必须使用原计划，避免重复执行。具体 canonical digest 规则由共享实现定义，改变规则需提升版本。
 
+Launch Manifest 的 frameworkOptions 保存 SaveOnError、SaveDraw 与 DebugMode，缺省值分别为 true、false、false。
+这些诊断偏好不参与项目 Runtime Profile Digest；更改后在新 Worker 实例中生效。
+Worker 在进入 Ready 前设置全局选项与绝对 LogDir（项目根目录下的 debug），检查返回值并记录日志；
+设置失败保持 NotReady，不创建预览控制器或执行任务。
+
 ## 预算与预览
 
 Launch Manifest 上限 256 KiB，Run Plan 上限 1 MiB，Snapshot payload 上限 3 MiB；日志消息和补取响应分别受 64 KiB 与 1 MiB 上限约束。这些限制低于传输帧上限，供终态诊断和响应 Envelope 留出空间。

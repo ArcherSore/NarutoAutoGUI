@@ -122,7 +122,8 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         _serverReady.Task.WaitAsync(cancellationToken);
 
     internal async Task<WorkerSnapshot> PrepareWorkerAsync(
-        uint childSessionId, ProjectPlanModule project, CancellationToken cancellationToken = default)
+        uint childSessionId, ProjectPlanModule project, CancellationToken cancellationToken = default,
+        MaaFrameworkOptions? frameworkOptions = null)
     {
         await WaitForServerReadyAsync(cancellationToken);
         WorkerAdmissionRecord? existing;
@@ -156,7 +157,9 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
 
         var instanceId = Guid.NewGuid();
         var launchToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-        var manifest = project.CreateLaunchManifest(instanceId);
+        var manifest = project.CreateLaunchManifest(instanceId) with {
+            FrameworkOptions = frameworkOptions ?? new MaaFrameworkOptions()
+        };
         var manifestPath = _store.GetManifestPath(instanceId);
         var admission = new WorkerAdmissionRecord(
             instanceId, launchToken, childSessionId, null,

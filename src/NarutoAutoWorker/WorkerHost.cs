@@ -75,9 +75,18 @@ internal sealed class WorkerHost : IDisposable
         }
     }
 
-    private async Task InitializeAsync(CancellationToken cancellationToken)
+    internal async Task InitializeAsync(CancellationToken cancellationToken)
     {
-        var (status, reason) = await DependencyProbe.RunAsync(_manifest, cancellationToken);
+        // Apply process-wide options before Ready admits preview controllers or task execution.
+        StructuredReason? optionsFailure = null;
+        try {
+            WorkerFrameworkOptions.Apply(_manifest.ProjectRoot, _manifest.FrameworkOptions,
+                (level, source, message) => Log(level, source, message));
+        } catch (Exception exception) {
+            optionsFailure = new StructuredReason("FrameworkOptionsFailed", exception.GetBaseException().Message);
+        }
+        var (status, reason) = optionsFailure is null
+            ? await DependencyProbe.RunAsync(_manifest, cancellationToken) : (_dependencyStatus, optionsFailure);
         WorkerSnapshot snapshot;
         lock (_stateGate) {
             _dependencyStatus = status;
@@ -558,7 +567,7 @@ internal sealed class WorkerHost : IDisposable
         }
     }
 
-    private WorkerSnapshot GetSnapshot()
+    internal WorkerSnapshot GetSnapshot()
     {
         lock (_stateGate) {
             return GetSnapshotLocked();

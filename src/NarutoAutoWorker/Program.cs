@@ -9,6 +9,9 @@ internal static class Program
     private static async Task<int> Main(string[] args)
     {
         try {
+            if (args.Length == 3 && args[0] == "--framework-diagnostics-self-test") {
+                return FrameworkDiagnosticsSelfTest.Run(args[1], args[2]);
+            }
             if (args.Length == 2 && args[0] == "--preview-buffer-reader") {
                 return PreviewSelfTests.RunBufferReader(args[1]);
             }

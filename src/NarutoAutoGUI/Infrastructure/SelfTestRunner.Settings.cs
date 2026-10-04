@@ -77,8 +77,8 @@ internal static partial class SelfTestRunner
         var page = settings.Page;
         var items = page.Sections.SelectMany(section => section.Items).ToArray();
         if (!page.Sections.Select(section => section.Definition.Id)
-                .SequenceEqual(["updates", "support", "sponsorship"])
-            || items.Count(item => item.Definition.Type == SettingsItemKind.Toggle) != 2
+                .SequenceEqual(["updates", "support", "framework", "sponsorship"])
+            || items.Count(item => item.Definition.Type == SettingsItemKind.Toggle) != 5
             || items.Count(item => item.Definition.Type == SettingsItemKind.Action) != 4
             || items.Count(item => item.Definition.Type == SettingsItemKind.Info) != 1
             || items.Single(item => item.Definition.SettingKey == "update.checkOnStartup").Toggle
@@ -146,6 +146,7 @@ internal static partial class SelfTestRunner
         ExpectInvalid(valid.Replace("\"description\":\"Static\"", "\"valueKey\":\"unknown.value\""));
         VerifySettingsUpdateIntegration(logger, testDirectory);
         VerifyClosePreference(logger, testDirectory);
+        VerifyFrameworkPreferences(logger, testDirectory);
         Console.WriteLine("SETTINGS SELF-TEST PASS: definition, registry, preference, actions, "
             + "dynamic state and isolation.");
 
@@ -190,6 +191,18 @@ internal static partial class SelfTestRunner
                 throw new InvalidOperationException("Toggle renderer 必须将选择传给持久化 seam。");
             }
             toggle.IsChecked = false;
+            foreach (var key in new[] { "saveOnError", "saveDraw", "debugMode" }) {
+                var item = page.Sections.SelectMany(section => section.Items)
+                    .Single(item => item.Definition.SettingKey == "framework." + key);
+                var control = SettingsVisualDescendants(view).OfType<Wpf.Ui.Controls.ToggleSwitch>()
+                    .Single(control => System.Windows.Automation.AutomationProperties.GetAutomationId(control)
+                        == item.Definition.Id);
+                var previous = item.Toggle!.Value;
+                control.IsChecked = !previous;
+                if (item.Toggle.Value == previous) {
+                    throw new InvalidOperationException("框架开关必须经 TwoWay 绑定保存用户选择。");
+                }
+            }
             var action = SettingsActionFor(window, "update.check");
             var button = SettingsButtonFor(window, "update.check");
             if (version.Text == "—" || button.Command != action) {

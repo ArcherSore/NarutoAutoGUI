@@ -281,6 +281,16 @@ internal static partial class SelfTestRunner
             var button = SettingsButtonFor(window, "diagnostics.export");
             var action = SettingsActionFor(window, "diagnostics.export");
             CaptureSettings("top");
+            foreach (var id in new[] {
+                "framework-save-on-error", "framework-save-draw", "framework-debug-mode"
+            }) {
+                var toggle = SettingsVisualDescendants(settingsView).OfType<Wpf.Ui.Controls.ToggleSwitch>()
+                    .Single(control => System.Windows.Automation.AutomationProperties.GetAutomationId(control) == id);
+                toggle.BringIntoView();
+                PumpOnboarding();
+                AssertVisible(toggle);
+            }
+            CaptureSettings("framework");
             button.BringIntoView();
             PumpOnboarding();
             AssertVisible(button);
@@ -312,7 +322,7 @@ internal static partial class SelfTestRunner
             if (settings.ScrollableHeight <= 0 || settings.VerticalOffset <= 0) {
                 throw new InvalidOperationException("最小窗口中较长的 Settings 状态必须可以向下滚动。");
             }
-            AssertVisible(button);
+            AssertVisible(SettingsButtonFor(window, "support.openAfdian"));
             AssertVisible(SettingsButtonFor(window, "onboarding.replay"));
             if (settings.ExtentWidth > settings.ViewportWidth + 1) {
                 throw new InvalidOperationException("最小窗口的 Settings 不能横向溢出。");

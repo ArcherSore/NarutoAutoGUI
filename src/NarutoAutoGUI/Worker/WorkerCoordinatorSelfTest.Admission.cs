@@ -162,15 +162,20 @@ internal static partial class WorkerCoordinatorSelfTest
     private static async Task VerifyLaunchFailureAfterAdmissionAsync(AdmissionContext context)
     {
         var launches = 0;
+        var options = new MaaFrameworkOptions(SaveOnError: false, SaveDraw: true, DebugMode: true);
         var kept = context.CreateCase("launch-failure-session-exists", null);
         await using (var coordinator = kept.CreateCoordinator(kept.FakeWorkerPath,
             () => [new WorkerProcessEntry(4, context.Session, "csrss")], () => [context.Session],
-            (_, _, _, _, _) => {
+            (_, instanceId, _, manifestPath, _) => {
+                var manifest = System.Text.Json.JsonSerializer.Deserialize<LaunchManifest>(
+                    File.ReadAllBytes(manifestPath), ProtocolJson.Options)!;
+                Require(manifest.WorkerInstanceId == instanceId && manifest.FrameworkOptions == options,
+                    "GUI 设置未写入实际启动 Worker 所用的 Launch Manifest。");
                 launches++;
                 throw new InvalidOperationException("scripted launch failure");
             })) {
             var failure = await ExpectAsync<InvalidOperationException>(() => coordinator.PrepareWorkerAsync(
-                context.Session, context.Project, context.Token), "注入的启动失败没有传播。");
+                context.Session, context.Project, context.Token, options), "注入的启动失败没有传播。");
             Require(failure.Message == "scripted launch failure" && kept.ReadRecord().WorkerPid is null
                 && coordinator.Snapshot.Observation == WorkerObservation.WorkerRecoveryConflict,
                 "启动失败后 PID 为空的 Admission 未被保留。");

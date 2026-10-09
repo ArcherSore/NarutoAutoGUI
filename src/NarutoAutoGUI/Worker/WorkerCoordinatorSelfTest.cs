@@ -350,7 +350,7 @@ internal static partial class WorkerCoordinatorSelfTest
         }
     }
 
-    private static async Task<ProtocolConnection> OpenConnectionAsync(
+    internal static async Task<ProtocolConnection> OpenConnectionAsync(
         string pipeName, WorkerAdmissionRecord record, long lastLogSequence,
         CancellationToken cancellationToken, RunSnapshot? activeRun = null)
     {
@@ -400,7 +400,7 @@ internal static partial class WorkerCoordinatorSelfTest
             activeRun?.State ?? RunState.Idle, activeRun, null, 1, lastLogSequence);
     }
 
-    private static RunSnapshot CreateActiveRun(RunStartAttempt attempt)
+    internal static RunSnapshot CreateActiveRun(RunStartAttempt attempt)
     {
         var startedAtUtc = DateTime.UtcNow;
         var item = attempt.Plan.Items.Single();
@@ -433,7 +433,7 @@ internal static partial class WorkerCoordinatorSelfTest
     private static WireEnvelope CreateLogEvent(Guid workerInstanceId, WorkerLogEntry entry) =>
         WireEnvelope.Event(ProtocolOperations.LogEntry, new LogEntryEvent(workerInstanceId, entry));
 
-    private static async Task<WireEnvelope> ReadRequestAsync(
+    internal static async Task<WireEnvelope> ReadRequestAsync(
         ProtocolConnection connection, string operation, CancellationToken cancellationToken)
     {
         var request = await connection.ReadAsync(cancellationToken)

@@ -54,8 +54,11 @@ internal static class RuntimeControls
             : environmentReady ? new RuntimeAction.Start(startAllowed, startBlocker)
             : new RuntimeAction.Prepare(commandsAvailable && project.Loaded);
 
+        // With no Worker, or one proven gone, no Run can be using the configuration; a Worker that may still be
+        // alive keeps it locked until a fresh snapshot shows it idle.
         var editable = project.Loaded && commandsAvailable
             && (observed.Observation is WorkerObservation.WorkerNotStarted or WorkerObservation.ChildSessionEnded
+                    or WorkerObservation.WorkerExited
                 || fresh && worker is { ActiveRun: null, RunState: RunState.Idle });
         LockReason? configurationLock = !project.Loaded || editable ? null
             : active is not null || pending == PendingOperation.StartingRun ? LockReason.RunActive

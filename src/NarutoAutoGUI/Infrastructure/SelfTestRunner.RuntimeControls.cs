@@ -205,9 +205,9 @@ internal static partial class SelfTestRunner
                 Worker = new WorkerCoordinatorSnapshot(WorkerObservation.Connected, false, idle, "scenario")
             }, new(new RuntimeAction.Prepare(true), false, runtimeBusy, showEnabled, true, none)),
             ("Worker 已退出", start with { Worker = Observed(WorkerObservation.WorkerExited, idle) },
-                new(retryPrepare, false, runtimeBusy, showEnabled, true, none)),
+                new(retryPrepare, true, null, showEnabled, true, none)),
             ("Worker 已退出，最后快照仍在运行", start with { Worker = Observed(WorkerObservation.WorkerExited, running) },
-                new(retryPrepare, false, runtimeBusy, showEnabled, true, none)),
+                new(retryPrepare, true, null, showEnabled, true, none)),
             ("Worker 恢复冲突", stopped with { Worker = Observed(WorkerObservation.WorkerRecoveryConflict, null) },
                 new(retryPrepare, false, runtimeBusy, showDisabled, true, none)),
             ("分身已结束，最后快照仍在运行", stopped with {

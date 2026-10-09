@@ -130,8 +130,8 @@ internal static partial class SelfTestRunner
     {
         WithRunningFakeWorker(logger, Path.Combine(directory, "no-project-stop"), (_, _) => Task.CompletedTask,
             coordinator => WithRuntimeControlWindow(logger, Path.Combine(directory, "no-project-window"), window => {
-                PumpUntil(() => HeaderShows(window, "StopTaskHeaderButton", enabled: false),
-                    "项目未加载时，运行中的 Run 应显示停止任务但不可用。");
+                PumpUntil(() => HeaderShows(window, "StopTaskHeaderButton", enabled: true),
+                    "项目未加载时，运行中的 Run 仍应可以停止。");
             }, coordinator: coordinator, loadProject: false));
     }
 

@@ -245,10 +245,10 @@ internal static partial class SelfTestRunner
                 new(new RuntimeAction.Prepare(false), false, runtimeBusy, showDisabled, false, none)),
             ("项目未加载但仍在运行", start with {
                 Worker = Observed(WorkerObservation.Connected, running), Project = ProjectReadiness.NotLoaded
-            }, new(new RuntimeAction.Stop(false), false, null, showEnabled, true, worker)),
+            }, new(new RuntimeAction.Stop(true), false, null, showEnabled, true, worker)),
             ("执行计划为空但仍在运行", start with {
                 Worker = Observed(WorkerObservation.Connected, running), Project = ready with { SelectedTaskCount = 0 }
-            }, new(new RuntimeAction.Stop(false), false, runActive, showEnabled, true, worker)),
+            }, new(new RuntimeAction.Stop(true), false, runActive, showEnabled, true, worker)),
             ("Worker 属于其他 Child Session", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, childSessionId: 8))
             }, new(new RuntimeAction.Start(true), true, null, showEnabled, true, none))

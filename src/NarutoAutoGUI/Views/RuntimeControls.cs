@@ -22,8 +22,8 @@ internal static class RuntimeControls
             && worker.RuntimeProfileDigest == project.RuntimeProfileDigest;
         var runStartable = environmentReady && project is { SelectedTaskCount: > 0, ConfigurationValid: true }
             && worker is { ActiveRun: null, RunState: RunState.Idle };
-        var stopAllowed = commandsAvailable && fresh && project is { Loaded: true, SelectedTaskCount: > 0 }
-            && active is { } run && IsStoppable(run);
+        // Stopping needs only the Run itself, never the project or the Active Configuration.
+        var stopAllowed = commandsAvailable && fresh && active is { } run && IsStoppable(run);
 
         var preparing = pending == PendingOperation.PreparingEnvironment
             || session.State is ChildSessionState.Connecting or ChildSessionState.Existing

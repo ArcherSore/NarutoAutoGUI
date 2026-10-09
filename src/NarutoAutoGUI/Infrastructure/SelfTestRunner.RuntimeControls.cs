@@ -223,11 +223,11 @@ internal static partial class SelfTestRunner
             ("上次 Run 失败且配置无效", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, last: RunState.Failed)),
                 Project = ready with { ConfigurationValid = false }
-            }, new(retryPrepare, true, null, showEnabled, true, worker)),
+            }, new(BlockedRetry(StartBlocker.ConfigurationInvalid), true, null, showEnabled, true, worker)),
             ("上次 Run 失败且执行计划为空", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, last: RunState.Failed)),
                 Project = ready with { SelectedTaskCount = 0 }
-            }, new(retryPrepare, true, null, showEnabled, true, worker)),
+            }, new(BlockedRetry(StartBlocker.NoTasks), true, null, showEnabled, true, worker)),
             ("上次 Run 成功", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, last: RunState.Succeeded))
             }, new(new RuntimeAction.Start(true), true, null, showEnabled, true, worker)),
@@ -258,6 +258,8 @@ internal static partial class SelfTestRunner
             new(observation, observation == WorkerObservation.Connected, snapshot, "scenario");
 
         static RuntimeAction.Start BlockedStart(StartBlocker blocker) => new(false, blocker);
+
+        static RuntimeAction.Retry BlockedRetry(StartBlocker blocker) => new(RetryTarget.Start, false, blocker);
     }
 
     private static ChildSessionSnapshot ScenarioSession(ChildSessionState state) => new(state,

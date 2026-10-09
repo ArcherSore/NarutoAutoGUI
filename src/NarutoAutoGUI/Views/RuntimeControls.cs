@@ -42,8 +42,9 @@ internal static class RuntimeControls
             : project.SelectedTaskCount == 0 ? StartBlocker.NoTasks
             : !project.ConfigurationValid ? StartBlocker.ConfigurationInvalid
             : StartBlocker.RuntimeNotReady;
-        var retryTarget = preparationFailed || !runStartable ? RetryTarget.Prepare : RetryTarget.Start;
-        var retryEnabled = commandsAvailable && project.Loaded;
+        // Retry prepares again only when the Runtime Environment failed; after a failed Run it is Start again.
+        var retryTarget = runtimeFaulted ? RetryTarget.Prepare : RetryTarget.Start;
+        var retryEnabled = retryTarget == RetryTarget.Prepare ? commandsAvailable && project.Loaded : startAllowed;
         RuntimeAction action = preparing || starting || stopping
             ? new RuntimeAction.InProgress(stopping ? ProgressKind.StoppingRun
                 : starting ? ProgressKind.StartingRun : ProgressKind.PreparingEnvironment)

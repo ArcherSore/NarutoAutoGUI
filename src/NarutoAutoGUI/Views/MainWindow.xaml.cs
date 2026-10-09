@@ -356,7 +356,7 @@ public partial class MainWindow : FluentWindow
 
     private async void PrepareEnvironmentButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_pendingOperation != PendingOperation.None || _exitInProgress) {
+        if (OperationOrExitInProgress) {
             return;
         }
         _environmentPreparationFailed = false;
@@ -382,7 +382,7 @@ public partial class MainWindow : FluentWindow
             });
     }
 
-    // Runtime Controls choose what Retry means; this handler only carries it out.
+    // RuntimeControls chooses what Retry means; this handler only carries it out.
     private void RetryRuntimeHeaderButton_Click(object sender, RoutedEventArgs e)
     {
         if (CurrentControls.Action is RuntimeAction.Retry { Target: RetryTarget.Start }) {
@@ -1464,7 +1464,7 @@ public partial class MainWindow : FluentWindow
 
     private async Task RunOperationAsync(PendingOperation pending, Func<Task> operation)
     {
-        if (_pendingOperation != PendingOperation.None || _exitInProgress) {
+        if (OperationOrExitInProgress) {
             return;
         }
 
@@ -1674,7 +1674,7 @@ public partial class MainWindow : FluentWindow
         });
     }
 
-    // Runtime Controls decide whether the runtime allows Preview; the window adds its own visibility checks.
+    // RuntimeControls decides whether the runtime allows Preview; the window adds its own visibility checks.
     private bool TryGetPreviewTarget(out Guid workerId)
     {
         if (CurrentControls.PreviewWorker is Guid worker && IsVisible && HomeView.Visibility == Visibility.Visible
@@ -1871,6 +1871,9 @@ public partial class MainWindow : FluentWindow
         _sessionSnapshot = snapshot;
         RefreshRuntimeControls();
     }
+
+    // Another operation is running or the application is exiting, so a new operation must not start.
+    private bool OperationOrExitInProgress => _pendingOperation != PendingOperation.None || _exitInProgress;
 
     private void SetPendingOperation(PendingOperation operation)
     {

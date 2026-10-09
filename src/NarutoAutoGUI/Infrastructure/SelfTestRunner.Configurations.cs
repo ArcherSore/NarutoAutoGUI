@@ -127,7 +127,7 @@ internal static partial class SelfTestRunner
             void SetBusy(bool busy)
             {
                 SetOnboardingField(window, "_pendingOperation",
-                    busy ? Views.PendingOperation.StartingRun : Views.PendingOperation.None);
+                    busy ? Views.PendingOperation.PreparingEnvironment : Views.PendingOperation.None);
                 InvokeOnboarding(window, "RefreshRuntimeControls");
             }
             bool LockBadgeShown() => ((System.Windows.UIElement)window.FindName("ConfigurationLockBadge")).Visibility

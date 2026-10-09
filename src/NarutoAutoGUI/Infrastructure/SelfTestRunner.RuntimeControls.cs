@@ -40,7 +40,7 @@ internal static partial class SelfTestRunner
                     "正在停止任务")
             }) {
                 window.ApplyRuntimeControls(new RuntimeControlState(action, true, null, idleDesktop, true, null));
-                var shown = RuntimeHeaderControls.Where(name => Named<UIElement>(window, name).IsVisible).ToArray();
+                var shown = ShownHeaderControls(window);
                 Require(shown.SequenceEqual([control]), $"{action} 应只显示 {control}，实际为 {string.Join("、", shown)}。");
                 var element = Named<FrameworkElement>(window, control);
                 Require(progress is null ? element.IsEnabled == enabled
@@ -81,7 +81,7 @@ internal static partial class SelfTestRunner
 
     private static void VerifyRuntimeControlScenarios()
     {
-        var scenarios = RuntimeControlScenarios("scenario-digest");
+        var scenarios = RuntimeControlScenarios();
         var failures = new List<string>();
         foreach (var (name, inputs, expected) in scenarios) {
             var actual = RuntimeControls.Derive(inputs);
@@ -99,8 +99,9 @@ internal static partial class SelfTestRunner
 
     // Each row states the controls a user sees for one situation; expected values come from the rules in #12.
     private static (string Name, RuntimeControlInputs Inputs, RuntimeControlState Expected)[]
-        RuntimeControlScenarios(string digest)
+        RuntimeControlScenarios()
     {
+        const string digest = "scenario-digest";
         var ready = new ProjectReadiness(true, 1, true, digest);
         var idle = ScenarioWorker(digest);
         var running = ScenarioWorker(digest, active: RunState.Running);
@@ -306,6 +307,9 @@ internal static partial class SelfTestRunner
             }
         }
     }
+
+    private static string[] ShownHeaderControls(MainWindow window) =>
+        RuntimeHeaderControls.Where(name => Named<UIElement>(window, name).IsVisible).ToArray();
 
     private static T Named<T>(MainWindow window, string name) where T : class =>
         window.FindName(name) as T ?? throw new InvalidOperationException($"MainWindow 缺少控件 {name}。");

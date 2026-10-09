@@ -49,8 +49,7 @@ public partial class MainWindow
 
     private void ReplayOnboarding()
     {
-        if (_projectPlan is null || _pendingOperation != PendingOperation.None || _exitInProgress || IsGlobalModalOpen
-            || _onboardingActive) {
+        if (_projectPlan is null || OperationOrExitInProgress || IsGlobalModalOpen || _onboardingActive) {
             return;
         }
         _onboardingAutoEnded = true;
@@ -527,7 +526,7 @@ public partial class MainWindow
         if (_logger is null || _settings is null || _onboardingClosed) {
             return;
         }
-        var busy = _pendingOperation != PendingOperation.None || _exitInProgress;
+        var busy = OperationOrExitInProgress;
         _settings.ReplayOnboarding.IsEnabled = _projectPlan is not null && !busy
             && !_onboardingActive && !IsGlobalModalOpen;
         _settings.ReplayOnboarding.ToolTip = _projectPlan is null ? "项目加载后可查看新手指引"

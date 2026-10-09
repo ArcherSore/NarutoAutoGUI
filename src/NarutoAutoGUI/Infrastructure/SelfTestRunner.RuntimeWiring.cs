@@ -89,100 +89,86 @@ internal static partial class SelfTestRunner
 
     private static void VerifyWorkerStopWiring(AppLogger logger, string directory)
     {
-        var planDirectory = CreateProjectFixture(Path.Combine(directory, "stop-plan"));
-        var activeRun = WorkerCoordinatorSelfTest.CreateActiveRun(
-            ProjectPlanModule.Open(planDirectory, Path.Combine(planDirectory, "plan.json")).CreateRunStartAttempt());
-        WithFakeWorker(logger, Path.Combine(directory, "stop"), (coordinator, record, pipeName) => {
-            var operations = new HeldOperations { RunOperations = true };
-            var stoppingSent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var sendCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var close = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            var worker = Task.Run(async () => {
-                await using var pipe = await WorkerCoordinatorSelfTest.OpenConnectionAsync(
-                    pipeName, record, 0, timeout.Token, activeRun);
-                var stop = await WorkerCoordinatorSelfTest.ReadRequestAsync(
-                    pipe, ProtocolOperations.RunStop, timeout.Token);
-                await pipe.WriteAsync(WireEnvelope.Response(ProtocolOperations.RunStop, stop.RequestId!.Value,
-                    new RunStopResponse("stop_requested")), timeout.Token);
-                var running = coordinator.Snapshot.WorkerSnapshot!;
-                var stopping = running with {
-                    StateRevision = 2, RunState = RunState.Stopping,
-                    ActiveRun = activeRun with { State = RunState.Stopping }
-                };
-                await pipe.WriteAsync(StateEvent(stopping), timeout.Token);
-                stoppingSent.TrySetResult();
-                await sendCancelled.Task.WaitAsync(timeout.Token);
-                var cancelled = stopping with {
-                    StateRevision = 3, RunState = RunState.Idle, ActiveRun = null,
-                    LastRun = activeRun with { State = RunState.Cancelled }
-                };
-                await pipe.WriteAsync(StateEvent(cancelled), timeout.Token);
-                await close.Task.WaitAsync(timeout.Token);
-            });
-            var verified = false;
-            try {
-                WithRuntimeControlWindow(logger, Path.Combine(directory, "stop-window"), window => {
-                    PumpUntil(() => HeaderShows(window, "StopTaskHeaderButton", enabled: true),
-                        "Worker 报告运行中的 Run 后应显示可用的停止任务。");
-                    Require(LockText(window) == "任务运行中，配置已锁定", "运行中应说明配置已锁定。");
-                    Click(window, "StopTaskHeaderButton");
-                    PumpUntil(() => operations.Entered == 1, "点击停止任务应开始停止操作。");
-                    Require(ProgressShows(window, "正在停止任务"), "停止操作进行中应显示停止进度。");
-                    operations.Release();
-                    PumpUntil(() => stoppingSent.Task.IsCompleted, "Worker 未收到停止请求。");
-                    PumpOnboarding();
-                    Require(ProgressShows(window, "正在停止任务"), "Run 停止中应保持停止进度。");
-                    sendCancelled.TrySetResult();
-                    PumpUntil(() => HeaderShows(window, "PrepareEnvironmentButton", enabled: true)
-                        && ConfigurationEditable(window), "Run 取消后应回到准备运行环境并解除配置锁定。");
-                }, coordinator: coordinator, runOperation: operations.RunAsync);
-                verified = true;
-            } finally {
-                sendCancelled.TrySetResult();
-                close.TrySetResult();
-                FinishFakeWorker(worker, timeout, verified);
-            }
-        });
+        var operations = new HeldOperations { RunOperations = true };
+        var stoppingSent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sendCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        WithRunningFakeWorker(logger, Path.Combine(directory, "stop"), async (worker, cancellationToken) => {
+            var stop = await WorkerCoordinatorSelfTest.ReadRequestAsync(
+                worker.Pipe, ProtocolOperations.RunStop, cancellationToken);
+            await worker.Pipe.WriteAsync(WireEnvelope.Response(ProtocolOperations.RunStop, stop.RequestId!.Value,
+                new RunStopResponse("stop_requested")), cancellationToken);
+            var stopping = worker.Coordinator.Snapshot.WorkerSnapshot! with {
+                StateRevision = 2, RunState = RunState.Stopping,
+                ActiveRun = worker.ActiveRun with { State = RunState.Stopping }
+            };
+            await worker.Pipe.WriteAsync(StateEvent(stopping), cancellationToken);
+            stoppingSent.TrySetResult();
+            await sendCancelled.Task.WaitAsync(cancellationToken);
+            var cancelled = stopping with {
+                StateRevision = 3, RunState = RunState.Idle, ActiveRun = null,
+                LastRun = worker.ActiveRun with { State = RunState.Cancelled }
+            };
+            await worker.Pipe.WriteAsync(StateEvent(cancelled), cancellationToken);
+        }, coordinator => WithRuntimeControlWindow(logger, Path.Combine(directory, "stop-window"), window => {
+            PumpUntil(() => HeaderShows(window, "StopTaskHeaderButton", enabled: true),
+                "Worker 报告运行中的 Run 后应显示可用的停止任务。");
+            Require(LockText(window) == "任务运行中，配置已锁定", "运行中应说明配置已锁定。");
+            Click(window, "StopTaskHeaderButton");
+            PumpUntil(() => operations.Entered == 1, "点击停止任务应开始停止操作。");
+            Require(ProgressShows(window, "正在停止任务"), "停止操作进行中应显示停止进度。");
+            operations.Release();
+            PumpUntil(() => stoppingSent.Task.IsCompleted, "Worker 未收到停止请求。");
+            PumpOnboarding();
+            Require(ProgressShows(window, "正在停止任务"), "Run 停止中应保持停止进度。");
+            sendCancelled.TrySetResult();
+            PumpUntil(() => HeaderShows(window, "PrepareEnvironmentButton", enabled: true)
+                && ConfigurationEditable(window), "Run 取消后应回到准备运行环境并解除配置锁定。");
+        }, coordinator: coordinator, runOperation: operations.RunAsync));
     }
 
     private static void VerifyStopWithoutProjectWiring(AppLogger logger, string directory)
     {
-        var planDirectory = CreateProjectFixture(Path.Combine(directory, "no-project-plan"));
+        WithRunningFakeWorker(logger, Path.Combine(directory, "no-project-stop"), (_, _) => Task.CompletedTask,
+            coordinator => WithRuntimeControlWindow(logger, Path.Combine(directory, "no-project-window"), window => {
+                PumpUntil(() => HeaderShows(window, "StopTaskHeaderButton", enabled: false),
+                    "项目未加载时，运行中的 Run 应显示停止任务但不可用。");
+            }, coordinator: coordinator, loadProject: false));
+    }
+
+    private sealed record FakeWorker(ProtocolConnection Pipe, WorkerCoordinator Coordinator, RunSnapshot ActiveRun);
+
+    // A fake Worker reports a running Run, then follows the script; its pipe stays open until verify returns.
+    private static void WithRunningFakeWorker(AppLogger logger, string directory,
+        Func<FakeWorker, CancellationToken, Task> script, Action<WorkerCoordinator> verify)
+    {
+        var planDirectory = CreateProjectFixture(Path.Combine(directory, "plan"));
         var activeRun = WorkerCoordinatorSelfTest.CreateActiveRun(
             ProjectPlanModule.Open(planDirectory, Path.Combine(planDirectory, "plan.json")).CreateRunStartAttempt());
-        WithFakeWorker(logger, Path.Combine(directory, "no-project-stop"), (coordinator, record, pipeName) => {
+        WithFakeWorker(logger, Path.Combine(directory, "worker"), (coordinator, record, pipeName) => {
             var close = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var worker = Task.Run(async () => {
                 await using var pipe = await WorkerCoordinatorSelfTest.OpenConnectionAsync(
                     pipeName, record, 0, timeout.Token, activeRun);
+                await script(new FakeWorker(pipe, coordinator, activeRun), timeout.Token);
                 await close.Task.WaitAsync(timeout.Token);
             });
             var verified = false;
             try {
-                WithRuntimeControlWindow(logger, Path.Combine(directory, "no-project-window"), window => {
-                    PumpUntil(() => HeaderShows(window, "StopTaskHeaderButton", enabled: false),
-                        "项目未加载时，运行中的 Run 应显示停止任务但不可用。");
-                }, coordinator: coordinator, loadProject: false);
+                verify(coordinator);
                 verified = true;
             } finally {
                 close.TrySetResult();
-                FinishFakeWorker(worker, timeout, verified);
+                // A failed check stops the fake Worker at once, so its timeout cannot hide the check's message.
+                if (!verified) {
+                    timeout.Cancel();
+                }
+                try {
+                    worker.GetAwaiter().GetResult();
+                } catch (Exception) when (!verified) {
+                }
             }
         });
-    }
-
-    // A failed check stops the fake Worker at once, so its timeout cannot hide the check's own message.
-    private static void FinishFakeWorker(Task worker, CancellationTokenSource timeout, bool verified)
-    {
-        if (!verified) {
-            timeout.Cancel();
-        }
-        try {
-            worker.GetAwaiter().GetResult();
-        } catch (Exception) when (!verified) {
-        }
     }
 
     private static WireEnvelope StateEvent(WorkerSnapshot snapshot) => WireEnvelope.Event(
@@ -212,11 +198,8 @@ internal static partial class SelfTestRunner
         }
     }
 
-    private static bool HeaderShows(MainWindow window, string control, bool enabled)
-    {
-        var shown = RuntimeHeaderControls.Where(name => Named<UIElement>(window, name).IsVisible).ToArray();
-        return shown.SequenceEqual([control]) && Named<UIElement>(window, control).IsEnabled == enabled;
-    }
+    private static bool HeaderShows(MainWindow window, string control, bool enabled) =>
+        ShownHeaderControls(window).SequenceEqual([control]) && Named<UIElement>(window, control).IsEnabled == enabled;
 
     private static bool ProgressShows(MainWindow window, string text)
     {
@@ -237,9 +220,9 @@ internal static partial class SelfTestRunner
         PumpOnboarding(20);
     }
 
-    private static void PumpUntil(Func<bool> condition, string failure, int timeoutMilliseconds = 15000)
+    private static void PumpUntil(Func<bool> condition, string failure)
     {
-        var deadline = Environment.TickCount64 + timeoutMilliseconds;
+        var deadline = Environment.TickCount64 + 15000;
         while (!condition()) {
             if (Environment.TickCount64 > deadline) {
                 throw new InvalidOperationException(failure);

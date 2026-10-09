@@ -35,14 +35,22 @@ internal static class RuntimeControls
                 or WorkerObservation.WorkerRecoveryConflict
             || worker?.WorkerState == WorkerState.Faulted;
         var runFaulted = active is null && worker?.LastRun?.State == RunState.Failed;
+        var startAllowed = commandsAvailable && runStartable;
+        StartBlocker? startBlocker = startAllowed ? null
+            : !commandsAvailable ? StartBlocker.CommandsUnavailable
+            : !project.Loaded ? StartBlocker.ProjectNotLoaded
+            : project.SelectedTaskCount == 0 ? StartBlocker.NoTasks
+            : !project.ConfigurationValid ? StartBlocker.ConfigurationInvalid
+            : StartBlocker.RuntimeNotReady;
+        var retryTarget = preparationFailed || !runStartable ? RetryTarget.Prepare : RetryTarget.Start;
+        var retryEnabled = commandsAvailable && project.Loaded;
         RuntimeAction action = preparing || starting || stopping
             ? new RuntimeAction.InProgress(stopping ? ProgressKind.StoppingRun
                 : starting ? ProgressKind.StartingRun : ProgressKind.PreparingEnvironment)
             : active?.State == RunState.Running ? new RuntimeAction.Stop(stopAllowed)
-            : runtimeFaulted || runFaulted ? new RuntimeAction.Retry(
-                preparationFailed || !runStartable ? RetryTarget.Prepare : RetryTarget.Start,
-                commandsAvailable && project.Loaded)
-            : environmentReady ? new RuntimeAction.Start(commandsAvailable && runStartable)
+            : runtimeFaulted || runFaulted ? new RuntimeAction.Retry(retryTarget, retryEnabled,
+                retryTarget == RetryTarget.Start && !retryEnabled ? startBlocker : null)
+            : environmentReady ? new RuntimeAction.Start(startAllowed, startBlocker)
             : new RuntimeAction.Prepare(commandsAvailable && project.Loaded);
 
         var editable = project.Loaded && commandsAvailable
@@ -91,6 +99,12 @@ internal enum ProgressKind
     PreparingEnvironment, StartingRun, StoppingRun
 }
 
+// Why Start cannot run, listed in the order checked so the reason a user can act on comes first.
+internal enum StartBlocker
+{
+    CommandsUnavailable, ProjectNotLoaded, NoTasks, ConfigurationInvalid, RuntimeNotReady
+}
+
 internal enum LockReason
 {
     RunActive, RuntimeBusy
@@ -110,9 +124,9 @@ internal abstract record RuntimeAction
 
     internal sealed record Prepare(bool Enabled) : RuntimeAction;
 
-    internal sealed record Retry(RetryTarget Target, bool Enabled) : RuntimeAction;
+    internal sealed record Retry(RetryTarget Target, bool Enabled, StartBlocker? Blocker = null) : RuntimeAction;
 
-    internal sealed record Start(bool Enabled) : RuntimeAction;
+    internal sealed record Start(bool Enabled, StartBlocker? Blocker = null) : RuntimeAction;
 
     internal sealed record Stop(bool Enabled) : RuntimeAction;
 

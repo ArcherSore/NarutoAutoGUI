@@ -48,6 +48,31 @@ internal static partial class SelfTestRunner
                     $"{action} 的可用性或进度说明不符。");
             }
 
+            // A disabled Start or Retry-to-Start explains itself on hover and to screen readers; enabled ones keep
+            // their usual tooltip.
+            foreach (var (action, control, toolTip, helpText) in new (RuntimeAction, string, string, string)[] {
+                (new RuntimeAction.Start(true), "StartTaskHeaderButton", "开始任务", ""),
+                (new RuntimeAction.Start(false, StartBlocker.CommandsUnavailable), "StartTaskHeaderButton",
+                    "当前操作完成后可开始任务", "当前操作完成后可开始任务"),
+                (new RuntimeAction.Start(false, StartBlocker.ProjectNotLoaded), "StartTaskHeaderButton",
+                    "MaaNOP 项目未加载，无法开始任务", "MaaNOP 项目未加载，无法开始任务"),
+                (new RuntimeAction.Start(false, StartBlocker.NoTasks), "StartTaskHeaderButton",
+                    "请先在执行计划中添加任务", "请先在执行计划中添加任务"),
+                (new RuntimeAction.Start(false, StartBlocker.ConfigurationInvalid), "StartTaskHeaderButton",
+                    "当前配置未通过校验，请先修正任务参数", "当前配置未通过校验，请先修正任务参数"),
+                (new RuntimeAction.Start(false, StartBlocker.RuntimeNotReady), "StartTaskHeaderButton",
+                    "运行环境尚未就绪，请稍候", "运行环境尚未就绪，请稍候"),
+                (new RuntimeAction.Retry(RetryTarget.Prepare, true), "RetryEnvironmentButton", "重试", ""),
+                (new RuntimeAction.Retry(RetryTarget.Start, true), "RetryEnvironmentButton", "重试", ""),
+                (new RuntimeAction.Retry(RetryTarget.Start, false, StartBlocker.NoTasks), "RetryEnvironmentButton",
+                    "请先在执行计划中添加任务", "请先在执行计划中添加任务")
+            }) {
+                window.ApplyRuntimeControls(new RuntimeControlState(action, true, null, idleDesktop, true, null));
+                var button = Named<FrameworkElement>(window, control);
+                Require(Equals(button.ToolTip, toolTip) && ToolTipService.GetShowOnDisabled(button)
+                    && AutomationProperties.GetHelpText(button) == helpText, $"{action} 的说明不符。");
+            }
+
             var state = new RuntimeControlState(new RuntimeAction.Prepare(true), true, null, idleDesktop, true, null);
             foreach (var (editable, lockReason, text) in new (bool, LockReason?, string?)[] {
                 (false, LockReason.RunActive, "任务运行中，配置已锁定"),
@@ -129,7 +154,7 @@ internal static partial class SelfTestRunner
                 PendingOperation = PendingOperation.RestoringSession
             }, new(preparing, false, runtimeBusy, showDisabled, false, none)),
             ("正在显示子桌面", start with { PendingOperation = PendingOperation.ShowingDesktop },
-                new(new RuntimeAction.Start(false), false, runtimeBusy, showDisabled, false, worker)),
+                new(BlockedStart(StartBlocker.CommandsUnavailable), false, runtimeBusy, showDisabled, false, worker)),
             ("正在创建分身", stopped with {
                 Session = ScenarioSession(ChildSessionState.Connecting),
                 PendingOperation = PendingOperation.PreparingEnvironment
@@ -151,9 +176,9 @@ internal static partial class SelfTestRunner
                 Session = ScenarioSession(ChildSessionState.Faulted), EnvironmentPreparationFailed = true
             }, new(retryPrepare, true, null, showDisabled, true, none)),
             ("配置无效", start with { Project = ready with { ConfigurationValid = false } },
-                new(new RuntimeAction.Start(false), true, null, showEnabled, true, worker)),
+                new(BlockedStart(StartBlocker.ConfigurationInvalid), true, null, showEnabled, true, worker)),
             ("执行计划为空", start with { Project = ready with { SelectedTaskCount = 0 } },
-                new(new RuntimeAction.Start(false), true, null, showEnabled, true, worker)),
+                new(BlockedStart(StartBlocker.NoTasks), true, null, showEnabled, true, worker)),
             ("项目未加载", stopped with { Project = ProjectReadiness.NotLoaded },
                 new(new RuntimeAction.Prepare(false), false, null, showDisabled, true, none)),
             ("Runtime Profile 不一致", start with {
@@ -213,7 +238,7 @@ internal static partial class SelfTestRunner
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, WorkerState.NotReady))
             }, new(new RuntimeAction.Prepare(true), true, null, showEnabled, true, none)),
             ("退出中", start with { Exiting = true },
-                new(new RuntimeAction.Start(false), false, runtimeBusy, showDisabled, false, none)),
+                new(BlockedStart(StartBlocker.CommandsUnavailable), false, runtimeBusy, showDisabled, false, none)),
             ("退出中且运行中", start with { Worker = Observed(WorkerObservation.Connected, running), Exiting = true },
                 new(new RuntimeAction.Stop(false), false, runActive, showDisabled, false, none)),
             ("正在结束分身", start with { Session = ScenarioSession(ChildSessionState.Disconnecting) },
@@ -231,6 +256,8 @@ internal static partial class SelfTestRunner
 
         static WorkerCoordinatorSnapshot Observed(WorkerObservation observation, WorkerSnapshot? snapshot) =>
             new(observation, observation == WorkerObservation.Connected, snapshot, "scenario");
+
+        static RuntimeAction.Start BlockedStart(StartBlocker blocker) => new(false, blocker);
     }
 
     private static ChildSessionSnapshot ScenarioSession(ChildSessionState state) => new(state,

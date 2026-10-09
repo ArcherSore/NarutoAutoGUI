@@ -703,7 +703,8 @@
                                     </Button>
                                     <Button x:Name="RetryEnvironmentButton" Grid.Column="1"
                                             Visibility="Collapsed" Style="{StaticResource RuntimeActionIconButtonStyle}"
-                                            ToolTip="重试" AutomationProperties.Name="重试运行环境"
+                                            ToolTip="重试" ToolTipService.ShowOnDisabled="True"
+                                            AutomationProperties.Name="重试运行环境"
                                             Click="RetryRuntimeHeaderButton_Click">
                                         <ui:SymbolIcon Width="20" Height="20" FontSize="20"
                                                        Foreground="{StaticResource Brush.Primary}"
@@ -711,7 +712,8 @@
                                     </Button>
                                     <Button x:Name="StartTaskHeaderButton" Grid.Column="1"
                                             Visibility="Collapsed" Style="{StaticResource RuntimeActionIconButtonStyle}"
-                                            ToolTip="开始任务" AutomationProperties.Name="开始任务"
+                                            ToolTip="开始任务" ToolTipService.ShowOnDisabled="True"
+                                            AutomationProperties.Name="开始任务"
                                             Click="StartRunButton_Click">
                                         <ui:SymbolIcon Width="20" Height="20" FontSize="20"
                                                        Foreground="{StaticResource Brush.Primary}" Symbol="Play24" />

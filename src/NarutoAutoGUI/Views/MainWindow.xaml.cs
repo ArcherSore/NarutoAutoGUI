@@ -1937,7 +1937,8 @@ public partial class MainWindow : FluentWindow
 
         static Visibility Visible(bool visible) => visible ? Visibility.Visible : Visibility.Collapsed;
 
-        // A blocked Start states why on hover and to screen readers; the task area holds the detailed message.
+        // A blocked Start, or a Retry that would start, says why on hover and to screen readers; the task area
+        // holds the detailed message.
         static void Explain(FrameworkElement button, string toolTip, StartBlocker? blocker)
         {
             var reason = blocker switch {

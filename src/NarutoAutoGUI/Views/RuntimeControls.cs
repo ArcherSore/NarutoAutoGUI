@@ -50,7 +50,7 @@ internal static class RuntimeControls
                 : starting ? ProgressKind.StartingRun : ProgressKind.PreparingEnvironment)
             : active?.State == RunState.Running ? new RuntimeAction.Stop(stopAllowed)
             : runtimeFaulted || runFaulted ? new RuntimeAction.Retry(retryTarget, retryEnabled,
-                retryTarget == RetryTarget.Start && !retryEnabled ? startBlocker : null)
+                retryTarget == RetryTarget.Start ? startBlocker : null)
             : environmentReady ? new RuntimeAction.Start(startAllowed, startBlocker)
             : new RuntimeAction.Prepare(commandsAvailable && project.Loaded);
 

@@ -526,12 +526,12 @@ public partial class MainWindow
         if (_logger is null || _settings is null || _onboardingClosed) {
             return;
         }
-        // Replay is offered under the same condition that lets the tour present itself.
-        var busy = !CurrentControls.CommandsAvailable;
-        _settings.ReplayOnboarding.IsEnabled = _projectPlan is not null && !busy
+        // Replay waits for runtime commands to be available, the same gate that lets a running tour continue.
+        var commandsUnavailable = !CurrentControls.CommandsAvailable;
+        _settings.ReplayOnboarding.IsEnabled = _projectPlan is not null && !commandsUnavailable
             && !_onboardingActive && !IsGlobalModalOpen;
         _settings.ReplayOnboarding.ToolTip = _projectPlan is null ? "项目加载后可查看新手指引"
-            : busy ? "当前操作完成后可查看新手指引" : null;
+            : commandsUnavailable ? "当前操作完成后可查看新手指引" : null;
         if (_onboardingActive) {
             if (!CanPresentOnboarding) {
                 PauseOnboarding();

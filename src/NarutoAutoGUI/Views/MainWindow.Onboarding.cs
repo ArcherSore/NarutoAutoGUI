@@ -49,7 +49,7 @@ public partial class MainWindow
 
     private void ReplayOnboarding()
     {
-        if (_projectPlan is null || OperationOrExitInProgress || IsGlobalModalOpen || _onboardingActive) {
+        if (_projectPlan is null || !CurrentControls.CommandsAvailable || IsGlobalModalOpen || _onboardingActive) {
             return;
         }
         _onboardingAutoEnded = true;
@@ -526,7 +526,8 @@ public partial class MainWindow
         if (_logger is null || _settings is null || _onboardingClosed) {
             return;
         }
-        var busy = OperationOrExitInProgress;
+        // Replay is offered under the same condition that lets the tour present itself.
+        var busy = !CurrentControls.CommandsAvailable;
         _settings.ReplayOnboarding.IsEnabled = _projectPlan is not null && !busy
             && !_onboardingActive && !IsGlobalModalOpen;
         _settings.ReplayOnboarding.ToolTip = _projectPlan is null ? "项目加载后可查看新手指引"

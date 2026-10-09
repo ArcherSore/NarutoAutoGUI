@@ -59,15 +59,17 @@ internal static partial class SelfTestRunner
             PumpUntil(() => ConfigurationEditable(window), "恢复操作结束后应解除配置锁定。");
             Require(ProgressShows(window, "正在准备运行环境"), "分身仍处于 Existing 时应保持准备进度。");
 
-            (bool Prepare, bool Editable)? duringLogoff = null;
-            wts.DuringLogoff = _ => duringLogoff = (
-                HeaderShows(window, "PrepareEnvironmentButton", enabled: false), ConfigurationEditable(window));
+            (bool Prepare, bool Editable, bool Replay, string? ReplayTip)? duringLogoff = null;
+            var replay = SettingsActionFor(window, "onboarding.replay");
+            wts.DuringLogoff = _ => duringLogoff = (HeaderShows(window, "PrepareEnvironmentButton", enabled: false),
+                ConfigurationEditable(window), replay.IsEnabled, replay.ToolTip);
             var ending = session.TerminateAsync();
             PumpUntil(() => ending.IsCompleted, "结束分身未完成。");
             ending.GetAwaiter().GetResult();
-            Require(duringLogoff == (true, false), "结束分身期间应禁用准备运行环境并锁定配置。");
-            Require(HeaderShows(window, "PrepareEnvironmentButton", enabled: true) && ConfigurationEditable(window),
-                "分身结束后应回到可准备运行环境。");
+            Require(duringLogoff == (true, false, false, "当前操作完成后可查看新手指引"),
+                "结束分身期间应禁用准备运行环境、锁定配置，并暂不可重看新手指引。");
+            Require(HeaderShows(window, "PrepareEnvironmentButton", enabled: true) && ConfigurationEditable(window)
+                && replay.IsEnabled && replay.ToolTip is null, "分身结束后应回到可准备运行环境并可重看新手指引。");
         }, session: session, runOperation: operations.RunAsync);
     }
 

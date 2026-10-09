@@ -176,49 +176,8 @@ internal sealed class DiagnosticPackageExporter(AppLogger logger)
     private IReadOnlyList<(string Path, string Entry)> MaaFrameworkDebugImages(
         string applicationDirectory, List<string> skipped)
     {
-        var files = new List<(string Path, string Entry)>();
-        foreach (var folder in new[] { "vision", "on_error", "screencap" }) {
-            var directories = new Stack<DirectoryInfo>();
-            directories.Push(new DirectoryInfo(Path.Combine(applicationDirectory, "debug", folder)));
-            while (directories.TryPop(out var directory)) {
-                var relative = Path.GetRelativePath(applicationDirectory, directory.FullName).Replace('\\', '/');
-                if (!CanReadDebugDirectory(directory.FullName, relative, skipped)) {
-                    continue;
-                }
-                FileSystemInfo[] entries;
-                try {
-                    entries = directory.GetFileSystemInfos();
-                } catch (Exception exception) when (
-                    exception is FileNotFoundException or DirectoryNotFoundException) {
-                    // Debug options may never have produced this directory.
-                    continue;
-                } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
-                    Skip(relative, exception, skipped);
-                    continue;
-                }
-                foreach (var entry in entries) {
-                    if (entry is DirectoryInfo child) {
-                        directories.Push(child);
-                        continue;
-                    }
-                    var extension = entry.Extension.ToLowerInvariant();
-                    var supported = folder switch {
-                        "vision" => extension == ".jpg",
-                        "on_error" => extension == ".png",
-                        _ => extension is ".png" or ".jpg" or ".jpeg"
-                    };
-                    if (!supported) {
-                        continue;
-                    }
-                    var name = Path.GetRelativePath(applicationDirectory, entry.FullName).Replace('\\', '/');
-                    if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) {
-                        Skip(name, new IOException("诊断采集不跟随文件链接。"), skipped);
-                        continue;
-                    }
-                    files.Add((entry.FullName, name));
-                }
-            }
-        }
-        return files.OrderBy(file => file.Entry, StringComparer.Ordinal).ToArray();
+        return MaaDebugImages.Enumerate(applicationDirectory, (entry, exception) => Skip(entry, exception, skipped))
+            .Select(file => (file.FullName, MaaDebugImages.RelativePath(applicationDirectory, file.FullName)))
+            .OrderBy(file => file.Item2, StringComparer.Ordinal).ToArray();
     }
 }

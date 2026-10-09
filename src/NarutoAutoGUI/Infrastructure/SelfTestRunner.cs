@@ -22,6 +22,7 @@ internal static partial class SelfTestRunner
             using var logger = new AppLogger(logDirectory);
             VerifyTerminalNotifications();
             VerifyDiagnosticPackage(logger, testDirectory);
+            VerifyDebugImageCleanup(logger, testDirectory);
             VerifyDeclarativeSettings(logger, testDirectory);
             VerifyDiagnosticSettings(logger, testDirectory);
             VerifyNavigationPreference(logger, testDirectory);

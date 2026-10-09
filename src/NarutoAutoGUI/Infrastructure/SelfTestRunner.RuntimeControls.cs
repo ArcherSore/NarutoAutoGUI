@@ -1,11 +1,11 @@
-using System.Reflection;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using NarutoAutoGUI.ChildSession;
-using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
 using NarutoAutoGUI.Views;
 using NarutoAutoGUI.Worker;
+using WpfButton = System.Windows.Controls.Button;
 
 namespace NarutoAutoGUI.Infrastructure;
 
@@ -13,25 +13,83 @@ internal static partial class SelfTestRunner
 {
     private const uint ScenarioSessionId = 7;
     private static readonly Guid ScenarioWorkerId = new("7a0c0e3e-5d1f-4b8e-9a51-000000000007");
+    private static readonly string[] RuntimeHeaderControls = [
+        "PrepareEnvironmentButton", "RetryEnvironmentButton", "StartTaskHeaderButton", "StopTaskHeaderButton",
+        "RuntimeHeaderProgressRing"
+    ];
 
-    private static void VerifyRuntimeControlScenarios(AppLogger logger, string testDirectory)
+    // The window shows what a RuntimeControlState says, independent of how the state was derived.
+    private static void VerifyRuntimeControlMapping(AppLogger logger, string testDirectory)
     {
-        var directory = Path.Combine(testDirectory, "runtime-controls");
-        var projectDirectory = CreateProjectFixture(directory);
-        var withTask = ProjectPlanModule.Open(projectDirectory, Path.Combine(directory, "with-task.json"));
-        var withoutTask = ProjectPlanModule.Open(projectDirectory, Path.Combine(directory, "without-task.json"));
-        withoutTask.RemoveTask(withoutTask.SelectedTaskNames.Single());
-        var scenarios = RuntimeControlScenarios(withTask.RuntimeProfileDigest);
-        var failures = new List<string>();
-        WithScenarioWindow(logger, directory, projectDirectory, window => {
-            foreach (var (name, inputs, expected) in scenarios) {
-                var actual = ObserveCurrentWindow(window, inputs, withTask, withoutTask);
-                if (actual != expected) {
-                    failures.Add($"{name}{Environment.NewLine}  expected {expected}{Environment.NewLine}"
-                        + $"  actual   {actual}");
-                }
+        WithRuntimeControlWindow(logger, Path.Combine(testDirectory, "runtime-mapping"), window => {
+            var idleDesktop = new DesktopToggle(DesktopAction.Show, true);
+            foreach (var (action, control, enabled, progress) in new (RuntimeAction, string, bool, string?)[] {
+                (new RuntimeAction.Prepare(true), "PrepareEnvironmentButton", true, null),
+                (new RuntimeAction.Prepare(false), "PrepareEnvironmentButton", false, null),
+                (new RuntimeAction.Retry(RetryTarget.Prepare, true), "RetryEnvironmentButton", true, null),
+                (new RuntimeAction.Retry(RetryTarget.Start, false), "RetryEnvironmentButton", false, null),
+                (new RuntimeAction.Start(true), "StartTaskHeaderButton", true, null),
+                (new RuntimeAction.Start(false), "StartTaskHeaderButton", false, null),
+                (new RuntimeAction.Stop(true), "StopTaskHeaderButton", true, null),
+                (new RuntimeAction.Stop(false), "StopTaskHeaderButton", false, null),
+                (new RuntimeAction.InProgress(ProgressKind.PreparingEnvironment), "RuntimeHeaderProgressRing", true,
+                    "正在准备运行环境"),
+                (new RuntimeAction.InProgress(ProgressKind.StartingRun), "RuntimeHeaderProgressRing", true,
+                    "正在开始任务"),
+                (new RuntimeAction.InProgress(ProgressKind.StoppingRun), "RuntimeHeaderProgressRing", true,
+                    "正在停止任务")
+            }) {
+                window.ApplyRuntimeControls(new RuntimeControlState(action, true, null, idleDesktop, true, null));
+                var shown = RuntimeHeaderControls.Where(name => Named<UIElement>(window, name).IsVisible).ToArray();
+                Require(shown.SequenceEqual([control]), $"{action} 应只显示 {control}，实际为 {string.Join("、", shown)}。");
+                var element = Named<FrameworkElement>(window, control);
+                Require(progress is null ? element.IsEnabled == enabled
+                    : Equals(element.ToolTip, progress) && AutomationProperties.GetName(element) == progress,
+                    $"{action} 的可用性或进度说明不符。");
+            }
+
+            var state = new RuntimeControlState(new RuntimeAction.Prepare(true), true, null, idleDesktop, true, null);
+            foreach (var (editable, lockReason, text) in new (bool, LockReason?, string?)[] {
+                (false, LockReason.RunActive, "任务运行中，配置已锁定"),
+                (false, LockReason.RuntimeBusy, "运行环境处理中，配置暂时锁定"),
+                (false, null, null),
+                (true, null, null)
+            }) {
+                window.ApplyRuntimeControls(
+                    state with { ConfigurationEditable = editable, ConfigurationLock = lockReason });
+                Require(Named<UIElement>(window, "NewConfigurationButton").IsEnabled == editable
+                    && Named<UIElement>(window, "ConfigurationLockBadge").IsVisible == text is not null
+                    && (text is null || Named<TextBlock>(window, "ConfigurationLockText").Text == text),
+                    $"配置可编辑={editable}、锁定原因={lockReason} 的显示不符。");
+            }
+
+            foreach (var (desktop, text) in new (DesktopToggle, string)[] {
+                (new DesktopToggle(DesktopAction.Hide, true), "隐藏分身"),
+                (new DesktopToggle(DesktopAction.Show, false), "显示分身")
+            }) {
+                window.ApplyRuntimeControls(state with { Desktop = desktop });
+                var button = Named<WpfButton>(window, "HomeDesktopVisibilityButton");
+                Require(Named<AccessText>(window, "HomeDesktopVisibilityText").Text == text
+                    && button.IsEnabled == desktop.Enabled && Equals(button.ToolTip, text)
+                    && AutomationProperties.GetName(button) == text
+                    && Equals(button.Tag, desktop.Action == DesktopAction.Hide ? "True" : "False"),
+                    $"{desktop} 的分身按钮显示不符。");
             }
         });
+        Console.WriteLine("RUNTIME CONTROL MAPPING PASS: header actions, configuration lock and desktop toggle.");
+    }
+
+    private static void VerifyRuntimeControlScenarios()
+    {
+        var scenarios = RuntimeControlScenarios("scenario-digest");
+        var failures = new List<string>();
+        foreach (var (name, inputs, expected) in scenarios) {
+            var actual = RuntimeControls.Derive(inputs);
+            if (actual != expected) {
+                failures.Add($"{name}{Environment.NewLine}  expected {expected}{Environment.NewLine}"
+                    + $"  actual   {actual}");
+            }
+        }
         if (failures.Count != 0) {
             throw new InvalidOperationException(
                 $"运行控制场景不符：{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
@@ -205,18 +263,27 @@ internal static partial class SelfTestRunner
                     itemState, DateTime.UnixEpoch, null, null, null, null)], null, null);
     }
 
-    private static void WithScenarioWindow(
-        AppLogger logger, string directory, string projectDirectory, Action<MainWindow> verify)
+    // Opens a real MainWindow off screen and lets its normal startup run; tests reach it only through its interface.
+    private static void WithRuntimeControlWindow(AppLogger logger, string directory, Action<MainWindow> verify,
+        ChildSessionManager? session = null, WorkerCoordinator? coordinator = null,
+        Func<Func<Task>, Task>? runOperation = null, bool loadProject = true)
     {
+        var projectDirectory = CreateProjectFixture(directory);
+        if (!loadProject) {
+            File.Delete(Path.Combine(projectDirectory, "interface.json"));
+        }
         var configDirectory = Path.Combine(projectDirectory, "config");
         Directory.CreateDirectory(configDirectory);
         File.WriteAllText(Path.Combine(configDirectory, "update-check.txt"), "false");
         File.WriteAllText(Path.Combine(configDirectory, "onboarding.txt"), "1");
-        using var session = new SimulatedWts().CreateManager(logger);
-        var coordinator = new WorkerCoordinator(logger, Path.Combine(directory, "state"), "unused.exe",
-            $"NarutoAutoGUI.RuntimeControls.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
-        var window = new MainWindow(logger, session, new ChildSessionProgramService(logger), coordinator,
-            operation => operation(), () => Task.CompletedTask, projectDirectory);
+        using var ownedSession = session is null ? new SimulatedWts().CreateManager(logger) : null;
+        var ownedCoordinator = coordinator is null
+            ? new WorkerCoordinator(logger, Path.Combine(directory, "state"), "unused.exe",
+                $"NarutoAutoGUI.RuntimeControls.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false)
+            : null;
+        var window = new MainWindow(logger, session ?? ownedSession!, new ChildSessionProgramService(logger),
+            coordinator ?? ownedCoordinator!, runOperation ?? (operation => operation()), () => Task.CompletedTask,
+            projectDirectory);
         var application = System.Windows.Application.Current;
         var shutdown = application.ShutdownMode;
         application.ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -234,84 +301,19 @@ internal static partial class SelfTestRunner
             window.Close();
             PumpOnboarding();
             application.ShutdownMode = shutdown;
-            Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
+            if (ownedCoordinator is not null) {
+                Task.Run(async () => await ownedCoordinator.DisposeAsync()).GetAwaiter().GetResult();
+            }
         }
     }
 
-    // Characterizes the controls of the current MainWindow; it reads private members only until extraction.
-    private static RuntimeControlState ObserveCurrentWindow(MainWindow window, RuntimeControlInputs inputs,
-        ProjectPlanModule withTask, ProjectPlanModule withoutTask)
+    private static T Named<T>(MainWindow window, string name) where T : class =>
+        window.FindName(name) as T ?? throw new InvalidOperationException($"MainWindow 缺少控件 {name}。");
+
+    private static void Require(bool condition, string failure)
     {
-        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        var type = typeof(MainWindow);
-        var project = inputs.Project;
-        if (project.Loaded && (project.SelectedTaskCount is not (0 or 1)
-            || project.RuntimeProfileDigest != withTask.RuntimeProfileDigest)) {
-            throw new InvalidOperationException($"场景项目状态无法由夹具表示：{project}。");
+        if (!condition) {
+            throw new InvalidOperationException(failure);
         }
-        var status = inputs.PendingOperation switch {
-            PendingOperation.None => string.Empty,
-            PendingOperation.RestoringSession => "正在恢复已有桌面分身...",
-            PendingOperation.ShowingDesktop => "正在显示子桌面...",
-            PendingOperation.PreparingEnvironment => "正在准备运行环境...",
-            PendingOperation.StartingRun => "正在开始任务...",
-            _ => "正在停止任务..."
-        };
-        Set("_sessionSnapshot", inputs.Session);
-        Set("_workerSnapshot", inputs.Worker);
-        Set("_projectPlan", !project.Loaded ? null : project.SelectedTaskCount == 0 ? withoutTask : withTask);
-        Set("_projectConfigurationValid", project.ConfigurationValid);
-        Set("_busy", inputs.PendingOperation != PendingOperation.None);
-        Set("_operationStatus", status);
-        Set("_environmentPreparationFailed", inputs.EnvironmentPreparationFailed);
-        Set("_exitInProgress", inputs.Exiting);
-        type.GetMethod("UpdateCommandAvailability", flags)!.Invoke(window, null);
-
-        var shown = new[] {
-            "PrepareEnvironmentButton", "RetryEnvironmentButton", "StartTaskHeaderButton", "StopTaskHeaderButton",
-            "RuntimeHeaderProgressRing"
-        }.Where(name => Named(name).Visibility == Visibility.Visible).ToArray();
-        if (shown.Length != 1) {
-            throw new InvalidOperationException($"运行控制应恰好显示一个主操作，实际为 {string.Join("、", shown)}。");
-        }
-        var enabled = Named(shown[0]).IsEnabled;
-        var retryTarget = inputs.EnvironmentPreparationFailed || !Get<bool>("IsRunReadyToStart")
-            ? RetryTarget.Prepare : RetryTarget.Start;
-        RuntimeAction action = shown[0] switch {
-            "PrepareEnvironmentButton" => new RuntimeAction.Prepare(enabled),
-            "RetryEnvironmentButton" => new RuntimeAction.Retry(retryTarget, enabled),
-            "StartTaskHeaderButton" => new RuntimeAction.Start(enabled),
-            "StopTaskHeaderButton" => new RuntimeAction.Stop(enabled),
-            _ => new RuntimeAction.InProgress(((FrameworkElement)Named(shown[0])).ToolTip switch {
-                "正在停止任务" => ProgressKind.StoppingRun,
-                "正在开始任务" => ProgressKind.StartingRun,
-                "正在准备运行环境" => ProgressKind.PreparingEnvironment,
-                var other => throw new InvalidOperationException($"未知进度说明：{other}。")
-            })
-        };
-        var editableProperty = (DependencyProperty)type
-            .GetField("ConfigurationEditableProperty", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
-        var lockText = ((TextBlock)Named("ConfigurationLockText")).Text;
-        LockReason? lockReason = Named("ConfigurationLockBadge").Visibility != Visibility.Visible ? null
-            : lockText switch {
-                "任务运行中，配置已锁定" => LockReason.RunActive,
-                "运行环境处理中，配置暂时锁定" => LockReason.RuntimeBusy,
-                _ => throw new InvalidOperationException($"未知配置锁定说明：{lockText}。")
-            };
-        var desktopButton = (System.Windows.Controls.Button)Named("HomeDesktopVisibilityButton");
-        var desktopAction = ((AccessText)Named("HomeDesktopVisibilityText")).Text == "隐藏分身"
-            ? DesktopAction.Hide : DesktopAction.Show;
-        if (Equals(desktopButton.Tag, "True") != (desktopAction == DesktopAction.Hide)) {
-            throw new InvalidOperationException("显示/隐藏分身按钮的状态标记与文字不一致。");
-        }
-        var previewArguments = new object?[] { null };
-        var previewTarget = (bool)type.GetMethod("TryGetPreviewTarget", flags)!.Invoke(window, previewArguments)!;
-        return new RuntimeControlState(action, (bool)window.GetValue(editableProperty), lockReason,
-            new DesktopToggle(desktopAction, desktopButton.IsEnabled), Get<bool>("CanRunCommand"),
-            previewTarget ? (Guid)previewArguments[0]! : null);
-
-        void Set(string name, object? value) => type.GetField(name, flags)!.SetValue(window, value);
-        T Get<T>(string name) => (T)type.GetProperty(name, flags)!.GetValue(window)!;
-        UIElement Named(string name) => (UIElement)window.FindName(name);
     }
 }

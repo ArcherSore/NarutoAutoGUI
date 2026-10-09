@@ -46,10 +46,6 @@ public partial class MainWindow : FluentWindow
     private const int MaximumGuiLogEntries = 1000;
     private HwndSource? _previewWindowSource;
     private const string PlanItemDragDataFormat = "NarutoAutoGUI.PlanItem";
-    // Busy status prefixes that also drive preview gating, the runtime header and the configuration lock text.
-    private const string PreparingEnvironmentStatus = "正在准备运行环境";
-    private const string StartingRunStatus = "正在开始任务";
-    private const string StoppingRunStatus = "正在停止任务";
 
     private enum MainSection
     {
@@ -76,8 +72,7 @@ public partial class MainWindow : FluentWindow
     private int _previewPollingGeneration;
     private volatile bool _previewPaused;
     private bool _allowClose;
-    private bool _busy;
-    private string _operationStatus = string.Empty;
+    private PendingOperation _pendingOperation;
     private bool _environmentPreparationFailed;
     private bool _exitInProgress;
     private bool _followLogs = true;
@@ -149,7 +144,7 @@ public partial class MainWindow : FluentWindow
         IsVisibleChanged += MainWindow_IsVisibleChanged;
         StateChanged += MainWindow_StateChanged;
         SwitchSection(MainSection.Home);
-        UpdateCommandAvailability();
+        RefreshRuntimeControls();
     }
 
     public ObservableCollection<LogEntry> LogLines { get; } = [];
@@ -165,8 +160,7 @@ public partial class MainWindow : FluentWindow
             EndOnboarding(handled: false);
         }
         UpdateUpdaterControls();
-        UpdatePreviewPolling();
-        UpdateCommandAvailability();
+        RefreshRuntimeControls();
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -187,7 +181,7 @@ public partial class MainWindow : FluentWindow
                 "MaaNOP 项目无法加载",
                 "请使用完整的 MaaNOP 发布包，确保 NarutoAutoGUI.exe 同级目录直接包含 interface.json。");
             ShowProjectValidationError(exception);
-            UpdateCommandAvailability();
+            RefreshRuntimeControls();
         }
         InitializeUpdates();
         try {
@@ -205,7 +199,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
         await RunOperationAsync(
-            "正在恢复已有桌面分身...",
+            PendingOperation.RestoringSession,
             async () =>
             {
                 await _sessionManager.EnsureConnectedAsync(showPreview: true);
@@ -305,7 +299,7 @@ public partial class MainWindow : FluentWindow
 
     private async void ShowSessionButton_Click(object sender, RoutedEventArgs e) =>
         await RunOperationAsync(
-            "正在显示子桌面...",
+            PendingOperation.ShowingDesktop,
             async () => await _sessionManager.EnsureConnectedAsync(showPreview: true));
 
     private void HideSessionButton_Click(object sender, RoutedEventArgs e)
@@ -342,9 +336,12 @@ public partial class MainWindow : FluentWindow
 
     private void HomeDesktopVisibilityButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_sessionSnapshot.State == ChildSessionState.ConnectedVisible) {
+        if (CurrentControls.Desktop is not { Enabled: true } desktop) {
+            return;
+        }
+        if (desktop.Action == DesktopAction.Hide) {
             HideSessionButton_Click(sender, e);
-        } else if (_sessionSnapshot.State == ChildSessionState.ConnectedHidden) {
+        } else {
             ShowSessionButton_Click(sender, e);
         }
     }
@@ -359,12 +356,12 @@ public partial class MainWindow : FluentWindow
 
     private async void PrepareEnvironmentButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_busy || _exitInProgress) {
+        if (_pendingOperation != PendingOperation.None || _exitInProgress) {
             return;
         }
         _environmentPreparationFailed = false;
         await RunOperationAsync(
-            $"{PreparingEnvironmentStatus}...",
+            PendingOperation.PreparingEnvironment,
             async () =>
             {
                 try {
@@ -385,12 +382,13 @@ public partial class MainWindow : FluentWindow
             });
     }
 
+    // Runtime Controls choose what Retry means; this handler only carries it out.
     private void RetryRuntimeHeaderButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_environmentPreparationFailed || !IsRunReadyToStart) {
-            PrepareEnvironmentButton_Click(sender, e);
-        } else {
+        if (CurrentControls.Action is RuntimeAction.Retry { Target: RetryTarget.Start }) {
             StartRunButton_Click(sender, e);
+        } else {
+            PrepareEnvironmentButton_Click(sender, e);
         }
     }
 
@@ -399,14 +397,17 @@ public partial class MainWindow : FluentWindow
         if (!CommitFocusedConfigurationInput() || RevealInvalidInputDraft()) {
             return;
         }
-        if (!CanStartRun) {
+        if (CurrentControls.Action is not (RuntimeAction.Start { Enabled: true }
+            or RuntimeAction.Retry { Target: RetryTarget.Start, Enabled: true })) {
             return;
         }
         await RunOperationAsync(
-            $"{StartingRunStatus}...",
+            PendingOperation.StartingRun,
             async () =>
             {
-                if (!SessionConnected) {
+                // The operation may wait behind another one, so the session is checked again when it runs.
+                if (_sessionSnapshot.State is not (ChildSessionState.ConnectedVisible
+                    or ChildSessionState.ConnectedHidden)) {
                     throw new InvalidOperationException("Child Session 尚未连接，当前不能开始任务。 ");
                 }
                 var project = RequireProject();
@@ -428,16 +429,16 @@ public partial class MainWindow : FluentWindow
 
     private async void StopRunButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!CanStopRun) {
+        if (CurrentControls.Action is not RuntimeAction.Stop { Enabled: true }) {
             return;
         }
         await RunOperationAsync(
-            $"{StoppingRunStatus}...",
+            PendingOperation.StoppingRun,
             async () =>
             {
                 var activeRun = _workerSnapshot.WorkerSnapshot?.ActiveRun
                                 ?? throw new InvalidOperationException("Worker 当前没有 active Run。 ");
-                if (!IsStoppable(activeRun)) {
+                if (!RuntimeControls.IsStoppable(activeRun)) {
                     throw new InvalidOperationException("当前执行计划尚未进入可停止状态。 ");
                 }
                 var response = await _workerCoordinator.StopRunAsync(activeRun.RunId);
@@ -466,7 +467,7 @@ public partial class MainWindow : FluentWindow
 
     private void AddTaskButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!CanEditConfiguration || sender is not WpfButton { Tag: ProjectTaskChoice task }) {
+        if (!CurrentControls.ConfigurationEditable || sender is not WpfButton { Tag: ProjectTaskChoice task }) {
             return;
         }
         try {
@@ -564,7 +565,7 @@ public partial class MainWindow : FluentWindow
 
     private void RemovePlanItemButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!CanEditConfiguration || sender is not WpfButton { Tag: ProjectTaskChoice task }) {
+        if (!CurrentControls.ConfigurationEditable || sender is not WpfButton { Tag: ProjectTaskChoice task }) {
             return;
         }
         try {
@@ -685,7 +686,7 @@ public partial class MainWindow : FluentWindow
 
     private void SaveSelectedCase(Guid configurationId, string optionName, string caseName, FrameworkElement selector)
     {
-        if (_updatingOptionEditors || !CanEditConfiguration) {
+        if (_updatingOptionEditors || !CurrentControls.ConfigurationEditable) {
             return;
         }
 
@@ -715,7 +716,7 @@ public partial class MainWindow : FluentWindow
             _projectConfigurationValid = false;
             ShowProjectValidationError(exception);
             _logger.Warn("刷新 MaaNOP option 编辑器失败。", exception);
-            UpdateCommandAvailability();
+            RefreshRuntimeControls();
         }
     }
 
@@ -745,7 +746,7 @@ public partial class MainWindow : FluentWindow
             _projectConfigurationValid = false;
             ShowProjectValidationError(exception);
         }
-        UpdateCommandAvailability();
+        RefreshRuntimeControls();
     }
 
     // Option edits never change the task shelf or tabs. Plan cards are rebuilt only when nested options appear or
@@ -1367,7 +1368,7 @@ public partial class MainWindow : FluentWindow
 
     private void PlanItemsPanel_Drop(object sender, WpfDragEventArgs e)
     {
-        if (!CanEditConfiguration || e.Data.GetData(PlanItemDragDataFormat) is not string taskName) {
+        if (!CurrentControls.ConfigurationEditable || e.Data.GetData(PlanItemDragDataFormat) is not string taskName) {
             return;
         }
         try {
@@ -1461,28 +1462,33 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private async Task RunOperationAsync(string status, Func<Task> operation)
+    private async Task RunOperationAsync(PendingOperation pending, Func<Task> operation)
     {
-        if (_busy || _exitInProgress) {
+        if (_pendingOperation != PendingOperation.None || _exitInProgress) {
             return;
         }
 
-        SetBusy(true, status);
+        SetPendingOperation(pending);
         try {
             await _runApplicationOperationAsync(operation);
         } catch (OperationCanceledException) {
-            _logger.Warn($"操作已取消：{status}");
+            _logger.Warn($"操作已取消：正在{OperationLabel(pending)}...");
         } catch (Exception exception) {
-            var operationName = status.TrimEnd('.', '…');
-            if (operationName.StartsWith("正在", StringComparison.Ordinal)) {
-                operationName = operationName[2..];
-            }
-
-            HandleOperationError($"{operationName}失败", exception);
+            HandleOperationError($"{OperationLabel(pending)}失败", exception);
         } finally {
-            SetBusy(false, string.Empty);
+            SetPendingOperation(PendingOperation.None);
         }
     }
+
+    // One label per operation feeds its progress text, cancellation log and failure dialog title.
+    private static string OperationLabel(PendingOperation operation) => operation switch {
+        PendingOperation.RestoringSession => "恢复已有桌面分身",
+        PendingOperation.ShowingDesktop => "显示子桌面",
+        PendingOperation.PreparingEnvironment => "准备运行环境",
+        PendingOperation.StartingRun => "开始任务",
+        PendingOperation.StoppingRun => "停止任务",
+        _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
+    };
 
     private void HandleOperationError(string operation, Exception exception)
     {
@@ -1606,8 +1612,7 @@ public partial class MainWindow : FluentWindow
         }
 
         _workerSnapshot = snapshot;
-        UpdateCommandAvailability();
-        UpdatePreviewPolling();
+        RefreshRuntimeControls();
     }
 
     private void MainWindow_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -1669,16 +1674,13 @@ public partial class MainWindow : FluentWindow
         });
     }
 
+    // Runtime Controls decide whether the runtime allows Preview; the window adds its own visibility checks.
     private bool TryGetPreviewTarget(out Guid workerId)
     {
-        var worker = _workerSnapshot.WorkerSnapshot;
-        var preparing = IsBusyWith(PreparingEnvironmentStatus);
-        if (!_exitInProgress && !_environmentPreparationFailed && !preparing && IsVisible
-            && HomeView.Visibility == Visibility.Visible
-            && (PreviewCardContent.Visibility == Visibility.Visible || PreviewOverlay.Visibility == Visibility.Visible)
-            && SessionConnected && WorkerFresh && worker is { WorkerState: WorkerState.Ready }
-            && worker.ChildSessionId == _sessionSnapshot.ChildSessionId) {
-            workerId = worker.WorkerInstanceId;
+        if (CurrentControls.PreviewWorker is Guid worker && IsVisible && HomeView.Visibility == Visibility.Visible
+            && (PreviewCardContent.Visibility == Visibility.Visible
+                || PreviewOverlay.Visibility == Visibility.Visible)) {
+            workerId = worker;
             return true;
         }
         workerId = Guid.Empty;
@@ -1867,115 +1869,68 @@ public partial class MainWindow : FluentWindow
         }
 
         _sessionSnapshot = snapshot;
-        UpdatePreviewPolling();
-        UpdateCommandAvailability();
+        RefreshRuntimeControls();
     }
 
-    private void SetBusy(bool busy, string status)
+    private void SetPendingOperation(PendingOperation operation)
     {
-        _busy = busy;
-        _operationStatus = status;
-        Mouse.OverrideCursor = busy ? System.Windows.Input.Cursors.Wait : null;
-        UpdateCommandAvailability();
-        UpdatePreviewPolling();
+        _pendingOperation = operation;
+        Mouse.OverrideCursor = operation != PendingOperation.None ? System.Windows.Input.Cursors.Wait : null;
+        RefreshRuntimeControls();
     }
 
-    private bool IsBusyWith(string status) => _busy && _operationStatus.StartsWith(status, StringComparison.Ordinal);
+    // Derived fresh on every read, so a click handler never acts on a decision the window no longer shows.
+    private RuntimeControlState CurrentControls => RuntimeControls.Derive(new RuntimeControlInputs(
+        _sessionSnapshot, _workerSnapshot, _projectPlan is { } project
+            ? new ProjectReadiness(true, project.SelectedTaskNames.Count, _projectConfigurationValid,
+                project.RuntimeProfileDigest)
+            : ProjectReadiness.NotLoaded,
+        _pendingOperation, _environmentPreparationFailed, _exitInProgress));
 
-    // Keep the stale snapshot for diagnostics, but a confirmed ended runtime cannot own current controls.
-    private WorkerSnapshot? RuntimeControlWorker =>
-        _workerSnapshot.Observation is WorkerObservation.ChildSessionEnded or WorkerObservation.WorkerExited
-            ? null : _workerSnapshot.WorkerSnapshot;
-
-    // No busy operation, exit, or session connect/disconnect is in progress.
-    private bool CanRunCommand => !_busy && !_exitInProgress
-        && _sessionSnapshot.State is not (ChildSessionState.Connecting or ChildSessionState.Disconnecting);
-
-    private bool SessionConnected =>
-        _sessionSnapshot.State is ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden;
-
-    private bool WorkerFresh => _workerSnapshot is { Observation: WorkerObservation.Connected, SnapshotFresh: true };
-
-    private static bool IsStoppable(RunSnapshot run) => run.State == RunState.Running
-        && run.Items.Any(item => item.State is PlanItemState.Starting or PlanItemState.Running);
-
-    // The plan and runtime state allow a run; CanStartRun additionally applies the temporary command gate.
-    private bool IsRunReadyToStart => _projectPlan is { SelectedTaskNames.Count: > 0 } project
-        && _projectConfigurationValid && SessionConnected && WorkerFresh
-        && RuntimeControlWorker is { ActiveRun: null, RunState: RunState.Idle, WorkerState: WorkerState.Ready } worker
-        && worker.RuntimeProfileDigest == project.RuntimeProfileDigest;
-
-    private bool CanStartRun => CanRunCommand && IsRunReadyToStart;
-
-    private bool CanStopRun => CanRunCommand && WorkerFresh && _projectPlan is { SelectedTaskNames.Count: > 0 }
-        && RuntimeControlWorker?.ActiveRun is { } run && IsStoppable(run);
-
-    private void UpdateCommandAvailability()
+    // The only refresh path for runtime inputs; changes that are purely visual call UpdatePreviewPolling alone.
+    private void RefreshRuntimeControls()
     {
         ReevaluateOnboarding();
-        var state = _sessionSnapshot.State;
-        var canRunCommand = CanRunCommand;
-        var sessionConnected = SessionConnected;
-
-        HomeDesktopVisibilityButton.Tag = state == ChildSessionState.ConnectedVisible ? "True" : "False";
-        if (sessionConnected) {
-            HomeDesktopVisibilityText.Text = state == ChildSessionState.ConnectedVisible
-                ? "隐藏分身"
-                : "显示分身";
-            HomeDesktopVisibilityButton.IsEnabled = canRunCommand;
-        } else {
-            HomeDesktopVisibilityText.Text = "显示分身";
-            HomeDesktopVisibilityButton.IsEnabled = false;
-        }
-
-        HomeDesktopVisibilityButton.ToolTip = HomeDesktopVisibilityText.Text;
-        AutomationProperties.SetName(HomeDesktopVisibilityButton, HomeDesktopVisibilityText.Text);
-
-        var projectReady = _projectPlan is not null;
-        UpdateRuntimeHeader(canRunCommand, projectReady, sessionConnected);
-        var editable = CanEditConfiguration;
-        SetValue(ConfigurationEditableProperty, editable);
-        ConfigurationLockBadge.Visibility = projectReady && !editable ? Visibility.Visible : Visibility.Collapsed;
-        ConfigurationLockText.Text = RuntimeControlWorker?.ActiveRun is not null
-            || IsBusyWith(StartingRunStatus) ? "任务运行中，配置已锁定" : "运行环境处理中，配置暂时锁定";
+        ApplyRuntimeControls(CurrentControls);
+        UpdatePreviewPolling();
     }
 
-    private void UpdateRuntimeHeader(bool canRunCommand, bool projectReady, bool sessionConnected)
+    internal void ApplyRuntimeControls(RuntimeControlState state)
     {
-        var worker = RuntimeControlWorker;
-        var active = worker?.ActiveRun;
-        var preparing = IsBusyWith(PreparingEnvironmentStatus)
-            || _sessionSnapshot.State is ChildSessionState.Connecting or ChildSessionState.Existing
-            || _workerSnapshot.Observation == WorkerObservation.WorkerStarting
-            || worker?.WorkerState == WorkerState.Starting;
-        var runtimeFaulted = _environmentPreparationFailed || _sessionSnapshot.State == ChildSessionState.Faulted
-            || _workerSnapshot.Observation is WorkerObservation.IpcDisconnected or WorkerObservation.WorkerExited
-                or WorkerObservation.WorkerRecoveryConflict
-            || worker?.WorkerState == WorkerState.Faulted;
-        var runFaulted = active is null && worker?.LastRun?.State == RunState.Failed;
-        var ready = sessionConnected && projectReady && WorkerFresh && worker?.WorkerState == WorkerState.Ready
-            && worker.RuntimeProfileDigest == _projectPlan!.RuntimeProfileDigest;
-        var running = active?.State is RunState.Starting or RunState.Running or RunState.Stopping;
-        var faulted = !running && (runtimeFaulted || runFaulted);
-        var starting = active?.State == RunState.Starting || IsBusyWith(StartingRunStatus);
-        var stopping = active?.State == RunState.Stopping || IsBusyWith(StoppingRunStatus);
-        var transitioning = preparing || starting || stopping;
+        var desktopText = state.Desktop.Action == DesktopAction.Hide ? "隐藏分身" : "显示分身";
+        HomeDesktopVisibilityButton.Tag = state.Desktop.Action == DesktopAction.Hide ? "True" : "False";
+        HomeDesktopVisibilityText.Text = desktopText;
+        HomeDesktopVisibilityButton.IsEnabled = state.Desktop.Enabled;
+        HomeDesktopVisibilityButton.ToolTip = desktopText;
+        AutomationProperties.SetName(HomeDesktopVisibilityButton, desktopText);
 
-        PrepareEnvironmentButton.Visibility = !transitioning && !running && !faulted && !ready
-            ? Visibility.Visible : Visibility.Collapsed;
-        PrepareEnvironmentButton.IsEnabled = canRunCommand && projectReady;
-        RetryEnvironmentButton.Visibility = !transitioning && faulted ? Visibility.Visible : Visibility.Collapsed;
-        RetryEnvironmentButton.IsEnabled = canRunCommand && projectReady;
-        StartTaskHeaderButton.Visibility = !transitioning && !running && ready && !faulted
-            ? Visibility.Visible : Visibility.Collapsed;
-        StartTaskHeaderButton.IsEnabled = CanStartRun;
-        StopTaskHeaderButton.Visibility = !transitioning && active?.State == RunState.Running
-            ? Visibility.Visible : Visibility.Collapsed;
-        StopTaskHeaderButton.IsEnabled = CanStopRun;
-        RuntimeHeaderProgressRing.Visibility = transitioning ? Visibility.Visible : Visibility.Collapsed;
-        var progressText = stopping ? StoppingRunStatus : starting ? StartingRunStatus : PreparingEnvironmentStatus;
-        RuntimeHeaderProgressRing.ToolTip = progressText;
-        System.Windows.Automation.AutomationProperties.SetName(RuntimeHeaderProgressRing, progressText);
+        var action = state.Action;
+        PrepareEnvironmentButton.Visibility = Visible(action is RuntimeAction.Prepare);
+        PrepareEnvironmentButton.IsEnabled = action is RuntimeAction.Prepare { Enabled: true };
+        RetryEnvironmentButton.Visibility = Visible(action is RuntimeAction.Retry);
+        RetryEnvironmentButton.IsEnabled = action is RuntimeAction.Retry { Enabled: true };
+        StartTaskHeaderButton.Visibility = Visible(action is RuntimeAction.Start);
+        StartTaskHeaderButton.IsEnabled = action is RuntimeAction.Start { Enabled: true };
+        StopTaskHeaderButton.Visibility = Visible(action is RuntimeAction.Stop);
+        StopTaskHeaderButton.IsEnabled = action is RuntimeAction.Stop { Enabled: true };
+        RuntimeHeaderProgressRing.Visibility = Visible(action is RuntimeAction.InProgress);
+        if (action is RuntimeAction.InProgress { Kind: var kind }) {
+            var operation = kind switch {
+                ProgressKind.StoppingRun => PendingOperation.StoppingRun,
+                ProgressKind.StartingRun => PendingOperation.StartingRun,
+                _ => PendingOperation.PreparingEnvironment
+            };
+            var progressText = $"正在{OperationLabel(operation)}";
+            RuntimeHeaderProgressRing.ToolTip = progressText;
+            AutomationProperties.SetName(RuntimeHeaderProgressRing, progressText);
+        }
+
+        SetValue(ConfigurationEditableProperty, state.ConfigurationEditable);
+        ConfigurationLockBadge.Visibility = Visible(state.ConfigurationLock is not null);
+        ConfigurationLockText.Text = state.ConfigurationLock == LockReason.RunActive
+            ? "任务运行中，配置已锁定" : "运行环境处理中，配置暂时锁定";
+
+        static Visibility Visible(bool visible) => visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ShowActionableError(string title, Exception exception, string recovery, bool offerLogDirectory)

@@ -172,12 +172,12 @@ internal static partial class SelfTestRunner
         });
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "tour-finish"), (window, directory) => {
             StartAutomaticOnboarding(window);
-            SetOnboardingField(window, "_busy", true);
+            SetOnboardingField(window, "_pendingOperation", PendingOperation.PreparingEnvironment);
             InvokeOnboarding(window, "ReevaluateOnboarding");
             if (((UIElement)window.FindName("OnboardingOverlay")).Visibility != Visibility.Collapsed) {
                 throw new InvalidOperationException("外部 busy 操作应暂停 Tour。");
             }
-            SetOnboardingField(window, "_busy", false);
+            SetOnboardingField(window, "_pendingOperation", PendingOperation.None);
             InvokeOnboarding(window, "ReevaluateOnboarding");
             PumpOnboarding();
             for (var index = 0; index < 4; index++) {

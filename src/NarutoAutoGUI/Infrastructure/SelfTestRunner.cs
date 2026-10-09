@@ -21,7 +21,8 @@ internal static partial class SelfTestRunner
             var logDirectory = Path.Combine(testDirectory, "logs");
             using var logger = new AppLogger(logDirectory);
             if (runtimeControlsOnly) {
-                VerifyRuntimeControlScenarios(logger, testDirectory);
+                VerifyRuntimeControlScenarios();
+                VerifyRuntimeControlMapping(logger, testDirectory);
                 Console.WriteLine("RUNTIME CONTROLS SELF-TEST PASS");
                 return 0;
             }
@@ -67,8 +68,8 @@ internal static partial class SelfTestRunner
             VerifyMinimizedPreview(logger, testDirectory);
             VerifyWorkerLogSequenceTracker();
             VerifyRunLogRouting(logger);
-            VerifyEndedSessionControls(logger, testDirectory, projectDirectory);
-            VerifyRuntimeControlScenarios(logger, testDirectory);
+            VerifyRuntimeControlScenarios();
+            VerifyRuntimeControlMapping(logger, testDirectory);
             Task.Run(() => WorkerCoordinatorSelfTest.RunAsync(
                 logger, testDirectory, projectDirectory,
                 Path.Combine(testDirectory, "maanop-config.json"))).GetAwaiter().GetResult();
@@ -794,110 +795,6 @@ internal static partial class SelfTestRunner
         MainWindow.WriteWorkerDiagnosticLog(logger, userEntry);
         MainWindow.WriteWorkerDiagnosticLog(logger, diagnosticEntry);
         logger.Info("GUI diagnostic only");
-    }
-
-    private static void VerifyEndedSessionControls(
-        AppLogger logger, string testDirectory, string projectDirectory)
-    {
-        using var session = new ChildSessionManager(logger);
-        var coordinator = new WorkerCoordinator(
-            logger, Path.Combine(testDirectory, "home-controls"), "unused.exe",
-            $"NarutoAutoGUI.Home.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
-        var window = new MainWindow(
-            logger, session, new ChildSessionProgramService(logger), coordinator,
-            operation => operation(), () => Task.CompletedTask);
-        const System.Reflection.BindingFlags flags =
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-        void SetField(string name, object value)
-        {
-            typeof(MainWindow).GetField(name, flags)!.SetValue(window, value);
-        }
-        void Refresh()
-        {
-            typeof(MainWindow).GetMethod("UpdateCommandAvailability", flags)!.Invoke(window, null);
-        }
-        var stop = (System.Windows.Controls.Button)window.FindName("StopTaskHeaderButton");
-        var prepare = (System.Windows.Controls.Button)window.FindName("PrepareEnvironmentButton");
-        try {
-            var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(testDirectory, "maanop-config.json"));
-            SetField("_projectPlan", project);
-            SetField("_projectConfigurationValid", true);
-            SetField("_sessionSnapshot", new ChildSessionSnapshot(
-                ChildSessionState.ConnectedHidden, 7, 1, "self-test"));
-            var plan = project.CreateRunStartAttempt().Plan;
-            var item = plan.Items[0];
-            var active = new RunSnapshot(
-                Guid.NewGuid(), "self-test", RunState.Running, DateTime.UtcNow, DateTime.UtcNow,
-                null, null, item.PlanItemId, 0, plan,
-                [new PlanItemSnapshot(item.PlanItemId, item.TaskName, item.TaskLabel, item.Entry,
-                    item.ResolvedOptions, item.PipelineOverride, PlanItemState.Running,
-                    DateTime.UtcNow, null, null, null, null)], null, null);
-            var available = new DependencyCheck(true, "self-test", null);
-            var worker = new WorkerSnapshot(
-                ProtocolConstants.SnapshotVersion, DateTime.UtcNow, 1, Guid.NewGuid(), Environment.ProcessId,
-                7, "self-test", ProtocolConstants.ProtocolVersion, project.RuntimeProfileDigest, plan.Project,
-                WorkerState.Ready, null,
-                new DependencyStatus(DateTime.UtcNow, "self-test", "self-test",
-                    available, available, available, available, available),
-                RunState.Running, active, null, 0, 0);
-            SetField("_workerSnapshot", new WorkerCoordinatorSnapshot(WorkerObservation.Connected, true, worker, ""));
-            Refresh();
-            if (stop.Visibility != System.Windows.Visibility.Visible || !stop.IsEnabled) {
-                throw new InvalidOperationException("运行中应显示可点击的停止按钮。");
-            }
-            if (((System.Windows.UIElement)window.FindName("ConfigurationLockBadge")).Visibility
-                    != System.Windows.Visibility.Visible
-                || ((System.Windows.Controls.TextBlock)window.FindName("ConfigurationLockText")).Text
-                    != "任务运行中，配置已锁定") {
-                throw new InvalidOperationException("运行中应在任务标题旁说明配置已锁定。");
-            }
-            SetField("_workerSnapshot", new WorkerCoordinatorSnapshot(
-                WorkerObservation.IpcDisconnected, false, worker, "暂时断线"));
-            Refresh();
-            if (stop.Visibility != System.Windows.Visibility.Visible || stop.IsEnabled) {
-                throw new InvalidOperationException("暂时断线应保留运行状态并禁止停止。");
-            }
-            SetField("_sessionSnapshot", ChildSessionSnapshot.Empty);
-            foreach (var state in new[] { RunState.Running, RunState.Starting, RunState.Stopping }) {
-                var stale = worker with { RunState = state, ActiveRun = active with { State = state } };
-                SetField("_workerSnapshot", new WorkerCoordinatorSnapshot(
-                    WorkerObservation.ChildSessionEnded, false, stale, "Child Session 已结束"));
-                Refresh();
-                var ring = (System.Windows.UIElement)window.FindName("RuntimeHeaderProgressRing");
-                if (stop.Visibility != System.Windows.Visibility.Collapsed
-                    || prepare.Visibility != System.Windows.Visibility.Visible || !prepare.IsEnabled
-                    || ring.Visibility != System.Windows.Visibility.Collapsed) {
-                    throw new InvalidOperationException($"分身结束后仍显示 {state} 控件，未恢复准备运行环境入口。");
-                }
-                var retained = (WorkerCoordinatorSnapshot)
-                    typeof(MainWindow).GetField("_workerSnapshot", flags)!.GetValue(window)!;
-                if (!ReferenceEquals(retained.WorkerSnapshot, stale)) {
-                    throw new InvalidOperationException("运行控件刷新不应修改最后已知快照。");
-                }
-            }
-            var progress = (System.Windows.FrameworkElement)window.FindName("RuntimeHeaderProgressRing");
-            var lockText = (System.Windows.Controls.TextBlock)window.FindName("ConfigurationLockText");
-            foreach (var (status, progressText, expectedLock) in new[] {
-                ("正在开始任务...", "正在开始任务", "任务运行中，配置已锁定"),
-                ("正在准备运行环境...", "正在准备运行环境", "运行环境处理中，配置暂时锁定")
-            }) {
-                SetField("_busy", true);
-                SetField("_operationStatus", status);
-                Refresh();
-                if (progress.Visibility != System.Windows.Visibility.Visible
-                    || !Equals(progress.ToolTip, progressText)
-                    || System.Windows.Automation.AutomationProperties.GetName(progress) != progressText
-                    || prepare.Visibility != System.Windows.Visibility.Collapsed || lockText.Text != expectedLock) {
-                    throw new InvalidOperationException($"{status} 期间应显示对应进度与配置锁定说明。");
-                }
-            }
-            SetField("_busy", false);
-            SetField("_operationStatus", string.Empty);
-        } finally {
-            window.AllowClose();
-            window.Close();
-            Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
-        }
     }
 
     private static void VerifyUnsupportedProjectConstraints(string testDirectory, string sourceProjectDirectory)

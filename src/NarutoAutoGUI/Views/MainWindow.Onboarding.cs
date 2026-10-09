@@ -41,7 +41,7 @@ public partial class MainWindow
     private bool IsOnboardingVisible => _onboardingActive && !_onboardingPaused
         && OnboardingOverlay.Visibility == Visibility.Visible;
 
-    private bool CanPresentOnboarding => !_onboardingClosed && CanRunCommand
+    private bool CanPresentOnboarding => !_onboardingClosed && CurrentControls.CommandsAvailable
         && IsLoaded && IsVisible && WindowState != WindowState.Minimized
         && HomeView.Visibility == Visibility.Visible && _projectPlan is not null
         && TaskWorkspacePanel.Visibility == Visibility.Visible && !IsGlobalModalOpen
@@ -49,7 +49,8 @@ public partial class MainWindow
 
     private void ReplayOnboarding()
     {
-        if (_projectPlan is null || _busy || _exitInProgress || IsGlobalModalOpen || _onboardingActive) {
+        if (_projectPlan is null || _pendingOperation != PendingOperation.None || _exitInProgress || IsGlobalModalOpen
+            || _onboardingActive) {
             return;
         }
         _onboardingAutoEnded = true;
@@ -526,10 +527,11 @@ public partial class MainWindow
         if (_logger is null || _settings is null || _onboardingClosed) {
             return;
         }
-        _settings.ReplayOnboarding.IsEnabled = _projectPlan is not null && !_busy && !_exitInProgress
+        var busy = _pendingOperation != PendingOperation.None || _exitInProgress;
+        _settings.ReplayOnboarding.IsEnabled = _projectPlan is not null && !busy
             && !_onboardingActive && !IsGlobalModalOpen;
         _settings.ReplayOnboarding.ToolTip = _projectPlan is null ? "项目加载后可查看新手指引"
-            : _busy || _exitInProgress ? "当前操作完成后可查看新手指引" : null;
+            : busy ? "当前操作完成后可查看新手指引" : null;
         if (_onboardingActive) {
             if (!CanPresentOnboarding) {
                 PauseOnboarding();

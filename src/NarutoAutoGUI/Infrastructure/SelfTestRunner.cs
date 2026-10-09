@@ -12,7 +12,7 @@ namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
-    internal static int Run(bool projectOnly = false, bool supportOnly = false)
+    internal static int Run(bool projectOnly = false, bool supportOnly = false, bool runtimeControlsOnly = false)
     {
         var testDirectory = Path.Combine(Path.GetTempPath(), $"NarutoAutoGUI-self-test-{Guid.NewGuid():N}");
 
@@ -20,6 +20,11 @@ internal static partial class SelfTestRunner
             Directory.CreateDirectory(testDirectory);
             var logDirectory = Path.Combine(testDirectory, "logs");
             using var logger = new AppLogger(logDirectory);
+            if (runtimeControlsOnly) {
+                VerifyRuntimeControlScenarios(logger, testDirectory);
+                Console.WriteLine("RUNTIME CONTROLS SELF-TEST PASS");
+                return 0;
+            }
             VerifyTerminalNotifications();
             VerifyDiagnosticPackage(logger, testDirectory);
             VerifyDebugImageCleanup(logger, testDirectory);
@@ -63,6 +68,7 @@ internal static partial class SelfTestRunner
             VerifyWorkerLogSequenceTracker();
             VerifyRunLogRouting(logger);
             VerifyEndedSessionControls(logger, testDirectory, projectDirectory);
+            VerifyRuntimeControlScenarios(logger, testDirectory);
             Task.Run(() => WorkerCoordinatorSelfTest.RunAsync(
                 logger, testDirectory, projectDirectory,
                 Path.Combine(testDirectory, "maanop-config.json"))).GetAwaiter().GetResult();

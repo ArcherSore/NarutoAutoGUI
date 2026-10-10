@@ -228,6 +228,13 @@ internal static partial class SelfTestRunner
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, last: RunState.Failed)),
                 Project = ready with { SelectedTaskCount = 0 }
             }, new(BlockedRetry(StartBlocker.NoTasks), true, null, showEnabled, true, worker)),
+            ("上次 Run 失败且 Runtime Profile 不一致", start with {
+                Worker = Observed(WorkerObservation.Connected, ScenarioWorker("other-digest", last: RunState.Failed))
+            }, new(retryPrepare, true, null, showEnabled, true, worker)),
+            ("上次 Run 失败且快照断档等待刷新", start with {
+                Worker = new WorkerCoordinatorSnapshot(WorkerObservation.Connected, false,
+                    ScenarioWorker(digest, last: RunState.Failed), "scenario")
+            }, new(BlockedRetry(StartBlocker.RuntimeNotReady), false, runtimeBusy, showEnabled, true, none)),
             ("上次 Run 成功", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, last: RunState.Succeeded))
             }, new(new RuntimeAction.Start(true), true, null, showEnabled, true, worker)),

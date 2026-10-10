@@ -42,8 +42,11 @@ internal static class RuntimeControls
             : project.SelectedTaskCount == 0 ? StartBlocker.NoTasks
             : !project.ConfigurationValid ? StartBlocker.ConfigurationInvalid
             : StartBlocker.RuntimeNotReady;
-        // Retry prepares again only when the Runtime Environment failed; after a failed Run it is Start again.
-        var retryTarget = runtimeFaulted ? RetryTarget.Prepare : RetryTarget.Start;
+        // Retry prepares again when the Runtime Environment failed or is not ready, and starts the Run again once it
+        // is ready. A snapshot that is still resynchronising is only waited for.
+        var resynchronising = observed is { Observation: WorkerObservation.Connected, SnapshotFresh: false };
+        var retryTarget = runtimeFaulted || !environmentReady && !resynchronising
+            ? RetryTarget.Prepare : RetryTarget.Start;
         var retryEnabled = retryTarget == RetryTarget.Prepare ? commandsAvailable && project.Loaded : startAllowed;
         RuntimeAction action = preparing || starting || stopping
             ? new RuntimeAction.InProgress(stopping ? ProgressKind.StoppingRun

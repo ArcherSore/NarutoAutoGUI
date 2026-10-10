@@ -20,11 +20,12 @@ internal static partial class SelfTestRunner
         var directory = Path.Combine(testDirectory, "runtime-wiring");
         VerifyStartupAndExitWiring(logger, directory);
         VerifySessionRestoreAndEndWiring(logger, directory);
+        VerifySessionEndWithWorkerWiring(logger, directory);
         VerifyFaultedSessionRetryWiring(logger, directory);
         VerifyWorkerStopWiring(logger, directory);
         VerifyStopWithoutProjectWiring(logger, directory);
-        Console.WriteLine("RUNTIME CONTROL WIRING PASS: startup, exit, project failure, restore, end, retry, "
-            + "stop, stop without project.");
+        Console.WriteLine("RUNTIME CONTROL WIRING PASS: startup, exit, project failure, restore, end, "
+            + "end with Worker, retry, stop, stop without project.");
     }
 
     private static void VerifyStartupAndExitWiring(AppLogger logger, string directory)
@@ -71,6 +72,41 @@ internal static partial class SelfTestRunner
             Require(HeaderShows(window, "PrepareEnvironmentButton", enabled: true) && ConfigurationEditable(window)
                 && replay.IsEnabled && replay.ToolTip is null, "分身结束后应回到可准备运行环境并可重看新手指引。");
         }, session: session, runOperation: operations.RunAsync);
+    }
+
+    // Like the tray: logoff blocks the UI thread and kills the Worker, then the coordinator learns the session ended.
+    // The Worker's disconnect is raised on another thread, so it reaches the window after ChildSessionEnded.
+    private static void VerifySessionEndWithWorkerWiring(AppLogger logger, string directory)
+    {
+        var wts = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] };
+        using var session = wts.CreateManager(logger);
+        var operations = new HeldOperations();
+        WithFakeWorker(logger, Path.Combine(directory, "end-worker"), (coordinator, record, pipeName) => {
+            var pipe = Task.Run(() => WorkerCoordinatorSelfTest.OpenConnectionAsync(
+                pipeName, record, 0, CancellationToken.None)).GetAwaiter().GetResult();
+            WithRuntimeControlWindow(logger, Path.Combine(directory, "end-worker-window"), window => {
+                PumpUntil(() => operations.Entered == 1, "启动时应开始恢复已有分身。");
+                operations.Release();
+                // Subscribed after the window, so the window has queued the disconnect once this sees it.
+                var disconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                coordinator.StateChanged += (_, snapshot) => {
+                    if (snapshot.Observation != WorkerObservation.Connected) {
+                        disconnected.TrySetResult();
+                    }
+                };
+                wts.DuringLogoff = _ => {
+                    Task.Run(async () => await pipe.DisposeAsync()).GetAwaiter().GetResult();
+                    Require(disconnected.Task.Wait(5000), "注销分身时未观察到 Worker 断线。");
+                };
+                var ending = session.TerminateAsync();
+                Require(ending.IsCompleted, "结束分身应像托盘一样在界面线程上同步完成。");
+                ending.GetAwaiter().GetResult();
+                coordinator.ChildSessionEnded();
+                PumpOnboarding();
+                Require(HeaderShows(window, "PrepareEnvironmentButton", enabled: true) && ConfigurationEditable(window),
+                    "结束分身后迟到的 Worker 断线不应让运行控制回到重试。");
+            }, session: session, coordinator: coordinator, runOperation: operations.RunAsync);
+        });
     }
 
     private static void VerifyFaultedSessionRetryWiring(AppLogger logger, string directory)

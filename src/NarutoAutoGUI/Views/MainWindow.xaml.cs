@@ -1611,7 +1611,9 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        _workerSnapshot = snapshot;
+        // A change raised on another thread runs here late, possibly after a newer one raised on this thread, so the
+        // coordinator's current snapshot is applied rather than the one the event carried.
+        _workerSnapshot = _workerCoordinator.Snapshot;
         RefreshRuntimeControls();
     }
 

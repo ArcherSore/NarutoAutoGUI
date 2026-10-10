@@ -32,6 +32,11 @@ _Avoid_: 子进程、Worker
 在 Child Session 中承载 MaaNOP 自动化运行的进程角色。
 _Avoid_: Windows 服务、GUI 后台线程
 
+**Runtime Environment（运行环境）**:
+协同运行的 Child Session、其中已接纳的 Child Session Worker 与游戏客户端，共同承载 MaaNOP Run。
+运行环境就绪不代表游戏已确认处于可直接执行任务的状态。
+_Avoid_: 桌面分身、Worker Launch Context
+
 **Project Interface**:
 MaaNOP 向前端声明可用任务、选项、资源和展示信息的项目接口。
 _Avoid_: 用户配置、Run Plan

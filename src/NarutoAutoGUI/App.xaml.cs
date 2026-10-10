@@ -31,7 +31,8 @@ public partial class App : System.Windows.Application
         if (e.Args.Contains("--self-test", StringComparer.OrdinalIgnoreCase)) {
             Environment.ExitCode = SelfTestRunner.Run(
                 e.Args.Contains("--project-only", StringComparer.Ordinal),
-                e.Args.Contains("--support-only", StringComparer.Ordinal));
+                e.Args.Contains("--support-only", StringComparer.Ordinal),
+                e.Args.Contains("--runtime-controls-only", StringComparer.Ordinal));
             Shutdown(Environment.ExitCode);
             return;
         }

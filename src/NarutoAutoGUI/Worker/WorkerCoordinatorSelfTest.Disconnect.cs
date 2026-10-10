@@ -56,6 +56,13 @@ internal static partial class WorkerCoordinatorSelfTest
         Require(refusal.Message.Contains("仍在运行", StringComparison.Ordinal),
             $"EOF 后旧连接未解绑，准备运行环境得到：{refusal.Message}");
 
+        // A killed Worker's pipe ends while Windows still lists its process; once the process is gone the observation
+        // becomes WorkerExited without another Prepare, and the Admission still stays.
+        alive = false;
+        await WaitForObservationAsync(coordinator, WorkerObservation.WorkerExited, token);
+        Require(File.Exists(recordPath), "Worker 进程退出后仅凭观察就删除了 Admission。");
+        alive = true;
+
         // The server keeps accepting; a dead recorded PID then shows WorkerExited and Prepare replaces it.
         pipe = await OpenConnectionAsync(pipeName, record, 0, token);
         await WaitForFreshAsync(coordinator, token);

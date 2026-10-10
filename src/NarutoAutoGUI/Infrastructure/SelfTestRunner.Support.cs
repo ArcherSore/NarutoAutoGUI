@@ -170,16 +170,7 @@ internal static partial class SelfTestRunner
         File.WriteAllText(Path.Combine(outside, "maafw.log"), "outside log");
         File.WriteAllText(Path.Combine(outside, "outside.jpg"), "outside image");
         File.WriteAllText(Path.Combine(outside, "vision", "outside.jpg"), "outside image");
-        var link = Path.Combine(application, relativeLink);
-        Directory.CreateDirectory(Path.GetDirectoryName(link)!);
-        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe") {
-            Arguments = $"/d /c mklink /J \"{link}\" \"{outside}\"",
-            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
-        })!;
-        process.WaitForExit();
-        if (process.ExitCode != 0) {
-            throw new InvalidOperationException("无法创建目录链接测试 fixture。");
-        }
+        CreateJunction(Path.Combine(application, relativeLink), outside);
         var destination = Path.Combine(root, "linked.zip");
         exporter.Export(destination, application, actualLogs, metadata);
         using var archive = ZipFile.OpenRead(destination);
@@ -190,6 +181,19 @@ internal static partial class SelfTestRunner
         if (!json.RootElement.GetProperty("skippedFiles").EnumerateArray()
                 .Any(item => item.GetString() == relativeLink)) {
             throw new InvalidOperationException("跳过的 debug 目录链接必须记录到 metadata。");
+        }
+    }
+
+    private static void CreateJunction(string link, string target)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(link)!);
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe") {
+            Arguments = $"/d /c mklink /J \"{link}\" \"{target}\"",
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
+        })!;
+        process.WaitForExit();
+        if (process.ExitCode != 0) {
+            throw new InvalidOperationException("无法创建目录链接测试 fixture。");
         }
     }
 

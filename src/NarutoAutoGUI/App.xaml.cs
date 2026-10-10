@@ -13,6 +13,7 @@ public partial class App : System.Windows.Application
 {
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly RunTerminalNotificationTracker _terminalNotifications = new();
+    private readonly CancellationTokenSource _debugImageCleanup = new();
     private AppLogger? _logger;
     private ChildSessionManager? _sessionManager;
     private WorkerCoordinator? _workerCoordinator;
@@ -30,7 +31,8 @@ public partial class App : System.Windows.Application
         if (e.Args.Contains("--self-test", StringComparer.OrdinalIgnoreCase)) {
             Environment.ExitCode = SelfTestRunner.Run(
                 e.Args.Contains("--project-only", StringComparer.Ordinal),
-                e.Args.Contains("--support-only", StringComparer.Ordinal));
+                e.Args.Contains("--support-only", StringComparer.Ordinal),
+                e.Args.Contains("--runtime-controls-only", StringComparer.Ordinal));
             Shutdown(Environment.ExitCode);
             return;
         }
@@ -47,6 +49,7 @@ public partial class App : System.Windows.Application
         _logger.Info("NarutoAutoGUI 正式 GUI 启动。");
         _logger.Debug($"Process={Environment.ProcessPath}；OS={Environment.OSVersion}；"
                       + $"64BitOS={Environment.Is64BitOperatingSystem}；64BitProcess={Environment.Is64BitProcess}。");
+        _ = new DebugImageCleaner(AppContext.BaseDirectory, _logger).RunAsync(_debugImageCleanup.Token);
 
         _sessionManager = new ChildSessionManager(_logger);
         _workerCoordinator = new WorkerCoordinator(
@@ -136,6 +139,7 @@ public partial class App : System.Windows.Application
             }
 
             _logger.Info("NarutoAutoGUI 正常退出。");
+            _debugImageCleanup.Cancel();
             _trayIcon?.Dispose();
             _trayIcon = null;
             _sessionManager.Dispose();

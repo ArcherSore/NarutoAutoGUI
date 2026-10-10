@@ -13,10 +13,6 @@ public partial class MainWindow
     private bool _committingConfigurationInput;
     private WpfTextBox? _configurationNameEditor;
 
-    private bool CanEditConfiguration => _projectPlan is not null && CanRunCommand
-        && (_workerSnapshot.Observation is WorkerObservation.WorkerNotStarted or WorkerObservation.ChildSessionEnded
-            || WorkerFresh && RuntimeControlWorker is { ActiveRun: null, RunState: Protocol.RunState.Idle });
-
     private void RenderConfigurationTabs()
     {
         var project = _projectPlan!;
@@ -41,7 +37,7 @@ public partial class MainWindow
                 };
                 AutomationProperties.SetName(delete, $"删除配置 {configuration.Name}");
                 delete.PreviewMouseLeftButtonDown += (_, e) => {
-                    if (!CanEditConfiguration || _configurationNameEditor is not null
+                    if (!CurrentControls.ConfigurationEditable || _configurationNameEditor is not null
                         || !CommitFocusedConfigurationInput()) {
                         e.Handled = true;
                     } else {
@@ -93,7 +89,7 @@ public partial class MainWindow
 
     private void ConfigurationScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (sender is ScrollViewer { ScrollableWidth: > 0 } scroll && CanEditConfiguration) {
+        if (sender is ScrollViewer { ScrollableWidth: > 0 } scroll && CurrentControls.ConfigurationEditable) {
             scroll.ScrollToHorizontalOffset(scroll.HorizontalOffset - e.Delta / 120.0 * 64);
             e.Handled = true;
         }
@@ -153,7 +149,8 @@ public partial class MainWindow
 
     private void ChangeConfiguration(Action change)
     {
-        if (!CanEditConfiguration || _configurationNameEditor is not null || !CommitFocusedConfigurationInput()) {
+        if (!CurrentControls.ConfigurationEditable || _configurationNameEditor is not null
+            || !CommitFocusedConfigurationInput()) {
             if (_projectPlan is not null) {
                 RestoreConfigurationSelection();
             }
@@ -185,7 +182,8 @@ public partial class MainWindow
 
     private void BeginConfigurationRename(TabItem tab)
     {
-        if (!CanEditConfiguration || _configurationNameEditor is not null || !CommitFocusedConfigurationInput()) {
+        if (!CurrentControls.ConfigurationEditable || _configurationNameEditor is not null
+            || !CommitFocusedConfigurationInput()) {
             return;
         }
         var header = (Grid)tab.Header;
@@ -238,7 +236,7 @@ public partial class MainWindow
 
     private bool CommitConfigurationName()
     {
-        if (!CanEditConfiguration || _configurationNameEditor is not { Tag: Guid id } editor
+        if (!CurrentControls.ConfigurationEditable || _configurationNameEditor is not { Tag: Guid id } editor
             || _committingConfigurationInput) {
             return true;
         }
@@ -262,7 +260,7 @@ public partial class MainWindow
 
     private bool CommitOptionInput(WpfTextBox textBox)
     {
-        if (_updatingOptionEditors || _committingConfigurationInput || !CanEditConfiguration
+        if (_updatingOptionEditors || _committingConfigurationInput || !CurrentControls.ConfigurationEditable
             || textBox.Tag is not OptionInputTag tag || tag.Submitted && textBox.Text == tag.Value) {
             return true;
         }

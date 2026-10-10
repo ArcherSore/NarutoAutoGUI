@@ -38,6 +38,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan AdmissionTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan LogRecoveryRetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan WorkerExitRecheckDelay = TimeSpan.FromSeconds(1);
     private const string EndChildSessionHint = "请从托盘菜单选择“结束桌面分身”后重新准备运行环境。";
     private readonly object _gate = new();
     private readonly object _logDispatchGate = new();
@@ -969,6 +970,32 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
                 AdmissionLiveness.Alive => "Worker 仍存活，IPC 已断开",
                 _ => "无法确认 Worker 是否仍在运行，IPC 已断开"
             });
+        if (liveness != AdmissionLiveness.Stale) {
+            _ = WatchForWorkerExitAsync(admission);
+        }
+    }
+
+    // A killed Worker's pipe ends while Windows still lists its process, so the inspection at EOF usually finds it.
+    // The same inspection repeats until the process is gone, the Worker reconnects or the Admission is replaced.
+    private async Task WatchForWorkerExitAsync(WorkerAdmissionRecord admission)
+    {
+        // Read before the first await, while the server task that disposes _shutdown on shutdown is still running.
+        var cancellationToken = _shutdown.Token;
+        try {
+            while (true) {
+                await Task.Delay(WorkerExitRecheckDelay, cancellationToken);
+                lock (_gate) {
+                    if (!ReferenceEquals(_admission, admission) || _connection is not null) {
+                        return;
+                    }
+                }
+                if (ClassifyAdmission(admission) == AdmissionLiveness.Stale) {
+                    SetDisconnectedObservation(admission, WorkerObservation.WorkerExited, "Worker 进程已退出");
+                    return;
+                }
+            }
+        } catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+        }
     }
 
     private void LoadAdmission()

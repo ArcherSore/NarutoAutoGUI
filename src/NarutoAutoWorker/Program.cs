@@ -16,7 +16,7 @@ internal static class Program
                 return PreviewSelfTests.RunBufferReader(args[1]);
             }
             if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase)) {
-                return WorkerSelfTestRunner.Run();
+                return WorkerSelfTestRunner.Run(args.Contains("--run-only", StringComparer.OrdinalIgnoreCase));
             }
 
             var arguments = WorkerArguments.Parse(args);

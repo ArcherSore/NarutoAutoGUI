@@ -323,9 +323,10 @@ internal sealed class ScriptedExecution : IPlanItemExecution
 
     internal WorkerSnapshot? SnapshotAtExecute { get; private set; }
 
-    internal IReadOnlyList<WireEnvelope> WrittenAtRequestStop { get; private set; } = [];
+    // Both keep what had been written at the first call, which is the one the ordering contract is about.
+    internal IReadOnlyList<WireEnvelope>? WrittenAtRequestStop { get; private set; }
 
-    internal IReadOnlyList<WireEnvelope> WrittenAtStop { get; private set; } = [];
+    internal IReadOnlyList<WireEnvelope>? WrittenAtStop { get; private set; }
 
     public Task<RuntimeExecutionResult> ExecuteAsync(CancellationToken cancellationToken)
     {
@@ -339,14 +340,14 @@ internal sealed class ScriptedExecution : IPlanItemExecution
 
     public void RequestStop()
     {
-        WrittenAtRequestStop = _owner.Wire.Frames();
+        WrittenAtRequestStop ??= _owner.Wire.Frames();
         Interlocked.Increment(ref _requestStops);
         _owner.Record(this, "RequestStop");
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        WrittenAtStop = _owner.Wire.Frames();
+        WrittenAtStop ??= _owner.Wire.Frames();
         Interlocked.Increment(ref _stops);
         _owner.Record(this, "StopAsync");
         _stopCalled.TrySetResult();

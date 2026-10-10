@@ -277,8 +277,8 @@ internal static class RunSelfTests
         // W1: the flag precedes the acknowledgement, which is fully written before the Stopping event, and
         // MaaFramework Stop starts only after that write. The GUI side never has to read for this to hold.
         await first.StopCalledAsync();
-        Expect(!first.WrittenAtRequestStop.Any(IsStopResponse), "RequestStop 必须先于 run.stop 响应写出。");
-        var written = first.WrittenAtStop.ToList();
+        Expect(first.WrittenAtRequestStop?.Any(IsStopResponse) == false, "RequestStop 必须先于 run.stop 响应写出。");
+        var written = first.WrittenAtStop!.ToList();
         var response = written.FindIndex(IsStopResponse);
         var stoppingEvent = written.FindIndex(frame => frame.Operation == ProtocolOperations.RunStateChanged
             && ProtocolJson.Deserialize<StateChangedEvent>(frame.Data).Snapshot.StateRevision == stopping.StateRevision);

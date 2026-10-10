@@ -23,9 +23,10 @@ internal static partial class SelfTestRunner
         VerifySessionEndWithWorkerWiring(logger, directory);
         VerifyFaultedSessionRetryWiring(logger, directory);
         VerifyWorkerStopWiring(logger, directory);
+        VerifyKilledWorkerWiring(logger, directory);
         VerifyStopWithoutProjectWiring(logger, directory);
         Console.WriteLine("RUNTIME CONTROL WIRING PASS: startup, exit, project failure, restore, end, "
-            + "end with Worker, retry, stop, stop without project.");
+            + "end with Worker, retry, stop, killed Worker, stop without project.");
     }
 
     private static void VerifyStartupAndExitWiring(AppLogger logger, string directory)
@@ -164,6 +165,26 @@ internal static partial class SelfTestRunner
         }, coordinator: coordinator, runOperation: operations.RunAsync));
     }
 
+    // A killed Worker closes its pipe while Windows still lists its process; the configuration unlocks once the
+    // process is gone, without another Prepare.
+    private static void VerifyKilledWorkerWiring(AppLogger logger, string directory)
+    {
+        var listed = true;
+        WithFakeWorker(logger, Path.Combine(directory, "killed-worker"), (coordinator, record, pipeName) => {
+            var pipe = Task.Run(() => WorkerCoordinatorSelfTest.OpenConnectionAsync(
+                pipeName, record, 0, CancellationToken.None)).GetAwaiter().GetResult();
+            WithRuntimeControlWindow(logger, Path.Combine(directory, "killed-worker-window"), window => {
+                PumpUntil(() => ConfigurationEditable(window), "空闲 Worker 已连接时应可编辑配置。");
+                Task.Run(async () => await pipe.DisposeAsync()).GetAwaiter().GetResult();
+                PumpUntil(() => HeaderShows(window, "RetryEnvironmentButton", enabled: true)
+                    && LockText(window) == "运行环境处理中，配置暂时锁定", "Worker 断线但进程仍在时应显示重试并锁定配置。");
+                listed = false;
+                PumpUntil(() => ConfigurationEditable(window) && LockText(window) is null
+                    && HeaderShows(window, "RetryEnvironmentButton", enabled: true), "Worker 进程退出后应解除配置锁定。");
+            }, coordinator: coordinator);
+        }, workerListed: () => listed);
+    }
+
     private static void VerifyStopWithoutProjectWiring(AppLogger logger, string directory)
     {
         WithRunningFakeWorker(logger, Path.Combine(directory, "no-project-stop"), (_, _) => Task.CompletedTask,
@@ -214,8 +235,9 @@ internal static partial class SelfTestRunner
         new StateChangedEvent(snapshot.WorkerInstanceId, snapshot.StateRevision, snapshot));
 
     // A coordinator whose admission belongs to this process, so a pipe client from the test is admitted.
+    // workerListed, when given, decides whether process inspection still finds that Worker.
     private static void WithFakeWorker(AppLogger logger, string directory,
-        Action<WorkerCoordinator, WorkerAdmissionRecord, string> verify)
+        Action<WorkerCoordinator, WorkerAdmissionRecord, string> verify, Func<bool>? workerListed = null)
     {
         Directory.CreateDirectory(directory);
         using var process = Process.GetCurrentProcess();
@@ -225,9 +247,10 @@ internal static partial class SelfTestRunner
         File.WriteAllBytes(Path.Combine(directory, "worker.json"),
             System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(record, ProtocolJson.Options));
         var pipeName = $"NarutoAutoGUI.RuntimeWiring.SelfTest.{Guid.NewGuid():N}";
-        var coordinator = new WorkerCoordinator(logger, directory,
-            process.MainModule?.FileName ?? throw new InvalidOperationException("无法取得自检进程路径。"),
-            pipeName, usePipeAcl: false);
+        var path = process.MainModule?.FileName ?? throw new InvalidOperationException("无法取得自检进程路径。");
+        WorkerProcessEntry[] worker = [new(Environment.ProcessId, record.ChildSessionId, Path.GetFileName(path))];
+        var coordinator = new WorkerCoordinator(logger, directory, path, pipeName, usePipeAcl: false,
+            workerListed is null ? null : () => workerListed() ? worker : []);
         try {
             Task.Run(() => coordinator.WaitForServerReadyAsync(CancellationToken.None)).GetAwaiter().GetResult();
             verify(coordinator, record, pipeName);

@@ -134,7 +134,8 @@ internal static class RunSelfTests
     {
         harness.ReadinessFailure = new StructuredReason("DependencyMissing", "scripted readiness failure");
         await harness.Host.InitializeAsync(CancellationToken.None);
-        Expect(await harness.StartAsync(Request(Plan(1))) == "error:worker_not_ready", "NotReady 时应为 worker_not_ready。");
+        Expect(await harness.StartAsync(Request(Plan(1))) == "error:worker_not_ready",
+            "NotReady 时应为 worker_not_ready。");
         Expect((await harness.SnapshotAsync()) is { StateRevision: 2, WorkerState: WorkerState.NotReady },
             "就绪检查失败应为 NotReady，拒绝不得提交状态。");
     }
@@ -281,7 +282,8 @@ internal static class RunSelfTests
         var written = first.WrittenAtStop!.ToList();
         var response = written.FindIndex(IsStopResponse);
         var stoppingEvent = written.FindIndex(frame => frame.Operation == ProtocolOperations.RunStateChanged
-            && ProtocolJson.Deserialize<StateChangedEvent>(frame.Data).Snapshot.StateRevision == stopping.StateRevision);
+            && ProtocolJson.Deserialize<StateChangedEvent>(frame.Data).Snapshot.StateRevision
+            == stopping.StateRevision);
         Expect(response >= 0 && stoppingEvent > response,
             "StopAsync 开始时，run.stop 响应及其后的 Stopping 事件应已完整写出。");
 

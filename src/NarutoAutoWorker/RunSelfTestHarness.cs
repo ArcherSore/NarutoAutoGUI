@@ -30,8 +30,9 @@ internal sealed class RunHarness : IAsyncDisposable
         var manifest = new LaunchManifest(ProtocolConstants.LaunchContextVersion, workerId, ProfileDigest,
             "C:\\dummy", Project, new Win32ControllerDefinition("test", "class", "window", "Cache", "Send", "Send"),
             [], new AgentDefinition("python.exe", [], "C:\\dummy"));
-        Host = new WorkerHost(new WorkerArguments(workerId, "test", "C:\\dummy"), manifest, previewSource ?? new NoWindowSource(),
-            Executions.Create, _ => Task.FromResult((Dependencies, ReadinessFailure)));
+        Host = new WorkerHost(new WorkerArguments(workerId, "test", "C:\\dummy"), manifest,
+            previewSource ?? new NoWindowSource(), Executions.Create,
+            _ => Task.FromResult((Dependencies, ReadinessFailure)));
         Executions.Probe = Host.GetSnapshot;
     }
 
@@ -428,7 +429,8 @@ internal sealed class RecordingStream(Stream inner) : Stream
         return frames;
     }
 
-    public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+    public override async ValueTask WriteAsync(
+        ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
     {
         if (FailWhen?.Invoke(Frames()) == true) {
             throw new IOException("scripted write failure");

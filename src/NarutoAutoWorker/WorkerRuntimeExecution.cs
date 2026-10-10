@@ -20,7 +20,18 @@ internal enum RuntimeExecutionOutcome
 internal sealed record RuntimeExecutionResult(
     RuntimeExecutionOutcome Outcome, JsonElement? Result, StructuredReason? Error);
 
-internal sealed class WorkerRuntimeExecution
+// Executes one Plan Item. Stopping has two phases: RequestStop only sets a flag before run.stop is acknowledged,
+// and StopAsync drives MaaFramework Stop after the Stopping snapshot has been written.
+internal interface IPlanItemExecution
+{
+    Task<RuntimeExecutionResult> ExecuteAsync(CancellationToken cancellationToken);
+
+    void RequestStop();
+
+    Task StopAsync(CancellationToken cancellationToken);
+}
+
+internal sealed class WorkerRuntimeExecution : IPlanItemExecution
 {
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan AgentExitGracePeriod = TimeSpan.FromSeconds(3);
@@ -63,7 +74,7 @@ internal sealed class WorkerRuntimeExecution
         _runLogAdapter = new MaaRunLogAdapter(log);
     }
 
-    internal async Task<RuntimeExecutionResult> ExecuteAsync(CancellationToken cancellationToken)
+    public async Task<RuntimeExecutionResult> ExecuteAsync(CancellationToken cancellationToken)
     {
         var result = await ExecuteCoreAsync(cancellationToken);
         // A concurrent Stop failure also wins over natural completion waiting to enter cleanup.
@@ -164,7 +175,7 @@ internal sealed class WorkerRuntimeExecution
         }
     }
 
-    internal async Task StopAsync(CancellationToken cancellationToken)
+    public async Task StopAsync(CancellationToken cancellationToken)
     {
         RequestStop();
 
@@ -207,7 +218,7 @@ internal sealed class WorkerRuntimeExecution
         }
     }
 
-    internal void RequestStop()
+    public void RequestStop()
     {
         lock (_gate) {
             _stopRequested = true;

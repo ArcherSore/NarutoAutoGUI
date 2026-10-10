@@ -22,8 +22,8 @@ internal static class RuntimeControls
             && worker.RuntimeProfileDigest == project.RuntimeProfileDigest;
         var runStartable = environmentReady && project is { SelectedTaskCount: > 0, ConfigurationValid: true }
             && worker is { ActiveRun: null, RunState: RunState.Idle };
-        var stopAllowed = commandsAvailable && fresh && project is { Loaded: true, SelectedTaskCount: > 0 }
-            && active is { } run && IsStoppable(run);
+        // Stopping needs only the Run itself, never the project or the Active Configuration.
+        var stopAllowed = commandsAvailable && fresh && active is { } run && IsStoppable(run);
 
         var preparing = pending == PendingOperation.PreparingEnvironment
             || session.State is ChildSessionState.Connecting or ChildSessionState.Existing
@@ -35,18 +35,33 @@ internal static class RuntimeControls
                 or WorkerObservation.WorkerRecoveryConflict
             || worker?.WorkerState == WorkerState.Faulted;
         var runFaulted = active is null && worker?.LastRun?.State == RunState.Failed;
+        var startAllowed = commandsAvailable && runStartable;
+        StartBlocker? startBlocker = startAllowed ? null
+            : !commandsAvailable ? StartBlocker.CommandsUnavailable
+            : !project.Loaded ? StartBlocker.ProjectNotLoaded
+            : project.SelectedTaskCount == 0 ? StartBlocker.NoTasks
+            : !project.ConfigurationValid ? StartBlocker.ConfigurationInvalid
+            : StartBlocker.RuntimeNotReady;
+        // Retry prepares again when the Runtime Environment failed or is not ready, and starts the Run again once it
+        // is ready. A snapshot that is still resynchronising is only waited for.
+        var resynchronising = observed is { Observation: WorkerObservation.Connected, SnapshotFresh: false };
+        var retryTarget = runtimeFaulted || !environmentReady && !resynchronising
+            ? RetryTarget.Prepare : RetryTarget.Start;
+        var retryEnabled = retryTarget == RetryTarget.Prepare ? commandsAvailable && project.Loaded : startAllowed;
         RuntimeAction action = preparing || starting || stopping
             ? new RuntimeAction.InProgress(stopping ? ProgressKind.StoppingRun
                 : starting ? ProgressKind.StartingRun : ProgressKind.PreparingEnvironment)
             : active?.State == RunState.Running ? new RuntimeAction.Stop(stopAllowed)
-            : runtimeFaulted || runFaulted ? new RuntimeAction.Retry(
-                preparationFailed || !runStartable ? RetryTarget.Prepare : RetryTarget.Start,
-                commandsAvailable && project.Loaded)
-            : environmentReady ? new RuntimeAction.Start(commandsAvailable && runStartable)
+            : runtimeFaulted || runFaulted ? new RuntimeAction.Retry(retryTarget, retryEnabled,
+                retryTarget == RetryTarget.Start ? startBlocker : null)
+            : environmentReady ? new RuntimeAction.Start(startAllowed, startBlocker)
             : new RuntimeAction.Prepare(commandsAvailable && project.Loaded);
 
+        // With no Worker, or one proven gone, no Run can be using the configuration; a Worker that may still be
+        // alive keeps it locked until a fresh snapshot shows it idle.
         var editable = project.Loaded && commandsAvailable
             && (observed.Observation is WorkerObservation.WorkerNotStarted or WorkerObservation.ChildSessionEnded
+                    or WorkerObservation.WorkerExited
                 || fresh && worker is { ActiveRun: null, RunState: RunState.Idle });
         LockReason? configurationLock = !project.Loaded || editable ? null
             : active is not null || pending == PendingOperation.StartingRun ? LockReason.RunActive
@@ -91,6 +106,12 @@ internal enum ProgressKind
     PreparingEnvironment, StartingRun, StoppingRun
 }
 
+// Why Start cannot run, listed in the order checked so the reason a user can act on comes first.
+internal enum StartBlocker
+{
+    CommandsUnavailable, ProjectNotLoaded, NoTasks, ConfigurationInvalid, RuntimeNotReady
+}
+
 internal enum LockReason
 {
     RunActive, RuntimeBusy
@@ -110,9 +131,9 @@ internal abstract record RuntimeAction
 
     internal sealed record Prepare(bool Enabled) : RuntimeAction;
 
-    internal sealed record Retry(RetryTarget Target, bool Enabled) : RuntimeAction;
+    internal sealed record Retry(RetryTarget Target, bool Enabled, StartBlocker? Blocker = null) : RuntimeAction;
 
-    internal sealed record Start(bool Enabled) : RuntimeAction;
+    internal sealed record Start(bool Enabled, StartBlocker? Blocker = null) : RuntimeAction;
 
     internal sealed record Stop(bool Enabled) : RuntimeAction;
 

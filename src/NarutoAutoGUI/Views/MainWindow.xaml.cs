@@ -1611,7 +1611,9 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        _workerSnapshot = snapshot;
+        // A change raised on another thread runs here late, possibly after a newer one raised on this thread, so the
+        // coordinator's current snapshot is applied rather than the one the event carried.
+        _workerSnapshot = _workerCoordinator.Snapshot;
         RefreshRuntimeControls();
     }
 
@@ -1914,6 +1916,8 @@ public partial class MainWindow : FluentWindow
         RetryEnvironmentButton.IsEnabled = action is RuntimeAction.Retry { Enabled: true };
         StartTaskHeaderButton.Visibility = Visible(action is RuntimeAction.Start);
         StartTaskHeaderButton.IsEnabled = action is RuntimeAction.Start { Enabled: true };
+        Explain(StartTaskHeaderButton, "开始任务", (action as RuntimeAction.Start)?.Blocker);
+        Explain(RetryEnvironmentButton, "重试", (action as RuntimeAction.Retry)?.Blocker);
         StopTaskHeaderButton.Visibility = Visible(action is RuntimeAction.Stop);
         StopTaskHeaderButton.IsEnabled = action is RuntimeAction.Stop { Enabled: true };
         RuntimeHeaderProgressRing.Visibility = Visible(action is RuntimeAction.InProgress);
@@ -1934,6 +1938,22 @@ public partial class MainWindow : FluentWindow
             ? "任务运行中，配置已锁定" : "运行环境处理中，配置暂时锁定";
 
         static Visibility Visible(bool visible) => visible ? Visibility.Visible : Visibility.Collapsed;
+
+        // A blocked Start, or a Retry that would start, says why on hover and to screen readers; the task area
+        // holds the detailed message.
+        static void Explain(FrameworkElement button, string toolTip, StartBlocker? blocker)
+        {
+            var reason = blocker switch {
+                StartBlocker.CommandsUnavailable => "当前操作完成后可开始任务",
+                StartBlocker.ProjectNotLoaded => "MaaNOP 项目未加载，无法开始任务",
+                StartBlocker.NoTasks => "请先在执行计划中添加任务",
+                StartBlocker.ConfigurationInvalid => "当前配置未通过校验，请先修正任务参数",
+                StartBlocker.RuntimeNotReady => "运行环境尚未就绪，请稍候",
+                _ => null
+            };
+            button.ToolTip = reason ?? toolTip;
+            AutomationProperties.SetHelpText(button, reason ?? string.Empty);
+        }
     }
 
     private void ShowActionableError(string title, Exception exception, string recovery, bool offerLogDirectory)

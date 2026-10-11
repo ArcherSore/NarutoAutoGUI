@@ -9,7 +9,8 @@ namespace NarutoAutoWorker;
 internal sealed class WorkerHost : IDisposable
 {
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(1);
-    private readonly object _stateGate = new();
+    // Guards only the current connection's event sender; Worker and Run state are owned by RunSupervisor.
+    private readonly object _eventsGate = new();
     private readonly WorkerArguments _arguments;
     private readonly LaunchManifest _manifest;
     private readonly WorkerLogBuffer _logs = new();
@@ -133,7 +134,7 @@ internal sealed class WorkerHost : IDisposable
         var connectionId = Guid.NewGuid();
         _connectionId = connectionId;
         await using var events = new WorkerEventSender(connection);
-        lock (_stateGate) {
+        lock (_eventsGate) {
             _events = events;
         }
         try {
@@ -150,7 +151,7 @@ internal sealed class WorkerHost : IDisposable
             }
         } finally {
             _preview.Disconnect(connectionId);
-            lock (_stateGate) {
+            lock (_eventsGate) {
                 if (ReferenceEquals(_events, events)) {
                     _events = null;
                 }
@@ -247,7 +248,7 @@ internal sealed class WorkerHost : IDisposable
     private void PublishState(string operation, WorkerSnapshot snapshot)
     {
         WorkerEventSender? events;
-        lock (_stateGate) {
+        lock (_eventsGate) {
             events = _events;
         }
         events?.PublishState(WireEnvelope.Event(
@@ -261,7 +262,7 @@ internal sealed class WorkerHost : IDisposable
         var entry = _logs.Add(level, source, message, runId, planItemId, taskName);
         Console.WriteLine($"[{entry.TimestampUtc:O}] [{level}] [{source}] {entry.Message}");
         WorkerEventSender? events;
-        lock (_stateGate) {
+        lock (_eventsGate) {
             events = _events;
         }
         events?.PublishLog(WireEnvelope.Event(

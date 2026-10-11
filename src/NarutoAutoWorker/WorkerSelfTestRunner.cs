@@ -247,16 +247,16 @@ internal static class WorkerSelfTestRunner
             RuntimeExecutionOutcome.Cancelled,
             RuntimeExecutionOutcome.CleanupFailed
         };
-        if (terminalOutcomes.Any(outcome => WorkerHost.ResolveFinalRunState(outcome, wasStopping: true)
+        if (terminalOutcomes.Any(outcome => RunSupervisor.ResolveFinalRunState(outcome, wasStopping: true)
                                             != RunState.Cancelled)) {
             throw new InvalidOperationException("停止已接受后，Run 终态必须由停止语义决定为 Cancelled。 ");
         }
-        if (WorkerHost.ResolveFinalRunState(RuntimeExecutionOutcome.Succeeded, wasStopping: false)
+        if (RunSupervisor.ResolveFinalRunState(RuntimeExecutionOutcome.Succeeded, wasStopping: false)
             != RunState.Succeeded
-            || WorkerHost.ResolveFinalRunState(RuntimeExecutionOutcome.Failed, wasStopping: false) != RunState.Failed
-            || WorkerHost.ResolveFinalRunState(RuntimeExecutionOutcome.Cancelled, wasStopping: false)
+            || RunSupervisor.ResolveFinalRunState(RuntimeExecutionOutcome.Failed, wasStopping: false) != RunState.Failed
+            || RunSupervisor.ResolveFinalRunState(RuntimeExecutionOutcome.Cancelled, wasStopping: false)
             != RunState.Cancelled
-            || WorkerHost.ResolveFinalRunState(RuntimeExecutionOutcome.CleanupFailed, wasStopping: false)
+            || RunSupervisor.ResolveFinalRunState(RuntimeExecutionOutcome.CleanupFailed, wasStopping: false)
             != RunState.Failed) {
             throw new InvalidOperationException("未停止 Run 的既有终态映射发生变化。 ");
         }

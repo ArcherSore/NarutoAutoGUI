@@ -74,18 +74,16 @@ internal static partial class SelfTestRunner
 
         // A Worker that faults during an observed Active Run is announced once. One already Faulted when its Run is
         // first seen is not, since nothing was observed to change.
-        foreach (var (state, title, message) in new[] {
-            (RunState.Stopping, "任务停止未确认", "MaaNOP 可能仍在运行。打开 NarutoAutoGUI 结束桌面分身以恢复。"),
-            (RunState.Running, "运行环境故障", "任务无法继续执行。打开 NarutoAutoGUI 结束桌面分身以恢复。")
-        }) {
+        foreach (var state in new[] { RunState.Stopping, RunState.Running }) {
             tracker = new RunTerminalNotificationTracker();
             active = CreateNotificationSnapshot(state);
             var faulted = active with {
                 WorkerSnapshot = active.WorkerSnapshot! with { WorkerState = WorkerState.Faulted }
             };
             tracker.Observe(active);
-            if (tracker.Observe(faulted) is not { Failed: true } notice || notice.Title != title
-                || notice.Message != message || tracker.Observe(faulted) is not null
+            if (tracker.Observe(faulted) is not { Title: "任务未能确认结束", Failed: true,
+                    Message: "MaaNOP 可能仍在运行。打开 NarutoAutoGUI 结束桌面分身以恢复。" }
+                || tracker.Observe(faulted) is not null
                 || tracker.Observe(faulted with { SnapshotFresh = false }) is not null
                 || tracker.Observe(faulted) is not null) {
                 throw new InvalidOperationException($"{state} 的 Run 期间 Worker 故障应恰好提醒一次。");

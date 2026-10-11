@@ -295,9 +295,7 @@ internal sealed class RunSupervisor
         }
     }
 
-    private async Task AdvanceRunAsync(
-        Guid runId, IPlanItemExecution execution,
-        CancellationToken cancellationToken)
+    private async Task AdvanceRunAsync(Guid runId, IPlanItemExecution execution, CancellationToken cancellationToken)
     {
         while (true) {
             var result = await execution.ExecuteAsync(cancellationToken);
@@ -362,7 +360,7 @@ internal sealed class RunSupervisor
         }
     }
 
-    // #18: the loop can no longer advance or end the Run. While the Run is still active, the Worker faults and keeps
+    // The loop can no longer advance or end the Run. While the Run is still active, the Worker faults and keeps
     // it as it was without a terminal state, as after an unconfirmed stop; only ending the Runtime Environment helps.
     private void FaultRunLoop(Guid runId, Exception exception)
     {

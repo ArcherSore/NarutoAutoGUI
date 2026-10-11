@@ -21,11 +21,8 @@ internal sealed class RunTerminalNotificationTracker
             // A Faulted Worker never ends its Run, so the fault is announced instead, once, and only when it happened
             // while the Run was observed.
             if (snapshot.WorkerState == WorkerState.Faulted && _faultedRuns.Add(active.RunId) && seenBefore) {
-                return active.State == RunState.Stopping
-                    ? new RunTerminalNotification(
-                        "任务停止未确认", "MaaNOP 可能仍在运行。打开 NarutoAutoGUI 结束桌面分身以恢复。", true)
-                    : new RunTerminalNotification(
-                        "运行环境故障", "任务无法继续执行。打开 NarutoAutoGUI 结束桌面分身以恢复。", true);
+                return new RunTerminalNotification(
+                    "任务未能确认结束", "MaaNOP 可能仍在运行。打开 NarutoAutoGUI 结束桌面分身以恢复。", true);
             }
         }
         if (snapshot.LastRun is not { State: RunState.Succeeded or RunState.Failed or RunState.Cancelled } run

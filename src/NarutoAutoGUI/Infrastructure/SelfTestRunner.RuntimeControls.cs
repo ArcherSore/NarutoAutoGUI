@@ -79,7 +79,7 @@ internal static partial class SelfTestRunner
 
             // Recovery is named for what it does and says why it is needed, whether or not it can run now.
             foreach (var (reason, text) in new (RecoveryReason, string)[] {
-                (RecoveryReason.StopUnconfirmed, "任务停止未确认，MaaNOP 可能仍在运行"),
+                (RecoveryReason.StopUnconfirmed, "任务未能确认结束，MaaNOP 可能仍在运行"),
                 (RecoveryReason.RuntimeFaulted, "运行环境故障，Worker 无法继续执行任务"),
                 (RecoveryReason.WorkerLost, "Worker 失联且未确认已退出；也可以等待它重新连接"),
                 (RecoveryReason.EndUnconfirmed, "上次结束桌面分身未确认")
@@ -162,7 +162,7 @@ internal static partial class SelfTestRunner
         var idle = ScenarioWorker(digest);
         var running = ScenarioWorker(digest, active: RunState.Running);
         var start = new RuntimeControlInputs(ScenarioSession(ChildSessionState.ConnectedHidden),
-            Observed(WorkerObservation.Connected, idle), ready, PendingOperation.None, false, false);
+            Observed(WorkerObservation.Connected, idle), ready, PendingOperation.None, false, false, false, false);
         var stopped = start with {
             Session = ScenarioSession(ChildSessionState.NotRunning), Worker = WorkerCoordinatorSnapshot.Empty
         };
@@ -257,6 +257,10 @@ internal static partial class SelfTestRunner
                 Worker = Observed(WorkerObservation.Connected,
                     ScenarioWorker(digest, WorkerState.Faulted, active: RunState.Running))
             }, new(Recover(RecoveryReason.StopUnconfirmed), false, runActive, showEnabled, true, none)),
+            ("停止未确认后 IPC 断线", start with {
+                Worker = Observed(WorkerObservation.IpcDisconnected,
+                    ScenarioWorker(digest, WorkerState.Faulted, active: RunState.Stopping))
+            }, new(Recover(RecoveryReason.WorkerLost), false, runActive, showEnabled, true, none)),
             ("清理失败后 Worker 故障", start with {
                 Worker = Observed(WorkerObservation.Connected,
                     ScenarioWorker(digest, WorkerState.Faulted, last: RunState.Failed))

@@ -79,8 +79,10 @@ public partial class App : System.Windows.Application
             await _environment.EndAsync(ConfirmExit, async ended => {
                 if (ended.Outcome != EnvironmentEndOutcome.Ended) {
                     if (ended.Error is { } error) {
-                        WpfMessageBox.Show($"{error.Message}已取消退出，避免遗留未知状态。请查看日志后重试。",
-                            "NarutoAutoGUI", MessageBoxButton.OK, MessageBoxImage.Error);
+                        WpfMessageBox.Show(
+                            $"{error.Message}已取消退出，避免遗留未知状态。请查看日志后重试。",
+                            "NarutoAutoGUI",
+                            MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                     return;
                 }

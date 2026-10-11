@@ -113,8 +113,7 @@ public partial class MainWindow : FluentWindow
         AppLogger logger,
         ChildSessionManager sessionManager, WorkerCoordinator workerCoordinator, RuntimeEnvironment environment,
         Func<Task> requestExitAsync, Func<Task> endEnvironmentAsync, Func<string, Task> installUpdateAsync,
-        string? applicationDirectory = null,
-        Func<CancellationToken, Task<EngineCheckResult>>? checkForUpdate = null)
+        string? applicationDirectory = null, Func<CancellationToken, Task<EngineCheckResult>>? checkForUpdate = null)
     {
         InitializeComponent();
         DataContext = this;
@@ -1940,7 +1939,7 @@ public partial class MainWindow : FluentWindow
         RecoverEnvironmentButton.IsEnabled = action is RuntimeAction.Recover { Enabled: true };
         if (action is RuntimeAction.Recover { Reason: var recovery }) {
             var reason = recovery switch {
-                RecoveryReason.StopUnconfirmed => "任务停止未确认，MaaNOP 可能仍在运行",
+                RecoveryReason.StopUnconfirmed => "任务未能确认结束，MaaNOP 可能仍在运行",
                 RecoveryReason.RuntimeFaulted => "运行环境故障，Worker 无法继续执行任务",
                 RecoveryReason.WorkerLost => "Worker 失联且未确认已退出；也可以等待它重新连接",
                 _ => "上次结束桌面分身未确认"
@@ -1950,12 +1949,13 @@ public partial class MainWindow : FluentWindow
         }
         RuntimeHeaderProgressRing.Visibility = Visible(action is RuntimeAction.InProgress);
         if (action is RuntimeAction.InProgress { Kind: var kind }) {
-            var progressText = kind switch {
-                ProgressKind.EndingEnvironment => "正在结束桌面分身",
-                ProgressKind.StoppingRun => $"正在{OperationLabel(PendingOperation.StoppingRun)}",
-                ProgressKind.StartingRun => $"正在{OperationLabel(PendingOperation.StartingRun)}",
-                _ => $"正在{OperationLabel(PendingOperation.PreparingEnvironment)}"
+            var operation = kind switch {
+                ProgressKind.StoppingRun => PendingOperation.StoppingRun,
+                ProgressKind.StartingRun => PendingOperation.StartingRun,
+                _ => PendingOperation.PreparingEnvironment
             };
+            var progressText = kind == ProgressKind.EndingEnvironment
+                ? "正在结束桌面分身" : $"正在{OperationLabel(operation)}";
             RuntimeHeaderProgressRing.ToolTip = progressText;
             AutomationProperties.SetName(RuntimeHeaderProgressRing, progressText);
         }

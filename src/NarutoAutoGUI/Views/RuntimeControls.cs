@@ -50,11 +50,12 @@ internal static class RuntimeControls
         var retryEnabled = retryTarget == RetryTarget.Prepare ? commandsAvailable && project.Loaded : startAllowed;
         // Execution termination is unconfirmed while a Worker may still run something the GUI cannot reach. Only
         // ending the Runtime Environment helps then; Retry would loop on the same Worker or start a second one.
+        // A lost Worker is described as lost even when its last snapshot was Faulted.
         RecoveryReason? recovery = endUnconfirmed ? RecoveryReason.EndUnconfirmed
-            : worker?.WorkerState == WorkerState.Faulted
-                ? active is null ? RecoveryReason.RuntimeFaulted : RecoveryReason.StopUnconfirmed
             : observed.Observation is WorkerObservation.IpcDisconnected or WorkerObservation.WorkerRecoveryConflict
                 ? RecoveryReason.WorkerLost
+            : worker?.WorkerState == WorkerState.Faulted
+                ? active is null ? RecoveryReason.RuntimeFaulted : RecoveryReason.StopUnconfirmed
             : null;
         var progress = new RuntimeAction.InProgress(ending ? ProgressKind.EndingEnvironment
             : stopping ? ProgressKind.StoppingRun
@@ -109,8 +110,8 @@ internal sealed record ProjectReadiness(
 
 internal sealed record RuntimeControlInputs(
     ChildSessionSnapshot Session, WorkerCoordinatorSnapshot Worker, ProjectReadiness Project,
-    PendingOperation PendingOperation, bool EnvironmentPreparationFailed, bool Exiting, bool Ending = false,
-    bool EndUnconfirmed = false);
+    PendingOperation PendingOperation, bool EnvironmentPreparationFailed, bool Exiting, bool Ending,
+    bool EndUnconfirmed);
 
 internal enum RetryTarget
 {

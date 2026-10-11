@@ -7,6 +7,7 @@ namespace NarutoAutoWorker;
 internal static class RunSelfTests
 {
     private const int RaceIterations = 16;
+    private static readonly TimeSpan StoppingWriteHold = TimeSpan.FromMilliseconds(300);
 
     internal static void Run() => RunAsync().GetAwaiter().GetResult();
 
@@ -271,6 +272,10 @@ internal static class RunSelfTests
     {
         var (request, first) = await StartRunningAsync(harness, 3);
         var revision = (await harness.SnapshotAsync()).StateRevision;
+        // W1 holds the Stopping event write for a while, so MaaFramework Stop started early from another thread is
+        // caught too. Correct code waits out the hold, because Stop cannot start until that write completes.
+        harness.Wire.HoldWrite = bytes => IsStoppingEvent(bytes)
+            ? Task.WhenAny(first.StopCalled, Task.Delay(StoppingWriteHold)) : null;
         Expect(await harness.StopAsync(request.RunId) == "stop_requested", "Running 中停止应为 stop_requested。");
         var stopping = await harness.SnapshotAsync();
         var run = stopping.ActiveRun!;
@@ -568,6 +573,17 @@ internal static class RunSelfTests
 
     private static long RevisionOf(WireEnvelope stateEvent) =>
         ProtocolJson.Deserialize<StateChangedEvent>(stateEvent.Data).Snapshot.StateRevision;
+
+    // Frames are written as a length prefix followed by the JSON payload; only the payload can match.
+    private static bool IsStoppingEvent(ReadOnlyMemory<byte> bytes)
+    {
+        if (bytes.Length == 0 || bytes.Span[0] != (byte)'{') {
+            return false;
+        }
+        var frame = JsonSerializer.Deserialize<WireEnvelope>(bytes.Span, ProtocolJson.Options)!;
+        return frame.Operation == ProtocolOperations.RunStateChanged
+            && ProtocolJson.Deserialize<StateChangedEvent>(frame.Data).Snapshot.RunState == RunState.Stopping;
+    }
 
     private static bool IsStopResponse(WireEnvelope frame) =>
         frame is { MessageType: ProtocolMessageTypes.Response, Operation: ProtocolOperations.RunStop, Success: true };

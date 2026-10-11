@@ -343,6 +343,8 @@ internal sealed class ScriptedExecution : IPlanItemExecution
             : Task.CompletedTask;
     }
 
+    internal Task StopCalled => _stopCalled.Task;
+
     internal async Task StopCalledAsync()
     {
         try {
@@ -377,6 +379,9 @@ internal sealed class RecordingStream(Stream inner) : Stream
     private readonly MemoryStream _written = new();
 
     internal Func<IReadOnlyList<WireEnvelope>, bool>? FailWhen { get; set; }
+
+    // Returns a task to wait for before the given bytes are written, or null to write them at once.
+    internal Func<ReadOnlyMemory<byte>, Task?>? HoldWrite { get; set; }
 
     public override bool CanRead => true;
     public override bool CanSeek => false;
@@ -413,6 +418,9 @@ internal sealed class RecordingStream(Stream inner) : Stream
     {
         if (FailWhen?.Invoke(Frames()) == true) {
             throw new IOException("scripted write failure");
+        }
+        if (HoldWrite?.Invoke(buffer) is { } hold) {
+            await hold;
         }
         await inner.WriteAsync(buffer, cancellationToken);
         lock (_gate) {

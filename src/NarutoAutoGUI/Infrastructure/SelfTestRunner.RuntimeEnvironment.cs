@@ -10,6 +10,7 @@ namespace NarutoAutoGUI.Infrastructure;
 internal static partial class SelfTestRunner
 {
     private static readonly TimeSpan EnvironmentWaitLimit = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan OnPoolLimit = TimeSpan.FromSeconds(30);
 
     private static void VerifyRuntimeEnvironment(AppLogger logger, string testDirectory)
     {
@@ -19,9 +20,10 @@ internal static partial class SelfTestRunner
         VerifyEndWithoutStop(logger, directory);
         VerifyInstallEnd(logger, directory);
         VerifyInstallEndUnconfirmed(logger, directory);
+        VerifyEndHoldsGate(logger, directory);
         VerifyEnvironmentClosing(logger, directory);
         Console.WriteLine("RUNTIME ENVIRONMENT PASS: exit, exit unconfirmed, user end, install, install unconfirmed, "
-            + "closing.");
+            + "gate, closing.");
     }
 
     // E1, E3: exit asks only when a Child Session exists and only after any in-flight operation, then discards the
@@ -178,17 +180,25 @@ internal static partial class SelfTestRunner
                 && AdmissionDiscarded(coordinator), "安装应先停止 Run 并等待其结束，再注销、等待 Worker 退出并丢弃 Admission。");
         });
 
-        WithRunningFakeWorker(logger, Path.Combine(directory, "install-stop-unanswered"), async (worker, token) =>
-            await WorkerCoordinatorSelfTest.ReadRequestAsync(worker.Pipe, ProtocolOperations.RunStop, token),
-            coordinator => {
+        foreach (var rejected in new[] { false, true }) {
+            var name = rejected ? "install-stop-rejected" : "install-stop-unanswered";
+            WithRunningFakeWorker(logger, Path.Combine(directory, name), async (worker, token) => {
+                var stop = await WorkerCoordinatorSelfTest.ReadRequestAsync(
+                    worker.Pipe, ProtocolOperations.RunStop, token);
+                if (rejected) {
+                    await worker.Pipe.WriteAsync(WireEnvelope.Failure(ProtocolOperations.RunStop,
+                        stop.RequestId!.Value, "operation_not_allowed", "scripted stop rejection"), token);
+                }
+            }, coordinator => {
                 AwaitRunningWorker(coordinator);
                 var wts = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] };
                 using var session = wts.CreateManager(logger);
                 var ended = OnPool(() => CreateEnvironment(logger, session, coordinator)
                     .EndAsync(EnvironmentEndReason.Install));
                 Require(ended == EnvironmentEndResult.Ended && wts.LogoffAttempts.SequenceEqual([7u])
-                    && AdmissionDiscarded(coordinator), "Run 停止未确认时安装仍应注销分身。");
+                    && AdmissionDiscarded(coordinator), "Run 停止被拒绝或未确认时安装仍应注销分身。");
             });
+        }
     }
 
     // E5: install is cancelled, keeping the Admission, when WTS still reports the Child Session, the Worker does not
@@ -214,12 +224,43 @@ internal static partial class SelfTestRunner
                         waitEnded.TrySetResult(token.IsCancellationRequested);
                     }
                 }).EndAsync(EnvironmentEndReason.Install));
-                Require(ended is { Outcome: EnvironmentEndOutcome.Unconfirmed }
-                    && (message is null ? ended.Error is Win32Exception : ended.Error is IOException
-                        && ended.Error.Message == message)
-                    && coordinator.TrackedWorkerPid is not null
-                    && (exits || waitEnded.Task.Wait(5000) && waitEnded.Task.Result),
+                var expectedError = message is null
+                    ? ended.Error is Win32Exception
+                    : ended.Error is IOException && ended.Error.Message == message;
+                var waitStopped = exits || (waitEnded.Task.Wait(5000) && waitEnded.Task.Result);
+                Require(ended is { Outcome: EnvironmentEndOutcome.Unconfirmed } && expectedError
+                    && coordinator.TrackedWorkerPid is not null && waitStopped,
                     $"{name}：安装应取消、保留 Admission 并停止等待 Worker。");
+            });
+        }
+    }
+
+    // E6: exit and install wait for the in-flight operation, then let the caller handle the result before any
+    // operation queued behind them runs.
+    private static void VerifyEndHoldsGate(AppLogger logger, string directory)
+    {
+        using var session = new SimulatedWts().CreateManager(logger);
+        foreach (var reason in new[] { EnvironmentEndReason.Exit, EnvironmentEndReason.Install }) {
+            WithFakeWorker(logger, Path.Combine(directory, $"gate-{reason}"), (coordinator, _, _) => {
+                var environment = CreateEnvironment(logger, session, coordinator);
+                var (heldDone, queuedRan) = OnPool(async () => {
+                    var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    var held = environment.RunExclusiveAsync(() => release.Task);
+                    var queued = false;
+                    (bool, bool)? seen = null;
+                    var ending = environment.EndAsync(reason, () => true, _ => {
+                        seen = (release.Task.IsCompleted, queued);
+                        return Task.CompletedTask;
+                    });
+                    var next = environment.RunExclusiveAsync(() => {
+                        queued = true;
+                        return Task.CompletedTask;
+                    });
+                    release.SetResult();
+                    await Task.WhenAll(held, ending, next);
+                    return seen ?? (false, true);
+                });
+                Require(heldDone && !queuedRan, $"{reason}：应等待进行中的操作，并在后续操作前处理结束结果。");
             });
         }
     }
@@ -245,7 +286,7 @@ internal static partial class SelfTestRunner
         static bool Refused(Func<Task> action)
         {
             try {
-                Task.Run(action).GetAwaiter().GetResult();
+                Task.Run(action).WaitAsync(OnPoolLimit).GetAwaiter().GetResult();
                 return false;
             } catch (OperationCanceledException) {
                 return true;
@@ -272,8 +313,9 @@ internal static partial class SelfTestRunner
     private static bool AdmissionDiscarded(WorkerCoordinator coordinator) =>
         coordinator.Snapshot.Observation == WorkerObservation.ChildSessionEnded && coordinator.TrackedWorkerPid is null;
 
-    // Runs on the thread pool, away from the dispatcher the self-test blocks.
-    private static T OnPool<T>(Func<Task<T>> action) => Task.Run(action).GetAwaiter().GetResult();
+    // Runs on the thread pool, away from the dispatcher the self-test blocks; a hang fails instead of stalling.
+    private static T OnPool<T>(Func<Task<T>> action) =>
+        Task.Run(action).WaitAsync(OnPoolLimit).GetAwaiter().GetResult();
 
     private static async Task RecordRequestsAsync(ProtocolConnection pipe, List<string> requests,
         CancellationToken cancellationToken, CancellationToken stopListening)

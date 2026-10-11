@@ -75,30 +75,31 @@ public partial class App : System.Windows.Application
         _mainWindow.SetExitInProgress(true);
         var exitCompleted = false;
         try {
-            var ended = await _environment.EndAsync(EnvironmentEndReason.Exit, ConfirmExit);
-            if (ended.Outcome != EnvironmentEndOutcome.Ended) {
-                if (ended.Error is { } error) {
-                    WpfMessageBox.Show(error.Message, "NarutoAutoGUI", MessageBoxButton.OK, MessageBoxImage.Error);
+            await _environment.EndAsync(EnvironmentEndReason.Exit, ConfirmExit, async ended => {
+                if (ended.Outcome != EnvironmentEndOutcome.Ended) {
+                    if (ended.Error is { } error) {
+                        WpfMessageBox.Show(error.Message, "NarutoAutoGUI", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                    return;
                 }
-                return;
-            }
 
-            _logger.Info("NarutoAutoGUI 正常退出。");
-            _debugImageCleanup.Cancel();
-            _trayIcon?.Dispose();
-            _trayIcon = null;
-            _sessionManager.Dispose();
-            if (_workerCoordinator is not null) {
-                _workerCoordinator.StateChanged -= WorkerCoordinator_StateChanged;
-                await _workerCoordinator.DisposeAsync();
-                _workerCoordinator = null;
-            }
-            _mainWindow.HiddenToTray -= MainWindow_HiddenToTray;
-            _mainWindow.AllowClose();
-            _mainWindow.Close();
-            _logger.Dispose();
-            exitCompleted = true;
-            Shutdown(0);
+                _logger.Info("NarutoAutoGUI 正常退出。");
+                _debugImageCleanup.Cancel();
+                _trayIcon?.Dispose();
+                _trayIcon = null;
+                _sessionManager.Dispose();
+                if (_workerCoordinator is not null) {
+                    _workerCoordinator.StateChanged -= WorkerCoordinator_StateChanged;
+                    await _workerCoordinator.DisposeAsync();
+                    _workerCoordinator = null;
+                }
+                _mainWindow.HiddenToTray -= MainWindow_HiddenToTray;
+                _mainWindow.AllowClose();
+                _mainWindow.Close();
+                _logger.Dispose();
+                exitCompleted = true;
+                Shutdown(0);
+            });
         } finally {
             if (!exitCompleted) {
                 _environment.Closing = false;

@@ -43,11 +43,12 @@ internal sealed class RuntimeEnvironment
 
     internal Task RunExclusiveAsync(Func<Task> operation) => RunGatedAsync(operation, refuseWhileClosing: true);
 
-    // Runs inside an exclusive operation the caller has already entered.
-    internal async Task PrepareAsync(ProjectPlanModule project, MaaFrameworkOptions frameworkOptions)
+    // Runs inside an exclusive operation the caller has already entered. The framework options are read once the
+    // Child Session is connected, just before the Worker is prepared.
+    internal async Task PrepareAsync(ProjectPlanModule project, Func<MaaFrameworkOptions> frameworkOptions)
     {
         var sessionId = await _session.EnsureConnectedAsync(showPreview: true);
-        await _coordinator.PrepareWorkerAsync(sessionId, project, frameworkOptions: frameworkOptions);
+        await _coordinator.PrepareWorkerAsync(sessionId, project, frameworkOptions: frameworkOptions());
         var game = NarutoGameLaunchProfile.ResolveExisting(_logger);
         await _programService.LaunchIfNeededAsync(
             sessionId, game.ExecutablePath, game.Arguments,
@@ -57,17 +58,26 @@ internal sealed class RuntimeEnvironment
     }
 
     // Each reason keeps the steps its caller has always taken; confirm is asked only where the reason asks for it.
-    internal Task<EnvironmentEndResult> EndAsync(EnvironmentEndReason reason, Func<bool>? confirm = null) =>
-        reason switch {
-            EnvironmentEndReason.Exit => EndExclusivelyAsync(() => EndForExitAsync(confirm)),
-            EnvironmentEndReason.Install => EndExclusivelyAsync(EndForInstallAsync),
-            _ => EndForUserAsync()
+    // Exit and install run inGate with the result before releasing the gate, so the caller's dialog, teardown or
+    // install handoff happens before any queued operation.
+    internal Task<EnvironmentEndResult> EndAsync(EnvironmentEndReason reason, Func<bool>? confirm = null,
+        Func<EnvironmentEndResult, Task>? inGate = null) => reason switch {
+            EnvironmentEndReason.Exit => EndExclusivelyAsync(() => EndForExitAsync(confirm), inGate),
+            EnvironmentEndReason.Install => EndExclusivelyAsync(EndForInstallAsync, inGate),
+            EnvironmentEndReason.UserRequested => EndForUserAsync(),
+            _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null)
         };
 
-    private async Task<EnvironmentEndResult> EndExclusivelyAsync(Func<Task<EnvironmentEndResult>> end)
+    private async Task<EnvironmentEndResult> EndExclusivelyAsync(
+        Func<Task<EnvironmentEndResult>> end, Func<EnvironmentEndResult, Task>? inGate)
     {
         var result = EnvironmentEndResult.Ended;
-        await RunGatedAsync(async () => result = await end(), refuseWhileClosing: false);
+        await RunGatedAsync(async () => {
+            result = await end();
+            if (inGate is not null) {
+                await inGate(result);
+            }
+        }, refuseWhileClosing: false);
         return result;
     }
 
@@ -117,7 +127,7 @@ internal sealed class RuntimeEnvironment
         } catch (OperationCanceledException) when (Closing) {
             throw;
         } catch (Exception exception) {
-            return new EnvironmentEndResult(EnvironmentEndOutcome.Unconfirmed, exception);
+            return EnvironmentEndResult.Unconfirmed(exception);
         }
     }
 
@@ -144,7 +154,7 @@ internal sealed class RuntimeEnvironment
             _logger.Info("已确认 Child Session 与已跟踪 Worker 结束，开始安装交接。");
             return EnvironmentEndResult.Ended;
         } catch (Exception exception) {
-            return new EnvironmentEndResult(EnvironmentEndOutcome.Unconfirmed, exception);
+            return EnvironmentEndResult.Unconfirmed(exception);
         } finally {
             exitWait.Cancel();
         }
@@ -235,6 +245,8 @@ internal sealed record EnvironmentEndResult(EnvironmentEndOutcome Outcome, Excep
 
     internal static EnvironmentEndResult Declined { get; } = new(EnvironmentEndOutcome.Declined);
 
+    internal static EnvironmentEndResult Unconfirmed(Exception error) => new(EnvironmentEndOutcome.Unconfirmed, error);
+
     internal static EnvironmentEndResult Unconfirmed(string message, Exception? cause = null) =>
-        new(EnvironmentEndOutcome.Unconfirmed, new InvalidOperationException(message, cause));
+        Unconfirmed(new InvalidOperationException(message, cause));
 }

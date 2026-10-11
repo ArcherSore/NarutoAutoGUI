@@ -365,7 +365,7 @@ public partial class MainWindow : FluentWindow
             {
                 try {
                     LoadProject();
-                    await _environment.PrepareAsync(RequireProject(), _settings.CreateFrameworkOptions());
+                    await _environment.PrepareAsync(RequireProject(), _settings.CreateFrameworkOptions);
                 } catch {
                     _environmentPreparationFailed = true;
                     throw;

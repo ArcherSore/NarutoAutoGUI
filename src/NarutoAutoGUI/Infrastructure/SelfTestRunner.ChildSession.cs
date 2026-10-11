@@ -104,12 +104,14 @@ internal static partial class SelfTestRunner
 
     // ReportedId is what WTSGetChildSessionId returns and Sessions what WTSEnumerateSessions lists.
     // Logoff behaves like WTSLogoffSession: a session that does not exist fails with ERROR_FILE_NOT_FOUND.
+    // SessionSurvivesLogoff reports success while WTS keeps reporting the session, which no logoff should hide.
     private sealed class SimulatedWts
     {
         internal uint? ReportedId { get; set; }
         internal HashSet<uint> Sessions { get; init; } = [0, 1];
         internal bool EnumerationFails { get; init; }
         internal int? LogoffError { get; init; }
+        internal bool SessionSurvivesLogoff { get; init; }
         internal Action<SimulatedWts>? DuringLogoff { get; set; }
         internal List<uint> LogoffAttempts { get; } = [];
 
@@ -133,6 +135,9 @@ internal static partial class SelfTestRunner
             }
             if (LogoffError is int error) {
                 throw new Win32Exception(error, $"self-test logoff {sessionId} failed");
+            }
+            if (SessionSurvivesLogoff) {
+                return sessionId;
             }
 
             Sessions.Remove(sessionId);

@@ -75,8 +75,8 @@ internal static partial class SelfTestRunner
         using var session = new ChildSession.ChildSessionManager(logger);
         var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "tabs-state"), "unused.exe",
             $"NarutoAutoGUI.Tabs.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
-        var window = new Views.MainWindow(logger, session, new ChildSession.ChildSessionProgramService(logger),
-            coordinator, operation => operation(), () => Task.CompletedTask);
+        var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
+            () => Task.CompletedTask, _ => Task.CompletedTask);
         const System.Reflection.BindingFlags flags =
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
         var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(testDirectory, "tabs.json"));
@@ -248,8 +248,8 @@ internal static partial class SelfTestRunner
         using var session = new ChildSession.ChildSessionManager(logger);
         var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "blank-labels-state"),
             "unused.exe", $"NarutoAutoGUI.BlankLabels.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
-        var window = new Views.MainWindow(logger, session, new ChildSession.ChildSessionProgramService(logger),
-            coordinator, operation => operation(), () => Task.CompletedTask);
+        var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
+            () => Task.CompletedTask, _ => Task.CompletedTask);
         try {
             var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "config.json"));
             var items = (System.Windows.DependencyObject)window.FindName("PlanItemsPanel");
@@ -287,8 +287,8 @@ internal static partial class SelfTestRunner
         using var session = new ChildSession.ChildSessionManager(logger);
         var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "draft-summary-state"),
             "unused.exe", $"NarutoAutoGUI.DraftSummary.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
-        var window = new Views.MainWindow(logger, session, new ChildSession.ChildSessionProgramService(logger),
-            coordinator, operation => operation(), () => Task.CompletedTask);
+        var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
+            () => Task.CompletedTask, _ => Task.CompletedTask);
         try {
             var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "config.json"));
             project.AddTask("OtherTask");

@@ -231,7 +231,7 @@ public partial class MainWindow
         _updateBusy = true;
         UpdateUpdaterControls();
         try {
-            await ((App)System.Windows.Application.Current).InstallUpdateAsync(_preparedReference);
+            await _installUpdateAsync(_preparedReference);
         } catch (Exception exception) {
             _logger.Warn("安装交接失败。", exception);
             UpdateDownloadStatus.Text = exception.Message;

@@ -11,17 +11,16 @@ namespace NarutoAutoGUI;
 
 public partial class App : System.Windows.Application
 {
-    private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly RunTerminalNotificationTracker _terminalNotifications = new();
     private readonly CancellationTokenSource _debugImageCleanup = new();
     private AppLogger? _logger;
     private ChildSessionManager? _sessionManager;
     private WorkerCoordinator? _workerCoordinator;
+    private RuntimeEnvironment? _environment;
     private MainWindow? _mainWindow;
     private Forms.NotifyIcon? _trayIcon;
     private Mutex? _singleInstanceMutex;
     private bool _ownsSingleInstanceMutex;
-    private bool _isExiting;
     private bool _hasShownTrayNotification;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -56,10 +55,10 @@ public partial class App : System.Windows.Application
             _logger, Path.Combine(AppContext.BaseDirectory, "state"),
             Path.Combine(AppContext.BaseDirectory, "worker", "NarutoAutoWorker.exe"));
         _workerCoordinator.StateChanged += WorkerCoordinator_StateChanged;
-        var programService = new ChildSessionProgramService(_logger);
+        _environment = new RuntimeEnvironment(
+            _logger, _sessionManager, _workerCoordinator, new ChildSessionProgramService(_logger));
         _mainWindow = new MainWindow(
-            _logger, _sessionManager, programService,
-            _workerCoordinator, RunApplicationOperationAsync, RequestExitAsync);
+            _logger, _sessionManager, _workerCoordinator, _environment, RequestExitAsync, InstallUpdateAsync);
         _mainWindow.HiddenToTray += MainWindow_HiddenToTray;
         MainWindow = _mainWindow;
         CreateTrayIcon();
@@ -68,103 +67,53 @@ public partial class App : System.Windows.Application
 
     internal async Task RequestExitAsync()
     {
-        if (_isExiting || _logger is null || _sessionManager is null || _mainWindow is null) {
+        if (IsExiting || _logger is null || _sessionManager is null || _mainWindow is null || _environment is null) {
             return;
         }
 
-        _isExiting = true;
+        _environment.Closing = true;
         _mainWindow.SetExitInProgress(true);
-        var gateEntered = false;
         var exitCompleted = false;
         try {
-            await _operationGate.WaitAsync();
-            gateEntered = true;
-
-            bool hasChildSession;
-            try {
-                // The application operation gate is held here, so this query observes the final
-                // state after any in-flight create/connect/launch operation has completed.
-                hasChildSession = _sessionManager.HasChildSession;
-            } catch (Exception exception) {
-                _logger.Error("退出前检查 Child Session 失败。", exception);
-                WpfMessageBox.Show(
-                    "无法确认桌面分身状态，已取消退出。请查看日志后重试。",
-                    "NarutoAutoGUI",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-                return;
-            }
-
-            if (hasChildSession) {
-                var answer = WpfMessageBox.Show(
-                    "桌面分身仍在运行。退出程序将注销该 Session，并结束其中的游戏和 MaaNOP。\n\n确认退出吗？",
-                    "确认退出",
-                MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
-                if (answer != MessageBoxResult.Yes) {
+            await _environment.EndAsync(EnvironmentEndReason.Exit, ConfirmExit, async ended => {
+                if (ended.Outcome != EnvironmentEndOutcome.Ended) {
+                    if (ended.Error is { } error) {
+                        WpfMessageBox.Show(error.Message, "NarutoAutoGUI", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
                     return;
                 }
 
-                try {
-                    await _sessionManager.TerminateAsync();
-                    _workerCoordinator?.ChildSessionEnded();
-                } catch (Exception exception) {
-                    _logger.Critical("退出前注销 Child Session 失败，已取消退出。", exception);
-                    WpfMessageBox.Show(
-                        "注销桌面分身失败，已取消退出，避免遗留未知状态。请查看日志。",
-                        "NarutoAutoGUI",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
-                    return;
+                _logger.Info("NarutoAutoGUI 正常退出。");
+                _debugImageCleanup.Cancel();
+                _trayIcon?.Dispose();
+                _trayIcon = null;
+                _sessionManager.Dispose();
+                if (_workerCoordinator is not null) {
+                    _workerCoordinator.StateChanged -= WorkerCoordinator_StateChanged;
+                    await _workerCoordinator.DisposeAsync();
+                    _workerCoordinator = null;
                 }
-            }
-
-            try {
-                if (_sessionManager.HasChildSession) {
-                    _logger.Critical("最终退出检查仍检测到 Child Session，已取消退出。");
-                    WpfMessageBox.Show(
-                        "最终检查仍检测到桌面分身，已取消退出，避免遗留未知状态。请查看日志后重试。",
-                        "NarutoAutoGUI",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
-                    return;
-                }
-            } catch (Exception exception) {
-                _logger.Critical("最终退出检查 Child Session 失败，已取消退出。", exception);
-                WpfMessageBox.Show(
-                    "最终检查无法确认桌面分身状态，已取消退出。请查看日志后重试。",
-                    "NarutoAutoGUI",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-                return;
-            }
-
-            _logger.Info("NarutoAutoGUI 正常退出。");
-            _debugImageCleanup.Cancel();
-            _trayIcon?.Dispose();
-            _trayIcon = null;
-            _sessionManager.Dispose();
-            if (_workerCoordinator is not null) {
-                _workerCoordinator.StateChanged -= WorkerCoordinator_StateChanged;
-                await _workerCoordinator.DisposeAsync();
-                _workerCoordinator = null;
-            }
-            _mainWindow.HiddenToTray -= MainWindow_HiddenToTray;
-            _mainWindow.AllowClose();
-            _mainWindow.Close();
-            _logger.Dispose();
-            exitCompleted = true;
-            Shutdown(0);
+                _mainWindow.HiddenToTray -= MainWindow_HiddenToTray;
+                _mainWindow.AllowClose();
+                _mainWindow.Close();
+                _logger.Dispose();
+                exitCompleted = true;
+                Shutdown(0);
+            });
         } finally {
-            if (gateEntered) {
-                _operationGate.Release();
-            }
-
             if (!exitCompleted) {
-                _isExiting = false;
+                _environment.Closing = false;
                 _mainWindow?.SetExitInProgress(false);
             }
         }
     }
+
+    private static bool ConfirmExit() => WpfMessageBox.Show(
+        "桌面分身仍在运行。退出程序将注销该 Session，并结束其中的游戏和 MaaNOP。\n\n确认退出吗？",
+        "确认退出",
+        MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
+
+    private bool IsExiting => _environment?.Closing == true;
 
     private void CreateTrayIcon()
     {
@@ -196,7 +145,7 @@ public partial class App : System.Windows.Application
     {
         Dispatcher.BeginInvoke(() => {
             var notification = _terminalNotifications.Observe(snapshot);
-            if (notification is null || _isExiting || _trayIcon is null
+            if (notification is null || IsExiting || _trayIcon is null
                 || _mainWindow is { IsVisible: true, IsActive: true, WindowState: not WindowState.Minimized }) {
                 return;
             }
@@ -268,13 +217,13 @@ public partial class App : System.Windows.Application
 
     private async Task ShowChildDesktopFromTrayAsync()
     {
-        if (_isExiting || _sessionManager is null || _logger is null) {
+        if (IsExiting || _sessionManager is null || _logger is null || _environment is null) {
             return;
         }
 
         try {
-            await RunApplicationOperationAsync(() => _sessionManager.EnsureConnectedAsync(showPreview: true));
-        } catch (OperationCanceledException) when (_isExiting) {
+            await _environment.RunExclusiveAsync(() => _sessionManager.EnsureConnectedAsync(showPreview: true));
+        } catch (OperationCanceledException) when (IsExiting) {
             return;
         } catch (Exception exception) {
             _logger.Error("从托盘显示子桌面失败。", exception);
@@ -288,7 +237,7 @@ public partial class App : System.Windows.Application
 
     private async Task TerminateFromTrayAsync()
     {
-        if (_isExiting || _sessionManager is null || _logger is null) {
+        if (IsExiting || _logger is null || _environment is null) {
             return;
         }
 
@@ -303,17 +252,17 @@ public partial class App : System.Windows.Application
         }
 
         try {
-            await RunApplicationOperationAsync(() => _sessionManager.TerminateAsync());
-            _workerCoordinator?.ChildSessionEnded();
-        } catch (OperationCanceledException) when (_isExiting) {
-            return;
-        } catch (Exception exception) {
+            var ended = await _environment.EndAsync(EnvironmentEndReason.UserRequested);
+            if (ended.Error is not { } exception) {
+                return;
+            }
             _logger.Error("从托盘结束桌面分身失败。", exception);
             ShowMainWindow();
             WpfMessageBox.Show(
                 $"{exception.GetBaseException().Message}\n\n请在主窗口检查桌面分身状态后重试；详细信息已写入日志。",
                 "结束桌面分身失败",
                 MessageBoxButton.OK, MessageBoxImage.Error);
+        } catch (OperationCanceledException) when (IsExiting) {
         }
     }
 
@@ -341,24 +290,6 @@ public partial class App : System.Windows.Application
     {
         ReleaseSingleInstance();
         base.OnExit(e);
-    }
-
-    private async Task RunApplicationOperationAsync(Func<Task> operation)
-    {
-        if (_isExiting) {
-            throw new OperationCanceledException("应用正在退出，未开始新的操作。");
-        }
-
-        await _operationGate.WaitAsync();
-        try {
-            if (_isExiting) {
-                throw new OperationCanceledException("应用正在退出，未开始新的操作。");
-            }
-
-            await operation();
-        } finally {
-            _operationGate.Release();
-        }
     }
 
     private bool TryAcquireSingleInstance()

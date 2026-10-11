@@ -57,10 +57,10 @@ public partial class MainWindow : FluentWindow
     private readonly ApplicationSettings _settings;
     private readonly string _applicationDirectory;
     private readonly ChildSessionManager _sessionManager;
-    private readonly ChildSessionProgramService _programService;
     private readonly WorkerCoordinator _workerCoordinator;
-    private readonly Func<Func<Task>, Task> _runApplicationOperationAsync;
+    private readonly RuntimeEnvironment _environment;
     private readonly Func<Task> _requestExitAsync;
+    private readonly Func<string, Task> _installUpdateAsync;
     private ChildSessionSnapshot _sessionSnapshot = ChildSessionSnapshot.Empty;
     private WorkerCoordinatorSnapshot _workerSnapshot = WorkerCoordinatorSnapshot.Empty;
     private ProjectPlanModule? _projectPlan;
@@ -110,9 +110,8 @@ public partial class MainWindow : FluentWindow
 
     internal MainWindow(
         AppLogger logger,
-        ChildSessionManager sessionManager, ChildSessionProgramService programService,
-        WorkerCoordinator workerCoordinator, Func<Func<Task>, Task> runApplicationOperationAsync,
-        Func<Task> requestExitAsync, string? applicationDirectory = null,
+        ChildSessionManager sessionManager, WorkerCoordinator workerCoordinator, RuntimeEnvironment environment,
+        Func<Task> requestExitAsync, Func<string, Task> installUpdateAsync, string? applicationDirectory = null,
         Func<CancellationToken, Task<EngineCheckResult>>? checkForUpdate = null)
     {
         InitializeComponent();
@@ -126,10 +125,10 @@ public partial class MainWindow : FluentWindow
             CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding, OpenAfdianAsync);
         SettingsView.DataContext = _settings.Page;
         _sessionManager = sessionManager;
-        _programService = programService;
         _workerCoordinator = workerCoordinator;
-        _runApplicationOperationAsync = runApplicationOperationAsync;
+        _environment = environment;
         _requestExitAsync = requestExitAsync;
+        _installUpdateAsync = installUpdateAsync;
         _sessionSnapshot = sessionManager.Snapshot;
         HomeLogListBox.AddHandler(
             ScrollViewer.ScrollChangedEvent,
@@ -366,15 +365,7 @@ public partial class MainWindow : FluentWindow
             {
                 try {
                     LoadProject();
-                    var sessionId = await _sessionManager.EnsureConnectedAsync(showPreview: true);
-                    await _workerCoordinator.PrepareWorkerAsync(sessionId, RequireProject(),
-                        frameworkOptions: _settings.CreateFrameworkOptions());
-                    var game = NarutoGameLaunchProfile.ResolveExisting(_logger);
-                    await _programService.LaunchIfNeededAsync(
-                        sessionId, game.ExecutablePath, game.Arguments,
-                        launchedProcessName: NarutoGameLaunchProfile.ClientProcessName);
-                    _sessionManager.ShowPreview();
-                    _logger.Info("真实 E2E 环境已准备；完成游戏登录后即可开始任务。 ");
+                    await _environment.PrepareAsync(RequireProject(), _settings.CreateFrameworkOptions);
                 } catch {
                     _environmentPreparationFailed = true;
                     throw;
@@ -1470,7 +1461,7 @@ public partial class MainWindow : FluentWindow
 
         SetPendingOperation(pending);
         try {
-            await _runApplicationOperationAsync(operation);
+            await _environment.RunExclusiveAsync(operation);
         } catch (OperationCanceledException) {
             _logger.Warn($"操作已取消：正在{OperationLabel(pending)}...");
         } catch (Exception exception) {

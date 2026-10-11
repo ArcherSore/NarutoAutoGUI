@@ -75,8 +75,9 @@ internal static partial class SelfTestRunner
         }, session: session, runOperation: operations.RunAsync);
     }
 
-    // Like the tray: logoff blocks the UI thread and kills the Worker, then the coordinator learns the session ended.
-    // The Worker's disconnect is raised on another thread, so it reaches the window after ChildSessionEnded.
+    // Like the tray: the end runs outside the window, logoff blocks the UI thread and kills the Worker, then the
+    // Admission is discarded. The Worker's disconnect is raised on another thread, so it reaches the window after
+    // ChildSessionEnded. Throughout the end the window shows its progress and offers no command.
     private static void VerifySessionEndWithWorkerWiring(AppLogger logger, string directory)
     {
         var wts = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] };
@@ -85,6 +86,7 @@ internal static partial class SelfTestRunner
         WithFakeWorker(logger, Path.Combine(directory, "end-worker"), (coordinator, record, pipeName) => {
             var pipe = Task.Run(() => WorkerCoordinatorSelfTest.OpenConnectionAsync(
                 pipeName, record, 0, CancellationToken.None)).GetAwaiter().GetResult();
+            var environment = WindowEnvironment(logger, session, coordinator, operations.RunAsync);
             WithRuntimeControlWindow(logger, Path.Combine(directory, "end-worker-window"), window => {
                 PumpUntil(() => operations.Entered == 1, "启动时应开始恢复已有分身。");
                 operations.Release();
@@ -95,18 +97,24 @@ internal static partial class SelfTestRunner
                         disconnected.TrySetResult();
                     }
                 };
+                bool? progressDuringLogoff = null;
                 wts.DuringLogoff = _ => {
+                    progressDuringLogoff = ProgressShows(window, "正在结束桌面分身") && !ConfigurationEditable(window)
+                        && !Named<UIElement>(window, "HomeDesktopVisibilityButton").IsEnabled;
                     Task.Run(async () => await pipe.DisposeAsync()).GetAwaiter().GetResult();
                     Require(disconnected.Task.Wait(5000), "注销分身时未观察到 Worker 断线。");
                 };
-                var ending = session.TerminateAsync();
-                Require(ending.IsCompleted, "结束分身应像托盘一样在界面线程上同步完成。");
-                ending.GetAwaiter().GetResult();
-                coordinator.ChildSessionEnded();
+                operations.RunOperations = true;
+                var ending = environment.EndAsync(() => true);
+                PumpUntil(() => operations.Entered == 2, "结束应进入操作闸门。");
+                operations.Release();
+                PumpUntil(() => ending.IsCompleted, "结束分身未完成。");
+                Require(ending.GetAwaiter().GetResult() == EnvironmentEndResult.Ended && progressDuringLogoff == true,
+                    "从窗口外结束时，窗口应显示结束进度并禁用命令。");
                 PumpOnboarding();
                 Require(HeaderShows(window, "PrepareEnvironmentButton", enabled: true) && ConfigurationEditable(window),
                     "结束分身后迟到的 Worker 断线不应让运行控制回到重试。");
-            }, session: session, coordinator: coordinator, runOperation: operations.RunAsync);
+            }, session: session, coordinator: coordinator, environment: environment);
         });
     }
 
@@ -299,13 +307,15 @@ internal static partial class SelfTestRunner
 
         internal int Entered { get; private set; }
 
-        internal bool RunOperations { get; init; }
+        internal bool RunOperations { get; set; }
 
+        // Whether an operation runs once released is decided when it enters.
         internal async Task RunAsync(Func<Task> operation)
         {
+            var run = RunOperations;
             Entered++;
             await _release.Task;
-            if (RunOperations) {
+            if (run) {
                 await operation();
             }
         }

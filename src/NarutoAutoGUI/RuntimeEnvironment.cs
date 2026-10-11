@@ -23,7 +23,7 @@ internal sealed class RuntimeEnvironment
     private readonly Func<Func<Task>, Task>? _runExclusive;
 
     // The optional parameters are self-test seams. Production waits for the Worker process itself, allows 30 seconds
-    // for each wait and serialises operations through its own gate.
+    // each for the Run to stop and for the Worker to exit, and serialises operations through its own gate.
     internal RuntimeEnvironment(
         AppLogger logger, ChildSessionManager session, WorkerCoordinator coordinator,
         ChildSessionProgramService programService, Func<int, CancellationToken, Task>? waitForWorkerExit = null,
@@ -41,6 +41,15 @@ internal sealed class RuntimeEnvironment
     // Set while the application exits or hands off an install; operations that have not started are refused.
     internal bool Closing { get; set; }
 
+    // True from entering the gate to end the Runtime Environment until that end returns.
+    internal bool Ending { get; private set; }
+
+    // True after an end that could not confirm the Child Session and the Worker were gone, until one does.
+    internal bool EndUnconfirmed { get; private set; }
+
+    // Raised when Ending or EndUnconfirmed changes, on the thread running the end.
+    internal event EventHandler? StateChanged;
+
     internal Task RunExclusiveAsync(Func<Task> operation) => RunGatedAsync(operation, refuseWhileClosing: true);
 
     // Runs inside an exclusive operation the caller has already entered. The framework options are read once the
@@ -57,23 +66,20 @@ internal sealed class RuntimeEnvironment
         _logger.Info("真实 E2E 环境已准备；完成游戏登录后即可开始任务。 ");
     }
 
-    // Each reason keeps the steps its caller has always taken; confirm is asked only where the reason asks for it.
-    // Exit and install run inGate with the result before releasing the gate, so the caller's dialog, teardown or
-    // install handoff happens before any queued operation.
-    internal Task<EnvironmentEndResult> EndAsync(EnvironmentEndReason reason, Func<bool>? confirm = null,
-        Func<EnvironmentEndResult, Task>? inGate = null) => reason switch {
-            EnvironmentEndReason.Exit => EndExclusivelyAsync(() => EndForExitAsync(confirm), inGate),
-            EnvironmentEndReason.Install => EndExclusivelyAsync(EndForInstallAsync, inGate),
-            EnvironmentEndReason.UserRequested => EndForUserAsync(),
-            _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null)
-        };
-
-    private async Task<EnvironmentEndResult> EndExclusivelyAsync(
-        Func<Task<EnvironmentEndResult>> end, Func<EnvironmentEndResult, Task>? inGate)
+    // Every caller ends the same way. confirm is asked inside the gate, and only when a Runtime Environment may
+    // remain; inGate receives the result before the gate is released, so a caller's teardown or install handoff
+    // happens before any queued operation. The closing flag never refuses an end.
+    internal async Task<EnvironmentEndResult> EndAsync(
+        Func<bool>? confirm = null, Func<EnvironmentEndResult, Task>? inGate = null)
     {
         var result = EnvironmentEndResult.Ended;
         await RunGatedAsync(async () => {
-            result = await end();
+            SetState(ending: true, EndUnconfirmed);
+            try {
+                result = await EndInGateAsync(confirm);
+            } finally {
+                SetState(ending: false, EndUnconfirmed);
+            }
             if (inGate is not null) {
                 await inGate(result);
             }
@@ -81,99 +87,97 @@ internal sealed class RuntimeEnvironment
         return result;
     }
 
-    private async Task<EnvironmentEndResult> EndForExitAsync(Func<bool>? confirm)
+    private async Task<EnvironmentEndResult> EndInGateAsync(Func<bool>? confirm)
     {
         bool hasChildSession;
         try {
             // The gate is held, so this observes the state after any in-flight create, connect or launch operation.
             hasChildSession = _session.HasChildSession;
         } catch (Exception exception) {
-            _logger.Error("退出前检查 Child Session 失败。", exception);
-            return EnvironmentEndResult.Unconfirmed("无法确认桌面分身状态，已取消退出。请查看日志后重试。", exception);
+            return Unconfirmed("无法确认桌面分身状态。", exception);
         }
-
-        if (hasChildSession) {
-            if (confirm?.Invoke() == false) {
-                return EnvironmentEndResult.Declined;
-            }
-            try {
-                await _session.TerminateAsync();
-                _coordinator.ChildSessionEnded();
-            } catch (Exception exception) {
-                _logger.Critical("退出前注销 Child Session 失败，已取消退出。", exception);
-                return EnvironmentEndResult.Unconfirmed("注销桌面分身失败，已取消退出，避免遗留未知状态。请查看日志。", exception);
-            }
-        }
-
-        try {
-            if (_session.HasChildSession) {
-                _logger.Critical("最终退出检查仍检测到 Child Session，已取消退出。");
-                return EnvironmentEndResult.Unconfirmed("最终检查仍检测到桌面分身，已取消退出，避免遗留未知状态。请查看日志后重试。");
-            }
-        } catch (Exception exception) {
-            _logger.Critical("最终退出检查 Child Session 失败，已取消退出。", exception);
-            return EnvironmentEndResult.Unconfirmed("最终检查无法确认桌面分身状态，已取消退出。请查看日志后重试。", exception);
-        }
-        return EnvironmentEndResult.Ended;
-    }
-
-    // The user has already confirmed; the Admission is discarded once the gate is released.
-    private async Task<EnvironmentEndResult> EndForUserAsync()
-    {
-        try {
-            await RunGatedAsync(() => _session.TerminateAsync(), refuseWhileClosing: true);
-            _coordinator.ChildSessionEnded();
+        // Any other observation may still hold an Admission, and so a Worker that has not been proven gone.
+        if (!hasChildSession && _coordinator.Snapshot.Observation
+            is WorkerObservation.WorkerNotStarted or WorkerObservation.ChildSessionEnded) {
+            SetState(Ending, endUnconfirmed: false);
             return EnvironmentEndResult.Ended;
-        } catch (OperationCanceledException) when (Closing) {
-            throw;
-        } catch (Exception exception) {
-            return EnvironmentEndResult.Unconfirmed(exception);
         }
-    }
+        if (confirm?.Invoke() == false) {
+            return EnvironmentEndResult.Declined;
+        }
 
-    private async Task<EnvironmentEndResult> EndForInstallAsync()
-    {
         using var exitWait = new CancellationTokenSource();
+        var failure = "无法确认 Worker 已退出。";
         try {
             // Capture the already verified Worker before WTS teardown, so a reused PID cannot pass for its exit.
             var workerExit = _coordinator.TrackedWorkerPid is int pid ? _waitForWorkerExit(pid, exitWait.Token) : null;
-            _logger.Info("安装前停止任务与 Preview，随后注销既有 Child Session。");
+            _logger.Info("开始结束桌面分身：先停止任务，随后注销 Child Session。");
             await StopActiveRunAsync();
+            failure = "注销桌面分身失败。";
             await _session.TerminateAsync();
+            failure = "无法确认桌面分身已结束。";
             if (_session.HasChildSession) {
-                throw new IOException("无法确认桌面分身已结束，已取消安装。请查看日志后重试。");
+                return Unconfirmed(failure);
             }
+            // Without a tracked PID, the logged-off Child Session is the proof that no Worker remains.
+            failure = "无法确认 Worker 已退出。";
             if (workerExit is not null) {
-                try {
-                    await workerExit.WaitAsync(_waitLimit);
-                } catch (TimeoutException) {
-                    throw new IOException("无法确认 Worker 已退出，已取消安装。请查看日志后重试。");
-                }
+                await workerExit.WaitAsync(_waitLimit);
             }
+            failure = "丢弃 Worker Admission 失败。";
             _coordinator.ChildSessionEnded();
-            _logger.Info("已确认 Child Session 与已跟踪 Worker 结束，开始安装交接。");
-            return EnvironmentEndResult.Ended;
         } catch (Exception exception) {
-            return EnvironmentEndResult.Unconfirmed(exception);
+            return Unconfirmed(failure, exception);
         } finally {
             exitWait.Cancel();
         }
+        SetState(Ending, endUnconfirmed: false);
+        _logger.Info("已确认 Child Session 结束、Worker 退出，Admission 已丢弃。");
+        return EnvironmentEndResult.Ended;
     }
 
+    // Stops only a Run that a connected, healthy Worker can still stop, then waits for a fresh snapshot without it.
+    // A failure here only logs: logging off the Child Session ends whatever still runs in it.
     private async Task StopActiveRunAsync()
     {
-        if (_coordinator.Snapshot.WorkerSnapshot?.ActiveRun is not { } activeRun) {
+        if (_coordinator.Snapshot is not { Observation: WorkerObservation.Connected, SnapshotFresh: true,
+            WorkerSnapshot: { WorkerState: not WorkerState.Faulted, ActiveRun: { } run } }) {
             return;
         }
         try {
             using var stopTimeout = new CancellationTokenSource(_waitLimit);
-            await _coordinator.StopRunAsync(activeRun.RunId, stopTimeout.Token);
-            while (_coordinator.Snapshot.WorkerSnapshot?.ActiveRun is not null) {
+            if (run.State != RunState.Stopping) {
+                await _coordinator.StopRunAsync(run.RunId, stopTimeout.Token);
+            }
+            while (_coordinator.Snapshot is not { Observation: WorkerObservation.Connected, SnapshotFresh: true }
+                || _coordinator.Snapshot.WorkerSnapshot?.ActiveRun?.RunId == run.RunId) {
+                if (_coordinator.Snapshot is { Observation: not WorkerObservation.Connected }
+                    or { WorkerSnapshot.WorkerState: WorkerState.Faulted }) {
+                    throw new IOException("Worker 已断开或进入 Faulted。");
+                }
                 await Task.Delay(200, stopTimeout.Token);
             }
+            _logger.Info($"Active Run 已正常停止：runId={run.RunId:D}。");
         } catch (Exception exception) {
-            _logger.Warn("正常停止未确认，继续使用现有 Child Session 注销路径。", exception);
+            _logger.Warn("正常停止未确认，继续注销 Child Session。", exception);
         }
+    }
+
+    private EnvironmentEndResult Unconfirmed(string message, Exception? cause = null)
+    {
+        _logger.Critical($"结束桌面分身未确认：{message}已保留 Worker Admission。", cause);
+        SetState(Ending, endUnconfirmed: true);
+        return EnvironmentEndResult.Unconfirmed(message, cause);
+    }
+
+    private void SetState(bool ending, bool endUnconfirmed)
+    {
+        if (Ending == ending && EndUnconfirmed == endUnconfirmed) {
+            return;
+        }
+        Ending = ending;
+        EndUnconfirmed = endUnconfirmed;
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private async Task RunGatedAsync(Func<Task> operation, bool refuseWhileClosing)
@@ -226,11 +230,6 @@ internal sealed class RuntimeEnvironment
             }
         }
     }
-}
-
-internal enum EnvironmentEndReason
-{
-    Exit, UserRequested, Install
 }
 
 internal enum EnvironmentEndOutcome

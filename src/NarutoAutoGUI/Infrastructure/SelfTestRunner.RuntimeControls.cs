@@ -37,7 +37,9 @@ internal static partial class SelfTestRunner
                 (new RuntimeAction.InProgress(ProgressKind.StartingRun), "RuntimeHeaderProgressRing", true,
                     "正在开始任务"),
                 (new RuntimeAction.InProgress(ProgressKind.StoppingRun), "RuntimeHeaderProgressRing", true,
-                    "正在停止任务")
+                    "正在停止任务"),
+                (new RuntimeAction.InProgress(ProgressKind.EndingEnvironment), "RuntimeHeaderProgressRing", true,
+                    "正在结束桌面分身")
             }) {
                 window.ApplyRuntimeControls(new RuntimeControlState(action, true, null, idleDesktop, true, null));
                 var shown = ShownHeaderControls(window);
@@ -143,6 +145,7 @@ internal static partial class SelfTestRunner
         var preparing = new RuntimeAction.InProgress(ProgressKind.PreparingEnvironment);
         var starting = new RuntimeAction.InProgress(ProgressKind.StartingRun);
         var stopping = new RuntimeAction.InProgress(ProgressKind.StoppingRun);
+        var ending = new RuntimeAction.InProgress(ProgressKind.EndingEnvironment);
         var retryPrepare = new RuntimeAction.Retry(RetryTarget.Prepare, true);
         const LockReason runActive = LockReason.RunActive;
         const LockReason runtimeBusy = LockReason.RuntimeBusy;
@@ -250,6 +253,11 @@ internal static partial class SelfTestRunner
                 new(new RuntimeAction.Stop(false), false, runActive, showDisabled, false, none)),
             ("正在结束分身", start with { Session = ScenarioSession(ChildSessionState.Disconnecting) },
                 new(new RuntimeAction.Prepare(false), false, runtimeBusy, showDisabled, false, none)),
+            ("正在结束运行环境", start with { Ending = true },
+                new(ending, false, runtimeBusy, showDisabled, false, worker)),
+            ("运行中正在结束运行环境", start with {
+                Worker = Observed(WorkerObservation.Connected, running), Ending = true
+            }, new(ending, false, runActive, showDisabled, false, worker)),
             ("项目未加载但仍在运行", start with {
                 Worker = Observed(WorkerObservation.Connected, running), Project = ProjectReadiness.NotLoaded
             }, new(new RuntimeAction.Stop(true), false, null, showEnabled, true, worker)),
@@ -303,7 +311,7 @@ internal static partial class SelfTestRunner
     // Opens a real MainWindow off screen and lets its normal startup run; tests reach it only through its interface.
     private static void WithRuntimeControlWindow(AppLogger logger, string directory, Action<MainWindow> verify,
         ChildSessionManager? session = null, WorkerCoordinator? coordinator = null,
-        Func<Func<Task>, Task>? runOperation = null, bool loadProject = true)
+        Func<Func<Task>, Task>? runOperation = null, bool loadProject = true, RuntimeEnvironment? environment = null)
     {
         var projectDirectory = CreateProjectFixture(directory);
         if (!loadProject) {
@@ -321,7 +329,8 @@ internal static partial class SelfTestRunner
         var windowSession = session ?? ownedSession!;
         var windowCoordinator = coordinator ?? ownedCoordinator!;
         var window = new MainWindow(logger, windowSession, windowCoordinator,
-            WindowEnvironment(logger, windowSession, windowCoordinator, runOperation), () => Task.CompletedTask,
+            environment ?? WindowEnvironment(logger, windowSession, windowCoordinator, runOperation),
+            () => Task.CompletedTask,
             _ => Task.CompletedTask, projectDirectory);
         var application = System.Windows.Application.Current;
         var shutdown = application.ShutdownMode;

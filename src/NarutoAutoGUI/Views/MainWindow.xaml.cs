@@ -135,6 +135,7 @@ public partial class MainWindow : FluentWindow
             new ScrollChangedEventHandler(LogListBox_ScrollChanged));
         _sessionManager.StateChanged += OnSessionStateChanged;
         _workerCoordinator.StateChanged += OnWorkerStateChanged;
+        _environment.StateChanged += OnEnvironmentStateChanged;
         _workerCoordinator.LogReceived += OnWorkerLogReceived;
         _workerSnapshot = workerCoordinator.Snapshot;
         Loaded += MainWindow_Loaded;
@@ -220,6 +221,7 @@ public partial class MainWindow : FluentWindow
             StopPreviewPolling();
             _sessionManager.StateChanged -= OnSessionStateChanged;
             _workerCoordinator.StateChanged -= OnWorkerStateChanged;
+            _environment.StateChanged -= OnEnvironmentStateChanged;
             _workerCoordinator.LogReceived -= OnWorkerLogReceived;
             IsVisibleChanged -= MainWindow_IsVisibleChanged;
             StateChanged -= MainWindow_StateChanged;
@@ -1865,6 +1867,17 @@ public partial class MainWindow : FluentWindow
         RefreshRuntimeControls();
     }
 
+    // Raised by whichever entry ends the Runtime Environment, so the tray's end shows here as well.
+    private void OnEnvironmentStateChanged(object? sender, EventArgs e)
+    {
+        if (!Dispatcher.CheckAccess()) {
+            _ = Dispatcher.BeginInvoke(() => OnEnvironmentStateChanged(sender, e));
+            return;
+        }
+
+        RefreshRuntimeControls();
+    }
+
     // Another operation is running or the application is exiting, so a new operation must not start.
     private bool OperationOrExitInProgress => _pendingOperation != PendingOperation.None || _exitInProgress;
 
@@ -1881,7 +1894,7 @@ public partial class MainWindow : FluentWindow
             ? new ProjectReadiness(true, project.SelectedTaskNames.Count, _projectConfigurationValid,
                 project.RuntimeProfileDigest)
             : ProjectReadiness.NotLoaded,
-        _pendingOperation, _environmentPreparationFailed, _exitInProgress));
+        _pendingOperation, _environmentPreparationFailed, _exitInProgress, _environment.Ending));
 
     // The only refresh path for runtime inputs; changes that are purely visual call UpdatePreviewPolling alone.
     private void RefreshRuntimeControls()
@@ -1913,12 +1926,12 @@ public partial class MainWindow : FluentWindow
         StopTaskHeaderButton.IsEnabled = action is RuntimeAction.Stop { Enabled: true };
         RuntimeHeaderProgressRing.Visibility = Visible(action is RuntimeAction.InProgress);
         if (action is RuntimeAction.InProgress { Kind: var kind }) {
-            var operation = kind switch {
-                ProgressKind.StoppingRun => PendingOperation.StoppingRun,
-                ProgressKind.StartingRun => PendingOperation.StartingRun,
-                _ => PendingOperation.PreparingEnvironment
+            var progressText = kind switch {
+                ProgressKind.EndingEnvironment => "正在结束桌面分身",
+                ProgressKind.StoppingRun => $"正在{OperationLabel(PendingOperation.StoppingRun)}",
+                ProgressKind.StartingRun => $"正在{OperationLabel(PendingOperation.StartingRun)}",
+                _ => $"正在{OperationLabel(PendingOperation.PreparingEnvironment)}"
             };
-            var progressText = $"正在{OperationLabel(operation)}";
             RuntimeHeaderProgressRing.ToolTip = progressText;
             AutomationProperties.SetName(RuntimeHeaderProgressRing, progressText);
         }

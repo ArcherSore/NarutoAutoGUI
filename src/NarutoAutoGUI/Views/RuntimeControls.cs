@@ -9,8 +9,8 @@ internal static class RuntimeControls
 {
     internal static RuntimeControlState Derive(RuntimeControlInputs inputs)
     {
-        var (session, observed, project, pending, preparationFailed, exiting) = inputs;
-        var commandsAvailable = pending == PendingOperation.None && !exiting
+        var (session, observed, project, pending, preparationFailed, exiting, ending) = inputs;
+        var commandsAvailable = pending == PendingOperation.None && !exiting && !ending
             && session.State is not (ChildSessionState.Connecting or ChildSessionState.Disconnecting);
         var sessionConnected = session.State is ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden;
         var fresh = observed is { Observation: WorkerObservation.Connected, SnapshotFresh: true };
@@ -48,7 +48,8 @@ internal static class RuntimeControls
         var retryTarget = runtimeFaulted || !environmentReady && !resynchronising
             ? RetryTarget.Prepare : RetryTarget.Start;
         var retryEnabled = retryTarget == RetryTarget.Prepare ? commandsAvailable && project.Loaded : startAllowed;
-        RuntimeAction action = preparing || starting || stopping
+        RuntimeAction action = ending ? new RuntimeAction.InProgress(ProgressKind.EndingEnvironment)
+            : preparing || starting || stopping
             ? new RuntimeAction.InProgress(stopping ? ProgressKind.StoppingRun
                 : starting ? ProgressKind.StartingRun : ProgressKind.PreparingEnvironment)
             : active?.State == RunState.Running ? new RuntimeAction.Stop(stopAllowed)
@@ -94,7 +95,7 @@ internal sealed record ProjectReadiness(
 
 internal sealed record RuntimeControlInputs(
     ChildSessionSnapshot Session, WorkerCoordinatorSnapshot Worker, ProjectReadiness Project,
-    PendingOperation PendingOperation, bool EnvironmentPreparationFailed, bool Exiting);
+    PendingOperation PendingOperation, bool EnvironmentPreparationFailed, bool Exiting, bool Ending = false);
 
 internal enum RetryTarget
 {
@@ -103,7 +104,7 @@ internal enum RetryTarget
 
 internal enum ProgressKind
 {
-    PreparingEnvironment, StartingRun, StoppingRun
+    PreparingEnvironment, StartingRun, StoppingRun, EndingEnvironment
 }
 
 // Why Start cannot run, listed in the order checked so the reason a user can act on comes first.

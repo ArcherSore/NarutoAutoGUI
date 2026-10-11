@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Runtime.ExceptionServices;
 using NarutoAutoGUI.Updates;
 
 namespace NarutoAutoGUI;
@@ -15,9 +14,9 @@ public partial class App
         var handedOff = false;
         try {
             // The handoff runs before the gate is released, so no queued operation starts while it is in progress.
-            await _environment.EndAsync(EnvironmentEndReason.Install, inGate: async ended => {
+            await _environment.EndAsync(inGate: async ended => {
                 if (ended.Error is { } error) {
-                    ExceptionDispatchInfo.Throw(error);
+                    throw new IOException($"{error.Message}已取消安装。请查看日志后重试。", error);
                 }
                 var engine = new UpdateEngineClient(new ProcessStartInfo(
                     Path.Combine(AppContext.BaseDirectory, "maanop-update-engine.exe")) {

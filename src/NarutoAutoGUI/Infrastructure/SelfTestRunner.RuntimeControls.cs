@@ -318,9 +318,11 @@ internal static partial class SelfTestRunner
             ? new WorkerCoordinator(logger, Path.Combine(directory, "state"), "unused.exe",
                 $"NarutoAutoGUI.RuntimeControls.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false)
             : null;
-        var window = new MainWindow(logger, session ?? ownedSession!, new ChildSessionProgramService(logger),
-            coordinator ?? ownedCoordinator!, runOperation ?? (operation => operation()), () => Task.CompletedTask,
-            projectDirectory);
+        var windowSession = session ?? ownedSession!;
+        var windowCoordinator = coordinator ?? ownedCoordinator!;
+        var window = new MainWindow(logger, windowSession, windowCoordinator,
+            WindowEnvironment(logger, windowSession, windowCoordinator, runOperation), () => Task.CompletedTask,
+            _ => Task.CompletedTask, projectDirectory);
         var application = System.Windows.Application.Current;
         var shutdown = application.ShutdownMode;
         application.ShutdownMode = ShutdownMode.OnExplicitShutdown;

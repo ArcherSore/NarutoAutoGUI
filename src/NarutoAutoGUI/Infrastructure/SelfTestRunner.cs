@@ -24,6 +24,7 @@ internal static partial class SelfTestRunner
                 VerifyRuntimeControlScenarios();
                 VerifyRuntimeControlMapping(logger, testDirectory);
                 VerifyRuntimeControlWiring(logger, testDirectory);
+                VerifyRuntimeEnvironment(logger, testDirectory);
                 Console.WriteLine("RUNTIME CONTROLS SELF-TEST PASS");
                 return 0;
             }
@@ -72,6 +73,7 @@ internal static partial class SelfTestRunner
             VerifyRuntimeControlScenarios();
             VerifyRuntimeControlMapping(logger, testDirectory);
             VerifyRuntimeControlWiring(logger, testDirectory);
+            VerifyRuntimeEnvironment(logger, testDirectory);
             Task.Run(() => WorkerCoordinatorSelfTest.RunAsync(
                 logger, testDirectory, projectDirectory,
                 Path.Combine(testDirectory, "maanop-config.json"))).GetAwaiter().GetResult();

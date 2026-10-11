@@ -189,9 +189,7 @@ internal sealed class RunHarness : IAsyncDisposable
     }
 }
 
-internal enum ScriptedStop { Complete, Throw, Block }
-
-// Records every execution call. Each call probes the Worker state lock from another thread: Monitor is reentrant,
+// Creates scripted executions. Each execution call probes the Worker state lock from another thread: Monitor is reentrant,
 // so only a second thread can show that the caller does not hold the lock.
 internal sealed class ScriptedExecutions
 {
@@ -199,7 +197,6 @@ internal sealed class ScriptedExecutions
 
     private readonly object _gate = new();
     private readonly List<ScriptedExecution> _created = [];
-    private readonly List<string> _calls = [];
     private readonly List<string> _violations = [];
     private TaskCompletionSource _changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -207,7 +204,7 @@ internal sealed class ScriptedExecutions
 
     internal RecordingStream Wire { get; set; } = null!;
 
-    internal ScriptedStop StopBehavior { get; set; }
+    internal bool StopFails { get; set; }
 
     internal IReadOnlyList<string> Violations
     {
@@ -215,16 +212,6 @@ internal sealed class ScriptedExecutions
         {
             lock (_gate) {
                 return _violations.ToArray();
-            }
-        }
-    }
-
-    internal IReadOnlyList<string> Calls
-    {
-        get
-        {
-            lock (_gate) {
-                return _calls.ToArray();
             }
         }
     }
@@ -277,7 +264,6 @@ internal sealed class ScriptedExecutions
         TaskCompletionSource changed;
         lock (_gate) {
             observe?.Invoke(released ? probe.Result : null);
-            _calls.Add($"{member}:{execution.Item.TaskName}");
             if (!released) {
                 _violations.Add($"{member}:{execution.Item.TaskName}");
             }
@@ -301,7 +287,6 @@ internal sealed class ScriptedExecution : IPlanItemExecution
     private readonly Action _onRunning;
     private readonly TaskCompletionSource<RuntimeExecutionResult> _result =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly TaskCompletionSource _stopReleased = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _stopCalled = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _requestStops;
     private int _stops;
@@ -346,19 +331,15 @@ internal sealed class ScriptedExecution : IPlanItemExecution
         _owner.Record(this, "RequestStop");
     }
 
-    public async Task StopAsync(CancellationToken cancellationToken)
+    public Task StopAsync(CancellationToken cancellationToken)
     {
         WrittenAtStop ??= _owner.Wire.Frames();
         Interlocked.Increment(ref _stops);
         _owner.Record(this, "StopAsync");
         _stopCalled.TrySetResult();
-        switch (_owner.StopBehavior) {
-            case ScriptedStop.Throw:
-                throw new StopConfirmationException("scripted stop confirmation failure");
-            case ScriptedStop.Block:
-                await _stopReleased.Task;
-                break;
-        }
+        return _owner.StopFails
+            ? Task.FromException(new StopConfirmationException("scripted stop confirmation failure"))
+            : Task.CompletedTask;
     }
 
     internal async Task StopCalledAsync()
@@ -383,12 +364,9 @@ internal sealed class ScriptedExecution : IPlanItemExecution
         RunSelfTests.Expect(thread.Join(RunHarness.WaitLimit), $"{Item.TaskName} 的 onRunning 未在时限内返回。");
     }
 
-    internal void Release()
-    {
-        _stopReleased.TrySetResult();
+    internal void Release() =>
         _result.TrySetResult(new RuntimeExecutionResult(RuntimeExecutionOutcome.Failed, null,
             new StructuredReason("SelfTestEnded", "self-test released the execution")));
-    }
 }
 
 // Records what the Worker has completely written, so ordering checks need no reads on the GUI side.

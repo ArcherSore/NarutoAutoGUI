@@ -390,7 +390,7 @@ internal static class RunSelfTests
 
     private static async Task VerifyStopFailureOnlyLogsAsync(RunHarness harness)
     {
-        harness.Executions.StopBehavior = ScriptedStop.Throw;
+        harness.Executions.StopFails = true;
         var (request, first) = await StartRunningAsync(harness, 1);
         Expect(await harness.StopAsync(request.RunId) == "stop_requested", "停止应被接受。");
         var revision = (await harness.SnapshotAsync()).StateRevision;
@@ -405,7 +405,7 @@ internal static class RunSelfTests
     // Current behavior tracked by #17: an unconfirmed stop faults the Worker and leaves the Run in Stopping.
     private static async Task VerifyStopTimedOutCurrentBehaviorAsync(RunHarness harness)
     {
-        harness.Executions.StopBehavior = ScriptedStop.Throw;
+        harness.Executions.StopFails = true;
         var (request, first) = await StartRunningAsync(harness, 2);
         await harness.StopAsync(request.RunId);
         var revision = (await harness.SnapshotAsync()).StateRevision;

@@ -228,6 +228,10 @@ internal sealed class RunSupervisor
             if (_activeRun.State == RunState.Stopping) {
                 return new RunStopResponse("already_stopping");
             }
+            // A Faulted Worker no longer drives its Run, so the execution is not asked to stop.
+            if (_workerState == WorkerState.Faulted) {
+                throw new WorkerRequestException("worker_faulted", _workerReason?.Message ?? "Worker Faulted。 ");
+            }
             if (_activeRun.State is not (RunState.Starting or RunState.Running)) {
                 throw new WorkerRequestException("operation_not_allowed", $"Run state={_activeRun.State}。 ");
             }
@@ -284,6 +288,17 @@ internal sealed class RunSupervisor
         Guid runId, IPlanItemExecution execution,
         CancellationToken cancellationToken)
     {
+        try {
+            await AdvanceRunAsync(runId, execution, cancellationToken);
+        } catch (Exception exception) when (!cancellationToken.IsCancellationRequested) {
+            FaultRunLoop(runId, exception);
+        }
+    }
+
+    private async Task AdvanceRunAsync(
+        Guid runId, IPlanItemExecution execution,
+        CancellationToken cancellationToken)
+    {
         while (true) {
             var result = await execution.ExecuteAsync(cancellationToken);
             IPlanItemExecution? nextExecution = null;
@@ -316,13 +331,14 @@ internal sealed class RunSupervisor
                             StartedAtUtc = now
                         };
                         var nextItem = _activeRun.Plan.Items[nextIndex];
+                        // Created before any state changes, so a factory failure leaves the Active Run as it was.
+                        nextExecution = CreateExecution(runId, nextItem);
                         _activeRun = _activeRun with {
                             State = RunState.Running,
                             CurrentPlanItemId = nextItem.PlanItemId,
                             CurrentPlanItemIndex = nextIndex,
                             Items = items
                         };
-                        nextExecution = CreateExecution(runId, nextItem);
                         _execution = nextExecution;
                         snapshot = CommitLocked();
                     } else {
@@ -344,6 +360,28 @@ internal sealed class RunSupervisor
             Log("INFO", "run.lifecycle", $"开始执行下一 Plan Item：{runId}。 ", runId);
             execution = nextExecution;
         }
+    }
+
+    // #18: the loop can no longer advance or end the Run. While the Run is still active, the Worker faults and keeps
+    // it as it was without a terminal state, as after an unconfirmed stop; only ending the Runtime Environment helps.
+    private void FaultRunLoop(Guid runId, Exception exception)
+    {
+        WorkerSnapshot? snapshot = null;
+        lock (_stateGate) {
+            if (_activeRun?.RunId == runId) {
+                _workerState = WorkerState.Faulted;
+                _workerReason = new StructuredReason(
+                    "RunLoopFault", $"Run 后台循环意外异常：{exception.GetBaseException().Message}");
+                snapshot = CommitLocked();
+            }
+        }
+        if (snapshot is not null) {
+            PublishState(ProtocolOperations.RunStateChanged, snapshot);
+        }
+        Log(
+            "ERROR", "run.lifecycle",
+            $"Run 后台循环意外异常：{runId}，{exception.GetType().Name}：{exception.GetBaseException().Message}",
+            runId);
     }
 
     private WorkerSnapshot CompleteRunLocked(

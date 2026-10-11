@@ -206,6 +206,9 @@ internal sealed class ScriptedExecutionFactory
 
     internal bool StopFails { get; set; }
 
+    // Plan Items whose execution cannot be created; the factory throws for them.
+    internal Func<RunPlanItem, bool>? FailCreate { get; set; }
+
     internal IReadOnlyList<string> Violations
     {
         get
@@ -228,6 +231,9 @@ internal sealed class ScriptedExecutionFactory
 
     internal IPlanItemExecution Create(Guid runId, RunPlanItem item, Action onRunning)
     {
+        if (FailCreate?.Invoke(item) == true) {
+            throw new InvalidOperationException($"scripted creation failure for {item.TaskName}");
+        }
         var execution = new ScriptedExecution(this, item, onRunning);
         lock (_gate) {
             _created.Add(execution);
@@ -358,6 +364,9 @@ internal sealed class ScriptedExecution : IPlanItemExecution
         _result.TrySetResult(new RuntimeExecutionResult(outcome,
             ProtocolJson.ToElement(new { scripted = outcome.ToString(), item = Item.TaskName }),
             errorCode is null ? null : new StructuredReason(errorCode, $"scripted {errorCode}")));
+
+    // Breaks the contract that ExecuteAsync reports failures as a result.
+    internal void Throw(Exception exception) => _result.TrySetException(exception);
 
     // The MaaFramework callback thread reports Running; a dedicated thread stands in for it.
     internal void ReportRunning()

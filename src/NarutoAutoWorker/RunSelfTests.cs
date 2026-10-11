@@ -65,16 +65,16 @@ internal static class RunSelfTests
         Expect(snapshot.StateRevision == 3 && snapshot.RunState == RunState.Starting && snapshot.LastRun is null,
             "接受应为一次提交，Run 为 Starting 且没有 Last Run。");
         Expect(run is { State: RunState.Starting, StartedAtUtc: not null, CurrentPlanItemIndex: 0 }
-               && run.CurrentPlanItemId == request.Plan.Items[0].PlanItemId && run.RunId == request.RunId,
+            && run.CurrentPlanItemId == request.Plan.Items[0].PlanItemId && run.RunId == request.RunId,
             "Active Run 应从第一项开始。");
         Expect(run!.Items[0] is { State: PlanItemState.Starting, StartedAtUtc: not null }
-               && run.Items.Skip(1).All(item => item is { State: PlanItemState.Pending, StartedAtUtc: null }),
+            && run.Items.Skip(1).All(item => item is { State: PlanItemState.Pending, StartedAtUtc: null }),
             "第一项应为 Starting，其余为 Pending。");
 
         // W3: both the acknowledgement and the first execution happen; their order is not part of the contract.
         var first = await harness.Executions.ExecutingAsync(request.Plan.Items[0].PlanItemId);
         Expect(first.SnapshotAtExecute?.ActiveRun?.RunId == request.RunId
-               && first.SnapshotAtExecute.ActiveRun.Items[0].State == PlanItemState.Starting,
+            && first.SnapshotAtExecute.ActiveRun.Items[0].State == PlanItemState.Starting,
             "首个 Plan Item 必须在接受提交可见后才开始执行。");
         Expect(harness.Executions.Created.Count == 1, "接受时只应创建第一项的执行。");
     }
@@ -97,18 +97,22 @@ internal static class RunSelfTests
         Expect(await harness.StartAsync(first) == "already_accepted", "Last Run 重试应为 already_accepted。");
         Expect((await harness.SnapshotAsync()).StateRevision == revision, "重试 Last Run 不得提交状态。");
 
-        var (second, _) = await StartRunningAsync(harness, 1, running: false);
+        var (second, secondExecution) = await StartRunningAsync(harness, 1, running: false);
         var snapshot = await harness.SnapshotAsync();
         Expect(snapshot.ActiveRun?.RunId == second.RunId && snapshot.LastRun is null, "接受新 Run 应清空 Last Run。");
         Expect(await harness.StartAsync(first) == "already_accepted", "更早的 Run 重试应为 already_accepted。");
+        secondExecution.Complete(RuntimeExecutionOutcome.Succeeded);
+        await TerminalAsync(harness, second.RunId);
+        Expect(await harness.StartAsync(first) == "already_accepted", "另一 Run 为 Last Run 时更早的 Run 仍应幂等。");
         Expect(harness.Executions.Created.Count == 2, "更早的 Run 重试不得再次执行。");
     }
 
-    // The ledger answers retries before Worker State, the Active Run or the plan are considered.
+    // Rejections follow the ledger, then Worker State, then the Active Run, then plan validation.
     private static async Task VerifyLedgerPrecedesStateAsync(RunHarness harness)
     {
         var (active, execution) = await StartRunningAsync(harness, 2);
         Expect(await harness.StartAsync(Request(Plan(1))) == "error:worker_busy", "已有 Active Run 时应为 worker_busy。");
+        Expect(await harness.StartAsync(Request(Plan(0))) == "error:worker_busy", "Active Run 检查应先于计划校验。");
         var conflicting = Request(Plan(2), active.RunId);
         Expect(await harness.StartAsync(conflicting) == "error:run_id_conflict", "相同 runId 不同计划应为冲突。");
 
@@ -119,6 +123,7 @@ internal static class RunSelfTests
         Expect(await harness.StartAsync(active) == "already_accepted", "Faulted 时重试已接受的 Run 应为 already_accepted。");
         Expect(await harness.StartAsync(conflicting) == "error:run_id_conflict", "Faulted 时冲突仍先于状态检查。");
         Expect(await harness.StartAsync(Request(Plan(1))) == "error:worker_faulted", "Faulted 时新 Run 应被拒绝。");
+        Expect(await harness.StartAsync(Request(Plan(0))) == "error:worker_faulted", "Worker State 检查应先于计划校验。");
         Expect((await harness.SnapshotAsync()).StateRevision == faulted.StateRevision, "拒绝不得提交状态。");
     }
 
@@ -187,7 +192,7 @@ internal static class RunSelfTests
         first.ReportRunning();
         var running = await harness.SnapshotAsync();
         Expect(running.StateRevision == 4 && running.ActiveRun is { State: RunState.Running }
-               && running.ActiveRun.Items[0].State == PlanItemState.Running, "onRunning 返回时应已提交 Running。");
+            && running.ActiveRun.Items[0].State == PlanItemState.Running, "onRunning 返回时应已提交 Running。");
         first.ReportRunning();
         Expect((await harness.SnapshotAsync()).StateRevision == 4, "重复 onRunning 应被忽略。");
 
@@ -195,9 +200,9 @@ internal static class RunSelfTests
         var second = await harness.Executions.ExecutingAsync(items[1].PlanItemId);
         var advanced = second.SnapshotAtExecute?.ActiveRun;
         Expect(advanced is { State: RunState.Running, CurrentPlanItemIndex: 1 }
-               && advanced.Items[0] is { State: PlanItemState.Succeeded, EndedAtUtc: not null, Result: not null }
-               && advanced.Items[1] is { State: PlanItemState.Starting, StartedAtUtc: not null }
-               && advanced.Items[2].State == PlanItemState.Pending,
+            && advanced.Items[0] is { State: PlanItemState.Succeeded, EndedAtUtc: not null, Result: not null }
+            && advanced.Items[1] is { State: PlanItemState.Starting, StartedAtUtc: not null }
+            && advanced.Items[2].State == PlanItemState.Pending,
             "推进提交应在下一项开始执行前可见。");
         Expect((await harness.SnapshotAsync()).StateRevision == 5, "推进应为一次提交。");
         first.ReportRunning();
@@ -212,11 +217,11 @@ internal static class RunSelfTests
         var done = await harness.SnapshotAsync();
         var last = done.LastRun!;
         Expect(done is { StateRevision: 9, RunState: RunState.Idle, ActiveRun: null, WorkerState: WorkerState.Ready,
-                   WorkerReason: null },
+            WorkerReason: null },
             "终结应为一次提交，Worker 回到 Ready。");
         Expect(last is { State: RunState.Succeeded, EndedAtUtc: not null, Error: null, CurrentPlanItemId: null,
-                   CurrentPlanItemIndex: null }
-               && ScriptedItem(last.Result) == "Task3" && last.Items.All(item => item.State == PlanItemState.Succeeded),
+            CurrentPlanItemIndex: null }
+            && ScriptedItem(last.Result) == "Task3" && last.Items.All(item => item.State == PlanItemState.Succeeded),
             "Last Run 应为 Succeeded，结果来自最后一项。");
     }
 
@@ -228,8 +233,8 @@ internal static class RunSelfTests
         var done = await harness.SnapshotAsync();
         var last = done.LastRun!;
         Expect(last is { State: RunState.Failed, Error.Code: "RunExecutionFailed" }
-               && last.Items[0] is { State: PlanItemState.Failed, Error.Code: "RunExecutionFailed" }
-               && last.Items.Skip(1).All(IsPriorItemFailed) && done.WorkerState == WorkerState.Ready,
+            && last.Items[0] is { State: PlanItemState.Failed, Error.Code: "RunExecutionFailed" }
+            && last.Items.Skip(1).All(IsPriorItemFailed) && done.WorkerState == WorkerState.Ready,
             "Running 前失败应直接终结为 Failed，后续项以 prior_item_failed 取消。");
         Expect(harness.Executions.Created.Count == 1, "失败后不得执行后续项。");
     }
@@ -244,9 +249,9 @@ internal static class RunSelfTests
         await TerminalAsync(harness, request.RunId);
         var last = (await harness.SnapshotAsync()).LastRun!;
         Expect(last is { State: RunState.Failed, Error.Code: "MaaTaskFailed" }
-               && last.Items[0].State == PlanItemState.Succeeded
-               && last.Items[1] is { State: PlanItemState.Failed, Error.Code: "MaaTaskFailed" }
-               && IsPriorItemFailed(last.Items[2]), "中间项失败应保留之前结果并取消之后项。");
+            && last.Items[0].State == PlanItemState.Succeeded
+            && last.Items[1] is { State: PlanItemState.Failed, Error.Code: "MaaTaskFailed" }
+            && IsPriorItemFailed(last.Items[2]), "中间项失败应保留之前结果并取消之后项。");
         Expect(harness.Executions.Created.Count == 2, "失败后不得执行后续项。");
     }
 
@@ -257,8 +262,8 @@ internal static class RunSelfTests
         await TerminalAsync(harness, request.RunId);
         var done = await harness.SnapshotAsync();
         Expect(done.LastRun is { State: RunState.Failed, Error.Code: "AgentCleanupFailed" }
-               && IsPriorItemFailed(done.LastRun.Items[1])
-               && done is { WorkerState: WorkerState.Faulted, WorkerReason.Code: "AgentCleanupFailed" },
+            && IsPriorItemFailed(done.LastRun.Items[1])
+            && done is { WorkerState: WorkerState.Faulted, WorkerReason.Code: "AgentCleanupFailed" },
             "未停止时清理失败应使 Run Failed、Worker Faulted。");
     }
 
@@ -270,9 +275,9 @@ internal static class RunSelfTests
         var stopping = await harness.SnapshotAsync();
         var run = stopping.ActiveRun!;
         Expect(stopping.StateRevision == revision + 1 && stopping.RunState == RunState.Stopping
-               && run is { State: RunState.Stopping, StopRequestedAtUtc: not null }
-               && run.Items[0].State == PlanItemState.Running
-               && run.Items.Skip(1).All(item => IsCancelled(item, "user_requested")),
+            && run is { State: RunState.Stopping, StopRequestedAtUtc: not null }
+            && run.Items[0].State == PlanItemState.Running
+            && run.Items.Skip(1).All(item => IsCancelled(item, "user_requested")),
             "停止应为一次提交：Run Stopping，Pending 项以 user_requested 取消，当前项不变。");
 
         // W1: the flag precedes the acknowledgement, which is fully written before the Stopping event, and
@@ -282,14 +287,13 @@ internal static class RunSelfTests
         var written = first.WrittenAtStop!.ToList();
         var response = written.FindIndex(IsStopResponse);
         var stoppingEvent = written.FindIndex(frame => frame.Operation == ProtocolOperations.RunStateChanged
-            && ProtocolJson.Deserialize<StateChangedEvent>(frame.Data).Snapshot.StateRevision
-            == stopping.StateRevision);
+            && RevisionOf(frame) == stopping.StateRevision);
         Expect(response >= 0 && stoppingEvent > response,
             "StopAsync 开始时，run.stop 响应及其后的 Stopping 事件应已完整写出。");
 
         Expect(await harness.StopAsync(request.RunId) == "already_stopping", "重复停止应为 already_stopping。");
         Expect((await harness.SnapshotAsync()).StateRevision == stopping.StateRevision
-               && first is { RequestStops: 1, Stops: 1 }, "重复停止不得提交或再次请求停止。");
+            && first is { RequestStops: 1, Stops: 1 }, "重复停止不得提交或再次请求停止。");
 
         first.Complete(RuntimeExecutionOutcome.Cancelled);
         await TerminalAsync(harness, request.RunId);
@@ -326,8 +330,8 @@ internal static class RunSelfTests
             var done = await harness.SnapshotAsync();
             var last = done.LastRun!;
             Expect(last is { State: RunState.Cancelled, Error: null } && IsCancelled(last.Items[0], "user_requested")
-                   && last.Items[0].Error is null && ScriptedItem(last.Result) == "Task1"
-                   && done is { WorkerState: WorkerState.Ready, WorkerReason: null },
+                && last.Items[0].Error is null && ScriptedItem(last.Result) == "Task1"
+                && done is { WorkerState: WorkerState.Ready, WorkerReason: null },
                 $"停止后结果为 {outcome} 时应终结为 Cancelled 且 Worker Ready。");
         }
 
@@ -337,7 +341,7 @@ internal static class RunSelfTests
         await TerminalAsync(harness, cleanup.RunId);
         var faulted = await harness.SnapshotAsync();
         Expect(faulted.LastRun is { State: RunState.Cancelled, Error: null }
-               && faulted is { WorkerState: WorkerState.Faulted, WorkerReason.Code: "AgentCleanupFailed" },
+            && faulted is { WorkerState: WorkerState.Faulted, WorkerReason.Code: "AgentCleanupFailed" },
             "停止后清理失败应为 Cancelled 且只在 WorkerReason 中体现。");
     }
 
@@ -349,7 +353,7 @@ internal static class RunSelfTests
         await TerminalAsync(harness, request.RunId);
         var last = (await harness.SnapshotAsync()).LastRun!;
         Expect(last.State == RunState.Cancelled && harness.Executions.Created.Count == 1
-               && IsCancelled(last.Items[1], "user_requested"), "停止先被接受时下一项不得开始。");
+            && IsCancelled(last.Items[1], "user_requested"), "停止先被接受时下一项不得开始。");
     }
 
     private static async Task VerifyCompletionBeforeStopAsync(RunHarness harness)
@@ -363,7 +367,7 @@ internal static class RunSelfTests
         Expect(first.RequestStops == 0 && second is { RequestStops: 1, Stops: 1 },
             "推进后停止应作用于下一项。");
         Expect(stopping.ActiveRun is { State: RunState.Stopping } && stopping.LastRun is null
-               && stopping.ActiveRun.Items[0].State == PlanItemState.Succeeded,
+            && stopping.ActiveRun.Items[0].State == PlanItemState.Succeeded,
             "下一项返回结果前 Run 应保持 Stopping，前一项保持 Succeeded。");
         second.Complete(RuntimeExecutionOutcome.Cancelled);
         await TerminalAsync(harness, request.RunId);
@@ -396,7 +400,7 @@ internal static class RunSelfTests
         var revision = (await harness.SnapshotAsync()).StateRevision;
         await first.StopCalledAsync();
         await harness.WaitForLogAsync(entry => entry is { Level: "ERROR", Source: "run.stop" }
-                                               && entry.RunId == request.RunId, "Stop 失败的 ERROR 日志");
+            && entry.RunId == request.RunId, "Stop 失败的 ERROR 日志");
         var snapshot = await harness.SnapshotAsync();
         Expect(snapshot.StateRevision == revision && snapshot.ActiveRun?.State == RunState.Stopping,
             "StopAsync 失败本身不得改变状态。");
@@ -414,8 +418,8 @@ internal static class RunSelfTests
         await harness.WaitForStateAsync(state => state.WorkerState == WorkerState.Faulted, "StopTimedOut 后 Faulted");
         var faulted = await harness.SnapshotAsync();
         Expect(faulted is { WorkerState: WorkerState.Faulted, WorkerReason.Code: "StopTimeout", LastRun: null,
-                   RunState: RunState.Stopping }
-               && faulted.StateRevision == revision + 1 && faulted.ActiveRun?.RunId == request.RunId,
+            RunState: RunState.Stopping }
+            && faulted.StateRevision == revision + 1 && faulted.ActiveRun?.RunId == request.RunId,
             "#17 当前行为：Worker Faulted，Run 停留在 Stopping 且没有终态。");
 
         Expect(await harness.StartAsync(Request(Plan(1))) == "error:worker_faulted", "#17 当前行为：新 Run 被拒绝。");
@@ -436,8 +440,8 @@ internal static class RunSelfTests
             var snapshot = await harness.SnapshotAsync();
             var item = snapshot.ActiveRun!.Items[0].State;
             Expect(stop == "stop_requested" && snapshot.RunState == RunState.Stopping
-                   && (item == PlanItemState.Running && snapshot.StateRevision == revision + 2
-                       || item == PlanItemState.Starting && snapshot.StateRevision == revision + 1),
+                && (item == PlanItemState.Running && snapshot.StateRevision == revision + 2
+                || item == PlanItemState.Starting && snapshot.StateRevision == revision + 1),
                 $"onRunning 与停止竞争出现非法结果：item={item}，revision 增量={snapshot.StateRevision - revision}。");
             first.Complete(RuntimeExecutionOutcome.Cancelled);
             await TerminalAsync(harness, request.RunId);
@@ -455,8 +459,8 @@ internal static class RunSelfTests
             await completing;
             if (first.RequestStops == 1) {
                 await TerminalAsync(harness, request.RunId);
-                Expect(harness.Executions.Created.Count(execution => execution.Item.PlanItemId
-                           == request.Plan.Items[1].PlanItemId) == 0,
+                var next = request.Plan.Items[1].PlanItemId;
+                Expect(!harness.Executions.Created.Any(execution => execution.Item.PlanItemId == next),
                     "停止先被接受时下一项不得创建。");
             } else {
                 var second = await harness.Executions.ExecutingAsync(request.Plan.Items[1].PlanItemId);
@@ -471,29 +475,38 @@ internal static class RunSelfTests
         }
     }
 
+    // C5: a reader on another thread snapshots throughout each Run. Snapshots hold the state lock for a few
+    // milliseconds, so the reader pauses between reads to let the Run progress meanwhile.
     private static async Task VerifyConcurrentSnapshotsAsync(RunHarness harness)
     {
-        var observed = new List<WorkerSnapshot>();
-        using var done = new CancellationTokenSource();
-        var reader = Task.Run(() =>
-        {
-            while (!done.IsCancellationRequested && observed.Count < 100) {
-                observed.Add(harness.Host.GetSnapshot());
-                Thread.Yield();
+        for (var iteration = 0; iteration < 3; iteration++) {
+            var observed = new List<WorkerSnapshot>();
+            using var done = new CancellationTokenSource();
+            var reader = Task.Run(() =>
+            {
+                while (!done.IsCancellationRequested) {
+                    observed.Add(harness.Host.GetSnapshot());
+                    Thread.Sleep(1);
+                }
+            });
+            var (request, execution) = await StartRunningAsync(harness, 5);
+            foreach (var item in request.Plan.Items.Skip(1)) {
+                execution.Complete(RuntimeExecutionOutcome.Succeeded);
+                execution = await harness.Executions.ExecutingAsync(item.PlanItemId);
+                execution.ReportRunning();
             }
-        });
-        var (request, execution) = await StartRunningAsync(harness, 5);
-        foreach (var item in request.Plan.Items.Skip(1)) {
             execution.Complete(RuntimeExecutionOutcome.Succeeded);
-            execution = await harness.Executions.ExecutingAsync(item.PlanItemId);
-            execution.ReportRunning();
+            await TerminalAsync(harness, request.RunId);
+            done.Cancel();
+            await reader;
+            VerifyConsistentSnapshots(observed);
         }
-        execution.Complete(RuntimeExecutionOutcome.Succeeded);
-        await TerminalAsync(harness, request.RunId);
-        done.Cancel();
-        await reader;
+    }
 
-        Expect(observed.Count > 0, "并发读取应取得 Snapshot。");
+    private static void VerifyConsistentSnapshots(List<WorkerSnapshot> observed)
+    {
+        Expect(observed.Any(snapshot => snapshot.ActiveRun?.CurrentPlanItemIndex > 0),
+            "并发读取应在 Run 推进期间取得 Snapshot。");
         for (var index = 1; index < observed.Count; index++) {
             Expect(observed[index].StateRevision >= observed[index - 1].StateRevision, "stateRevision 不得回退。");
         }
@@ -552,6 +565,9 @@ internal static class RunSelfTests
 
     private static Task<WorkerSnapshot> TerminalAsync(RunHarness harness, Guid runId) =>
         harness.WaitForStateAsync(state => state.ActiveRun is null && state.LastRun?.RunId == runId, $"Run {runId} 终结");
+
+    private static long RevisionOf(WireEnvelope stateEvent) =>
+        ProtocolJson.Deserialize<StateChangedEvent>(stateEvent.Data).Snapshot.StateRevision;
 
     private static bool IsStopResponse(WireEnvelope frame) =>
         frame is { MessageType: ProtocolMessageTypes.Response, Operation: ProtocolOperations.RunStop, Success: true };

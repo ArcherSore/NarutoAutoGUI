@@ -241,7 +241,11 @@ internal static class PreviewSelfTests
 
         try {
             var response = await SendAsync<PreviewResponse>(ProtocolOperations.PreviewStart, request);
+            var streaming = Stopwatch.StartNew();
             while (response.State != PreviewState.Streaming) {
+                if (streaming.Elapsed > TimeSpan.FromSeconds(8)) {
+                    throw new TimeoutException("真实 Host 预览未进入 Streaming。");
+                }
                 await Task.Delay(20);
                 response = await SendAsync<PreviewResponse>(ProtocolOperations.PreviewRenew, request);
             }
@@ -268,6 +272,9 @@ internal static class PreviewSelfTests
                 throw new InvalidOperationException("真实 Host 的控制请求被截图阻塞或重复创建采集。");
             }
             await SendAsync<PreviewResponse>(ProtocolOperations.PreviewStop, request);
+            if (harness.Executions.Violations.Count != 0) {
+                throw new InvalidOperationException("真实 Host 在状态锁内调用了 Plan Item 执行。");
+            }
         } finally {
             source.Block = false;
             source.Release.Set();

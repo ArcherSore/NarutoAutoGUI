@@ -26,7 +26,7 @@ internal sealed class RunHarness : IAsyncDisposable
 
     private RunHarness(Guid workerId, IPreviewCaptureSource? previewSource)
     {
-        Executions = new ScriptedExecutions();
+        Executions = new ScriptedExecutionFactory();
         var manifest = new LaunchManifest(ProtocolConstants.LaunchContextVersion, workerId, ProfileDigest,
             "C:\\dummy", Project, new Win32ControllerDefinition("test", "class", "window", "Cache", "Send", "Send"),
             [], new AgentDefinition("python.exe", [], "C:\\dummy"));
@@ -38,7 +38,7 @@ internal sealed class RunHarness : IAsyncDisposable
 
     internal WorkerHost Host { get; }
 
-    internal ScriptedExecutions Executions { get; }
+    internal ScriptedExecutionFactory Executions { get; }
 
     internal RecordingStream Wire { get; private set; } = null!;
 
@@ -189,11 +189,11 @@ internal sealed class RunHarness : IAsyncDisposable
     }
 }
 
-// Creates scripted executions. Each execution call probes the Worker state lock from another thread: Monitor is reentrant,
-// so only a second thread can show that the caller does not hold the lock.
-internal sealed class ScriptedExecutions
+// Creates scripted executions. Each execution call probes the Worker state lock from another thread:
+// Monitor is reentrant, so only a second thread can show that the caller does not hold the lock.
+internal sealed class ScriptedExecutionFactory
 {
-    internal static readonly TimeSpan LockProbeLimit = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan LockProbeLimit = TimeSpan.FromSeconds(2);
 
     private readonly object _gate = new();
     private readonly List<ScriptedExecution> _created = [];
@@ -243,7 +243,7 @@ internal sealed class ScriptedExecutions
             Task changed;
             lock (_gate) {
                 if (_created.FirstOrDefault(execution => execution.Item.PlanItemId == planItemId
-                                                         && execution.ExecuteCalled) is { } found) {
+                    && execution.ExecuteCalled) is { } found) {
                     return found;
                 }
                 changed = _changed.Task;
@@ -256,8 +256,9 @@ internal sealed class ScriptedExecutions
         }
     }
 
+    // Records a call to an execution member and reports a violation when the state lock was held during it.
     // observe sees the probed snapshot (null when the probe was blocked) before waiters are released.
-    internal void Record(ScriptedExecution execution, string member, Action<WorkerSnapshot?>? observe = null)
+    internal void ProbeLock(ScriptedExecution execution, string member, Action<WorkerSnapshot?>? observe = null)
     {
         var probe = Task.Run(Probe);
         var released = probe.Wait(LockProbeLimit);
@@ -283,7 +284,7 @@ internal sealed class ScriptedExecutions
 
 internal sealed class ScriptedExecution : IPlanItemExecution
 {
-    private readonly ScriptedExecutions _owner;
+    private readonly ScriptedExecutionFactory _owner;
     private readonly Action _onRunning;
     private readonly TaskCompletionSource<RuntimeExecutionResult> _result =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -292,7 +293,7 @@ internal sealed class ScriptedExecution : IPlanItemExecution
     private int _stops;
     private volatile bool _executeCalled;
 
-    internal ScriptedExecution(ScriptedExecutions owner, RunPlanItem item, Action onRunning)
+    internal ScriptedExecution(ScriptedExecutionFactory owner, RunPlanItem item, Action onRunning)
     {
         _owner = owner;
         Item = item;
@@ -316,7 +317,7 @@ internal sealed class ScriptedExecution : IPlanItemExecution
 
     public Task<RuntimeExecutionResult> ExecuteAsync(CancellationToken cancellationToken)
     {
-        _owner.Record(this, "ExecuteAsync", snapshot =>
+        _owner.ProbeLock(this, "ExecuteAsync", snapshot =>
         {
             SnapshotAtExecute = snapshot;
             _executeCalled = true;
@@ -328,14 +329,14 @@ internal sealed class ScriptedExecution : IPlanItemExecution
     {
         WrittenAtRequestStop ??= _owner.Wire.Frames();
         Interlocked.Increment(ref _requestStops);
-        _owner.Record(this, "RequestStop");
+        _owner.ProbeLock(this, "RequestStop");
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
         WrittenAtStop ??= _owner.Wire.Frames();
         Interlocked.Increment(ref _stops);
-        _owner.Record(this, "StopAsync");
+        _owner.ProbeLock(this, "StopAsync");
         _stopCalled.TrySetResult();
         return _owner.StopFails
             ? Task.FromException(new StopConfirmationException("scripted stop confirmation failure"))

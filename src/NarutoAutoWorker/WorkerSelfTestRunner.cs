@@ -6,7 +6,7 @@ namespace NarutoAutoWorker;
 
 internal static class WorkerSelfTestRunner
 {
-    internal static int Run(bool runOnly = false)
+    internal static int Run(bool runOnly)
     {
         if (runOnly) {
             return RunCharacterization();

@@ -15,7 +15,7 @@ internal static partial class SelfTestRunner
     private static readonly Guid ScenarioWorkerId = new("7a0c0e3e-5d1f-4b8e-9a51-000000000007");
     private static readonly string[] RuntimeHeaderControls = [
         "PrepareEnvironmentButton", "RetryEnvironmentButton", "StartTaskHeaderButton", "StopTaskHeaderButton",
-        "RuntimeHeaderProgressRing"
+        "RecoverEnvironmentButton", "RuntimeHeaderProgressRing"
     ];
 
     // The window shows what a RuntimeControlState says, independent of how the state was derived.
@@ -32,6 +32,8 @@ internal static partial class SelfTestRunner
                 (new RuntimeAction.Start(false), "StartTaskHeaderButton", false, null),
                 (new RuntimeAction.Stop(true), "StopTaskHeaderButton", true, null),
                 (new RuntimeAction.Stop(false), "StopTaskHeaderButton", false, null),
+                (new RuntimeAction.Recover(true, RecoveryReason.WorkerLost), "RecoverEnvironmentButton", true, null),
+                (new RuntimeAction.Recover(false, RecoveryReason.WorkerLost), "RecoverEnvironmentButton", false, null),
                 (new RuntimeAction.InProgress(ProgressKind.PreparingEnvironment), "RuntimeHeaderProgressRing", true,
                     "正在准备运行环境"),
                 (new RuntimeAction.InProgress(ProgressKind.StartingRun), "RuntimeHeaderProgressRing", true,
@@ -75,6 +77,23 @@ internal static partial class SelfTestRunner
                     && AutomationProperties.GetHelpText(button) == helpText, $"{action} 的说明不符。");
             }
 
+            // Recovery is named for what it does and says why it is needed, whether or not it can run now.
+            foreach (var (reason, text) in new (RecoveryReason, string)[] {
+                (RecoveryReason.StopUnconfirmed, "任务停止未确认，MaaNOP 可能仍在运行"),
+                (RecoveryReason.RuntimeFaulted, "运行环境故障，Worker 无法继续执行任务"),
+                (RecoveryReason.WorkerLost, "Worker 失联且未确认已退出；也可以等待它重新连接"),
+                (RecoveryReason.EndUnconfirmed, "上次结束桌面分身未确认")
+            }) {
+                foreach (var enabled in new[] { true, false }) {
+                    window.ApplyRuntimeControls(new RuntimeControlState(
+                        new RuntimeAction.Recover(enabled, reason), true, null, idleDesktop, true, null));
+                    var button = Named<FrameworkElement>(window, "RecoverEnvironmentButton");
+                    Require(Equals(button.ToolTip, $"结束桌面分身\n{text}") && ToolTipService.GetShowOnDisabled(button)
+                        && AutomationProperties.GetName(button) == "结束桌面分身"
+                        && AutomationProperties.GetHelpText(button) == text, $"{reason} 的恢复说明不符。");
+                }
+            }
+
             var state = new RuntimeControlState(new RuntimeAction.Prepare(true), true, null, idleDesktop, true, null);
             foreach (var (editable, lockReason, text) in new (bool, LockReason?, string?)[] {
                 (false, LockReason.RunActive, "任务运行中，配置已锁定"),
@@ -115,6 +134,16 @@ internal static partial class SelfTestRunner
             if (actual != expected) {
                 failures.Add($"{name}{Environment.NewLine}  expected {expected}{Environment.NewLine}"
                     + $"  actual   {actual}");
+            }
+            // While execution may not have ended, nothing may start, retry or prepare another Worker.
+            var observed = inputs.Worker;
+            var executionUnconfirmed = inputs.EndUnconfirmed
+                || observed.Observation is WorkerObservation.IpcDisconnected or WorkerObservation.WorkerRecoveryConflict
+                || observed.Observation is not (WorkerObservation.ChildSessionEnded or WorkerObservation.WorkerExited)
+                && observed.WorkerSnapshot?.WorkerState == WorkerState.Faulted;
+            if (executionUnconfirmed
+                && actual.Action is RuntimeAction.Retry or RuntimeAction.Start or RuntimeAction.Prepare) {
+                failures.Add($"{name}{Environment.NewLine}  执行终止未确认时不应提供 {actual.Action}");
             }
         }
         if (failures.Count != 0) {
@@ -201,9 +230,9 @@ internal static partial class SelfTestRunner
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, active: RunState.Stopping))
             }, new(stopping, false, runActive, showEnabled, true, worker)),
             ("运行中 IPC 暂时断线", start with { Worker = Observed(WorkerObservation.IpcDisconnected, running) },
-                new(new RuntimeAction.Stop(false), false, runActive, showEnabled, true, none)),
+                new(Recover(RecoveryReason.WorkerLost), false, runActive, showEnabled, true, none)),
             ("空闲时 IPC 断线", start with { Worker = Observed(WorkerObservation.IpcDisconnected, idle) },
-                new(retryPrepare, false, runtimeBusy, showEnabled, true, none)),
+                new(Recover(RecoveryReason.WorkerLost), false, runtimeBusy, showEnabled, true, none)),
             ("快照断档等待刷新", start with {
                 Worker = new WorkerCoordinatorSnapshot(WorkerObservation.Connected, false, idle, "scenario")
             }, new(new RuntimeAction.Prepare(true), false, runtimeBusy, showEnabled, true, none)),
@@ -212,7 +241,36 @@ internal static partial class SelfTestRunner
             ("Worker 已退出，最后快照仍在运行", start with { Worker = Observed(WorkerObservation.WorkerExited, running) },
                 new(retryPrepare, true, null, showEnabled, true, none)),
             ("Worker 恢复冲突", stopped with { Worker = Observed(WorkerObservation.WorkerRecoveryConflict, null) },
-                new(retryPrepare, false, runtimeBusy, showDisabled, true, none)),
+                new(Recover(RecoveryReason.WorkerLost), false, runtimeBusy, showDisabled, true, none)),
+            ("重启后恢复分身，Worker 恢复冲突", stopped with {
+                Session = ScenarioSession(ChildSessionState.Existing),
+                PendingOperation = PendingOperation.RestoringSession,
+                Worker = Observed(WorkerObservation.WorkerRecoveryConflict, null)
+            }, new(preparing, false, runtimeBusy, showDisabled, false, none)),
+            ("上次结束未确认，分身已不存在", stopped with { EndUnconfirmed = true },
+                new(Recover(RecoveryReason.EndUnconfirmed), true, null, showDisabled, true, none)),
+            ("Worker 故障且停止未确认", start with {
+                Worker = Observed(WorkerObservation.Connected,
+                    ScenarioWorker(digest, WorkerState.Faulted, active: RunState.Stopping))
+            }, new(Recover(RecoveryReason.StopUnconfirmed), false, runActive, showEnabled, true, none)),
+            ("Worker 故障且 Run 仍在运行", start with {
+                Worker = Observed(WorkerObservation.Connected,
+                    ScenarioWorker(digest, WorkerState.Faulted, active: RunState.Running))
+            }, new(Recover(RecoveryReason.StopUnconfirmed), false, runActive, showEnabled, true, none)),
+            ("清理失败后 Worker 故障", start with {
+                Worker = Observed(WorkerObservation.Connected,
+                    ScenarioWorker(digest, WorkerState.Faulted, last: RunState.Failed))
+            }, new(Recover(RecoveryReason.RuntimeFaulted), true, null, showEnabled, true, none)),
+            ("Worker 故障时退出中", start with {
+                Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, WorkerState.Faulted)),
+                Exiting = true
+            }, new(new RuntimeAction.Recover(false, RecoveryReason.RuntimeFaulted), false, runtimeBusy, showDisabled,
+                false, none)),
+            ("Worker 故障时正在显示子桌面", start with {
+                Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, WorkerState.Faulted)),
+                PendingOperation = PendingOperation.ShowingDesktop
+            }, new(new RuntimeAction.Recover(false, RecoveryReason.RuntimeFaulted), false, runtimeBusy, showDisabled,
+                false, none)),
             ("分身已结束，最后快照仍在运行", stopped with {
                 Worker = Observed(WorkerObservation.ChildSessionEnded, running)
             }, new(new RuntimeAction.Prepare(true), true, null, showDisabled, true, none)),
@@ -243,7 +301,7 @@ internal static partial class SelfTestRunner
             }, new(new RuntimeAction.Start(true), true, null, showEnabled, true, worker)),
             ("Worker 故障", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, WorkerState.Faulted))
-            }, new(retryPrepare, true, null, showEnabled, true, none)),
+            }, new(Recover(RecoveryReason.RuntimeFaulted), true, null, showEnabled, true, none)),
             ("Worker 依赖未就绪", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, WorkerState.NotReady))
             }, new(new RuntimeAction.Prepare(true), true, null, showEnabled, true, none)),
@@ -275,6 +333,8 @@ internal static partial class SelfTestRunner
         static RuntimeAction.Start BlockedStart(StartBlocker blocker) => new(false, blocker);
 
         static RuntimeAction.Retry BlockedRetry(StartBlocker blocker) => new(RetryTarget.Start, false, blocker);
+
+        static RuntimeAction.Recover Recover(RecoveryReason reason) => new(true, reason);
     }
 
     private static ChildSessionSnapshot ScenarioSession(ChildSessionState state) => new(state,
@@ -311,7 +371,8 @@ internal static partial class SelfTestRunner
     // Opens a real MainWindow off screen and lets its normal startup run; tests reach it only through its interface.
     private static void WithRuntimeControlWindow(AppLogger logger, string directory, Action<MainWindow> verify,
         ChildSessionManager? session = null, WorkerCoordinator? coordinator = null,
-        Func<Func<Task>, Task>? runOperation = null, bool loadProject = true, RuntimeEnvironment? environment = null)
+        Func<Func<Task>, Task>? runOperation = null, bool loadProject = true, RuntimeEnvironment? environment = null,
+        Func<Task>? endEnvironment = null)
     {
         var projectDirectory = CreateProjectFixture(directory);
         if (!loadProject) {
@@ -330,8 +391,8 @@ internal static partial class SelfTestRunner
         var windowCoordinator = coordinator ?? ownedCoordinator!;
         var window = new MainWindow(logger, windowSession, windowCoordinator,
             environment ?? WindowEnvironment(logger, windowSession, windowCoordinator, runOperation),
-            () => Task.CompletedTask,
-            _ => Task.CompletedTask, projectDirectory);
+            () => Task.CompletedTask, endEnvironment ?? (() => Task.CompletedTask), _ => Task.CompletedTask,
+            projectDirectory);
         var application = System.Windows.Application.Current;
         var shutdown = application.ShutdownMode;
         application.ShutdownMode = ShutdownMode.OnExplicitShutdown;

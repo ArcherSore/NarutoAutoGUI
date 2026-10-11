@@ -9,7 +9,7 @@ internal static class RuntimeControls
 {
     internal static RuntimeControlState Derive(RuntimeControlInputs inputs)
     {
-        var (session, observed, project, pending, preparationFailed, exiting, ending) = inputs;
+        var (session, observed, project, pending, preparationFailed, exiting, ending, endUnconfirmed) = inputs;
         var commandsAvailable = pending == PendingOperation.None && !exiting && !ending
             && session.State is not (ChildSessionState.Connecting or ChildSessionState.Disconnecting);
         var sessionConnected = session.State is ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden;
@@ -48,10 +48,24 @@ internal static class RuntimeControls
         var retryTarget = runtimeFaulted || !environmentReady && !resynchronising
             ? RetryTarget.Prepare : RetryTarget.Start;
         var retryEnabled = retryTarget == RetryTarget.Prepare ? commandsAvailable && project.Loaded : startAllowed;
-        RuntimeAction action = ending ? new RuntimeAction.InProgress(ProgressKind.EndingEnvironment)
-            : preparing || starting || stopping
-            ? new RuntimeAction.InProgress(stopping ? ProgressKind.StoppingRun
-                : starting ? ProgressKind.StartingRun : ProgressKind.PreparingEnvironment)
+        // Execution termination is unconfirmed while a Worker may still run something the GUI cannot reach. Only
+        // ending the Runtime Environment helps then; Retry would loop on the same Worker or start a second one.
+        RecoveryReason? recovery = endUnconfirmed ? RecoveryReason.EndUnconfirmed
+            : worker?.WorkerState == WorkerState.Faulted
+                ? active is null ? RecoveryReason.RuntimeFaulted : RecoveryReason.StopUnconfirmed
+            : observed.Observation is WorkerObservation.IpcDisconnected or WorkerObservation.WorkerRecoveryConflict
+                ? RecoveryReason.WorkerLost
+            : null;
+        var progress = new RuntimeAction.InProgress(ending ? ProgressKind.EndingEnvironment
+            : stopping ? ProgressKind.StoppingRun
+            : starting ? ProgressKind.StartingRun : ProgressKind.PreparingEnvironment);
+        // Progress the GUI drives outranks recovery. Progress a Worker reports does not, because a Faulted or lost
+        // Worker may never finish it.
+        var guiProgress = ending || preparing
+            || pending is PendingOperation.StartingRun or PendingOperation.StoppingRun;
+        RuntimeAction action = guiProgress ? progress
+            : recovery is { } reason ? new RuntimeAction.Recover(commandsAvailable, reason)
+            : starting || stopping ? progress
             : active?.State == RunState.Running ? new RuntimeAction.Stop(stopAllowed)
             : runtimeFaulted || runFaulted ? new RuntimeAction.Retry(retryTarget, retryEnabled,
                 retryTarget == RetryTarget.Start ? startBlocker : null)
@@ -95,7 +109,8 @@ internal sealed record ProjectReadiness(
 
 internal sealed record RuntimeControlInputs(
     ChildSessionSnapshot Session, WorkerCoordinatorSnapshot Worker, ProjectReadiness Project,
-    PendingOperation PendingOperation, bool EnvironmentPreparationFailed, bool Exiting, bool Ending = false);
+    PendingOperation PendingOperation, bool EnvironmentPreparationFailed, bool Exiting, bool Ending = false,
+    bool EndUnconfirmed = false);
 
 internal enum RetryTarget
 {
@@ -111,6 +126,12 @@ internal enum ProgressKind
 internal enum StartBlocker
 {
     CommandsUnavailable, ProjectNotLoaded, NoTasks, ConfigurationInvalid, RuntimeNotReady
+}
+
+// Why only ending the Runtime Environment can recover, in the words the recovery action explains it with.
+internal enum RecoveryReason
+{
+    StopUnconfirmed, RuntimeFaulted, WorkerLost, EndUnconfirmed
 }
 
 internal enum LockReason
@@ -139,6 +160,8 @@ internal abstract record RuntimeAction
     internal sealed record Stop(bool Enabled) : RuntimeAction;
 
     internal sealed record InProgress(ProgressKind Kind) : RuntimeAction;
+
+    internal sealed record Recover(bool Enabled, RecoveryReason Reason) : RuntimeAction;
 }
 
 internal sealed record DesktopToggle(DesktopAction Action, bool Enabled);

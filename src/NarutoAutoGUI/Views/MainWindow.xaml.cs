@@ -60,6 +60,7 @@ public partial class MainWindow : FluentWindow
     private readonly WorkerCoordinator _workerCoordinator;
     private readonly RuntimeEnvironment _environment;
     private readonly Func<Task> _requestExitAsync;
+    private readonly Func<Task> _endEnvironmentAsync;
     private readonly Func<string, Task> _installUpdateAsync;
     private ChildSessionSnapshot _sessionSnapshot = ChildSessionSnapshot.Empty;
     private WorkerCoordinatorSnapshot _workerSnapshot = WorkerCoordinatorSnapshot.Empty;
@@ -111,7 +112,8 @@ public partial class MainWindow : FluentWindow
     internal MainWindow(
         AppLogger logger,
         ChildSessionManager sessionManager, WorkerCoordinator workerCoordinator, RuntimeEnvironment environment,
-        Func<Task> requestExitAsync, Func<string, Task> installUpdateAsync, string? applicationDirectory = null,
+        Func<Task> requestExitAsync, Func<Task> endEnvironmentAsync, Func<string, Task> installUpdateAsync,
+        string? applicationDirectory = null,
         Func<CancellationToken, Task<EngineCheckResult>>? checkForUpdate = null)
     {
         InitializeComponent();
@@ -128,6 +130,7 @@ public partial class MainWindow : FluentWindow
         _workerCoordinator = workerCoordinator;
         _environment = environment;
         _requestExitAsync = requestExitAsync;
+        _endEnvironmentAsync = endEnvironmentAsync;
         _installUpdateAsync = installUpdateAsync;
         _sessionSnapshot = sessionManager.Snapshot;
         HomeLogListBox.AddHandler(
@@ -382,6 +385,14 @@ public partial class MainWindow : FluentWindow
             StartRunButton_Click(sender, e);
         } else {
             PrepareEnvironmentButton_Click(sender, e);
+        }
+    }
+
+    // The same routine as the tray's "结束桌面分身", including its confirmation.
+    private async void RecoverEnvironmentButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentControls.Action is RuntimeAction.Recover { Enabled: true }) {
+            await _endEnvironmentAsync();
         }
     }
 
@@ -1894,7 +1905,8 @@ public partial class MainWindow : FluentWindow
             ? new ProjectReadiness(true, project.SelectedTaskNames.Count, _projectConfigurationValid,
                 project.RuntimeProfileDigest)
             : ProjectReadiness.NotLoaded,
-        _pendingOperation, _environmentPreparationFailed, _exitInProgress, _environment.Ending));
+        _pendingOperation, _environmentPreparationFailed, _exitInProgress, _environment.Ending,
+        _environment.EndUnconfirmed));
 
     // The only refresh path for runtime inputs; changes that are purely visual call UpdatePreviewPolling alone.
     private void RefreshRuntimeControls()
@@ -1924,6 +1936,18 @@ public partial class MainWindow : FluentWindow
         Explain(RetryEnvironmentButton, "重试", (action as RuntimeAction.Retry)?.Blocker);
         StopTaskHeaderButton.Visibility = Visible(action is RuntimeAction.Stop);
         StopTaskHeaderButton.IsEnabled = action is RuntimeAction.Stop { Enabled: true };
+        RecoverEnvironmentButton.Visibility = Visible(action is RuntimeAction.Recover);
+        RecoverEnvironmentButton.IsEnabled = action is RuntimeAction.Recover { Enabled: true };
+        if (action is RuntimeAction.Recover { Reason: var recovery }) {
+            var reason = recovery switch {
+                RecoveryReason.StopUnconfirmed => "任务停止未确认，MaaNOP 可能仍在运行",
+                RecoveryReason.RuntimeFaulted => "运行环境故障，Worker 无法继续执行任务",
+                RecoveryReason.WorkerLost => "Worker 失联且未确认已退出；也可以等待它重新连接",
+                _ => "上次结束桌面分身未确认"
+            };
+            RecoverEnvironmentButton.ToolTip = $"结束桌面分身\n{reason}";
+            AutomationProperties.SetHelpText(RecoverEnvironmentButton, reason);
+        }
         RuntimeHeaderProgressRing.Visibility = Visible(action is RuntimeAction.InProgress);
         if (action is RuntimeAction.InProgress { Kind: var kind }) {
             var progressText = kind switch {

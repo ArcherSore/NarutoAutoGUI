@@ -31,6 +31,8 @@ MaaNOP Config 保存多份独立任务配置及激活项；它是用户意图，
 
 Worker 同时只执行一个 Run，逐项处理 Plan Item。失败终止后续项，停止请求先进入 Stopping，最终结果由 Worker 和 MaaFramework 的执行结果决定。Worker 是 Worker State、Run State 和 Plan Item 状态的权威来源。GUI 把连接、进程与 Session 状况作为独立的 GUI Observation；断线不伪造 Run 失败。
 
+停止未确认或 Run 后台循环出现意外异常时，Worker 进入 Faulted，Active Run 保持原状态、不终结。此时执行终止未确认；Worker 失联且进程未被证明已退出，或上次结束运行环境未确认，也是如此。执行终止未确认期间，GUI 不提供重试、开始或准备，只提供结束桌面分身作为恢复方式；Worker 重新连接或其进程确认退出后恢复正常控制。
+
 控制和状态通过 Named Pipe 传递；完整 Snapshot 用于初次同步和重连，事件用于加快显示，日志另按 sequence 补取。稳定的传输契约见 [Worker IPC](WORKER-IPC.md)。
 
 ## 游戏画面预览

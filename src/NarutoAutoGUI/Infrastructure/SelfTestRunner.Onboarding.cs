@@ -250,7 +250,8 @@ internal static partial class SelfTestRunner
         var coordinator = new WorkerCoordinator(logger, Path.Combine(directory, "tour-state"), "unused.exe",
             $"NarutoAutoGUI.Tour.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
         var window = new MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
-            requestExit ?? (() => Task.CompletedTask), _ => Task.CompletedTask, projectDirectory, checkForUpdate);
+            requestExit ?? (() => Task.CompletedTask), () => Task.CompletedTask, _ => Task.CompletedTask,
+            projectDirectory, checkForUpdate);
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var loaded = typeof(MainWindow).GetMethod("MainWindow_Loaded", flags)!;
         window.Loaded -= (RoutedEventHandler)loaded.CreateDelegate(typeof(RoutedEventHandler), window);

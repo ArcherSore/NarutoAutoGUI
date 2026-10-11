@@ -58,7 +58,8 @@ public partial class App : System.Windows.Application
         _environment = new RuntimeEnvironment(
             _logger, _sessionManager, _workerCoordinator, new ChildSessionProgramService(_logger));
         _mainWindow = new MainWindow(
-            _logger, _sessionManager, _workerCoordinator, _environment, RequestExitAsync, InstallUpdateAsync);
+            _logger, _sessionManager, _workerCoordinator, _environment, RequestExitAsync, EndEnvironmentAsync,
+            InstallUpdateAsync);
         _mainWindow.HiddenToTray += MainWindow_HiddenToTray;
         MainWindow = _mainWindow;
         CreateTrayIcon();

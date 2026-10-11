@@ -24,9 +24,10 @@ internal static partial class SelfTestRunner
         VerifyFaultedSessionRetryWiring(logger, directory);
         VerifyWorkerStopWiring(logger, directory);
         VerifyKilledWorkerWiring(logger, directory);
+        VerifyStopUnconfirmedRecoveryWiring(logger, directory);
         VerifyStopWithoutProjectWiring(logger, directory);
         Console.WriteLine("RUNTIME CONTROL WIRING PASS: startup, exit, project failure, restore, end, "
-            + "end with Worker, retry, stop, killed Worker, stop without project.");
+            + "end with Worker, retry, stop, killed Worker, recovery, stop without project.");
     }
 
     private static void VerifyStartupAndExitWiring(AppLogger logger, string directory)
@@ -184,13 +185,48 @@ internal static partial class SelfTestRunner
             WithRuntimeControlWindow(logger, Path.Combine(directory, "killed-worker-window"), window => {
                 PumpUntil(() => ConfigurationEditable(window), "空闲 Worker 已连接时应可编辑配置。");
                 Task.Run(async () => await pipe.DisposeAsync()).GetAwaiter().GetResult();
-                PumpUntil(() => HeaderShows(window, "RetryEnvironmentButton", enabled: true)
-                    && LockText(window) == "运行环境处理中，配置暂时锁定", "Worker 断线但进程仍在时应显示重试并锁定配置。");
+                PumpUntil(() => HeaderShows(window, "RecoverEnvironmentButton", enabled: true)
+                    && LockText(window) == "运行环境处理中，配置暂时锁定", "Worker 断线但进程仍在时应只提供结束桌面分身并锁定配置。");
                 listed = false;
                 PumpUntil(() => ConfigurationEditable(window) && LockText(window) is null
                     && HeaderShows(window, "RetryEnvironmentButton", enabled: true), "Worker 进程退出后应解除配置锁定。");
             }, coordinator: coordinator);
         }, workerListed: () => listed);
+    }
+
+    // #17: a stop the Worker could not confirm leaves only recovery, which calls the same end routine as the tray.
+    // Once the Runtime Environment has ended, Prepare returns and the configuration is editable.
+    private static void VerifyStopUnconfirmedRecoveryWiring(AppLogger logger, string directory)
+    {
+        using var session = new SimulatedWts().CreateManager(logger);
+        WithRunningFakeWorker(logger, Path.Combine(directory, "recover"), async (worker, token) => {
+            WorkerSnapshot? snapshot;
+            while ((snapshot = worker.Coordinator.Snapshot.WorkerSnapshot) is null) {
+                await Task.Delay(20, token);
+            }
+            await worker.Pipe.WriteAsync(StateEvent(snapshot with {
+                StateRevision = 2, WorkerState = WorkerState.Faulted,
+                WorkerReason = new StructuredReason("StopTimeout", "scripted stop timeout"),
+                RunState = RunState.Stopping, ActiveRun = worker.ActiveRun with { State = RunState.Stopping }
+            }), token);
+        }, coordinator => {
+            var environment = WindowEnvironment(logger, session, coordinator);
+            var endRequests = 0;
+            WithRuntimeControlWindow(logger, Path.Combine(directory, "recover-window"), window => {
+                PumpUntil(() => HeaderShows(window, "RecoverEnvironmentButton", enabled: true)
+                    && LockText(window) == "任务运行中，配置已锁定", "停止未确认时应只提供结束桌面分身，并保持配置锁定。");
+                Click(window, "RecoverEnvironmentButton");
+                Require(endRequests == 1, "结束桌面分身应调用与托盘相同的用户结束例程。");
+                var ending = environment.EndAsync(() => true);
+                PumpUntil(() => ending.IsCompleted, "结束运行环境未完成。");
+                Require(ending.GetAwaiter().GetResult() == EnvironmentEndResult.Ended, "结束运行环境应确认完成。");
+                PumpUntil(() => HeaderShows(window, "PrepareEnvironmentButton", enabled: true)
+                    && ConfigurationEditable(window), "结束运行环境后应回到准备运行环境，并可编辑配置。");
+            }, session: session, coordinator: coordinator, environment: environment, endEnvironment: () => {
+                endRequests++;
+                return Task.CompletedTask;
+            });
+        });
     }
 
     private static void VerifyStopWithoutProjectWiring(AppLogger logger, string directory)

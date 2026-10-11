@@ -28,7 +28,8 @@ internal sealed class RunSupervisor
 
     // publish receives every committed snapshot except Stopping, which the host writes directly after run.stop.
     internal RunSupervisor(
-        LaunchManifest manifest, WorkerLogBuffer logs, Func<Guid, RunPlanItem, Action, IPlanItemExecution> createExecution,
+        LaunchManifest manifest, WorkerLogBuffer logs,
+        Func<Guid, RunPlanItem, Action, IPlanItemExecution> createExecution,
         Action<string, string, string, Guid?> log, Action<string, WorkerSnapshot> publish, CancellationToken shutdown)
     {
         _manifest = manifest;

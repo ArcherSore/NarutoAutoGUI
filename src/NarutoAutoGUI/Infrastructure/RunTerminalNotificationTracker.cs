@@ -9,6 +9,7 @@ internal sealed class RunTerminalNotificationTracker
 {
     private readonly HashSet<Guid> _observedRuns = [];
     private readonly HashSet<Guid> _completedRuns = [];
+    private readonly HashSet<Guid> _faultedRuns = [];
 
     internal RunTerminalNotification? Observe(WorkerCoordinatorSnapshot observation)
     {
@@ -16,7 +17,13 @@ internal sealed class RunTerminalNotificationTracker
             return null;
         }
         if (snapshot.ActiveRun is { } active && !_completedRuns.Contains(active.RunId)) {
-            _observedRuns.Add(active.RunId);
+            var seenBefore = !_observedRuns.Add(active.RunId);
+            // A Faulted Worker never ends its Run, so the fault is announced instead, once, and only when it happened
+            // while the Run was observed.
+            if (snapshot.WorkerState == WorkerState.Faulted && _faultedRuns.Add(active.RunId) && seenBefore) {
+                return new RunTerminalNotification(
+                    "任务未能确认结束", "MaaNOP 可能仍在运行。打开 NarutoAutoGUI 结束桌面分身以恢复。", true);
+            }
         }
         if (snapshot.LastRun is not { State: RunState.Succeeded or RunState.Failed or RunState.Cancelled } run
             || !_observedRuns.Remove(run.RunId) || !_completedRuns.Add(run.RunId)) {

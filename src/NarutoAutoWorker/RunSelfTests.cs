@@ -32,7 +32,9 @@ internal static class RunSelfTests
         await ScenarioAsync("S7", VerifyCompletionBeforeStopAsync);
         await ScenarioAsync("S8", VerifyStopMismatchAsync);
         await ScenarioAsync("S9", VerifyStopFailureOnlyLogsAsync);
-        await ScenarioAsync("T1/T2", VerifyStopTimedOutCurrentBehaviorAsync);
+        await ScenarioAsync("T1/T2", VerifyStopTimedOutContractAsync);
+        await ScenarioAsync("L1", VerifyExecutionThrowsAsync);
+        await ScenarioAsync("L2", VerifyNextExecutionFailsAsync);
         await ScenarioAsync("C3", VerifyRunningRacesStopAsync);
         await ScenarioAsync("C4", VerifyCompletionRacesStopAsync);
         await ScenarioAsync("C5", VerifyConcurrentSnapshotsAsync);
@@ -411,8 +413,9 @@ internal static class RunSelfTests
             "StopAsync 失败本身不得改变状态。");
     }
 
-    // Current behavior tracked by #17: an unconfirmed stop faults the Worker and leaves the Run in Stopping.
-    private static async Task VerifyStopTimedOutCurrentBehaviorAsync(RunHarness harness)
+    // Decided for #17 (#23): an unconfirmed stop faults the Worker and keeps the Run in Stopping without a terminal
+    // state, because execution may not have ended. The GUI recovers by ending the Runtime Environment.
+    private static async Task VerifyStopTimedOutContractAsync(RunHarness harness)
     {
         harness.Executions.StopFails = true;
         var (request, first) = await StartRunningAsync(harness, 2);
@@ -425,12 +428,57 @@ internal static class RunSelfTests
         Expect(faulted is { WorkerState: WorkerState.Faulted, WorkerReason.Code: "StopTimeout", LastRun: null,
             RunState: RunState.Stopping }
             && faulted.StateRevision == revision + 1 && faulted.ActiveRun?.RunId == request.RunId,
-            "#17 当前行为：Worker Faulted，Run 停留在 Stopping 且没有终态。");
+            "#17：Worker Faulted，Run 停留在 Stopping 且没有终态。");
 
-        Expect(await harness.StartAsync(Request(Plan(1))) == "error:worker_faulted", "#17 当前行为：新 Run 被拒绝。");
-        Expect(await harness.StartAsync(request) == "already_accepted", "#17 当前行为：同一 Run 仍按 ledger 幂等。");
-        Expect(await harness.StopAsync(request.RunId) == "already_stopping", "#17 当前行为：再次停止为 already_stopping。");
-        Expect((await harness.SnapshotAsync()).StateRevision == faulted.StateRevision, "#17 当前行为：上述请求不提交。");
+        Expect(await harness.StartAsync(Request(Plan(1))) == "error:worker_faulted", "#17：新 Run 被拒绝。");
+        Expect(await harness.StartAsync(request) == "already_accepted", "#17：同一 Run 仍按 ledger 幂等。");
+        Expect(await harness.StopAsync(request.RunId) == "already_stopping", "#17：再次停止为 already_stopping。");
+        Expect((await harness.SnapshotAsync()).StateRevision == faulted.StateRevision, "#17：上述请求不提交。");
+    }
+
+    // #18: an execution that throws instead of returning its result faults the Worker.
+    private static async Task VerifyExecutionThrowsAsync(RunHarness harness)
+    {
+        var (request, first) = await StartRunningAsync(harness, 2);
+        var before = await harness.SnapshotAsync();
+        first.Throw(new InvalidOperationException("scripted execution contract violation"));
+        await ExpectRunLoopFaultAsync(harness, request, before);
+    }
+
+    // #18: so does a failure to create the next Plan Item's execution.
+    private static async Task VerifyNextExecutionFailsAsync(RunHarness harness)
+    {
+        harness.Executions.FailCreate = item => item.TaskName == "Task2";
+        var (request, first) = await StartRunningAsync(harness, 2);
+        var before = await harness.SnapshotAsync();
+        first.Complete(RuntimeExecutionOutcome.Succeeded);
+        await ExpectRunLoopFaultAsync(harness, request, before);
+    }
+
+    // The fault is one commit, published once, that leaves the Active Run as it was and gives it no terminal state.
+    // Afterwards the Worker accepts nothing new and no longer calls the execution, as after an unconfirmed stop.
+    private static async Task ExpectRunLoopFaultAsync(
+        RunHarness harness, RunStartRequest request, WorkerSnapshot before)
+    {
+        var faulted = await harness.WaitForStateAsync(
+            state => state.WorkerState == WorkerState.Faulted, "Run 后台循环异常后 Faulted");
+        Expect(faulted is { WorkerReason.Code: "RunLoopFault", LastRun: null, RunState: RunState.Running }
+            && faulted.StateRevision == before.StateRevision + 1
+            && JsonSerializer.Serialize(faulted.ActiveRun, ProtocolJson.Options)
+                == JsonSerializer.Serialize(before.ActiveRun, ProtocolJson.Options),
+            "#18：Worker 应 Faulted 且只提交一次，Active Run 保持原状态、没有终态。");
+        await harness.WaitForLogAsync(entry => entry is { Level: "ERROR", Source: "run.lifecycle" }
+            && entry.RunId == request.RunId, "Run 后台循环异常的 ERROR 日志");
+        var published = harness.Wire.Frames().Count(frame => frame.Operation == ProtocolOperations.RunStateChanged
+            && RevisionOf(frame) == faulted.StateRevision);
+        Expect(published == 1, "#18：Faulted 状态应只发布一次。");
+
+        Expect(await harness.StartAsync(Request(Plan(1))) == "error:worker_faulted", "#18：新 Run 被拒绝。");
+        Expect(await harness.StartAsync(request) == "already_accepted", "#18：同一 Run 仍按 ledger 幂等。");
+        Expect(await harness.StopAsync(request.RunId) == "error:worker_faulted", "#18：停止被拒绝，不再使用执行上下文。");
+        Expect((await harness.SnapshotAsync()).StateRevision == faulted.StateRevision
+            && harness.Executions.Created.All(execution => execution.RequestStops == 0),
+            "#18：上述请求不提交、不调用执行。");
     }
 
     // C3: either Running is committed first (two commits) or Stopping wins and Running is ignored (one commit).

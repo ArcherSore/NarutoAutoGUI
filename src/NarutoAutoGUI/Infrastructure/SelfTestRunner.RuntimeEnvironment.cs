@@ -6,7 +6,8 @@ using NarutoAutoGUI.Worker;
 namespace NarutoAutoGUI.Infrastructure;
 
 // Ends the Runtime Environment through RuntimeEnvironment alone and observes simulated WTS, the pipe and the
-// coordinator. Each end reason keeps the steps its caller took before the lifecycle had a single owner.
+// coordinator. Every caller gets the same end: stop the Active Run, log off, confirm that the Child Session and the
+// Worker are gone, and only then discard the Admission.
 internal static partial class SelfTestRunner
 {
     private static readonly TimeSpan EnvironmentWaitLimit = TimeSpan.FromMilliseconds(500);
@@ -15,144 +16,27 @@ internal static partial class SelfTestRunner
     private static void VerifyRuntimeEnvironment(AppLogger logger, string testDirectory)
     {
         var directory = Path.Combine(testDirectory, "runtime-environment");
-        VerifyExitEnd(logger, directory);
-        VerifyExitEndUnconfirmed(logger, directory);
-        VerifyEndWithoutStop(logger, directory);
-        VerifyInstallEnd(logger, directory);
-        VerifyInstallEndUnconfirmed(logger, directory);
+        VerifyEndStopsRunFirst(logger, directory);
+        VerifyEndAfterUnconfirmedStop(logger, directory);
+        VerifyEndWithFaultedWorker(logger, directory);
+        VerifyEndWaitsForWorker(logger, directory);
+        VerifyEndUnconfirmed(logger, directory);
+        VerifyEndConfirmation(logger, directory);
         VerifyEndHoldsGate(logger, directory);
         VerifyEnvironmentClosing(logger, directory);
-        Console.WriteLine("RUNTIME ENVIRONMENT PASS: exit, exit unconfirmed, user end, install, install unconfirmed, "
-            + "gate, closing.");
+        Console.WriteLine("RUNTIME ENVIRONMENT PASS: stop first, unconfirmed stop, faulted Worker, Worker exit, "
+            + "unconfirmed end, confirmation, gate, closing.");
     }
 
-    // E1, E3: exit asks only when a Child Session exists and only after any in-flight operation, then discards the
-    // Admission before another operation can run. It does not wait for the Worker.
-    private static void VerifyExitEnd(AppLogger logger, string directory)
+    // U1, U9: the Active Run is stopped and has ended before logoff, and the Admission is discarded only after the
+    // Worker has exited. The end is in progress from asking the user to the last step.
+    private static void VerifyEndStopsRunFirst(AppLogger logger, string directory)
     {
-        var none = new SimulatedWts();
-        using (var session = none.CreateManager(logger)) {
-            WithFakeWorker(logger, Path.Combine(directory, "exit-none"), (coordinator, _, _) => {
-                var asked = false;
-                var ended = OnPool(() => CreateEnvironment(logger, session, coordinator)
-                    .EndAsync(EnvironmentEndReason.Exit, () => asked = true));
-                Require(ended == EnvironmentEndResult.Ended && !asked && none.LogoffAttempts.Count == 0,
-                    "没有桌面分身时退出不应询问或注销。");
-            });
-        }
-
-        var wts = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] };
-        using var existing = wts.CreateManager(logger);
-        WithFakeWorker(logger, Path.Combine(directory, "exit"), (coordinator, _, _) => {
-            var waits = 0;
-            var environment = CreateEnvironment(logger, existing, coordinator, (_, _) => {
-                waits++;
-                return Task.CompletedTask;
-            });
-            var declined = OnPool(async () => {
-                var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                var asked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                var held = environment.RunExclusiveAsync(() => release.Task);
-                var ending = environment.EndAsync(EnvironmentEndReason.Exit, () => {
-                    asked.TrySetResult();
-                    return false;
-                });
-                Require(!asked.Task.Wait(200), "退出确认应等待进行中的操作完成后再询问。");
-                release.SetResult();
-                await held;
-                return await ending;
-            });
-            Require(declined == EnvironmentEndResult.Declined && wts.LogoffAttempts.Count == 0
-                && coordinator.TrackedWorkerPid is not null, "拒绝退出时不应注销或丢弃 Admission。");
-
-            var (ended, discardedForNext) = OnPool(async () => {
-                var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                var held = environment.RunExclusiveAsync(() => release.Task);
-                var ending = environment.EndAsync(EnvironmentEndReason.Exit, () => true);
-                var discarded = false;
-                var next = environment.RunExclusiveAsync(() => {
-                    discarded = AdmissionDiscarded(coordinator);
-                    return Task.CompletedTask;
-                });
-                release.SetResult();
-                await Task.WhenAll(held, next);
-                return (await ending, discarded);
-            });
-            Require(ended == EnvironmentEndResult.Ended && wts.LogoffAttempts.SequenceEqual([7u]) && discardedForNext
-                && waits == 0, "确认退出后应注销分身，在下一操作开始前丢弃 Admission，且不等待 Worker 退出。");
-        });
-    }
-
-    // E2: an exit that cannot log off or check the Child Session is cancelled. A failed logoff keeps the Admission;
-    // the final check runs after the Admission has already been discarded.
-    private static void VerifyExitEndUnconfirmed(AppLogger logger, string directory)
-    {
-        foreach (var (name, wts, message, discarded) in new (string, SimulatedWts, string, bool)[] {
-            ("exit-logoff-failure", new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7], LogoffError = 5 },
-                "注销桌面分身失败，已取消退出，避免遗留未知状态。请查看日志。", false),
-            ("exit-session-survives",
-                new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7], SessionSurvivesLogoff = true },
-                "最终检查仍检测到桌面分身，已取消退出，避免遗留未知状态。请查看日志后重试。", true)
-        }) {
-            using var session = wts.CreateManager(logger);
-            WithFakeWorker(logger, Path.Combine(directory, name), (coordinator, _, _) => {
-                var ended = OnPool(() => CreateEnvironment(logger, session, coordinator)
-                    .EndAsync(EnvironmentEndReason.Exit, () => true));
-                Require(ended is { Outcome: EnvironmentEndOutcome.Unconfirmed } && ended.Error?.Message == message
-                    && AdmissionDiscarded(coordinator) == discarded, $"{name}：退出应取消并说明原因。");
-            });
-        }
-
-        using var unreadable = new ChildSessionManager(logger,
-            () => throw new Win32Exception(5, "self-test WTS failure"), () => [0u, 1u], () => null);
-        WithFakeWorker(logger, Path.Combine(directory, "exit-query-failure"), (coordinator, _, _) => {
-            var asked = false;
-            var ended = OnPool(() => CreateEnvironment(logger, unreadable, coordinator)
-                .EndAsync(EnvironmentEndReason.Exit, () => asked = true));
-            Require(ended is { Outcome: EnvironmentEndOutcome.Unconfirmed } && !asked
-                && ended.Error?.Message == "无法确认桌面分身状态，已取消退出。请查看日志后重试。"
-                && coordinator.TrackedWorkerPid is not null, "无法查询桌面分身时退出应取消且不询问。");
-        });
-    }
-
-    // E1, E4: exit and the user's end log off a running Run without asking the Worker to stop it. The user's end also
-    // skips the final WTS check; both are current behaviour that #23 PR 2 changes.
-    private static void VerifyEndWithoutStop(AppLogger logger, string directory)
-    {
-        foreach (var reason in new[] { EnvironmentEndReason.Exit, EnvironmentEndReason.UserRequested }) {
-            var requests = new List<string>();
-            using var listening = new CancellationTokenSource();
-            var wts = new SimulatedWts {
-                ReportedId = 7, Sessions = [0, 1, 7],
-                SessionSurvivesLogoff = reason == EnvironmentEndReason.UserRequested
-            };
-            using var session = wts.CreateManager(logger);
-            WithRunningFakeWorker(logger, Path.Combine(directory, $"no-stop-{reason}"),
-                (worker, token) => RecordRequestsAsync(worker.Pipe, requests, token, listening.Token), coordinator => {
-                    try {
-                        AwaitRunningWorker(coordinator);
-                        var waits = 0;
-                        var ended = OnPool(() => CreateEnvironment(logger, session, coordinator, (_, _) => {
-                            waits++;
-                            return Task.CompletedTask;
-                        }).EndAsync(reason, () => true));
-                        Require(ended == EnvironmentEndResult.Ended && wts.LogoffAttempts.SequenceEqual([7u])
-                            && AdmissionDiscarded(coordinator) && waits == 0,
-                            $"{reason}：应注销并丢弃 Admission，不等待 Worker 退出。");
-                    } finally {
-                        listening.Cancel();
-                    }
-                });
-            Require(requests.Count == 0, $"{reason}：结束分身前不应请求 Worker 停止 Run。");
-        }
-    }
-
-    // E5: install stops the Active Run and waits for it to end, logs off, checks WTS, waits for the Worker captured
-    // before logoff, and only then discards the Admission. A stop that is not acknowledged does not block it.
-    private static void VerifyInstallEnd(AppLogger logger, string directory)
-    {
-        WithRunningFakeWorker(logger, Path.Combine(directory, "install"), async (worker, token) => {
+        RuntimeEnvironment? environment = null;
+        bool? endingAtStop = null;
+        WithRunningFakeWorker(logger, Path.Combine(directory, "stop-first"), async (worker, token) => {
             var stop = await WorkerCoordinatorSelfTest.ReadRequestAsync(worker.Pipe, ProtocolOperations.RunStop, token);
+            endingAtStop = environment?.Ending;
             await worker.Pipe.WriteAsync(WireEnvelope.Response(ProtocolOperations.RunStop, stop.RequestId!.Value,
                 new RunStopResponse("stop_requested")), token);
             var cancelled = worker.Coordinator.Snapshot.WorkerSnapshot! with {
@@ -163,109 +47,236 @@ internal static partial class SelfTestRunner
         }, coordinator => {
             AwaitRunningWorker(coordinator);
             var logoff = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            bool? runEndedFirst = null;
+            (bool RunEnded, bool Ending, bool Discarded)? atLogoff = null;
             var wts = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] };
             wts.DuringLogoff = _ => {
-                runEndedFirst = coordinator.Snapshot.WorkerSnapshot?.ActiveRun is null;
+                atLogoff = (coordinator.Snapshot.WorkerSnapshot?.ActiveRun is null, environment!.Ending,
+                    AdmissionDiscarded(coordinator));
                 logoff.TrySetResult();
             };
             using var session = wts.CreateManager(logger);
             int? waitedPid = null;
             // The wait only completes after logoff, so the end succeeds only if it waits after logging off.
-            var ended = OnPool(() => CreateEnvironment(logger, session, coordinator, (pid, _) => {
+            environment = CreateEnvironment(logger, session, coordinator, (pid, _) => {
                 waitedPid = pid;
                 return logoff.Task;
-            }, TimeSpan.FromSeconds(10)).EndAsync(EnvironmentEndReason.Install));
-            Require(ended == EnvironmentEndResult.Ended && runEndedFirst == true && waitedPid == Environment.ProcessId
-                && AdmissionDiscarded(coordinator), "安装应先停止 Run 并等待其结束，再注销、等待 Worker 退出并丢弃 Admission。");
+            }, TimeSpan.FromSeconds(10));
+            var changes = 0;
+            environment.StateChanged += (_, _) => Interlocked.Increment(ref changes);
+            bool? endingAtConfirm = null;
+            var ended = OnPool(() => environment.EndAsync(() => {
+                endingAtConfirm = environment.Ending;
+                return true;
+            }));
+            Require(ended == EnvironmentEndResult.Ended && atLogoff == (true, true, false)
+                && waitedPid == Environment.ProcessId && AdmissionDiscarded(coordinator),
+                "结束应先停止 Run 并等待其结束，再注销、等待 Worker 退出，最后丢弃 Admission。");
+            Require(endingAtConfirm == true && endingAtStop == true && !environment.Ending && changes == 2
+                && !environment.EndUnconfirmed, "结束期间应一直处于正在结束，结束后清除并各通知一次。");
         });
+    }
 
-        foreach (var rejected in new[] { false, true }) {
-            var name = rejected ? "install-stop-rejected" : "install-stop-unanswered";
-            WithRunningFakeWorker(logger, Path.Combine(directory, name), async (worker, token) => {
+    // U2: a stop that the Worker rejects, never answers or cannot answer because it disconnected does not block the
+    // end; logging off ends the Run.
+    private static void VerifyEndAfterUnconfirmedStop(AppLogger logger, string directory)
+    {
+        foreach (var outcome in new[] { "rejected", "unanswered", "disconnected" }) {
+            WithRunningFakeWorker(logger, Path.Combine(directory, $"stop-{outcome}"), async (worker, token) => {
                 var stop = await WorkerCoordinatorSelfTest.ReadRequestAsync(
                     worker.Pipe, ProtocolOperations.RunStop, token);
-                if (rejected) {
+                if (outcome == "rejected") {
                     await worker.Pipe.WriteAsync(WireEnvelope.Failure(ProtocolOperations.RunStop,
                         stop.RequestId!.Value, "operation_not_allowed", "scripted stop rejection"), token);
+                } else if (outcome == "disconnected") {
+                    await worker.Pipe.DisposeAsync();
                 }
             }, coordinator => {
                 AwaitRunningWorker(coordinator);
                 var wts = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] };
                 using var session = wts.CreateManager(logger);
-                var ended = OnPool(() => CreateEnvironment(logger, session, coordinator)
-                    .EndAsync(EnvironmentEndReason.Install));
+                var ended = OnPool(() => CreateEnvironment(logger, session, coordinator).EndAsync(() => true));
                 Require(ended == EnvironmentEndResult.Ended && wts.LogoffAttempts.SequenceEqual([7u])
-                    && AdmissionDiscarded(coordinator), "Run 停止被拒绝或未确认时安装仍应注销分身。");
+                    && AdmissionDiscarded(coordinator), $"{outcome}：Run 停止未确认时仍应注销分身并完成结束。");
             });
         }
     }
 
-    // E5: install is cancelled, keeping the Admission, when WTS still reports the Child Session, the Worker does not
-    // exit in time or the logoff fails; the logoff failure is passed on unchanged.
-    private static void VerifyInstallEndUnconfirmed(AppLogger logger, string directory)
+    // U3: a Faulted Worker whose stop is unconfirmed is not asked again; logging off ends its Run.
+    private static void VerifyEndWithFaultedWorker(AppLogger logger, string directory)
     {
-        foreach (var (name, wts, exits, message) in new (string, SimulatedWts, bool, string?)[] {
-            ("install-session-survives",
-                new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7], SessionSurvivesLogoff = true },
-                true, "无法确认桌面分身已结束，已取消安装。请查看日志后重试。"),
-            ("install-worker-stays", new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] },
-                false, "无法确认 Worker 已退出，已取消安装。请查看日志后重试。"),
-            ("install-logoff-failure", new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7], LogoffError = 5 },
-                true, null)
+        var requests = new List<string>();
+        using var listening = new CancellationTokenSource();
+        WithRunningFakeWorker(logger, Path.Combine(directory, "faulted"), async (worker, token) => {
+            WorkerSnapshot? snapshot;
+            while ((snapshot = worker.Coordinator.Snapshot.WorkerSnapshot) is null) {
+                await Task.Delay(20, token);
+            }
+            var faulted = snapshot with {
+                StateRevision = 2, WorkerState = WorkerState.Faulted,
+                WorkerReason = new StructuredReason("StopTimeout", "scripted stop timeout"),
+                RunState = RunState.Stopping, ActiveRun = worker.ActiveRun with { State = RunState.Stopping }
+            };
+            await worker.Pipe.WriteAsync(StateEvent(faulted), token);
+            await RecordRequestsAsync(worker.Pipe, requests, token, listening.Token);
+        }, coordinator => {
+            try {
+                AwaitWorker(coordinator, snapshot => snapshot.WorkerSnapshot?.WorkerState == WorkerState.Faulted,
+                    "假 Worker 未报告 Faulted。");
+                var wts = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] };
+                using var session = wts.CreateManager(logger);
+                var ended = OnPool(() => CreateEnvironment(logger, session, coordinator).EndAsync(() => true));
+                Require(ended == EnvironmentEndResult.Ended && wts.LogoffAttempts.SequenceEqual([7u])
+                    && AdmissionDiscarded(coordinator), "Worker Faulted 时应直接注销分身并完成结束。");
+            } finally {
+                listening.Cancel();
+            }
+        });
+        Require(requests.Count == 0, "Worker Faulted 时不应再请求停止 Run。");
+    }
+
+    // U4: an end is confirmed only once the Worker has exited within the limit. Otherwise the Admission is kept and
+    // the end is reported unconfirmed; ending again continues from what remains and clears that report.
+    private static void VerifyEndWaitsForWorker(AppLogger logger, string directory)
+    {
+        var wts = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] };
+        using var session = wts.CreateManager(logger);
+        WithFakeWorker(logger, Path.Combine(directory, "worker-exit"), (coordinator, _, _) => {
+            var exited = false;
+            var waitEnded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var environment = CreateEnvironment(logger, session, coordinator, async (_, token) => {
+                try {
+                    await Task.Delay(exited ? TimeSpan.Zero : Timeout.InfiniteTimeSpan, token);
+                } finally {
+                    waitEnded.TrySetResult(token.IsCancellationRequested);
+                }
+            });
+            var first = OnPool(() => environment.EndAsync(() => true));
+            Require(first is { Outcome: EnvironmentEndOutcome.Unconfirmed, Error.Message: "无法确认 Worker 已退出。" }
+                && coordinator.TrackedWorkerPid is not null && environment.EndUnconfirmed
+                && waitEnded.Task.Wait(5000) && waitEnded.Task.Result,
+                "Worker 未在上限内退出时，结束应未确认、保留 Admission 并停止等待。");
+
+            exited = true;
+            var asked = false;
+            var second = OnPool(() => environment.EndAsync(() => asked = true));
+            Require(second == EnvironmentEndResult.Ended && asked && AdmissionDiscarded(coordinator)
+                && !environment.EndUnconfirmed && wts.LogoffAttempts.SequenceEqual([7u]),
+                "再次结束应确认 Worker 退出后丢弃 Admission，并清除未确认。");
+        });
+    }
+
+    // U5, U10: a failed logoff, a Child Session that survives logoff and a WTS query that fails all leave the end
+    // unconfirmed with the Admission kept. A Child Session that cannot be queried is not asked about.
+    private static void VerifyEndUnconfirmed(AppLogger logger, string directory)
+    {
+        foreach (var (name, createSession, message, asks) in new (string, Func<ChildSessionManager>, string, bool)[] {
+            ("logoff-failure", () => new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7], LogoffError = 5 }
+                .CreateManager(logger), "注销桌面分身失败。", true),
+            ("session-survives", () => new SimulatedWts {
+                ReportedId = 7, Sessions = [0, 1, 7], SessionSurvivesLogoff = true
+            }.CreateManager(logger), "无法确认桌面分身已结束。", true),
+            ("query-failure", () => new ChildSessionManager(logger,
+                () => throw new Win32Exception(5, "self-test WTS failure"), () => [0u, 1u], () => null),
+                "无法确认桌面分身状态。", false)
         }) {
-            using var session = wts.CreateManager(logger);
+            using var session = createSession();
             WithFakeWorker(logger, Path.Combine(directory, name), (coordinator, _, _) => {
-                var waitEnded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                var ended = OnPool(() => CreateEnvironment(logger, session, coordinator, async (_, token) => {
-                    try {
-                        await Task.Delay(exits ? TimeSpan.Zero : Timeout.InfiniteTimeSpan, token);
-                    } finally {
-                        waitEnded.TrySetResult(token.IsCancellationRequested);
-                    }
-                }).EndAsync(EnvironmentEndReason.Install));
-                var expectedError = message is null
-                    ? ended.Error is Win32Exception
-                    : ended.Error is IOException && ended.Error.Message == message;
-                var waitStopped = exits || (waitEnded.Task.Wait(5000) && waitEnded.Task.Result);
-                Require(ended is { Outcome: EnvironmentEndOutcome.Unconfirmed } && expectedError
-                    && coordinator.TrackedWorkerPid is not null && waitStopped,
-                    $"{name}：安装应取消、保留 Admission 并停止等待 Worker。");
+                var asked = false;
+                var environment = CreateEnvironment(logger, session, coordinator);
+                var ended = OnPool(() => environment.EndAsync(() => asked = true));
+                Require(ended is { Outcome: EnvironmentEndOutcome.Unconfirmed } && ended.Error?.Message == message
+                    && asked == asks && coordinator.TrackedWorkerPid is not null && environment.EndUnconfirmed
+                    && !environment.Ending, $"{name}：结束应未确认、说明原因并保留 Admission。");
             });
         }
     }
 
-    // E6: exit and install wait for the in-flight operation, then let the caller handle the result before any
-    // operation queued behind them runs.
+    // U7, U8: the user is asked only when a Runtime Environment may remain, and only after any in-flight operation;
+    // declining changes nothing. An Admission without a Child Session still needs ending.
+    private static void VerifyEndConfirmation(AppLogger logger, string directory)
+    {
+        var none = new SimulatedWts();
+        using (var session = none.CreateManager(logger)) {
+            var coordinator = new WorkerCoordinator(logger, Path.Combine(directory, "none", "state"), "unused.exe",
+                $"NarutoAutoGUI.RuntimeEnvironment.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
+            try {
+                var asked = false;
+                var ended = OnPool(() => CreateEnvironment(logger, session, coordinator).EndAsync(() => asked = true));
+                Require(ended == EnvironmentEndResult.Ended && !asked && none.LogoffAttempts.Count == 0,
+                    "没有运行环境时结束不应询问或注销。");
+            } finally {
+                Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
+            }
+        }
+
+        var wts = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] };
+        using (var existing = wts.CreateManager(logger)) {
+            WithFakeWorker(logger, Path.Combine(directory, "declined"), (coordinator, _, _) => {
+                var environment = CreateEnvironment(logger, existing, coordinator);
+                var declined = OnPool(async () => {
+                    var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    var asked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    var held = environment.RunExclusiveAsync(() => release.Task);
+                    var ending = environment.EndAsync(() => {
+                        asked.TrySetResult();
+                        return false;
+                    });
+                    Require(!asked.Task.Wait(200), "确认应等待进行中的操作完成后再询问。");
+                    release.SetResult();
+                    await held;
+                    return await ending;
+                });
+                Require(declined == EnvironmentEndResult.Declined && wts.LogoffAttempts.Count == 0
+                    && coordinator.TrackedWorkerPid is not null && !environment.EndUnconfirmed && !environment.Ending,
+                    "拒绝结束时不应注销、丢弃 Admission 或报告未确认。");
+            });
+        }
+
+        using var admissionOnly = new SimulatedWts().CreateManager(logger);
+        WithFakeWorker(logger, Path.Combine(directory, "admission-only"), (coordinator, _, _) => {
+            var environment = CreateEnvironment(logger, admissionOnly, coordinator);
+            var asked = 0;
+            var ended = OnPool(() => environment.EndAsync(() => ++asked > 0));
+            Require(ended == EnvironmentEndResult.Ended && asked == 1 && AdmissionDiscarded(coordinator),
+                "只剩 Admission 时仍应询问并结束。");
+            Require(OnPool(() => environment.EndAsync(() => ++asked > 0)) == EnvironmentEndResult.Ended && asked == 1,
+                "结束确认后再次结束不应询问。");
+        });
+    }
+
+    // U6: the end waits for the in-flight operation and discards the Admission inside the gate, so a queued operation
+    // sees it discarded; the caller handles the result before that operation runs.
     private static void VerifyEndHoldsGate(AppLogger logger, string directory)
     {
-        using var session = new SimulatedWts().CreateManager(logger);
-        foreach (var reason in new[] { EnvironmentEndReason.Exit, EnvironmentEndReason.Install }) {
-            WithFakeWorker(logger, Path.Combine(directory, $"gate-{reason}"), (coordinator, _, _) => {
-                var environment = CreateEnvironment(logger, session, coordinator);
-                var (heldDone, queuedRan) = OnPool(async () => {
-                    var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                    var held = environment.RunExclusiveAsync(() => release.Task);
-                    var queued = false;
-                    (bool, bool)? seen = null;
-                    var ending = environment.EndAsync(reason, () => true, _ => {
-                        seen = (release.Task.IsCompleted, queued);
-                        return Task.CompletedTask;
-                    });
-                    var next = environment.RunExclusiveAsync(() => {
-                        queued = true;
-                        return Task.CompletedTask;
-                    });
-                    release.SetResult();
-                    await Task.WhenAll(held, ending, next);
-                    return seen ?? (false, true);
+        var wts = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] };
+        using var session = wts.CreateManager(logger);
+        WithFakeWorker(logger, Path.Combine(directory, "gate"), (coordinator, _, _) => {
+            var environment = CreateEnvironment(logger, session, coordinator);
+            var (ended, seen, discardedForNext) = OnPool(async () => {
+                var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var held = environment.RunExclusiveAsync(() => release.Task);
+                var queued = false;
+                (bool HeldDone, bool QueuedRan)? seen = null;
+                var ending = environment.EndAsync(() => true, _ => {
+                    seen = (release.Task.IsCompleted, queued);
+                    return Task.CompletedTask;
                 });
-                Require(heldDone && !queuedRan, $"{reason}：应等待进行中的操作，并在后续操作前处理结束结果。");
+                var discarded = false;
+                var next = environment.RunExclusiveAsync(() => {
+                    queued = true;
+                    discarded = AdmissionDiscarded(coordinator);
+                    return Task.CompletedTask;
+                });
+                release.SetResult();
+                await Task.WhenAll(held, next);
+                return (await ending, seen, discarded);
             });
-        }
+            Require(ended == EnvironmentEndResult.Ended && seen == (true, false) && discardedForNext,
+                "结束应等待进行中的操作，在后续操作前处理结果，且后续操作看到 Admission 已丢弃。");
+        });
     }
 
-    // E6: while the application is closing, operations and the user's end are refused; exit still ends.
+    // While the application is closing, operations are refused; the end that closes it still runs.
     private static void VerifyEnvironmentClosing(AppLogger logger, string directory)
     {
         using var session = new SimulatedWts().CreateManager(logger);
@@ -277,10 +288,8 @@ internal static partial class SelfTestRunner
                 ran = true;
                 return Task.CompletedTask;
             })) && !ran, "退出中不应开始新的运行环境操作。");
-            Require(Refused(() => environment.EndAsync(EnvironmentEndReason.UserRequested)),
-                "退出中不应开始用户发起的结束分身。");
-            Require(OnPool(() => environment.EndAsync(EnvironmentEndReason.Exit)) == EnvironmentEndResult.Ended,
-                "退出本身不受退出中标志阻止。");
+            Require(OnPool(() => environment.EndAsync(() => true)) == EnvironmentEndResult.Ended,
+                "退出中的结束不受退出中标志阻止。");
         });
 
         static bool Refused(Func<Task> action)
@@ -299,16 +308,20 @@ internal static partial class SelfTestRunner
         TimeSpan? waitLimit = null) => new(logger, session, coordinator, new ChildSessionProgramService(logger),
         waitForWorkerExit ?? ((_, _) => Task.CompletedTask), waitLimit ?? EnvironmentWaitLimit);
 
-    // The owner a window under test uses; operations run at once unless a test holds them.
+    // The owner a window under test uses; operations run at once unless a test holds them, and the fake Worker,
+    // which is this process, counts as exited once the Child Session is logged off.
     private static RuntimeEnvironment WindowEnvironment(AppLogger logger, ChildSessionManager session,
         WorkerCoordinator coordinator, Func<Func<Task>, Task>? runOperation = null) =>
-        new(logger, session, coordinator, new ChildSessionProgramService(logger),
-            runExclusive: runOperation ?? (operation => operation()));
+        new(logger, session, coordinator, new ChildSessionProgramService(logger), (_, _) => Task.CompletedTask,
+            EnvironmentWaitLimit, runOperation ?? (operation => operation()));
 
     // Ending before the fake Worker is admitted would discard the Admission it connects with.
-    private static void AwaitRunningWorker(WorkerCoordinator coordinator) => Require(SpinWait.SpinUntil(
-        () => coordinator.Snapshot is { Observation: WorkerObservation.Connected, SnapshotFresh: true,
-            WorkerSnapshot.ActiveRun: not null }, 10000), "假 Worker 未报告运行中的 Run。");
+    private static void AwaitRunningWorker(WorkerCoordinator coordinator) => AwaitWorker(coordinator,
+        snapshot => snapshot is { Observation: WorkerObservation.Connected, SnapshotFresh: true,
+            WorkerSnapshot.ActiveRun: not null }, "假 Worker 未报告运行中的 Run。");
+
+    private static void AwaitWorker(WorkerCoordinator coordinator, Func<WorkerCoordinatorSnapshot, bool> condition,
+        string failure) => Require(SpinWait.SpinUntil(() => condition(coordinator.Snapshot), 10000), failure);
 
     private static bool AdmissionDiscarded(WorkerCoordinator coordinator) =>
         coordinator.Snapshot.Observation == WorkerObservation.ChildSessionEnded && coordinator.TrackedWorkerPid is null;

@@ -58,7 +58,8 @@ public partial class App : System.Windows.Application
         _environment = new RuntimeEnvironment(
             _logger, _sessionManager, _workerCoordinator, new ChildSessionProgramService(_logger));
         _mainWindow = new MainWindow(
-            _logger, _sessionManager, _workerCoordinator, _environment, RequestExitAsync, InstallUpdateAsync);
+            _logger, _sessionManager, _workerCoordinator, _environment, RequestExitAsync, EndEnvironmentAsync,
+            InstallUpdateAsync);
         _mainWindow.HiddenToTray += MainWindow_HiddenToTray;
         MainWindow = _mainWindow;
         CreateTrayIcon();
@@ -75,10 +76,13 @@ public partial class App : System.Windows.Application
         _mainWindow.SetExitInProgress(true);
         var exitCompleted = false;
         try {
-            await _environment.EndAsync(EnvironmentEndReason.Exit, ConfirmExit, async ended => {
+            await _environment.EndAsync(ConfirmExit, async ended => {
                 if (ended.Outcome != EnvironmentEndOutcome.Ended) {
                     if (ended.Error is { } error) {
-                        WpfMessageBox.Show(error.Message, "NarutoAutoGUI", MessageBoxButton.OK, MessageBoxImage.Error);
+                        WpfMessageBox.Show(
+                            $"{error.Message}已取消退出，避免遗留未知状态。请查看日志后重试。",
+                            "NarutoAutoGUI",
+                            MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                     return;
                 }
@@ -109,9 +113,31 @@ public partial class App : System.Windows.Application
     }
 
     private static bool ConfirmExit() => WpfMessageBox.Show(
-        "桌面分身仍在运行。退出程序将注销该 Session，并结束其中的游戏和 MaaNOP。\n\n确认退出吗？",
+        "桌面分身仍在运行。退出程序将先停止正在运行的任务，再注销该 Session，并结束其中的游戏和 MaaNOP。\n\n确认退出吗？",
         "确认退出",
         MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
+
+    // The tray and the main window end the Runtime Environment through this routine. The question is asked inside
+    // the operation gate, so an exit that started meanwhile turns it into a decline.
+    internal async Task EndEnvironmentAsync()
+    {
+        if (IsExiting || _environment is null) {
+            return;
+        }
+
+        var ended = await _environment.EndAsync(() => !IsExiting && WpfMessageBox.Show(
+            "结束桌面分身将先停止正在运行的任务，再注销 Session，并结束其中运行的程序。确认继续吗？",
+            "结束桌面分身",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes);
+        if (ended.Error is not { } error) {
+            return;
+        }
+        ShowMainWindow();
+        WpfMessageBox.Show(
+            $"{error.Message}已保留 Worker Admission，可再次结束桌面分身；详细信息已写入日志。",
+            "结束桌面分身未确认",
+            MessageBoxButton.OK, MessageBoxImage.Error);
+    }
 
     private bool IsExiting => _environment?.Closing == true;
 
@@ -126,7 +152,7 @@ public partial class App : System.Windows.Application
         menu.Items.Add("显示子桌面", null, async (_, _) =>
             await Dispatcher.InvokeAsync(async () => await ShowChildDesktopFromTrayAsync()).Task.Unwrap());
         menu.Items.Add("结束桌面分身", null, async (_, _) =>
-            await Dispatcher.InvokeAsync(async () => await TerminateFromTrayAsync()).Task.Unwrap());
+            await Dispatcher.InvokeAsync(async () => await EndEnvironmentAsync()).Task.Unwrap());
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("退出程序", null, async (_, _) =>
             await Dispatcher.InvokeAsync(async () => await RequestExitAsync()).Task.Unwrap());
@@ -232,37 +258,6 @@ public partial class App : System.Windows.Application
                 $"{exception.GetBaseException().Message}\n\n请在主窗口检查桌面分身状态后重试；详细信息已写入日志。",
                 "显示子桌面失败",
                 MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    private async Task TerminateFromTrayAsync()
-    {
-        if (IsExiting || _logger is null || _environment is null) {
-            return;
-        }
-
-        var answer = WpfMessageBox.Show(
-            "结束桌面分身将注销 Session，并结束其中运行的程序。确认继续吗？",
-            "结束桌面分身",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning,
-            MessageBoxResult.No);
-        if (answer != MessageBoxResult.Yes) {
-            return;
-        }
-
-        try {
-            var ended = await _environment.EndAsync(EnvironmentEndReason.UserRequested);
-            if (ended.Error is not { } exception) {
-                return;
-            }
-            _logger.Error("从托盘结束桌面分身失败。", exception);
-            ShowMainWindow();
-            WpfMessageBox.Show(
-                $"{exception.GetBaseException().Message}\n\n请在主窗口检查桌面分身状态后重试；详细信息已写入日志。",
-                "结束桌面分身失败",
-                MessageBoxButton.OK, MessageBoxImage.Error);
-        } catch (OperationCanceledException) when (IsExiting) {
         }
     }
 

@@ -71,6 +71,27 @@ internal static partial class SelfTestRunner
         if (tracker.Observe(terminal)?.Message != "任务运行失败。打开 NarutoAutoGUI 查看运行动态。") {
             throw new InvalidOperationException("缺少失败项时须使用简短后备文案。");
         }
+
+        // A Worker that faults during an observed Active Run is announced once. One already Faulted when its Run is
+        // first seen is not, since nothing was observed to change.
+        foreach (var state in new[] { RunState.Stopping, RunState.Running }) {
+            tracker = new RunTerminalNotificationTracker();
+            active = CreateNotificationSnapshot(state);
+            var faulted = active with {
+                WorkerSnapshot = active.WorkerSnapshot! with { WorkerState = WorkerState.Faulted }
+            };
+            tracker.Observe(active);
+            if (tracker.Observe(faulted) is not { Title: "任务未能确认结束", Failed: true,
+                    Message: "MaaNOP 可能仍在运行。打开 NarutoAutoGUI 结束桌面分身以恢复。" }
+                || tracker.Observe(faulted) is not null
+                || tracker.Observe(faulted with { SnapshotFresh = false }) is not null
+                || tracker.Observe(faulted) is not null) {
+                throw new InvalidOperationException($"{state} 的 Run 期间 Worker 故障应恰好提醒一次。");
+            }
+            if (new RunTerminalNotificationTracker().Observe(faulted) is not null) {
+                throw new InvalidOperationException("没有已观察的 Run 时 Worker 故障不应提醒。");
+            }
+        }
     }
 
     private static void VerifyDiagnosticPackage(AppLogger logger, string testDirectory)

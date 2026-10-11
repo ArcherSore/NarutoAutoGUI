@@ -24,9 +24,10 @@ internal static partial class SelfTestRunner
         VerifyFaultedSessionRetryWiring(logger, directory);
         VerifyWorkerStopWiring(logger, directory);
         VerifyKilledWorkerWiring(logger, directory);
+        VerifyStopUnconfirmedRecoveryWiring(logger, directory);
         VerifyStopWithoutProjectWiring(logger, directory);
         Console.WriteLine("RUNTIME CONTROL WIRING PASS: startup, exit, project failure, restore, end, "
-            + "end with Worker, retry, stop, killed Worker, stop without project.");
+            + "end with Worker, retry, stop, killed Worker, recovery, stop without project.");
     }
 
     private static void VerifyStartupAndExitWiring(AppLogger logger, string directory)
@@ -75,8 +76,9 @@ internal static partial class SelfTestRunner
         }, session: session, runOperation: operations.RunAsync);
     }
 
-    // Like the tray: logoff blocks the UI thread and kills the Worker, then the coordinator learns the session ended.
-    // The Worker's disconnect is raised on another thread, so it reaches the window after ChildSessionEnded.
+    // Like the tray: the end runs outside the window, logoff blocks the UI thread and kills the Worker, then the
+    // Admission is discarded. The Worker's disconnect is raised on another thread, so it reaches the window after
+    // ChildSessionEnded. Throughout the end the window shows its progress and offers no command.
     private static void VerifySessionEndWithWorkerWiring(AppLogger logger, string directory)
     {
         var wts = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] };
@@ -85,6 +87,7 @@ internal static partial class SelfTestRunner
         WithFakeWorker(logger, Path.Combine(directory, "end-worker"), (coordinator, record, pipeName) => {
             var pipe = Task.Run(() => WorkerCoordinatorSelfTest.OpenConnectionAsync(
                 pipeName, record, 0, CancellationToken.None)).GetAwaiter().GetResult();
+            var environment = WindowEnvironment(logger, session, coordinator, operations.RunAsync);
             WithRuntimeControlWindow(logger, Path.Combine(directory, "end-worker-window"), window => {
                 PumpUntil(() => operations.Entered == 1, "启动时应开始恢复已有分身。");
                 operations.Release();
@@ -95,18 +98,24 @@ internal static partial class SelfTestRunner
                         disconnected.TrySetResult();
                     }
                 };
+                bool? progressDuringLogoff = null;
                 wts.DuringLogoff = _ => {
+                    progressDuringLogoff = ProgressShows(window, "正在结束桌面分身") && !ConfigurationEditable(window)
+                        && !Named<UIElement>(window, "HomeDesktopVisibilityButton").IsEnabled;
                     Task.Run(async () => await pipe.DisposeAsync()).GetAwaiter().GetResult();
                     Require(disconnected.Task.Wait(5000), "注销分身时未观察到 Worker 断线。");
                 };
-                var ending = session.TerminateAsync();
-                Require(ending.IsCompleted, "结束分身应像托盘一样在界面线程上同步完成。");
-                ending.GetAwaiter().GetResult();
-                coordinator.ChildSessionEnded();
+                operations.RunOperations = true;
+                var ending = environment.EndAsync(() => true);
+                PumpUntil(() => operations.Entered == 2, "结束应进入操作闸门。");
+                operations.Release();
+                PumpUntil(() => ending.IsCompleted, "结束分身未完成。");
+                Require(ending.GetAwaiter().GetResult() == EnvironmentEndResult.Ended && progressDuringLogoff == true,
+                    "从窗口外结束时，窗口应显示结束进度并禁用命令。");
                 PumpOnboarding();
                 Require(HeaderShows(window, "PrepareEnvironmentButton", enabled: true) && ConfigurationEditable(window),
                     "结束分身后迟到的 Worker 断线不应让运行控制回到重试。");
-            }, session: session, coordinator: coordinator, runOperation: operations.RunAsync);
+            }, session: session, coordinator: coordinator, environment: environment);
         });
     }
 
@@ -176,13 +185,48 @@ internal static partial class SelfTestRunner
             WithRuntimeControlWindow(logger, Path.Combine(directory, "killed-worker-window"), window => {
                 PumpUntil(() => ConfigurationEditable(window), "空闲 Worker 已连接时应可编辑配置。");
                 Task.Run(async () => await pipe.DisposeAsync()).GetAwaiter().GetResult();
-                PumpUntil(() => HeaderShows(window, "RetryEnvironmentButton", enabled: true)
-                    && LockText(window) == "运行环境处理中，配置暂时锁定", "Worker 断线但进程仍在时应显示重试并锁定配置。");
+                PumpUntil(() => HeaderShows(window, "RecoverEnvironmentButton", enabled: true)
+                    && LockText(window) == "运行环境处理中，配置暂时锁定", "Worker 断线但进程仍在时应只提供结束桌面分身并锁定配置。");
                 listed = false;
                 PumpUntil(() => ConfigurationEditable(window) && LockText(window) is null
                     && HeaderShows(window, "RetryEnvironmentButton", enabled: true), "Worker 进程退出后应解除配置锁定。");
             }, coordinator: coordinator);
         }, workerListed: () => listed);
+    }
+
+    // #17: a stop the Worker could not confirm leaves only recovery, which calls the same end routine as the tray.
+    // Once the Runtime Environment has ended, Prepare returns and the configuration is editable.
+    private static void VerifyStopUnconfirmedRecoveryWiring(AppLogger logger, string directory)
+    {
+        using var session = new SimulatedWts().CreateManager(logger);
+        WithRunningFakeWorker(logger, Path.Combine(directory, "recover"), async (worker, token) => {
+            WorkerSnapshot? snapshot;
+            while ((snapshot = worker.Coordinator.Snapshot.WorkerSnapshot) is null) {
+                await Task.Delay(20, token);
+            }
+            await worker.Pipe.WriteAsync(StateEvent(snapshot with {
+                StateRevision = 2, WorkerState = WorkerState.Faulted,
+                WorkerReason = new StructuredReason("StopTimeout", "scripted stop timeout"),
+                RunState = RunState.Stopping, ActiveRun = worker.ActiveRun with { State = RunState.Stopping }
+            }), token);
+        }, coordinator => {
+            var environment = WindowEnvironment(logger, session, coordinator);
+            var endRequests = 0;
+            WithRuntimeControlWindow(logger, Path.Combine(directory, "recover-window"), window => {
+                PumpUntil(() => HeaderShows(window, "RecoverEnvironmentButton", enabled: true)
+                    && LockText(window) == "任务运行中，配置已锁定", "停止未确认时应只提供结束桌面分身，并保持配置锁定。");
+                Click(window, "RecoverEnvironmentButton");
+                Require(endRequests == 1, "结束桌面分身应调用与托盘相同的用户结束例程。");
+                var ending = environment.EndAsync(() => true);
+                PumpUntil(() => ending.IsCompleted, "结束运行环境未完成。");
+                Require(ending.GetAwaiter().GetResult() == EnvironmentEndResult.Ended, "结束运行环境应确认完成。");
+                PumpUntil(() => HeaderShows(window, "PrepareEnvironmentButton", enabled: true)
+                    && ConfigurationEditable(window), "结束运行环境后应回到准备运行环境，并可编辑配置。");
+            }, session: session, coordinator: coordinator, environment: environment, endEnvironment: () => {
+                endRequests++;
+                return Task.CompletedTask;
+            });
+        });
     }
 
     private static void VerifyStopWithoutProjectWiring(AppLogger logger, string directory)
@@ -299,13 +343,15 @@ internal static partial class SelfTestRunner
 
         internal int Entered { get; private set; }
 
-        internal bool RunOperations { get; init; }
+        internal bool RunOperations { get; set; }
 
+        // Whether an operation runs once released is decided when it enters.
         internal async Task RunAsync(Func<Task> operation)
         {
+            var run = RunOperations;
             Entered++;
             await _release.Task;
-            if (RunOperations) {
+            if (run) {
                 await operation();
             }
         }

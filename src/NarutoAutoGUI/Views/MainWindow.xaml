@@ -725,6 +725,15 @@
                                         <ui:SymbolIcon Width="20" Height="20" FontSize="20"
                                                        Foreground="{StaticResource Brush.Primary}" Symbol="Stop24" />
                                     </Button>
+                                    <Button x:Name="RecoverEnvironmentButton" Grid.Column="1"
+                                            Visibility="Collapsed" Style="{StaticResource RuntimeActionIconButtonStyle}"
+                                            ToolTip="结束桌面分身" ToolTipService.ShowOnDisabled="True"
+                                            AutomationProperties.Name="结束桌面分身"
+                                            Click="RecoverEnvironmentButton_Click">
+                                        <ui:SymbolIcon Width="20" Height="20" FontSize="20"
+                                                       Foreground="{StaticResource Brush.Primary}"
+                                                       Symbol="SignOut24" />
+                                    </Button>
                                     <ui:ProgressRing x:Name="RuntimeHeaderProgressRing" Grid.Column="1"
                                                      Width="18" Height="18" Margin="0,0,9,0"
                                                      VerticalAlignment="Center" Visibility="Collapsed"

@@ -17,7 +17,9 @@ GUI 不加载 MaaFramework 执行任务。Worker 不读取或修改用户任务�
 
 ## 运行环境生命周期
 
-GUI 启动时检查已有 Child Session，必要时恢复 RDP 预览宿主。创建或恢复后，程序在独立 Windows Session 中运行。隐藏桌面分身只隐藏宿主窗口，保留 RDP 连接及其中程序；结束分身或退出时通过统一入口停止相关操作并注销 Session。
+GUI 启动时检查已有 Child Session，必要时恢复 RDP 预览宿主。创建或恢复后，程序在独立 Windows Session 中运行。隐藏桌面分身只隐藏宿主窗口，保留 RDP 连接及其中程序。
+
+RuntimeEnvironment 是运行环境生命周期的唯一所有者：持有应用操作闸门，负责准备与结束运行环境。退出、托盘、主窗口恢复操作与安装更新都以同一顺序结束运行环境：先在时限内正常停止 Active Run（失败时以注销恢复），再注销 Child Session，并在时限内确认 Child Session 已结束、已跟踪的 Worker 已退出，之后才丢弃 Admission。无法确认时如实报告"结束未确认"并保留 Admission，可再次结束。结束期间主窗口显示进度并暂停其他命令。
 
 GUI 以真实 Windows 进程和 Session 身份核验 Worker，再通过受限的本机 Named Pipe 接纳连接。同一 Child Session 只接纳一个 Worker。GUI 只在能证明 Worker 已不存在或 Child Session 已确认注销时丢弃 Admission，无法确认时拒绝准备；每次启动 Worker 前还会确认目标 Child Session 中没有 Worker 进程。断线时，已接纳 Worker 可继续运行；GUI 重连后取得新的完整 Snapshot 才能重新作出执行决策。Worker 不具备跨进程退出恢复 Run 的能力。
 
@@ -28,6 +30,8 @@ GUI 以真实 Windows 进程和 Session 身份核验 Worker，再通过受限的
 MaaNOP Config 保存多份独立任务配置及激活项；它是用户意图，不是执行结果。ProjectModel 按当前 Project Interface 校验激活配置，开始时生成不可变、有序的 Run Plan。Worker Launch Context 独立确定项目与框架环境；Run Plan 只描述本次任务与参数。
 
 Worker 同时只执行一个 Run，逐项处理 Plan Item。失败终止后续项，停止请求先进入 Stopping，最终结果由 Worker 和 MaaFramework 的执行结果决定。Worker 是 Worker State、Run State 和 Plan Item 状态的权威来源。GUI 把连接、进程与 Session 状况作为独立的 GUI Observation；断线不伪造 Run 失败。
+
+停止未确认或 Run 后台循环出现意外异常时，Worker 进入 Faulted，Active Run 保持原状态、不终结。此时执行终止未确认；Worker 失联且进程未被证明已退出，或上次结束运行环境未确认，也是如此。执行终止未确认期间，GUI 不提供重试、开始或准备，只提供结束桌面分身作为恢复方式；Worker 重新连接或其进程确认退出后恢复正常控制。
 
 控制和状态通过 Named Pipe 传递；完整 Snapshot 用于初次同步和重连，事件用于加快显示，日志另按 sequence 补取。稳定的传输契约见 [Worker IPC](WORKER-IPC.md)。
 

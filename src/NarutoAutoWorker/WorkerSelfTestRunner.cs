@@ -6,10 +6,14 @@ namespace NarutoAutoWorker;
 
 internal static class WorkerSelfTestRunner
 {
-    internal static int Run()
+    internal static int Run(bool runOnly)
     {
+        if (runOnly) {
+            return RunCharacterization();
+        }
         PreviewSelfTests.Run();
         try {
+            RunSelfTests.Run();
             VerifyFocusProjection();
             VerifyCallbackAdapter();
             VerifyLogResponseBudget();
@@ -20,7 +24,7 @@ internal static class WorkerSelfTestRunner
             VerifyTaskerTaskCallbackCompletion();
             FrameworkOptionsSelfTests.Run();
             Console.WriteLine(
-                "WORKER SELF-TEST PASS: MaaNOP string focus projection; Callback adapter; "
+                "WORKER SELF-TEST PASS: Run characterization; MaaNOP string focus projection; Callback adapter; "
                 + "log response budget; preview shared buffer; "
                 + "budget rejection; transport write guard; agent executable resolution; "
                 + "accepted stop wins terminal race; stop/cleanup serialization; "
@@ -28,6 +32,18 @@ internal static class WorkerSelfTestRunner
             return 0;
         } catch (Exception exception) {
             Console.Error.WriteLine($"WORKER SELF-TEST FAIL: {exception}");
+            return 1;
+        }
+    }
+
+    private static int RunCharacterization()
+    {
+        try {
+            RunSelfTests.Run();
+            Console.WriteLine("WORKER RUN SELF-TEST PASS: Run characterization");
+            return 0;
+        } catch (Exception exception) {
+            Console.Error.WriteLine($"WORKER RUN SELF-TEST FAIL: {exception}");
             return 1;
         }
     }

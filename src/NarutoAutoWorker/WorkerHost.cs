@@ -9,7 +9,7 @@ namespace NarutoAutoWorker;
 
 internal sealed class WorkerHost : IDisposable
 {
-    private sealed record DeferredStop(Guid RunId, WorkerRuntimeExecution Execution, WorkerSnapshot StoppingSnapshot);
+    private sealed record DeferredStop(Guid RunId, IPlanItemExecution Execution, WorkerSnapshot StoppingSnapshot);
 
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(1);
     private readonly object _stateGate = new();
@@ -24,15 +24,24 @@ internal sealed class WorkerHost : IDisposable
     private DependencyStatus _dependencyStatus;
     private RunSnapshot? _activeRun;
     private RunSnapshot? _lastRun;
-    private WorkerRuntimeExecution? _execution;
+    private IPlanItemExecution? _execution;
     private long _stateRevision = 1;
     private readonly WorkerPreviewService _preview;
+    private readonly Func<Guid, RunPlanItem, Action, IPlanItemExecution> _createExecution;
+    private readonly Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>> _checkReadiness;
     private Guid _connectionId;
 
-    internal WorkerHost(WorkerArguments arguments, LaunchManifest manifest, IPreviewCaptureSource? previewSource = null)
+    // The execution factory and readiness check default to MaaFramework and the dependency probe; self-tests replace
+    // them so Run rules can be exercised without native runtime, a game window or Python.
+    internal WorkerHost(
+        WorkerArguments arguments, LaunchManifest manifest, IPreviewCaptureSource? previewSource = null,
+        Func<Guid, RunPlanItem, Action, IPlanItemExecution>? createExecution = null,
+        Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>>? checkReadiness = null)
     {
         _arguments = arguments;
         _manifest = manifest;
+        _createExecution = createExecution ?? CreateRuntimeExecution;
+        _checkReadiness = checkReadiness ?? CheckReadinessAsync;
         var sessionId = (uint)Process.GetCurrentProcess().SessionId;
         _preview = new WorkerPreviewService(manifest.WorkerInstanceId, sessionId,
             previewSource ?? new MaaPreviewCaptureSource(manifest, sessionId),
@@ -77,16 +86,7 @@ internal sealed class WorkerHost : IDisposable
 
     internal async Task InitializeAsync(CancellationToken cancellationToken)
     {
-        // Apply process-wide options before Ready admits preview controllers or task execution.
-        StructuredReason? optionsFailure = null;
-        try {
-            WorkerFrameworkOptions.Apply(_manifest.ProjectRoot, _manifest.FrameworkOptions,
-                (level, source, message) => Log(level, source, message));
-        } catch (Exception exception) {
-            optionsFailure = new StructuredReason("FrameworkOptionsFailed", exception.GetBaseException().Message);
-        }
-        var (status, reason) = optionsFailure is null
-            ? await DependencyProbe.RunAsync(_manifest, cancellationToken) : (_dependencyStatus, optionsFailure);
+        var (status, reason) = await _checkReadiness(cancellationToken);
         WorkerSnapshot snapshot;
         lock (_stateGate) {
             _dependencyStatus = status;
@@ -104,6 +104,21 @@ internal sealed class WorkerHost : IDisposable
         } else {
             Log("ERROR", "worker.readiness", $"Dependency Readiness=NotReady：{reason.Code} - {reason.Message}");
         }
+    }
+
+    private async Task<(DependencyStatus Status, StructuredReason? Reason)> CheckReadinessAsync(
+        CancellationToken cancellationToken)
+    {
+        // Apply process-wide options before Ready admits preview controllers or task execution.
+        StructuredReason? optionsFailure = null;
+        try {
+            WorkerFrameworkOptions.Apply(_manifest.ProjectRoot, _manifest.FrameworkOptions,
+                (level, source, message) => Log(level, source, message));
+        } catch (Exception exception) {
+            optionsFailure = new StructuredReason("FrameworkOptionsFailed", exception.GetBaseException().Message);
+        }
+        return optionsFailure is null
+            ? await DependencyProbe.RunAsync(_manifest, cancellationToken) : (_dependencyStatus, optionsFailure);
     }
 
     private async Task ConnectAndServeAsync(CancellationToken cancellationToken)
@@ -215,7 +230,7 @@ internal sealed class WorkerHost : IDisposable
 
     private RunStartResponse AcceptRun(RunStartRequest request)
     {
-        WorkerRuntimeExecution execution;
+        IPlanItemExecution execution;
         RunSnapshot run;
         WorkerSnapshot snapshot;
         lock (_stateGate) {
@@ -276,7 +291,7 @@ internal sealed class WorkerHost : IDisposable
     private RunStopResponse AcceptStop(RunStopRequest request, out DeferredStop? deferredStop)
     {
         deferredStop = null;
-        WorkerRuntimeExecution execution;
+        IPlanItemExecution execution;
         WorkerSnapshot snapshot;
         lock (_stateGate) {
             if (_activeRun is null) {
@@ -348,12 +363,12 @@ internal sealed class WorkerHost : IDisposable
     }
 
     private async Task ExecuteRunAsync(
-        Guid runId, WorkerRuntimeExecution execution,
+        Guid runId, IPlanItemExecution execution,
         CancellationToken cancellationToken)
     {
         while (true) {
             var result = await execution.ExecuteAsync(cancellationToken);
-            WorkerRuntimeExecution? nextExecution = null;
+            IPlanItemExecution? nextExecution = null;
             WorkerSnapshot snapshot;
             lock (_stateGate) {
                 if (_activeRun?.RunId != runId || !ReferenceEquals(_execution, execution)) {
@@ -476,10 +491,13 @@ internal sealed class WorkerHost : IDisposable
         };
     }
 
-    private WorkerRuntimeExecution CreateExecution(Guid runId, RunPlanItem item) => new(
+    // Called under _stateGate so the active Run is never committed without its execution; factories only construct.
+    private IPlanItemExecution CreateExecution(Guid runId, RunPlanItem item) =>
+        _createExecution(runId, item, () => MarkRunRunning(runId, item.PlanItemId));
+
+    private WorkerRuntimeExecution CreateRuntimeExecution(Guid runId, RunPlanItem item, Action onRunning) => new(
         _manifest, runId, item, checked((uint)Process.GetCurrentProcess().SessionId),
-        (level, source, message) => Log(level, source, message, runId, item.PlanItemId, item.TaskName),
-        () => MarkRunRunning(runId, item.PlanItemId));
+        (level, source, message) => Log(level, source, message, runId, item.PlanItemId, item.TaskName), onRunning);
 
     private void MarkRunRunning(Guid runId, Guid planItemId)
     {

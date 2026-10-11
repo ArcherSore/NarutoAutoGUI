@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.IO.Pipes;
-using System.Reflection;
 using System.Text.Json;
 using NarutoAutoGUI.Protocol;
 
@@ -227,43 +225,15 @@ internal static class PreviewSelfTests
 
     private static async Task VerifyHostIsolationAsync()
     {
-        var worker = Guid.NewGuid();
-        var project = new ProjectProvenance("test", "1", 1, "test");
-        var manifest = new LaunchManifest(1, worker, "test", "C:\\dummy", project,
-            new Win32ControllerDefinition("test", "class", "window", "Cache", "Send", "Send"),
-            [], new AgentDefinition("python.exe", [], "C:\\dummy"));
         var source = new ScriptedCaptureSource { Target = new PreviewTarget(1, 1, 1, 1) };
-        using var host = new WorkerHost(new WorkerArguments(worker, "test", "C:\\dummy"), manifest, source);
-        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        typeof(WorkerHost).GetField("_workerState", flags)!.SetValue(host, WorkerState.Ready);
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        var name = $"NarutoAutoGUI.Preview.HostTest.{Guid.NewGuid():N}";
-        await using var server = new NamedPipeServerStream(name, PipeDirection.InOut, 1,
-            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-        await using var client = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
-        var connected = server.WaitForConnectionAsync(timeout.Token);
-        await client.ConnectAsync(timeout.Token);
-        await connected;
-        await using var gui = new ProtocolConnection(server);
-        await using var workerConnection = new ProtocolConnection(client);
-        var serving = host.ServeConnectionAsync(workerConnection, timeout.Token);
+        await using var harness = await RunHarness.CreateAsync(previewSource: source);
+        var worker = (await harness.SnapshotAsync()).WorkerInstanceId;
         var request = new PreviewRequest(worker, Guid.NewGuid());
-        var responses = System.Threading.Channels.Channel.CreateUnbounded<WireEnvelope>();
-        var receiving = Task.Run(async () =>
-        {
-            while (await gui.ReadAsync(timeout.Token) is { } message) {
-                if (message.MessageType == ProtocolMessageTypes.Response) {
-                    await responses.Writer.WriteAsync(message, timeout.Token);
-                }
-            }
-        }, timeout.Token);
 
         async Task<T> SendAsync<T>(string operation, object data)
         {
-            var id = Guid.NewGuid();
-            await gui.WriteAsync(WireEnvelope.Request(operation, id, data), timeout.Token);
-            var reply = await responses.Reader.ReadAsync(timeout.Token);
-            if (reply.RequestId != id || reply.Success != true) {
+            var reply = await harness.RequestAsync(operation, data);
+            if (reply.Success != true) {
                 throw new InvalidOperationException($"真实 Host 请求失败：{operation} {reply.Error?.Code}");
             }
             return ProtocolJson.Deserialize<T>(reply.Data);
@@ -271,8 +241,12 @@ internal static class PreviewSelfTests
 
         try {
             var response = await SendAsync<PreviewResponse>(ProtocolOperations.PreviewStart, request);
+            var streaming = Stopwatch.StartNew();
             while (response.State != PreviewState.Streaming) {
-                await Task.Delay(20, timeout.Token);
+                if (streaming.Elapsed > TimeSpan.FromSeconds(8)) {
+                    throw new TimeoutException("真实 Host 预览未进入 Streaming。");
+                }
+                await Task.Delay(20);
                 response = await SendAsync<PreviewResponse>(ProtocolOperations.PreviewRenew, request);
             }
             using var reader = PreviewBuffer.OpenRead(response.Descriptor!);
@@ -282,38 +256,28 @@ internal static class PreviewSelfTests
             }
             source.Block = true;
             await WaitUntilAsync(() => source.Entered.IsSet);
-            var runId = Guid.NewGuid();
-            var empty = ProtocolJson.ToElement(new { });
-            var item = new RunPlanItem(Guid.NewGuid(), "test", "test", "test", empty, empty);
-            var plan = new RunPlan(1, DateTime.UtcNow, project, "test", empty, [item]);
-            var run = new RunSnapshot(runId, "test", RunState.Running, DateTime.UtcNow, DateTime.UtcNow,
-                null, null, item.PlanItemId, 0, plan, [], null, null);
-            var execution = new WorkerRuntimeExecution(manifest, runId, item, 1, (_, _, _) => { }, () => { });
-            typeof(WorkerHost).GetField("_activeRun", flags)!.SetValue(host, run);
-            typeof(WorkerHost).GetField("_execution", flags)!.SetValue(host, execution);
+            var run = RunSelfTests.Request(RunSelfTests.Plan(1));
+            if (await harness.StartAsync(run) != "accepted") {
+                throw new InvalidOperationException("截图阻塞时 run.start 未被接受。");
+            }
+            (await harness.Executions.ExecutingAsync(run.Plan.Items[0].PlanItemId)).ReportRunning();
             var clock = Stopwatch.StartNew();
             var snapshot = await SendAsync<GetSnapshotResponse>(ProtocolOperations.WorkerGetSnapshot, new { });
             await SendAsync<PreviewResponse>(ProtocolOperations.PreviewRenew, request);
-            var stop = await SendAsync<RunStopResponse>(ProtocolOperations.RunStop, new RunStopRequest(runId));
+            var stop = await SendAsync<RunStopResponse>(ProtocolOperations.RunStop, new RunStopRequest(run.RunId));
             var stopped = await SendAsync<GetSnapshotResponse>(ProtocolOperations.WorkerGetSnapshot, new { });
             if (snapshot.Snapshot.RunState != RunState.Running || stop.Disposition != "stop_requested"
                 || stopped.Snapshot.RunState != RunState.Stopping || clock.Elapsed > TimeSpan.FromSeconds(2)
                 || source.OpenCount != 1) {
                 throw new InvalidOperationException("真实 Host 的控制请求被截图阻塞或重复创建采集。");
             }
-            // Native Tasker setup is outside this seam; finish its controlled readiness failure.
-            var ready = (TaskCompletionSource<MaaFramework.Binding.MaaTasker>)typeof(WorkerRuntimeExecution)
-                .GetField("_taskerReady", flags)!.GetValue(execution)!;
-            ready.TrySetException(new InvalidOperationException("test tasker readiness ends"));
             await SendAsync<PreviewResponse>(ProtocolOperations.PreviewStop, request);
+            if (harness.Executions.Violations.Count != 0) {
+                throw new InvalidOperationException("真实 Host 在状态锁内调用了 Plan Item 执行。");
+            }
         } finally {
             source.Block = false;
             source.Release.Set();
-            timeout.Cancel();
-            try {
-                await Task.WhenAll(serving, receiving);
-            } catch (OperationCanceledException) {
-            }
         }
     }
 

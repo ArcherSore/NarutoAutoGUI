@@ -139,6 +139,75 @@ internal sealed class RunSupervisor
         return new RunStartResponse("accepted");
     }
 
+    private void ValidateRunPlan(RunStartRequest request)
+    {
+        CanonicalDigest.ValidateDigestFormat(request.PlanDigest, nameof(request.PlanDigest));
+        if (request.Plan.PlanVersion != ProtocolConstants.PlanVersion) {
+            throw new WorkerRequestException("invalid_run_plan", "不支持 planVersion。 ");
+        }
+        if (request.Plan.Items.Count == 0) {
+            throw new WorkerRequestException("invalid_run_plan", "Run Plan 必须至少包含一个 Plan Item。 ");
+        }
+        if (request.Plan.Items.Select(item => item.PlanItemId).Distinct().Count() != request.Plan.Items.Count) {
+            throw new WorkerRequestException("invalid_run_plan", "Plan Item ID 不唯一。 ");
+        }
+        if (request.Plan.RuntimeProfileDigest != _manifest.RuntimeProfileDigest) {
+            throw new WorkerRequestException("worker_not_ready", "Run Plan Runtime Profile Digest 与 Worker 不一致。 ");
+        }
+        var actualDigest = CanonicalDigest.ComputePlanDigestV1(request.Plan);
+        if (actualDigest != request.PlanDigest) {
+            throw new WorkerRequestException("invalid_run_plan", "planDigest 重算不一致。 ");
+        }
+        var planBytes = JsonSerializer.SerializeToUtf8Bytes(request.Plan, ProtocolJson.Options).Length;
+        if (planBytes > ProtocolConstants.MaximumRunPlanBytes) {
+            throw new WorkerRequestException(
+                "invalid_run_plan",
+                $"Run Plan 超过 {ProtocolConstants.MaximumRunPlanBytes} bytes。 ");
+        }
+
+        var candidate = GetSnapshotLocked() with {
+            ActiveRun = new RunSnapshot(
+                request.RunId, request.PlanDigest, RunState.Starting, request.Plan.CreatedAtUtc,
+                DateTime.UtcNow, null, null, request.Plan.Items[0].PlanItemId, 0,
+                request.Plan, [], null, null),
+            RunState = RunState.Starting
+        };
+        var candidateBytes = JsonSerializer.SerializeToUtf8Bytes(
+            WireEnvelope.Response(
+                ProtocolOperations.WorkerGetSnapshot, Guid.Empty, new GetSnapshotResponse(candidate)),
+            ProtocolJson.Options).Length;
+        if (candidateBytes + 512 * 1024 > ProtocolConstants.MaximumSnapshotPayloadBytes) {
+            throw new WorkerRequestException(
+                "invalid_run_plan",
+                $"Run 接受后无法满足 Snapshot terminal reserve：base={candidateBytes}。 ");
+        }
+    }
+
+    // Called under _stateGate so the active Run is never committed without its execution; factories only construct.
+    private IPlanItemExecution CreateExecution(Guid runId, RunPlanItem item) =>
+        _createExecution(runId, item, () => MarkRunRunning(runId, item.PlanItemId));
+
+    private void MarkRunRunning(Guid runId, Guid planItemId)
+    {
+        WorkerSnapshot snapshot;
+        lock (_stateGate) {
+            if (_activeRun?.RunId != runId || _activeRun.CurrentPlanItemId != planItemId
+                || _activeRun.State == RunState.Stopping) {
+                return;
+            }
+            var currentIndex = _activeRun.CurrentPlanItemIndex
+                               ?? throw new InvalidOperationException("active Run 缺少 current item index。 ");
+            var items = _activeRun.Items.ToArray();
+            if (items[currentIndex].State != PlanItemState.Starting) {
+                return;
+            }
+            items[currentIndex] = items[currentIndex] with { State = PlanItemState.Running };
+            _activeRun = _activeRun with { State = RunState.Running, Items = items };
+            snapshot = CommitLocked();
+        }
+        PublishState(ProtocolOperations.RunStateChanged, snapshot);
+    }
+
     // Stopping has two phases: the flag is set before run.stop is acknowledged, and MaaFramework Stop starts only when
     // the host calls PendingStop.Begin after writing the Stopping snapshot.
     internal RunStopResponse Stop(RunStopRequest request, out PendingStop? pendingStop)
@@ -338,75 +407,6 @@ internal sealed class RunSupervisor
             RuntimeExecutionOutcome.Cancelled => RunState.Cancelled,
             _ => RunState.Failed
         };
-    }
-
-    // Called under _stateGate so the active Run is never committed without its execution; factories only construct.
-    private IPlanItemExecution CreateExecution(Guid runId, RunPlanItem item) =>
-        _createExecution(runId, item, () => MarkRunRunning(runId, item.PlanItemId));
-
-    private void MarkRunRunning(Guid runId, Guid planItemId)
-    {
-        WorkerSnapshot snapshot;
-        lock (_stateGate) {
-            if (_activeRun?.RunId != runId || _activeRun.CurrentPlanItemId != planItemId
-                || _activeRun.State == RunState.Stopping) {
-                return;
-            }
-            var currentIndex = _activeRun.CurrentPlanItemIndex
-                               ?? throw new InvalidOperationException("active Run 缺少 current item index。 ");
-            var items = _activeRun.Items.ToArray();
-            if (items[currentIndex].State != PlanItemState.Starting) {
-                return;
-            }
-            items[currentIndex] = items[currentIndex] with { State = PlanItemState.Running };
-            _activeRun = _activeRun with { State = RunState.Running, Items = items };
-            snapshot = CommitLocked();
-        }
-        PublishState(ProtocolOperations.RunStateChanged, snapshot);
-    }
-
-    private void ValidateRunPlan(RunStartRequest request)
-    {
-        CanonicalDigest.ValidateDigestFormat(request.PlanDigest, nameof(request.PlanDigest));
-        if (request.Plan.PlanVersion != ProtocolConstants.PlanVersion) {
-            throw new WorkerRequestException("invalid_run_plan", "不支持 planVersion。 ");
-        }
-        if (request.Plan.Items.Count == 0) {
-            throw new WorkerRequestException("invalid_run_plan", "Run Plan 必须至少包含一个 Plan Item。 ");
-        }
-        if (request.Plan.Items.Select(item => item.PlanItemId).Distinct().Count() != request.Plan.Items.Count) {
-            throw new WorkerRequestException("invalid_run_plan", "Plan Item ID 不唯一。 ");
-        }
-        if (request.Plan.RuntimeProfileDigest != _manifest.RuntimeProfileDigest) {
-            throw new WorkerRequestException("worker_not_ready", "Run Plan Runtime Profile Digest 与 Worker 不一致。 ");
-        }
-        var actualDigest = CanonicalDigest.ComputePlanDigestV1(request.Plan);
-        if (actualDigest != request.PlanDigest) {
-            throw new WorkerRequestException("invalid_run_plan", "planDigest 重算不一致。 ");
-        }
-        var planBytes = JsonSerializer.SerializeToUtf8Bytes(request.Plan, ProtocolJson.Options).Length;
-        if (planBytes > ProtocolConstants.MaximumRunPlanBytes) {
-            throw new WorkerRequestException(
-                "invalid_run_plan",
-                $"Run Plan 超过 {ProtocolConstants.MaximumRunPlanBytes} bytes。 ");
-        }
-
-        var candidate = GetSnapshotLocked() with {
-            ActiveRun = new RunSnapshot(
-                request.RunId, request.PlanDigest, RunState.Starting, request.Plan.CreatedAtUtc,
-                DateTime.UtcNow, null, null, request.Plan.Items[0].PlanItemId, 0,
-                request.Plan, [], null, null),
-            RunState = RunState.Starting
-        };
-        var candidateBytes = JsonSerializer.SerializeToUtf8Bytes(
-            WireEnvelope.Response(
-                ProtocolOperations.WorkerGetSnapshot, Guid.Empty, new GetSnapshotResponse(candidate)),
-            ProtocolJson.Options).Length;
-        if (candidateBytes + 512 * 1024 > ProtocolConstants.MaximumSnapshotPayloadBytes) {
-            throw new WorkerRequestException(
-                "invalid_run_plan",
-                $"Run 接受后无法满足 Snapshot terminal reserve：base={candidateBytes}。 ");
-        }
     }
 
     private WorkerSnapshot CommitLocked()

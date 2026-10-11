@@ -17,7 +17,7 @@ internal sealed class WorkerHost : IDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private WorkerEventSender? _events;
     private readonly WorkerPreviewService _preview;
-    private readonly RunSupervisor _runs;
+    private readonly RunSupervisor _supervisor;
     private readonly Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>> _checkReadiness;
     private Guid _connectionId;
 
@@ -31,7 +31,7 @@ internal sealed class WorkerHost : IDisposable
         _arguments = arguments;
         _manifest = manifest;
         _checkReadiness = checkReadiness ?? CheckReadinessAsync;
-        _runs = new RunSupervisor(manifest, _logs, createExecution ?? CreateRuntimeExecution,
+        _supervisor = new RunSupervisor(manifest, _logs, createExecution ?? CreateRuntimeExecution,
             (level, source, message, runId) => Log(level, source, message, runId), PublishState, _shutdown.Token);
         var sessionId = (uint)Process.GetCurrentProcess().SessionId;
         _preview = new WorkerPreviewService(manifest.WorkerInstanceId, sessionId,
@@ -68,7 +68,7 @@ internal sealed class WorkerHost : IDisposable
     internal async Task InitializeAsync(CancellationToken cancellationToken)
     {
         var (status, reason) = await _checkReadiness(cancellationToken);
-        _runs.CompleteInitialization(status, reason);
+        _supervisor.CompleteInitialization(status, reason);
         if (reason is null) {
             Log(
                 "INFO",
@@ -93,7 +93,7 @@ internal sealed class WorkerHost : IDisposable
         }
         return optionsFailure is null
             ? await DependencyProbe.RunAsync(_manifest, cancellationToken)
-            : (_runs.GetSnapshot().DependencyStatus, optionsFailure);
+            : (_supervisor.GetSnapshot().DependencyStatus, optionsFailure);
     }
 
     private async Task ConnectAndServeAsync(CancellationToken cancellationToken)
@@ -177,10 +177,10 @@ internal sealed class WorkerHost : IDisposable
                     request.Operation, requestId, new GetSnapshotResponse(GetSnapshot())),
                 ProtocolOperations.RunStart => WireEnvelope.Response(
                     request.Operation, requestId,
-                    _runs.Accept(ProtocolJson.Deserialize<RunStartRequest>(request.Data))),
+                    _supervisor.Accept(ProtocolJson.Deserialize<RunStartRequest>(request.Data))),
                 ProtocolOperations.RunStop => WireEnvelope.Response(
                     request.Operation, requestId,
-                    _runs.Stop(ProtocolJson.Deserialize<RunStopRequest>(request.Data), out pendingStop)),
+                    _supervisor.Stop(ProtocolJson.Deserialize<RunStopRequest>(request.Data), out pendingStop)),
                 ProtocolOperations.LogGetSince => WireEnvelope.Response(
                     request.Operation, requestId,
                     GetLogs(ProtocolJson.Deserialize<LogGetSinceRequest>(request.Data))),
@@ -235,7 +235,7 @@ internal sealed class WorkerHost : IDisposable
 
     private WireEnvelope HandlePreview(string operation, Guid requestId, PreviewRequest request)
     {
-        if (operation != ProtocolOperations.PreviewStop && !_runs.IsReady) {
+        if (operation != ProtocolOperations.PreviewStop && !_supervisor.IsReady) {
             throw new WorkerRequestException("worker_not_ready", "Worker 尚未就绪。");
         }
         return WireEnvelope.Response(operation, requestId, _preview.Handle(operation, _connectionId, request));
@@ -243,7 +243,7 @@ internal sealed class WorkerHost : IDisposable
 
     public void Dispose() => _preview.Dispose();
 
-    internal WorkerSnapshot GetSnapshot() => _runs.GetSnapshot();
+    internal WorkerSnapshot GetSnapshot() => _supervisor.GetSnapshot();
 
     private void PublishState(string operation, WorkerSnapshot snapshot)
     {

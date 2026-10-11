@@ -327,7 +327,7 @@ internal sealed class RunSupervisor
         return CommitLocked();
     }
 
-    internal static RunState ResolveFinalRunState(RuntimeExecutionOutcome outcome, bool wasStopping)
+    private static RunState ResolveFinalRunState(RuntimeExecutionOutcome outcome, bool wasStopping)
     {
         if (wasStopping) {
             return RunState.Cancelled;

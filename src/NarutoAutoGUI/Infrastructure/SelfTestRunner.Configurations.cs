@@ -334,6 +334,75 @@ internal static partial class SelfTestRunner
         }
     }
 
+    // Enter submits like losing focus; an unchanged value or draft is not submitted, validated or logged again.
+    private static void VerifyEnterCommitsInput(AppLogger logger, string testDirectory)
+    {
+        var projectDirectory = CreateProjectFixture(Path.Combine(testDirectory, "enter-commit"));
+        var configPath = Path.Combine(projectDirectory, "config.json");
+        using var session = new ChildSession.ChildSessionManager(logger);
+        var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "enter-commit-state"),
+            "unused.exe", $"NarutoAutoGUI.EnterCommit.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
+        var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
+            () => Task.CompletedTask, () => Task.CompletedTask, _ => Task.CompletedTask);
+        var rejections = 0;
+        void CountRejection(object? sender, Models.LogEntry entry)
+        {
+            rejections += entry.Message.Contains("未通过校验") ? 1 : 0;
+        }
+        logger.EntryWritten += CountRejection;
+        try {
+            var project = ProjectPlanModule.Open(projectDirectory, configPath);
+            var items = (System.Windows.DependencyObject)window.FindName("PlanItemsPanel");
+            SetOnboardingField(window, "_projectPlan", project);
+            SetOnboardingField(window, "_expandedTaskName", "RealTask");
+            InvokeOnboarding(window, "RenderTaskPlan");
+            var input = ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
+                .Single(item => System.Windows.Automation.AutomationProperties.GetName(item)
+                    == "Server range · Server");
+            string Saved() => ProjectPlanModule.Open(projectDirectory, configPath).Configurations[0]
+                .ExplicitOptions["ServerRange"].GetProperty("Inputs").GetProperty("server_range").GetString()!;
+            bool Invalid() => System.Windows.Automation.AutomationProperties.GetItemStatus(input).Length > 0;
+            using var source = new System.Windows.Interop.HwndSource(
+                new System.Windows.Interop.HwndSourceParameters("self-test"));
+            bool Press(System.Windows.Input.Key key)
+            {
+                var args = new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,
+                    source, 0, key) { RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent };
+                input.RaiseEvent(args);
+                return args.Handled;
+            }
+            void Blur() => input.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(
+                System.Windows.Input.Keyboard.PrimaryDevice, 0, input, null) {
+                RoutedEvent = System.Windows.Input.Keyboard.LostKeyboardFocusEvent
+            });
+
+            input.Text = "980";
+            Require(Press(System.Windows.Input.Key.Enter) && Saved() == "980" && !Invalid(),
+                "合法参数按 Enter 必须立即校验并保存。");
+            var savedText = File.ReadAllText(configPath);
+            File.Delete(configPath);
+            Require(Press(System.Windows.Input.Key.Enter), "Enter 应由参数输入框处理。");
+            Blur();
+            Require(!File.Exists(configPath), "未修改的参数再次按 Enter 或随后失焦不得重复保存。");
+            File.WriteAllText(configPath, savedText);
+
+            input.Text = "978-,";
+            Press(System.Windows.Input.Key.Enter);
+            Require(Invalid() && input.Text == "978-," && Saved() == "980" && rejections == 1,
+                "非法参数按 Enter 必须显示校验错误，保留草稿且不保存。");
+            Press(System.Windows.Input.Key.Enter);
+            Blur();
+            Require(Invalid() && rejections == 1, "未修改的非法草稿再按 Enter 或失焦不重复校验。");
+            Require(Press(System.Windows.Input.Key.Escape) && input.Text == "980" && !Invalid() && Saved() == "980",
+                "非法草稿经 Enter 提交后，Esc 必须恢复已保存值并清除错误。");
+        } finally {
+            logger.EntryWritten -= CountRejection;
+            window.AllowClose();
+            window.Close();
+            Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
+        }
+    }
+
     private static IEnumerable<System.Windows.DependencyObject> ConfigurationDescendants(
         System.Windows.DependencyObject parent)
     {

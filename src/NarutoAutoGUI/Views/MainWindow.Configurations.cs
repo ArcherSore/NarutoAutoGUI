@@ -373,6 +373,9 @@ public partial class MainWindow
             || textBox.Tag is not OptionInputTag tag || tag.Submitted && textBox.Text == tag.Value) {
             return true;
         }
+        if (_invalidInputDrafts.TryGetValue(tag.Key, out var draft) && draft.Text == textBox.Text) {
+            return false;
+        }
         _committingConfigurationInput = true;
         try {
             if (_projectPlan!.CheckInputValue(tag.OptionName, tag.InputName, textBox.Text) is { } problem) {

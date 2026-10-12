@@ -52,6 +52,7 @@ internal static partial class SelfTestRunner
             VerifyConfigurationHeader(logger, testDirectory);
             VerifyBlankParameterLabels(logger, testDirectory);
             VerifyDraftSummarySync(logger, testDirectory);
+            VerifyEnterCommitsInput(logger, testDirectory);
             VerifyParameterInspector(testDirectory, projectDirectory);
             VerifyPlanItemHeaders(logger, testDirectory);
             VerifyParameterInspectorWindow(logger, testDirectory);

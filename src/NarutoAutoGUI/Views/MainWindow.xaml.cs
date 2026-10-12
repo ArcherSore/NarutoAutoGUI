@@ -695,9 +695,14 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    // Esc abandons an unsaved or invalid edit and puts the saved value back.
+    // Enter submits like losing focus; Esc abandons an unsaved or invalid edit and puts the saved value back.
     private void OptionInputTextBox_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
+        if (e.Key == Key.Enter && sender is WpfTextBox { Tag: OptionInputTag } submitted) {
+            _ = CommitOptionInput(submitted);
+            e.Handled = true;
+            return;
+        }
         if (e.Key != Key.Escape || sender is not WpfTextBox { Tag: OptionInputTag tag } editor
             || editor.Text == tag.Value && !_invalidInputDrafts.ContainsKey(tag.Key)) {
             return;

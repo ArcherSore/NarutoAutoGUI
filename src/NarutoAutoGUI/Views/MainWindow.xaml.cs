@@ -34,7 +34,6 @@ using WpfPoint = System.Windows.Point;
 using WpfTextBox = System.Windows.Controls.TextBox;
 using WpfToolTip = System.Windows.Controls.ToolTip;
 using FluentWindow = Wpf.Ui.Controls.FluentWindow;
-using WpfNavigationViewItem = Wpf.Ui.Controls.NavigationViewItem;
 using WpfOrientation = System.Windows.Controls.Orientation;
 using WpfSymbolIcon = Wpf.Ui.Controls.SymbolIcon;
 using WpfSymbolRegular = Wpf.Ui.Controls.SymbolRegular;
@@ -84,7 +83,6 @@ public partial class MainWindow : FluentWindow
     // Labels of the tasks added since the add-task panel was last opened.
     private readonly List<string> _addedSinceShelfOpened = [];
     private readonly Dictionary<string, bool> _taskGroupExpanded = new(StringComparer.Ordinal);
-    private bool _navigationPreferenceLoaded;
     private string _configurationLockText = string.Empty;
     private string? _expandedTaskName;
     private string? _dragTaskName;
@@ -93,6 +91,9 @@ public partial class MainWindow : FluentWindow
     private readonly List<Border> _dropIndicators = [];
     private readonly Dictionary<string, Border> _planItemContainers = new(StringComparer.Ordinal);
     private readonly List<(TextBlock Summary, string TaskName)> _planItemSummaries = [];
+    private readonly Dictionary<string, PlanItemStatusView> _planItemStatuses = new(StringComparer.Ordinal);
+    // Only the timing text changes while a Run is active; cards are never rebuilt for it.
+    private readonly DispatcherTimer _runTimer = new() { Interval = TimeSpan.FromSeconds(1) };
 
     private readonly Dictionary<(Guid, string, string), InputDraft> _invalidInputDrafts = new();
     private readonly Dictionary<(Guid, string, string), WpfTextBox> _optionInputEditors = new();
@@ -109,6 +110,10 @@ public partial class MainWindow : FluentWindow
     {
         internal (Guid, string, string) Key => (ConfigurationId, OptionName, InputName);
     }
+
+    // The badge and status text of a plan card, updated in place as the Run moves on.
+    private sealed record PlanItemStatusView(
+        Border Badge, TextBlock Number, WpfSymbolIcon Icon, TextBlock Status, int Position);
 
     // The parts of a shown inspector row that change in place when a value is saved or a draft appears.
     private sealed record InspectorRowView(
@@ -154,6 +159,9 @@ public partial class MainWindow : FluentWindow
         IsVisibleChanged += MainWindow_IsVisibleChanged;
         StateChanged += MainWindow_StateChanged;
         SizeChanged += (_, _) => UpdateConfigurationLockText();
+        HomeView.SizeChanged += (_, _) => RuntimeSidebarVisibility(
+            HomeView.Visibility == Visibility.Visible ? MainSection.Home : MainSection.Settings);
+        _runTimer.Tick += (_, _) => RefreshRunTiming();
         SwitchSection(MainSection.Home);
         RefreshRuntimeControls();
     }
@@ -230,6 +238,7 @@ public partial class MainWindow : FluentWindow
             EndOnboarding(handled: false);
             RemovePreviewWindowHook();
             RemoveConfigurationWheelHook();
+            _runTimer.Stop();
             _updateCancellation?.Cancel();
             StopPreviewPolling();
             _sessionManager.StateChanged -= OnSessionStateChanged;
@@ -253,42 +262,9 @@ public partial class MainWindow : FluentWindow
         HiddenToTray?.Invoke(this, EventArgs.Empty);
     }
 
-    private void MainNavigation_Loaded(object sender, RoutedEventArgs e)
-    {
-        if (!_navigationPreferenceLoaded) {
-            try {
-                if (File.Exists(NavigationPreferencePath)) {
-                    MainNavigation.IsPaneOpen = File.ReadAllText(NavigationPreferencePath) != "false";
-                }
-            } catch (Exception exception) {
-                _logger.Warn("读取侧栏展开状态失败，保留默认状态。", exception);
-            }
-            _navigationPreferenceLoaded = true;
-            MainNavigation.PaneOpened += MainNavigation_PaneStateChanged;
-            MainNavigation.PaneClosed += MainNavigation_PaneStateChanged;
-        }
-        if (MainNavigation.Template.FindName("PART_ToggleButton", MainNavigation)
-            is Wpf.Ui.Controls.Button { Content: TextBlock title }) {
-            // WPF-UI 4.3 places the pane title 6 DIP to the right of navigation item labels.
-            title.Margin = new Thickness(-6, 0, 0, 0);
-        }
-    }
-
-    private string NavigationPreferencePath => Path.Combine(_applicationDirectory, "config", "navigation-pane.txt");
-
-    private void MainNavigation_PaneStateChanged(object sender, RoutedEventArgs e)
-    {
-        try {
-            Directory.CreateDirectory(Path.GetDirectoryName(NavigationPreferencePath)!);
-            File.WriteAllText(NavigationPreferencePath, MainNavigation.IsPaneOpen ? "true" : "false");
-        } catch (Exception exception) {
-            _logger.Warn("保存侧栏展开状态失败。", exception);
-        }
-    }
-
     private void NavigationItem_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is WpfNavigationViewItem { Tag: string sectionName }
+        if (sender is RailItem { Tag: string sectionName }
             && Enum.TryParse(sectionName, ignoreCase: false, out MainSection section)) {
             SwitchSection(section);
         }
@@ -364,9 +340,35 @@ public partial class MainWindow : FluentWindow
     {
         RuntimeSidebar.Visibility = section == MainSection.Home ? Visibility.Visible : Visibility.Collapsed;
         RuntimeSidebarColumn.Width = section == MainSection.Home
-            ? new GridLength(392)
+            ? new GridLength(SidebarWidth(HomeView.ActualWidth) + RuntimeSidebar.Margin.Right)
             : new GridLength(0);
     }
+
+    // The console takes about a third of the home page, bounded so neither it nor the task area gets cramped.
+    internal static double SidebarWidth(double homeWidth) => Math.Clamp(Math.Round(homeWidth * 0.35), 340, 540);
+
+    private void RuntimeMoreButton_Click(object sender, RoutedEventArgs e)
+    {
+        RuntimeMoreMenu.PlacementTarget = RuntimeMoreButton;
+        RuntimeMoreMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        RuntimeMoreMenu.IsOpen = true;
+    }
+
+    private void OpenLogsMenuItem_Click(object sender, RoutedEventArgs e) => TryOpenLogsDirectory();
+
+    // The same routine as the tray's "结束桌面分身", including its confirmation.
+    private async void EndEnvironmentMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (EndEnvironmentBlocker(CurrentControls) is null) {
+            await _endEnvironmentAsync();
+        }
+    }
+
+    // Why the desktop clone cannot be ended from the menu now, or null when it can.
+    internal static string? EndEnvironmentBlocker(RuntimeControlState state) =>
+        state.Action is RuntimeAction.Recover { Enabled: true } ? null
+        : !state.CommandsAvailable ? "处理中"
+        : !state.Desktop.Enabled ? "未创建" : null;
 
     private async void PrepareEnvironmentButton_Click(object sender, RoutedEventArgs e)
     {
@@ -938,6 +940,7 @@ public partial class MainWindow : FluentWindow
         _taskDescriptionButtons.Clear();
         _optionInputEditors.Clear();
         _inspectorRows.Clear();
+        _planItemStatuses.Clear();
         EmptyPlanPanel.Visibility = project.SelectedTaskNames.Count == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -954,6 +957,7 @@ public partial class MainWindow : FluentWindow
             PlanItemsPanel.Children.Add(container);
         }
         AddDropIndicator();
+        ApplyPlanItemStatuses(CurrentRunProgress);
     }
 
     private Task OpenAfdianAsync()
@@ -1044,7 +1048,9 @@ public partial class MainWindow : FluentWindow
             Margin = new Thickness(expanded ? 6 : 4, 0, 4, 0)
         };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -1055,6 +1061,7 @@ public partial class MainWindow : FluentWindow
         dragHandle.PreviewMouseMove += PlanDragHandle_PreviewMouseMove;
         BindConfigurationEditable(dragHandle);
         header.Children.Add(dragHandle);
+        header.Children.Add(CreatePlanItemBadge(task));
 
         var label = new TextBlock {
             Text = task.Label,
@@ -1101,15 +1108,24 @@ public partial class MainWindow : FluentWindow
             $"{task.Label}，{(hasParameters ? (expanded ? "已展开" : "已折叠") : "没有可配置的参数")}");
         AutomationProperties.SetHelpText(main, hasParameters ? (expanded ? "点击收起参数" : "点击展开参数") : string.Empty);
         main.Click += PlanItemHeader_Click;
-        Grid.SetColumn(main, 1);
+        Grid.SetColumn(main, 2);
         header.Children.Add(main);
+        var status = new TextBlock {
+            FontSize = 12, Margin = new Thickness(4, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed
+        };
+        AutomationProperties.SetLiveSetting(status, AutomationLiveSetting.Polite);
+        Grid.SetColumn(status, 3);
+        header.Children.Add(status);
+        var badge = _planItemStatuses[task.Name];
+        _planItemStatuses[task.Name] = badge with { Status = status };
 
         if (!string.IsNullOrWhiteSpace(task.Description)) {
             var information = CreateIconButton(WpfSymbolRegular.Info16, $"查看 {task.Label} 的任务描述");
             information.Tag = task;
             information.Click += TaskDescriptionButton_Click;
             _taskDescriptionButtons[task.Name] = information;
-            Grid.SetColumn(information, 2);
+            Grid.SetColumn(information, 4);
             header.Children.Add(information);
         }
 
@@ -1117,9 +1133,30 @@ public partial class MainWindow : FluentWindow
         remove.Tag = task;
         remove.Click += RemovePlanItemButton_Click;
         BindConfigurationEditable(remove);
-        Grid.SetColumn(remove, 3);
+        Grid.SetColumn(remove, 5);
         header.Children.Add(remove);
         return header;
+    }
+
+    // The plan position, replaced by the item's state while a Run describes this plan.
+    private Border CreatePlanItemBadge(ProjectTaskChoice task)
+    {
+        var position = RequireProject().SelectedTaskNames.ToList().IndexOf(task.Name);
+        var number = new TextBlock {
+            Text = (position + 1).ToString(), FontSize = 12, FontWeight = FontWeights.SemiBold,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var icon = CreateSymbolIcon(WpfSymbolRegular.Subtract16);
+        icon.Width = icon.Height = icon.FontSize = 14;
+        icon.Visibility = Visibility.Collapsed;
+        var badge = new Border {
+            Width = 24, Height = 24, CornerRadius = new CornerRadius(12), Margin = new Thickness(2, 0, 2, 0),
+            VerticalAlignment = VerticalAlignment.Center, Child = new Grid { Children = { number, icon } }
+        };
+        Grid.SetColumn(badge, 1);
+        _planItemStatuses[task.Name] = new PlanItemStatusView(badge, number, icon, new TextBlock(), position);
+        return badge;
     }
 
     // Drafts are those of the active configuration; sharing is only worked out for the expanded card.
@@ -1729,7 +1766,7 @@ public partial class MainWindow : FluentWindow
     {
         var paused = WindowState == WindowState.Minimized;
         if (paused && !_previewPaused) {
-            ShowPreviewPlaceholder("等待游戏画面");
+            ShowPreviewPlaceholder("窗口恢复后继续显示");
         }
         _previewPaused = paused;
         if (!TryGetPreviewTarget(out var workerId)) {
@@ -1758,12 +1795,7 @@ public partial class MainWindow : FluentWindow
                             || !TryGetPreviewTarget(out var current) || current != workerId) {
                             return;
                         }
-                        if (frame is { State: PreviewState.Streaming, Revision: > 0 }) {
-                            DisplayPreviewFrame(frame, pixels);
-                        } else {
-                            ShowPreviewPlaceholder(frame?.State == PreviewState.WaitingForWindow
-                                ? "等待游戏窗口" : "等待游戏画面");
-                        }
+                        PresentPreviewFrame(frame, pixels);
                     }, cancellation.Token, () => _previewPaused);
             } catch (OperationCanceledException) when (cancellation.IsCancellationRequested) {
             } finally {
@@ -1890,6 +1922,17 @@ public partial class MainWindow : FluentWindow
         UpdatePreviewPolling();
     }
 
+    private void PresentPreviewFrame(PreviewFrameInfo? frame, byte[] pixels)
+    {
+        if (frame is { State: PreviewState.Streaming, Revision: > 0 }) {
+            DisplayPreviewFrame(frame, pixels);
+        } else {
+            ShowPreviewPlaceholder(frame?.State == PreviewState.WaitingForWindow
+                ? "等待游戏窗口" : "等待游戏画面", interrupted: frame is null
+                    || frame.State is PreviewState.Unavailable or PreviewState.Retiring);
+        }
+    }
+
     private void DisplayPreviewFrame(PreviewFrameInfo frame, byte[] pixels)
     {
         if (HomePreviewImage.Source is not WriteableBitmap image
@@ -1899,14 +1942,29 @@ public partial class MainWindow : FluentWindow
             UpdateExpandedPreviewSize();
         }
         image.WritePixels(new Int32Rect(0, 0, frame.Width, frame.Height), pixels, frame.Width * 4, 0);
+        PreviewLiveText.Text = $"实时 · {frame.Width}×{frame.Height}";
+        PreviewLiveIndicator.Visibility = Visibility.Visible;
+        PreviewScreen.Background = (WpfBrush)FindResource("Preview.Live");
         HomePreviewImage.Visibility = Visibility.Visible;
         HomePreviewPlaceholder.Visibility = Visibility.Collapsed;
     }
 
-    private void ShowPreviewPlaceholder(string detail = "请先连接运行环境")
+    // The empty picture says whether a picture is on its way, was cut off, or needs the runtime first.
+    private void ShowPreviewPlaceholder(string? waiting = null, bool interrupted = false)
     {
+        var action = CurrentControls.Action;
+        var (title, detail) = interrupted ? ("画面已中断", "正在重新连接游戏画面…")
+            : waiting is not null ? ("正在连接画面…", waiting)
+            : action is RuntimeAction.Recover or RuntimeAction.Retry { Target: RetryTarget.Prepare }
+                ? ("画面已中断", "运行环境恢复后重新显示")
+            : action is RuntimeAction.InProgress { Kind: ProgressKind.PreparingEnvironment }
+                ? ("正在连接画面…", "运行环境准备中")
+            : ("暂无画面", "准备运行环境后显示游戏画面");
         HomePreviewImage.Source = null;
+        HomePreviewPlaceholder.Tag = title;
         HomePreviewPlaceholder.Content = detail;
+        PreviewLiveIndicator.Visibility = Visibility.Collapsed;
+        PreviewScreen.Background = (WpfBrush)FindResource("Preview.Surface");
         UpdateExpandedPreviewSize();
         HomePreviewImage.Visibility = Visibility.Collapsed;
         HomePreviewPlaceholder.Visibility = Visibility.Visible;
@@ -2035,12 +2093,7 @@ public partial class MainWindow : FluentWindow
         RecoverEnvironmentButton.Visibility = Visible(action is RuntimeAction.Recover);
         RecoverEnvironmentButton.IsEnabled = action is RuntimeAction.Recover { Enabled: true };
         if (action is RuntimeAction.Recover { Reason: var recovery }) {
-            var reason = recovery switch {
-                RecoveryReason.StopUnconfirmed => "任务未能确认结束，MaaNOP 可能仍在运行",
-                RecoveryReason.RuntimeFaulted => "运行环境故障，Worker 无法继续执行任务",
-                RecoveryReason.WorkerLost => "Worker 失联且未确认已退出；也可以等待它重新连接",
-                _ => "上次结束桌面分身未确认"
-            };
+            var reason = RecoveryText(recovery);
             RecoverEnvironmentButton.ToolTip = $"结束桌面分身\n{reason}";
             AutomationProperties.SetHelpText(RecoverEnvironmentButton, reason);
         }
@@ -2055,7 +2108,12 @@ public partial class MainWindow : FluentWindow
                 ? "正在结束桌面分身" : $"正在{OperationLabel(operation)}";
             RuntimeHeaderProgressRing.ToolTip = progressText;
             AutomationProperties.SetName(RuntimeHeaderProgressRing, progressText);
+            RuntimeProgressText.Text = $"{progressText}…";
         }
+        ApplyMoreMenu(state);
+        var progress = CurrentRunProgress;
+        ApplyRuntimeStatus(state, progress);
+        ApplyRunProgress(progress);
 
         SetValue(ConfigurationEditableProperty, state.ConfigurationEditable);
         if (!state.ConfigurationEditable && _taskShelfExpanded) {
@@ -2073,16 +2131,241 @@ public partial class MainWindow : FluentWindow
         // holds the detailed message.
         static void Explain(FrameworkElement button, string toolTip, StartBlocker? blocker)
         {
-            var reason = blocker switch {
-                StartBlocker.CommandsUnavailable => "当前操作完成后可开始任务",
-                StartBlocker.ProjectNotLoaded => "MaaNOP 项目未加载，无法开始任务",
-                StartBlocker.NoTasks => "请先在执行计划中添加任务",
-                StartBlocker.ConfigurationInvalid => "当前配置未通过校验，请先修正任务参数",
-                StartBlocker.RuntimeNotReady => "运行环境尚未就绪，请稍候",
-                _ => null
-            };
+            var reason = blocker is { } value ? StartBlockerText(value) : null;
             button.ToolTip = reason ?? toolTip;
             AutomationProperties.SetHelpText(button, reason ?? string.Empty);
+        }
+    }
+
+    private static string StartBlockerText(StartBlocker blocker) => blocker switch {
+        StartBlocker.CommandsUnavailable => "当前操作完成后可开始任务",
+        StartBlocker.ProjectNotLoaded => "MaaNOP 项目未加载，无法开始任务",
+        StartBlocker.NoTasks => "请先在执行计划中添加任务",
+        StartBlocker.ConfigurationInvalid => "当前配置未通过校验，请先修正任务参数",
+        _ => "运行环境尚未就绪，请稍候"
+    };
+
+    private static string RecoveryText(RecoveryReason reason) => reason switch {
+        RecoveryReason.StopUnconfirmed => "任务未能确认结束，MaaNOP 可能仍在运行",
+        RecoveryReason.RuntimeFaulted => "运行环境故障，Worker 无法继续执行任务",
+        RecoveryReason.WorkerLost => "Worker 失联且未确认已退出；也可以等待它重新连接",
+        _ => "上次结束桌面分身未确认"
+    };
+
+    private void ApplyMoreMenu(RuntimeControlState state)
+    {
+        var hide = state.Desktop.Action == DesktopAction.Hide;
+        DesktopMenuItem.Header = hide ? "隐藏桌面分身" : "显示桌面分身";
+        DesktopMenuIcon.Symbol = hide ? WpfSymbolRegular.EyeOff16 : WpfSymbolRegular.Eye16;
+        DesktopMenuItem.IsEnabled = state.Desktop.Enabled;
+        DesktopMenuItem.InputGestureText = state.Desktop.Enabled ? string.Empty : "未就绪";
+        ExpandPreviewMenuItem.IsEnabled = state.PreviewWorker is not null;
+        ExpandPreviewMenuItem.InputGestureText = state.PreviewWorker is null ? "暂无画面" : string.Empty;
+        var endBlocker = EndEnvironmentBlocker(state);
+        EndEnvironmentMenuItem.IsEnabled = endBlocker is null;
+        EndEnvironmentMenuItem.InputGestureText = endBlocker ?? string.Empty;
+    }
+
+    private RunProgressView? CurrentRunProgress => _projectPlan is { } project
+        ? RunProgress.Derive(_workerSnapshot.WorkerSnapshot, project.SelectedTaskNames) : null;
+
+    private enum StatusTone { Idle, Busy, Ok, Run, Bad }
+
+    // The pill, title and detail restate the action RuntimeControls chose; progress only adds the current item.
+    private void ApplyRuntimeStatus(RuntimeControlState state, RunProgressView? progress)
+    {
+        var planSummary = _projectPlan is { } project ? $"{project.SelectedTaskNames.Count} 项任务待执行" : "项目未加载";
+        var current = progress?.Current;
+        var (tone, pill, title, detail, warn) = state.Action switch {
+            RuntimeAction.Prepare => (StatusTone.Idle, "未准备", "开始任务前需要准备运行环境",
+                "将准备桌面分身、Worker 和游戏", false),
+            RuntimeAction.InProgress { Kind: ProgressKind.PreparingEnvironment } => (StatusTone.Busy, "准备中",
+                "正在准备运行环境", PreparationStage(), false),
+            RuntimeAction.InProgress { Kind: ProgressKind.StartingRun } => (StatusTone.Busy, "启动中", "正在开始任务",
+                "正在把执行计划交给 Worker…", false),
+            RuntimeAction.InProgress { Kind: ProgressKind.StoppingRun } => (StatusTone.Busy, "停止中", "正在停止任务",
+                "等待当前任务安全结束…", false),
+            RuntimeAction.InProgress => (StatusTone.Busy, "处理中", "正在结束桌面分身", "正在注销 Child Session…", false),
+            RuntimeAction.Stop when current is not null => (StatusTone.Run, "运行中",
+                $"第 {progress!.CurrentIndex + 1} / {progress.Total} 项：{current.TaskLabel}",
+                $"本项已运行 {ElapsedText(current.StartedAtUtc, null)}", false),
+            RuntimeAction.Stop => (StatusTone.Run, "运行中", "任务运行中", string.Empty, false),
+            RuntimeAction.Start { Blocker: { } blocker } => (StatusTone.Ok, "就绪", planSummary,
+                StartBlockerText(blocker), true),
+            RuntimeAction.Start => (StatusTone.Ok, "就绪", planSummary,
+                $"{ActiveConfigurationName} · 运行环境已就绪{(progress is null ? "" : "，可以再次开始")}", false),
+            RuntimeAction.Retry { Target: RetryTarget.Prepare } => (StatusTone.Bad, "需重试", "运行环境未就绪",
+                "重新准备运行环境后再开始任务", false),
+            RuntimeAction.Retry retry => (StatusTone.Bad, "需重试", "上次运行失败",
+                retry.Blocker is { } blocker ? StartBlockerText(blocker) : "修正后可以重新开始任务",
+                retry.Blocker is not null),
+            RuntimeAction.Recover { Reason: var reason } => (StatusTone.Bad, "故障", RecoveryTitle(reason),
+                RecoveryText(reason), false),
+            _ => (StatusTone.Idle, string.Empty, string.Empty, string.Empty, false)
+        };
+        var (surface, foreground) = tone switch {
+            StatusTone.Busy => ("Brush.Warning.Surface", "Brush.Warning.Foreground"),
+            StatusTone.Ok => ("Brush.TasksAccent.Surface", "Brush.Success"),
+            StatusTone.Run => ("Brush.Primary.Surface", "Brush.Primary"),
+            StatusTone.Bad => ("Brush.Error.Surface", "Brush.Error"),
+            _ => ("Brush.Surface.Disabled", "Brush.Text.Secondary")
+        };
+        RuntimeStatusPill.Background = (WpfBrush)FindResource(surface);
+        RuntimeStatusText.Foreground = (WpfBrush)FindResource(foreground);
+        RuntimeStatusText.Text = pill;
+        AutomationProperties.SetName(RuntimeStatusPill, $"运行状态：{pill}");
+        RuntimeStatusTitle.Text = title;
+        RuntimeStatusDetail.Text = detail;
+        RuntimeStatusDetail.Visibility = detail.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        RuntimeStatusDetail.Foreground =
+            (WpfBrush)FindResource(warn ? "Brush.Warning.Foreground" : "Brush.Text.Secondary");
+
+        static string RecoveryTitle(RecoveryReason reason) => reason switch {
+            RecoveryReason.StopUnconfirmed => "任务未能确认结束",
+            RecoveryReason.RuntimeFaulted => "运行环境故障",
+            RecoveryReason.WorkerLost => "Worker 失联",
+            _ => "结束桌面分身未确认"
+        };
+    }
+
+    // Worker observations do not report game launch progress; only describe the stages they confirm.
+    private string PreparationStage() =>
+        _sessionSnapshot.State is not (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden)
+            ? "正在连接桌面分身…"
+            : _workerSnapshot.Observation == WorkerObservation.WorkerNotStarted ? "桌面分身已连接，等待 Worker 启动…"
+            : _workerSnapshot.Observation == WorkerObservation.WorkerStarting ? "正在启动 Worker…"
+            : _workerSnapshot is { Observation: WorkerObservation.Connected, SnapshotFresh: false }
+                ? "正在同步 Worker 状态…" : "正在完成运行环境准备…";
+
+    private string ActiveConfigurationName => _projectPlan is { } project
+        ? project.Configurations.Single(item => item.Id == project.ActiveConfigurationId).Name : string.Empty;
+
+    private static string ElapsedText(DateTime? startedAtUtc, DateTime? endedAtUtc) =>
+        RunProgress.Elapsed(startedAtUtc, endedAtUtc, DateTime.UtcNow) is { } elapsed
+            ? RunProgress.FormatDuration(elapsed) : "00:00";
+
+    // RunProgress already hides a Last Run whose plan does not match the configuration on screen.
+    private void ApplyRunProgress(RunProgressView? progress)
+    {
+        var shown = progress is not null;
+        RunProgressPanel.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+        if (progress is not null) {
+            RunProgressCaption.Text = RunProgress.Caption(progress);
+            ApplyRunElapsed(progress);
+            AutomationProperties.SetName(RunProgressBar, RunProgress.AccessibleCaption(progress));
+        }
+        _displayedProgress = shown ? progress : null;
+        DrawRunProgressBar();
+        ApplyPlanItemStatuses(progress);
+        if (progress is { Active: true }) {
+            _runTimer.Start();
+        } else {
+            _runTimer.Stop();
+        }
+    }
+
+    private RunProgressView? _displayedProgress;
+
+    private void RefreshRunTiming()
+    {
+        var progress = CurrentRunProgress;
+        if (progress is not { Active: true }) {
+            return;
+        }
+        ApplyRunElapsed(progress);
+        if (CurrentControls.Action is RuntimeAction.Stop && progress.Current is { } current) {
+            RuntimeStatusDetail.Text = $"本项已运行 {ElapsedText(current.StartedAtUtc, null)}";
+        }
+        if (_projectPlan is not { } project
+            || !progress.Items.Select(item => item.TaskName).SequenceEqual(project.SelectedTaskNames)) {
+            return;
+        }
+        foreach (var view in _planItemStatuses.Values) {
+            var item = progress.Items[view.Position];
+            if (item.State == PlanItemProgress.Running) {
+                view.Status.Text = $"运行中 · {ElapsedText(item.StartedAtUtc, null)}";
+            }
+        }
+    }
+
+    private void ApplyRunElapsed(RunProgressView progress) => RunProgressElapsed.Text = progress.Active
+        ? $"总用时 {ElapsedText(progress.StartedAtUtc, null)}"
+        : $"用时 {ElapsedText(progress.StartedAtUtc, progress.EndedAtUtc)}";
+
+    private void RunProgressBar_SizeChanged(object sender, SizeChangedEventArgs e) => DrawRunProgressBar();
+
+    private void PreviewScreen_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.WidthChanged) {
+            PreviewScreen.Height = e.NewSize.Width * 9 / 16;
+        }
+    }
+
+    // Fill covers finished items only; the running item is marked by its position, never by an invented percentage.
+    private void DrawRunProgressBar()
+    {
+        RunProgressBar.Children.Clear();
+        if (_displayedProgress is not { Total: > 0 } progress || RunProgressBar.ActualWidth <= 0) {
+            return;
+        }
+        var width = RunProgressBar.ActualWidth;
+        var segment = width / progress.Total;
+        void Add(double left, double size, string brush)
+        {
+            var bar = new System.Windows.Shapes.Rectangle {
+                Width = Math.Max(0, size), Height = 6, Fill = (WpfBrush)FindResource(brush)
+            };
+            Canvas.SetLeft(bar, left);
+            RunProgressBar.Children.Add(bar);
+        }
+        Add(0, width, "Brush.Progress.Track");
+        Add(0, segment * progress.Processed, "Brush.Primary");
+        if (progress.CurrentIndex is { } index) {
+            Add(segment * index, segment, "Brush.Primary.Border");
+        }
+        for (var item = 0; item < progress.Total; item++) {
+            if (progress.Items[item].State is PlanItemProgress.Failed or PlanItemProgress.Stopped) {
+                Add(segment * (item + 1) - 2, 2, progress.Items[item].State == PlanItemProgress.Failed
+                    ? "Brush.Error" : "Brush.Border.Strong");
+            }
+        }
+        RunProgressBar.Clip = new RectangleGeometry(new Rect(0, 0, width, 6), 3, 3);
+    }
+
+    // Cards show their item's state only while the Run describes this exact plan; otherwise they show their number.
+    private void ApplyPlanItemStatuses(RunProgressView? progress)
+    {
+        var items = progress is not null && _projectPlan is { } project
+            && progress.Items.Select(item => item.TaskName).SequenceEqual(project.SelectedTaskNames)
+                ? progress.Items : null;
+        foreach (var view in _planItemStatuses.Values) {
+            var item = items?[view.Position];
+            var (surface, foreground, symbol) = item?.State switch {
+                PlanItemProgress.Running => ("Brush.Primary.Surface", "Brush.Primary", (WpfSymbolRegular?)null),
+                PlanItemProgress.Succeeded => ("Brush.Success", "Brush.Text.Inverse", WpfSymbolRegular.Checkmark16),
+                PlanItemProgress.Failed => ("Brush.Error", "Brush.Text.Inverse", WpfSymbolRegular.Dismiss16),
+                PlanItemProgress.Stopped or PlanItemProgress.NotRun => ("Brush.Surface.Disabled", "Brush.Text.Muted",
+                    WpfSymbolRegular.Subtract16),
+                _ => ("Brush.Surface.Disabled", "Brush.Text.Secondary", null)
+            };
+            view.Badge.Background = (WpfBrush)FindResource(surface);
+            view.Number.Foreground = view.Icon.Foreground = (WpfBrush)FindResource(foreground);
+            view.Number.Visibility = symbol is null ? Visibility.Visible : Visibility.Collapsed;
+            view.Icon.Visibility = symbol is null ? Visibility.Collapsed : Visibility.Visible;
+            view.Icon.Symbol = symbol ?? WpfSymbolRegular.Subtract16;
+            view.Status.Text = item is null ? string.Empty : item.State == PlanItemProgress.Running
+                ? $"运行中 · {ElapsedText(item.StartedAtUtc, null)}" : RunProgress.StateText(item.State);
+            view.Status.Foreground = (WpfBrush)FindResource(item?.State switch {
+                PlanItemProgress.Running => "Brush.Primary",
+                PlanItemProgress.Succeeded => "Brush.Success",
+                PlanItemProgress.Failed => "Brush.Error.Foreground",
+                _ => "Brush.Text.Muted"
+            });
+            view.Status.FontWeight = item?.State is PlanItemProgress.Running or PlanItemProgress.Failed
+                ? FontWeights.SemiBold : FontWeights.Normal;
+            view.Status.Visibility = item is null ? Visibility.Collapsed : Visibility.Visible;
+            AutomationProperties.SetItemStatus(view.Badge,
+                item is null ? string.Empty : RunProgress.StateText(item.State));
         }
     }
 

@@ -1,59 +1,45 @@
+using System.Reflection;
 using System.Windows;
-using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
-using Wpf.Ui.Controls;
+using NarutoAutoGUI.Views;
 
 namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
-    private static void VerifyNavigationPreference(AppLogger logger, string testDirectory)
+    // The rail keeps one fixed width with no expand toggle, and a navigation preference left by an older version is
+    // simply ignored.
+    private static void VerifyNavigationRail(AppLogger logger, string testDirectory)
     {
-        var scenario = Path.Combine(testDirectory, "navigation-preference");
-        RunOnboardingScenario(logger, scenario, (window, directory) => {
-            var navigation = (NavigationView)window.FindName("MainNavigation");
-            var path = Path.Combine(directory, "config", "navigation-pane.txt");
-            if (!navigation.IsPaneOpen || File.Exists(path)) {
-                throw new InvalidOperationException("侧栏首次加载应默认展开且不写入偏好。");
+        string? preference = null;
+        RunOnboardingScenario(logger, Path.Combine(testDirectory, "navigation-rail"), (window, directory) => {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            var rail = (FrameworkElement)window.FindName("MainNavigation");
+            Require(rail.ActualWidth == 64 && window.FindName("PART_ToggleButton") is null
+                && File.ReadAllText(preference!) == "false", "导航栏应固定为 64 像素、没有展开入口，并忽略旧偏好。");
+            var home = (RailItem)window.FindName("HomeNavigationItem");
+            var settings = (RailItem)window.FindName("SettingsNavigationItem");
+            ClickOnboarding(window, "SettingsNavigationItem");
+            Require(settings.IsActive && !home.IsActive && ((UIElement)window.FindName("SettingsView")).IsVisible
+                && !((UIElement)window.FindName("HomeView")).IsVisible, "点击设置应切换到设置页并标记选中项。");
+            ClickOnboarding(window, "HomeNavigationItem");
+            Require(home.IsActive && !settings.IsActive && ((UIElement)window.FindName("HomeView")).IsVisible,
+                "点击首页应回到首页。");
+            var state = typeof(MainWindow).GetField("_updateCheckState", flags)!;
+            var states = state.FieldType;
+            foreach (var (name, badge, loading) in new[] {
+                ("UpdateAvailable", true, false), ("Checking", false, true), ("UpToDate", false, false)
+            }) {
+                state.SetValue(window, Enum.Parse(states, name));
+                InvokeOnboarding(window, "RefreshUpdatePresentation");
+                Require(((UIElement)window.FindName("UpdateNavigationBadge")).IsVisible == badge
+                    && ((UIElement)window.FindName("UpdateNavigationLoading")).IsVisible == loading,
+                    $"更新状态 {name} 的提示点或加载指示不符。");
             }
-            Toggle(navigation);
-            if (navigation.IsPaneOpen || File.ReadAllText(path) != "false") {
-                throw new InvalidOperationException("点击菜单折叠侧栏必须保存偏好。");
-            }
-            window.Hide();
-            window.Show();
-            PumpOnboarding();
-            if (navigation.IsPaneOpen) {
-                throw new InvalidOperationException("隐藏后重新显示不能重置侧栏状态。");
-            }
+        }, directory => {
+            preference = Path.Combine(directory, "config", "navigation-pane.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(preference)!);
+            File.WriteAllText(preference, "false");
         });
-        RunOnboardingScenario(logger, scenario, (window, directory) => {
-            var navigation = (NavigationView)window.FindName("MainNavigation");
-            var path = Path.Combine(directory, "config", "navigation-pane.txt");
-            if (navigation.IsPaneOpen || File.ReadAllText(path) != "false") {
-                throw new InvalidOperationException("重新创建窗口必须恢复折叠状态。");
-            }
-            Toggle(navigation);
-            if (!navigation.IsPaneOpen || File.ReadAllText(path) != "true") {
-                throw new InvalidOperationException("重新展开侧栏必须保存偏好。");
-            }
-            using var locked = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            Toggle(navigation);
-            if (navigation.IsPaneOpen || File.ReadAllText(path) != "true") {
-                throw new InvalidOperationException("偏好写入失败不能阻止侧栏切换或损坏旧偏好。");
-            }
-        });
-        RunOnboardingScenario(logger, scenario, (window, directory) => {
-            if (!((NavigationView)window.FindName("MainNavigation")).IsPaneOpen) {
-                throw new InvalidOperationException("重新创建窗口必须恢复展开状态。");
-            }
-        });
-        Console.WriteLine("NAVIGATION SELF-TEST PASS: default, menu toggle, reopen, hide/show and write failure.");
-
-        static void Toggle(NavigationView navigation)
-        {
-            var button = (UIElement)navigation.Template.FindName("PART_ToggleButton", navigation);
-            button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-            PumpOnboarding();
-        }
+        Console.WriteLine("NAVIGATION SELF-TEST PASS: fixed rail, sections, update indicators, legacy preference.");
     }
 }

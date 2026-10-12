@@ -23,7 +23,10 @@ internal static partial class SelfTestRunner
             using var logger = new AppLogger(logDirectory);
             if (runtimeControlsOnly) {
                 VerifyRuntimeControlScenarios();
+                VerifyRunProgressScenarios();
                 VerifyRuntimeControlMapping(logger, testDirectory);
+                VerifyRuntimeConsole(logger, testDirectory);
+                VerifyRunProgressWiring(logger, testDirectory);
                 VerifyRuntimeControlWiring(logger, testDirectory);
                 VerifyRuntimeEnvironment(logger, testDirectory);
                 Console.WriteLine("RUNTIME CONTROLS SELF-TEST PASS");
@@ -34,7 +37,7 @@ internal static partial class SelfTestRunner
             VerifyDebugImageCleanup(logger, testDirectory);
             VerifyDeclarativeSettings(logger, testDirectory);
             VerifyDiagnosticSettings(logger, testDirectory);
-            VerifyNavigationPreference(logger, testDirectory);
+            VerifyNavigationRail(logger, testDirectory);
             if (supportOnly) {
                 Console.WriteLine("SUPPORT SELF-TEST PASS");
                 return 0;
@@ -76,7 +79,10 @@ internal static partial class SelfTestRunner
             VerifyWorkerLogSequenceTracker();
             VerifyRunLogRouting(logger);
             VerifyRuntimeControlScenarios();
+            VerifyRunProgressScenarios();
             VerifyRuntimeControlMapping(logger, testDirectory);
+            VerifyRuntimeConsole(logger, testDirectory);
+            VerifyRunProgressWiring(logger, testDirectory);
             VerifyRuntimeControlWiring(logger, testDirectory);
             VerifyRuntimeEnvironment(logger, testDirectory);
             Task.Run(() => WorkerCoordinatorSelfTest.RunAsync(

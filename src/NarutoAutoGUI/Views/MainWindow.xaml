@@ -22,6 +22,50 @@
                  WindowStartupLocation="CenterScreen">
     <ui:FluentWindow.Resources>
         <views:ScrollEdgeVisibilityConverter x:Key="Scroll.EdgeVisibility" />
+        <Style x:Key="Rail.Label" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,3,0,0" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Foreground"
+                    Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=views:RailItem}}" />
+            <Setter Property="FontWeight"
+                    Value="{Binding FontWeight, RelativeSource={RelativeSource AncestorType=views:RailItem}}" />
+        </Style>
+        <Style x:Key="Rail.Item" TargetType="views:RailItem">
+            <Setter Property="Width" Value="54" />
+            <Setter Property="Height" Value="52" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+            <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource ControlFocusVisualStyle}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="views:RailItem">
+                        <Grid>
+                            <Border Background="{TemplateBinding Background}" CornerRadius="8">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <Border x:Name="Indicator" Width="3" Height="20" Margin="-5,0,0,0" CornerRadius="1.5"
+                                    HorizontalAlignment="Left" Visibility="Collapsed"
+                                    Background="{StaticResource Brush.Primary}" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{StaticResource Brush.Rail.Hover}" />
+                                <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+                            </Trigger>
+                            <Trigger Property="IsActive" Value="True">
+                                <Setter Property="Background" Value="{StaticResource Brush.Rail.Active}" />
+                                <Setter Property="Foreground" Value="{StaticResource Brush.Primary}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                                <Setter TargetName="Indicator" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <!-- Configuration tabs are segments on one tinted bar. The scroll bar stays hidden; edge fades show where
              more tabs are clipped, and the add button sits outside the scroller. -->
         <Color x:Key="Configuration.BarColor">#E9EDF3</Color>
@@ -254,12 +298,26 @@
         <SolidColorBrush x:Key="Preview.Surface" Color="#F2F6FB" />
         <Geometry x:Key="Preview.Monitor">M3,3 L21,3 Q23,3 23,5 L23,18 Q23,20 21,20
             L3,20 Q1,20 1,18 L1,5 Q1,3 3,3 M12,20 L12,24 M7,24 L17,24</Geometry>
+        <Geometry x:Key="Preview.Expand">M7,1 L2,1 Q1,1 1,2 L1,7 M17,1 L22,1 Q23,1 23,2 L23,7
+            M1,17 L1,22 Q1,23 2,23 L7,23 M17,23 L22,23 Q23,23 23,22 L23,17</Geometry>
+        <Style x:Key="Preview.ExpandIcon" TargetType="Path">
+            <Setter Property="Data" Value="{StaticResource Preview.Expand}" />
+            <Setter Property="Width" Value="13" />
+            <Setter Property="Height" Value="13" />
+            <Setter Property="Stretch" Value="Uniform" />
+            <Setter Property="StrokeThickness" Value="2" />
+            <Setter Property="StrokeStartLineCap" Value="Round" />
+            <Setter Property="StrokeEndLineCap" Value="Round" />
+            <Setter Property="Stroke"
+                    Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}" />
+        </Style>
         <DataTemplate x:Key="Preview.Empty">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Path Data="{StaticResource Preview.Monitor}" Width="34" Height="32" Stretch="Uniform"
                       Stroke="#B6C2D1" StrokeThickness="1.8" StrokeStartLineCap="Round"
-                      StrokeEndLineCap="Round" Margin="0,0,0,14" />
-                <TextBlock Text="暂无截图" FontSize="14" FontWeight="SemiBold" TextAlignment="Center"
+                      StrokeEndLineCap="Round" Margin="0,0,0,8" />
+                <TextBlock Text="{Binding Tag, RelativeSource={RelativeSource AncestorType=ContentControl}}"
+                           FontSize="13" FontWeight="SemiBold" TextAlignment="Center"
                            Foreground="{Binding Foreground,
                                RelativeSource={RelativeSource AncestorType=ContentControl}}" />
                 <TextBlock Text="{Binding}" FontSize="11" TextAlignment="Center" Margin="0,6,0,0"
@@ -296,43 +354,100 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="Preview.DesktopButton" TargetType="{x:Type Button}"
-               BasedOn="{StaticResource BaseButtonStyle}">
-            <Setter Property="Background" Value="{StaticResource Brush.Primary.Surface}" />
-            <Setter Property="BorderBrush" Value="{StaticResource Brush.Primary.Border}" />
+        <!-- Runtime console: one card whose sections are divided by hairlines. -->
+        <Style x:Key="Console.Card" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Foreground" Value="{StaticResource Brush.Primary}" />
-            <Setter Property="Height" Value="34" />
-            <Setter Property="MinWidth" Value="112" />
-            <Setter Property="Padding" Value="12,4" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect BlurRadius="18" ShadowDepth="4" Direction="270" Opacity="0.06"
+                                      Color="#182230" />
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Console.Section" TargetType="Border">
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Subtle}" />
+            <Setter Property="BorderThickness" Value="0,1,0,0" />
+        </Style>
+        <Style x:Key="Console.SectionHeader" TargetType="Grid">
+            <Setter Property="Height" Value="42" />
+            <Setter Property="Margin" Value="16,0,8,0" />
+        </Style>
+        <Style x:Key="Console.SectionTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+        </Style>
+        <Style x:Key="Console.Pill" TargetType="Border">
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Padding" Value="8,0,9,0" />
+            <Setter Property="CornerRadius" Value="11" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="Console.ButtonText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground"
+                    Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+        </Style>
+        <Style x:Key="Console.PrimaryButton" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="14,0" />
+        </Style>
+        <Style x:Key="Console.NeutralButton" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="14,0" />
+            <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
             <Style.Triggers>
-                <Trigger Property="Tag" Value="True">
-                    <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
-                    <Setter Property="BorderBrush" Value="{StaticResource Preview.Border}" />
-                    <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
-                </Trigger>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{StaticResource Brush.Primary.SurfaceHover}" />
+                    <Setter Property="Background" Value="{StaticResource Brush.Surface.Subdued}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Strong}" />
                 </Trigger>
-                <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="{StaticResource Brush.Primary.Border}" />
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="Console.DangerButton" TargetType="Button" BasedOn="{StaticResource Console.NeutralButton}">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Error.Foreground}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Error.Border}" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Brush.Error.Surface}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource Brush.Error}" />
                 </Trigger>
-                <MultiTrigger>
-                    <MultiTrigger.Conditions>
-                        <Condition Property="Tag" Value="True" />
-                        <Condition Property="IsMouseOver" Value="True" />
-                    </MultiTrigger.Conditions>
-                    <Setter Property="Background" Value="{StaticResource Brush.Surface.Disabled}" />
-                </MultiTrigger>
-                <MultiTrigger>
-                    <MultiTrigger.Conditions>
-                        <Condition Property="Tag" Value="True" />
-                        <Condition Property="IsPressed" Value="True" />
-                    </MultiTrigger.Conditions>
-                    <Setter Property="Background" Value="{StaticResource Brush.Border}" />
-                </MultiTrigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Opacity" Value="0.45" />
+            </Style.Triggers>
+        </Style>
+        <!-- Shortcuts over the live picture appear while it is hovered or holds keyboard focus. -->
+        <Style x:Key="Preview.Overlay" TargetType="StackPanel">
+            <Setter Property="Opacity" Value="0" />
+            <Style.Triggers>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding Visibility, ElementName=HomePreviewImage}" Value="Visible" />
+                        <Condition Binding="{Binding IsMouseOver, ElementName=PreviewCardContent}" Value="True" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Opacity" Value="1" />
+                </MultiDataTrigger>
+                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                    <Setter Property="Opacity" Value="1" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="Preview.OverlayButton" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Background" Value="#A80A0E14" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="White" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#D90A0E14" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -375,20 +490,6 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
-        <!-- The three runtime sidebar cards share one surface, header rhythm and title style. -->
-        <Style x:Key="Sidebar.Card" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
-            <Setter Property="BorderBrush" Value="{StaticResource Preview.Border}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
-        </Style>
-        <Style x:Key="Sidebar.CardHeader" TargetType="Grid">
-            <Setter Property="Height" Value="32" />
-            <Setter Property="Margin" Value="16,8,12,8" />
-        </Style>
-        <Style x:Key="Sidebar.CardTitle" TargetType="TextBlock" BasedOn="{StaticResource SectionTitleTextStyle}">
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
     </ui:FluentWindow.Resources>
     <Grid x:Name="WindowOverlayRoot">
     <Grid x:Name="MainWindowContent">
@@ -428,52 +529,52 @@
             </ui:TitleBar.Icon>
         </ui:TitleBar>
 
-        <ui:NavigationView x:Name="MainNavigation"
-                           Loaded="MainNavigation_Loaded"
-                           Grid.Row="1"
-                           PaneDisplayMode="Left"
-                           PaneTitle="菜单"
-                           OpenPaneLength="168"
-                           IsPaneOpen="True"
-                           IsPaneVisible="True"
-                           IsPaneToggleVisible="True"
-                           IsBackButtonVisible="Collapsed"
-                           IsTopSeparatorVisible="False"
-                           HeaderVisibility="Collapsed"
-                           FrameMargin="0">
-            <ui:NavigationView.MenuItems>
-                <ui:NavigationViewItem x:Name="HomeNavigationItem"
-                                       Content="首页"
-                                       Icon="{ui:SymbolIcon Home24}"
-                                       IsActive="True"
-                                       Tag="Home"
-                                       Click="NavigationItem_Click" />
-            </ui:NavigationView.MenuItems>
-            <ui:NavigationView.FooterMenuItems>
-                <ui:NavigationViewItem x:Name="UpdateNavigationItem" Content="更新" Click="ViewUpdate_Click">
-                    <ui:NavigationViewItem.Icon>
-                        <views:NavigationIcon>
-                            <Grid Width="20" Height="20" HorizontalAlignment="Center"
-                                  VerticalAlignment="Center" IsHitTestVisible="False">
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="64" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <!-- A fixed 64 px rail on every page: icon above label, home on top, update and settings at the bottom. -->
+            <Border x:Name="MainNavigation" BorderThickness="0,0,1,0" BorderBrush="{StaticResource Rail.Border}"
+                    Background="{StaticResource Brush.Canvas}" AutomationProperties.Name="导航">
+                <DockPanel Margin="0,6,0,10">
+                    <views:RailItem x:Name="HomeNavigationItem" DockPanel.Dock="Top" Tag="Home" IsActive="True"
+                                    Style="{StaticResource Rail.Item}" ToolTip="首页"
+                                    AutomationProperties.Name="首页" Click="NavigationItem_Click">
+                        <StackPanel>
+                            <ui:SymbolIcon Symbol="Home24" FontSize="20" HorizontalAlignment="Center" />
+                            <TextBlock Text="首页" Style="{StaticResource Rail.Label}" />
+                        </StackPanel>
+                    </views:RailItem>
+                    <views:RailItem x:Name="SettingsNavigationItem" DockPanel.Dock="Bottom" Tag="Settings"
+                                    Style="{StaticResource Rail.Item}" ToolTip="设置"
+                                    AutomationProperties.Name="设置" Click="NavigationItem_Click">
+                        <StackPanel>
+                            <ui:SymbolIcon Symbol="Settings24" FontSize="20" HorizontalAlignment="Center" />
+                            <TextBlock Text="设置" Style="{StaticResource Rail.Label}" />
+                        </StackPanel>
+                    </views:RailItem>
+                    <views:RailItem x:Name="UpdateNavigationItem" DockPanel.Dock="Bottom"
+                                    Style="{StaticResource Rail.Item}" Click="ViewUpdate_Click">
+                        <StackPanel>
+                            <Grid Width="20" Height="20" HorizontalAlignment="Center" IsHitTestVisible="False">
                                 <ui:SymbolIcon x:Name="UpdateNavigationIcon" Symbol="Alert24" FontSize="20" />
-                                <Ellipse x:Name="UpdateNavigationBadge" Width="6" Height="6"
-                                         HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0"
-                                         Fill="#F53F3F" Stroke="White" StrokeThickness="1" Visibility="Collapsed" />
+                                <Ellipse x:Name="UpdateNavigationBadge" Width="7" Height="7"
+                                         HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-1,-2,0"
+                                         Fill="#E03131" Stroke="{StaticResource Brush.Canvas}" StrokeThickness="1.5"
+                                         Visibility="Collapsed" />
                                 <ui:ProgressRing x:Name="UpdateNavigationLoading" Width="14" Height="14"
                                                  IsIndeterminate="True" Visibility="Collapsed"
                                                  Foreground="{StaticResource Brush.Primary}" />
                             </Grid>
-                        </views:NavigationIcon>
-                    </ui:NavigationViewItem.Icon>
-                </ui:NavigationViewItem>
-                <ui:NavigationViewItem x:Name="SettingsNavigationItem"
-                                       Content="设置"
-                                       Icon="{ui:SymbolIcon Settings24}"
-                                       Tag="Settings"
-                                       Click="NavigationItem_Click" />
-            </ui:NavigationView.FooterMenuItems>
+                            <TextBlock Text="更新" Style="{StaticResource Rail.Label}" />
+                        </StackPanel>
+                    </views:RailItem>
+                    <Border />
+                </DockPanel>
+            </Border>
 
-            <ui:NavigationView.ContentOverlay>
+            <Grid Grid.Column="1">
                 <Grid Background="{StaticResource Brush.Canvas}">
                     <!-- Settings owns its definition-driven view and namescope. -->
                     <Grid x:Name="HomeView">
@@ -706,206 +807,268 @@
                     </Grid>
 
                         </Grid>
-                        <Grid x:Name="RuntimeSidebar" Grid.Column="1" Margin="0,12,12,12">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" MinHeight="120" />
-                            </Grid.RowDefinitions>
-                            <Border x:Name="RuntimeControlCard" Grid.Row="0" Margin="0,0,0,10"
-                                    Style="{StaticResource Sidebar.Card}">
-                                <Border.Resources>
-                                    <Style x:Key="RuntimeActionIconButtonStyle" TargetType="{x:Type Button}"
-                                           BasedOn="{StaticResource CompactIconButtonStyle}">
-                                        <Setter Property="Width" Value="32" />
-                                        <Setter Property="Height" Value="32" />
-                                        <Setter Property="Padding" Value="0" />
-                                        <Setter Property="Background" Value="{StaticResource Brush.Primary.Surface}" />
-                                        <Setter Property="BorderThickness" Value="1" />
-                                        <Setter Property="BorderBrush" Value="{StaticResource Brush.Primary.Border}" />
-                                        <Setter Property="FocusVisualStyle"
-                                                Value="{StaticResource ControlFocusVisualStyle}" />
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="{x:Type Button}">
-                                                    <Border CornerRadius="100" Background="{TemplateBinding Background}"
-                                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                                            BorderThickness="{TemplateBinding BorderThickness}">
-                                                        <ContentPresenter HorizontalAlignment="Center"
-                                                                          VerticalAlignment="Center" />
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                        <Setter Property="Foreground" Value="{StaticResource Brush.Primary}" />
-                                        <Style.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Background"
-                                                        Value="{StaticResource Brush.Primary.SurfaceHover}" />
-                                            </Trigger>
-                                            <Trigger Property="IsPressed" Value="True">
-                                                <Setter Property="Opacity" Value="0.7" />
-                                            </Trigger>
-                                            <Trigger Property="IsEnabled" Value="False">
-                                                <Setter Property="Opacity" Value="0.45" />
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Resources>
-                                <Grid Style="{StaticResource Sidebar.CardHeader}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="运行控制" Style="{StaticResource Sidebar.CardTitle}" />
-                                    <Button x:Name="PrepareEnvironmentButton" Grid.Column="1"
-                                            Style="{StaticResource RuntimeActionIconButtonStyle}"
-                                            ToolTip="准备运行环境" AutomationProperties.Name="准备运行环境"
-                                            Click="PrepareEnvironmentButton_Click">
-                                        <ui:SymbolIcon Width="20" Height="20" FontSize="20"
-                                                       Foreground="{StaticResource Brush.Primary}" Symbol="Power24" />
-                                    </Button>
-                                    <Button x:Name="RetryEnvironmentButton" Grid.Column="1"
-                                            Visibility="Collapsed" Style="{StaticResource RuntimeActionIconButtonStyle}"
-                                            ToolTip="重试" ToolTipService.ShowOnDisabled="True"
-                                            AutomationProperties.Name="重试运行环境"
-                                            Click="RetryRuntimeHeaderButton_Click">
-                                        <ui:SymbolIcon Width="20" Height="20" FontSize="20"
-                                                       Foreground="{StaticResource Brush.Primary}"
-                                                       Symbol="ArrowClockwise24" />
-                                    </Button>
-                                    <Button x:Name="StartTaskHeaderButton" Grid.Column="1"
-                                            Visibility="Collapsed" Style="{StaticResource RuntimeActionIconButtonStyle}"
-                                            ToolTip="开始任务" ToolTipService.ShowOnDisabled="True"
-                                            AutomationProperties.Name="开始任务"
-                                            Click="StartRunButton_Click">
-                                        <ui:SymbolIcon Width="20" Height="20" FontSize="20"
-                                                       Foreground="{StaticResource Brush.Primary}" Symbol="Play24" />
-                                    </Button>
-                                    <Button x:Name="StopTaskHeaderButton" Grid.Column="1"
-                                            Visibility="Collapsed" Style="{StaticResource RuntimeActionIconButtonStyle}"
-                                            ToolTip="停止任务" AutomationProperties.Name="停止任务"
-                                            Click="StopRunButton_Click">
-                                        <ui:SymbolIcon Width="20" Height="20" FontSize="20"
-                                                       Foreground="{StaticResource Brush.Primary}" Symbol="Stop24" />
-                                    </Button>
-                                    <Button x:Name="RecoverEnvironmentButton" Grid.Column="1"
-                                            Visibility="Collapsed" Style="{StaticResource RuntimeActionIconButtonStyle}"
-                                            ToolTip="结束桌面分身" ToolTipService.ShowOnDisabled="True"
-                                            AutomationProperties.Name="结束桌面分身"
-                                            Click="RecoverEnvironmentButton_Click">
-                                        <ui:SymbolIcon Width="20" Height="20" FontSize="20"
-                                                       Foreground="{StaticResource Brush.Primary}"
-                                                       Symbol="SignOut24" />
-                                    </Button>
-                                    <ui:ProgressRing x:Name="RuntimeHeaderProgressRing" Grid.Column="1"
-                                                     Width="18" Height="18" Margin="0,0,9,0"
-                                                     VerticalAlignment="Center" Visibility="Collapsed"
-                                                     IsIndeterminate="True"
-                                                     ToolTip="正在准备运行环境"
-                                                     AutomationProperties.Name="正在准备运行环境" />
-                                </Grid>
-                            </Border>
-                            <Border x:Name="PreviewCard" Grid.Row="1" Margin="0,0,0,10"
-                                    Style="{StaticResource Sidebar.Card}">
-                                <StackPanel>
-                                    <Grid Style="{StaticResource Sidebar.CardHeader}">
+                        <!-- One runtime console: run control, game preview and grouped activity as sections. -->
+                        <Border x:Name="RuntimeSidebar" Grid.Column="1" Margin="0,14,16,16"
+                                Style="{StaticResource Console.Card}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" MinHeight="120" />
+                                </Grid.RowDefinitions>
+                                <StackPanel x:Name="RuntimeControlCard" Margin="16,12,16,16">
+                                    <Grid Height="28" Margin="0,0,-8,0">
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Text="实时截图" Style="{StaticResource Sidebar.CardTitle}" />
-                                        <Button x:Name="ExpandPreviewButton" Grid.Column="1"
+                                        <TextBlock Text="运行控制" Style="{StaticResource Console.SectionTitle}" />
+                                        <Border x:Name="RuntimeStatusPill" Grid.Column="1" Margin="8,0,0,0"
+                                                Style="{StaticResource Console.Pill}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="7" Height="7" VerticalAlignment="Center"
+                                                         Fill="{Binding Foreground, ElementName=RuntimeStatusText}" />
+                                                <TextBlock x:Name="RuntimeStatusText" Margin="6,0,0,0" FontSize="12"
+                                                           FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Border>
+                                        <Button x:Name="RuntimeMoreButton" Grid.Column="3"
                                                 Style="{StaticResource Preview.IconButton}"
-                                                ToolTip="放大实时截图" AutomationProperties.Name="放大实时截图"
-                                                Click="ExpandPreview_Click">
-                                            <Path Width="13" Height="13" Stretch="Uniform" StrokeThickness="2"
-                                                  Stroke="{StaticResource Brush.Text.Secondary}"
-                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                                  Data="M7,1 L2,1 Q1,1 1,2 L1,7 M17,1 L22,1 Q23,1 23,2 L23,7
-                                                        M1,17 L1,22 Q1,23 2,23 L7,23
-                                                        M17,23 L22,23 Q23,23 23,22 L23,17" />
-                                        </Button>
-                                        <Border Grid.Column="2" Width="1" Height="14" Margin="4,0"
-                                                Background="{StaticResource Preview.Border}" />
-                                        <Button Grid.Column="3" Style="{StaticResource Preview.IconButton}"
-                                                ToolTip="展开或收起实时截图" AutomationProperties.Name="展开或收起实时截图"
-                                                Click="TogglePreview_Click">
-                                            <ui:SymbolIcon x:Name="PreviewChevron" Symbol="ChevronUp16" FontSize="16" />
+                                                ToolTip="更多操作" AutomationProperties.Name="更多操作"
+                                                Click="RuntimeMoreButton_Click">
+                                            <ui:SymbolIcon Symbol="MoreHorizontal20" FontSize="18" />
+                                            <Button.ContextMenu>
+                                                <ContextMenu x:Name="RuntimeMoreMenu">
+                                                    <MenuItem x:Name="DesktopMenuItem" Header="显示桌面分身"
+                                                              Click="HomeDesktopVisibilityButton_Click">
+                                                        <MenuItem.Icon>
+                                                            <ui:SymbolIcon x:Name="DesktopMenuIcon" Symbol="Eye16" />
+                                                        </MenuItem.Icon>
+                                                    </MenuItem>
+                                                    <MenuItem x:Name="ExpandPreviewMenuItem" Header="放大游戏画面"
+                                                              Click="ExpandPreview_Click">
+                                                        <MenuItem.Icon>
+                                                            <Path Style="{StaticResource Preview.ExpandIcon}" />
+                                                        </MenuItem.Icon>
+                                                    </MenuItem>
+                                                    <MenuItem x:Name="OpenLogsMenuItem" Header="打开日志目录"
+                                                              Click="OpenLogsMenuItem_Click">
+                                                        <MenuItem.Icon>
+                                                            <ui:SymbolIcon Symbol="Folder16" />
+                                                        </MenuItem.Icon>
+                                                    </MenuItem>
+                                                    <Separator />
+                                                    <MenuItem x:Name="EndEnvironmentMenuItem" Header="结束桌面分身"
+                                                              Foreground="{StaticResource Brush.Error.Foreground}"
+                                                              Click="EndEnvironmentMenuItem_Click">
+                                                        <MenuItem.Icon>
+                                                            <ui:SymbolIcon Symbol="SignOut20" />
+                                                        </MenuItem.Icon>
+                                                    </MenuItem>
+                                                </ContextMenu>
+                                            </Button.ContextMenu>
                                         </Button>
                                     </Grid>
-                                    <StackPanel x:Name="PreviewCardContent" Margin="16,0,16,16">
-                                        <Viewbox Stretch="Uniform" HorizontalAlignment="Stretch">
-                                            <Border Width="360" Height="178" ClipToBounds="True"
+                                    <TextBlock x:Name="RuntimeStatusTitle" Margin="0,12,0,0" FontSize="15"
+                                               FontWeight="SemiBold" TextWrapping="Wrap"
+                                               Foreground="{StaticResource Brush.Text.Primary}" />
+                                    <TextBlock x:Name="RuntimeStatusDetail" Margin="0,2,0,0" FontSize="12.5"
+                                               TextWrapping="Wrap" LineHeight="19"
+                                               Foreground="{StaticResource Brush.Text.Secondary}" />
+                                    <StackPanel x:Name="RunProgressPanel" Margin="0,12,0,0" Visibility="Collapsed">
+                                        <Canvas x:Name="RunProgressBar" Height="6" ClipToBounds="True"
+                                                SizeChanged="RunProgressBar_SizeChanged" />
+                                        <Grid Margin="0,6,0,0">
+                                            <TextBlock x:Name="RunProgressCaption" FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Foreground="{StaticResource Brush.Text.Muted}" />
+                                            <TextBlock x:Name="RunProgressElapsed" FontSize="12"
+                                                       HorizontalAlignment="Right"
+                                                       Foreground="{StaticResource Brush.Text.Muted}" />
+                                        </Grid>
+                                    </StackPanel>
+                                    <!-- Exactly one primary action shows; RuntimeControls decides which. -->
+                                    <Grid Margin="0,14,0,0">
+                                        <Button x:Name="PrepareEnvironmentButton"
+                                                Style="{StaticResource Console.PrimaryButton}"
+                                                ToolTip="准备运行环境" AutomationProperties.Name="准备运行环境"
+                                                Click="PrepareEnvironmentButton_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:SymbolIcon Symbol="Power20" FontSize="16" Margin="0,0,8,0" />
+                                                <TextBlock Text="准备运行环境" Style="{StaticResource Console.ButtonText}" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="RetryEnvironmentButton" Visibility="Collapsed"
+                                                Style="{StaticResource Console.PrimaryButton}"
+                                                ToolTip="重试" ToolTipService.ShowOnDisabled="True"
+                                                AutomationProperties.Name="重试运行环境"
+                                                Click="RetryRuntimeHeaderButton_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:SymbolIcon Symbol="ArrowClockwise20" FontSize="16"
+                                                               Margin="0,0,8,0" />
+                                                <TextBlock Text="重试" Style="{StaticResource Console.ButtonText}" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="StartTaskHeaderButton" Visibility="Collapsed"
+                                                Style="{StaticResource Console.PrimaryButton}"
+                                                ToolTip="开始任务" ToolTipService.ShowOnDisabled="True"
+                                                AutomationProperties.Name="开始任务"
+                                                Click="StartRunButton_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:SymbolIcon Symbol="Play20" FontSize="16" Margin="0,0,8,0" />
+                                                <TextBlock Text="开始任务" Style="{StaticResource Console.ButtonText}" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="StopTaskHeaderButton" Visibility="Collapsed"
+                                                Style="{StaticResource Console.NeutralButton}"
+                                                ToolTip="停止任务" AutomationProperties.Name="停止任务"
+                                                Click="StopRunButton_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:SymbolIcon Symbol="Stop20" FontSize="16" Margin="0,0,8,0" />
+                                                <TextBlock Text="停止任务" Style="{StaticResource Console.ButtonText}" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="RecoverEnvironmentButton" Visibility="Collapsed"
+                                                Style="{StaticResource Console.DangerButton}"
+                                                ToolTip="结束桌面分身" ToolTipService.ShowOnDisabled="True"
+                                                AutomationProperties.Name="结束桌面分身"
+                                                Click="RecoverEnvironmentButton_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:SymbolIcon Symbol="SignOut20" FontSize="16" Margin="0,0,8,0" />
+                                                <TextBlock Text="结束桌面分身"
+                                                           Style="{StaticResource Console.ButtonText}" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Border x:Name="RuntimeHeaderProgressRing" Height="36" CornerRadius="6"
+                                                Visibility="Collapsed"
+                                                Background="{StaticResource Brush.Surface.Disabled}"
+                                                ToolTip="正在准备运行环境" AutomationProperties.Name="正在准备运行环境">
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                <ui:ProgressRing Width="16" Height="16" IsIndeterminate="True"
+                                                                 VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                <TextBlock x:Name="RuntimeProgressText" FontWeight="SemiBold"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{StaticResource Brush.Text.Secondary}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </StackPanel>
+
+                                <Border x:Name="PreviewCard" Grid.Row="1" Style="{StaticResource Console.Section}">
+                                    <StackPanel>
+                                        <Grid Style="{StaticResource Console.SectionHeader}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="游戏画面" Style="{StaticResource Console.SectionTitle}" />
+                                            <StackPanel x:Name="PreviewLiveIndicator" Grid.Column="1" Margin="10,0,0,0"
+                                                        Orientation="Horizontal" Visibility="Collapsed">
+                                                <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                                                         Fill="{StaticResource Brush.Success}" />
+                                                <TextBlock x:Name="PreviewLiveText" Margin="6,0,0,0" FontSize="12"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{StaticResource Brush.Text.Muted}" />
+                                            </StackPanel>
+                                            <Button x:Name="ExpandPreviewButton" Grid.Column="2"
+                                                    Style="{StaticResource Preview.IconButton}"
+                                                    ToolTip="放大游戏画面" AutomationProperties.Name="放大游戏画面"
+                                                    Click="ExpandPreview_Click">
+                                                <Path Style="{StaticResource Preview.ExpandIcon}" />
+                                            </Button>
+                                            <Button Grid.Column="3" Style="{StaticResource Preview.IconButton}"
+                                                    ToolTip="展开或收起游戏画面" AutomationProperties.Name="展开或收起游戏画面"
+                                                    Click="TogglePreview_Click">
+                                                <ui:SymbolIcon x:Name="PreviewChevron" Symbol="ChevronUp16"
+                                                               FontSize="16" />
+                                            </Button>
+                                        </Grid>
+                                        <Grid x:Name="PreviewCardContent" Margin="12,0,12,12">
+                                            <!-- Kept at 16:9 from its width, so empty-state text keeps its size. -->
+                                            <Border x:Name="PreviewScreen" CornerRadius="6" ClipToBounds="True"
                                                     Background="{StaticResource Preview.Surface}"
-                                                    BorderBrush="{StaticResource Preview.Border}" BorderThickness="0.6">
+                                                    BorderBrush="{StaticResource Brush.Border.Subtle}"
+                                                    BorderThickness="1"
+                                                    SizeChanged="PreviewScreen_SizeChanged">
                                                 <Grid>
                                                     <Image x:Name="HomePreviewImage" Stretch="Uniform"
                                                            RenderOptions.BitmapScalingMode="HighQuality"
                                                            Visibility="Collapsed" />
                                                     <ContentControl x:Name="HomePreviewPlaceholder"
                                                                     ContentTemplate="{StaticResource Preview.Empty}"
-                                                                    Foreground="#526077" />
+                                                                    Tag="暂无画面"
+                                                                   Foreground="{StaticResource Brush.Text.Secondary}" />
                                                 </Grid>
                                             </Border>
-                                        </Viewbox>
-                                        <Button x:Name="HomeDesktopVisibilityButton" Margin="0,10,0,0"
-                                                HorizontalAlignment="Right" IsEnabled="False"
-                                                Style="{StaticResource Preview.DesktopButton}"
-                                                AutomationProperties.Name="显示分身" ToolTip="显示分身"
-                                                Click="HomeDesktopVisibilityButton_Click">
-                                            <StackPanel Orientation="Horizontal">
-                                                <Viewbox Width="20" Height="20" Margin="0,0,7,0">
-                                                    <Path Width="24" Height="24" StrokeThickness="2"
-                                                          Stroke="{Binding Foreground,
-                                                              RelativeSource={RelativeSource AncestorType=Button}}"
-                                                          StrokeLineJoin="Round" StrokeStartLineCap="Round"
-                                                          StrokeEndLineCap="Round">
-                                                        <Path.Style>
-                                                            <Style TargetType="{x:Type Path}">
-                                                                <Setter Property="Data"
-                                                                        Value="M9,19 L4,19 Q2,19 2,17 L2,4 Q2,2 4,2
-                                                                               L19,2 Q21,2 21,4 L21,9
-                                                                               M9,16 Q16,7 23,16 Q16,25 9,16 Z
-                                                                               M18,16 A2,2 0 1 1 14,16
-                                                                               A2,2 0 1 1 18,16" />
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Value="True"
-                                                                        Binding="{Binding Tag,
-                                                                            RelativeSource={RelativeSource
-                                                                                AncestorType=Button}}">
+                                            <!-- Desktop and enlarge shortcuts float over a live picture on hover. -->
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                                        VerticalAlignment="Bottom" Margin="0,0,8,8"
+                                                        Style="{StaticResource Preview.Overlay}">
+                                                <Button x:Name="HomeDesktopVisibilityButton" IsEnabled="False"
+                                                        Style="{StaticResource Preview.OverlayButton}"
+                                                        AutomationProperties.Name="显示分身" ToolTip="显示分身"
+                                                        Click="HomeDesktopVisibilityButton_Click">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Viewbox Width="16" Height="16" Margin="0,0,6,0">
+                                                            <Path Width="24" Height="24" StrokeThickness="2"
+                                                                  Stroke="{Binding Foreground,
+                                                                   RelativeSource={RelativeSource AncestorType=Button}}"
+                                                                  StrokeLineJoin="Round" StrokeStartLineCap="Round"
+                                                                  StrokeEndLineCap="Round">
+                                                                <Path.Style>
+                                                                    <Style TargetType="{x:Type Path}">
                                                                         <Setter Property="Data"
-                                                                            Value="M3,3 L21,21 M9,5 Q17,2 23,12
-                                                                                   Q21,16 19,17 M15,19 Q7,22 1,12
-                                                                                   Q3,8 5,7 M9,9 A4,4 0 0 0 15,15" />
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Path.Style>
-                                                    </Path>
-                                                </Viewbox>
-                                                <AccessText x:Name="HomeDesktopVisibilityText" Text="显示分身"
-                                                            VerticalAlignment="Center" />
+                                                                             Value="M9,19 L4,19 Q2,19 2,17 L2,4 Q2,2 4,2
+                                                                                       L19,2 Q21,2 21,4 L21,9
+                                                                                       M9,16 Q16,7 23,16 Q16,25 9,16 Z
+                                                                                       M18,16 A2,2 0 1 1 14,16
+                                                                                       A2,2 0 1 1 18,16" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Value="True"
+                                                                                Binding="{Binding Tag,
+                                                                                    RelativeSource={RelativeSource
+                                                                                        AncestorType=Button}}">
+                                                                                <Setter Property="Data"
+                                                                                    Value="M3,3 L21,21 M9,5 Q17,2 23,12
+                                                                                          Q21,16 19,17 M15,19 Q7,22 1,12
+                                                                                      Q3,8 5,7 M9,9 A4,4 0 0 0 15,15" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Path.Style>
+                                                            </Path>
+                                                        </Viewbox>
+                                                        <AccessText x:Name="HomeDesktopVisibilityText" Text="显示分身"
+                                                                    VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Margin="6,0,0,0" Style="{StaticResource Preview.OverlayButton}"
+                                                        ToolTip="放大游戏画面" AutomationProperties.Name="放大游戏画面"
+                                                        Click="ExpandPreview_Click">
+                                                    <Path Style="{StaticResource Preview.ExpandIcon}" />
+                                                </Button>
                                             </StackPanel>
-                                        </Button>
+                                        </Grid>
                                     </StackPanel>
-                                </StackPanel>
-                            </Border>
-                            <Border Grid.Row="2" Style="{StaticResource Sidebar.Card}">
-                                <Grid>
+                                </Border>
+
+                                <Grid Grid.Row="2">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="*" />
                                     </Grid.RowDefinitions>
-                                    <Grid Style="{StaticResource Sidebar.CardHeader}">
+                                    <Border Grid.RowSpan="2" Style="{StaticResource Console.Section}" />
+                                    <Grid Style="{StaticResource Console.SectionHeader}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="运行动态" Style="{StaticResource Sidebar.CardTitle}" />
+                                            <TextBlock Text="运行动态" Style="{StaticResource Console.SectionTitle}" />
                                             <TextBlock x:Name="RunLogCountText" Margin="8,0,0,0" FontSize="12"
                                                        VerticalAlignment="Center"
                                                        Foreground="{StaticResource Brush.Text.Muted}" />
@@ -928,7 +1091,7 @@
                                             </StackPanel>
                                         </Button>
                                     </Grid>
-                                    <Grid Grid.Row="1" Margin="10,0,12,12">
+                                    <Grid Grid.Row="1" Margin="8,0,8,8">
                                         <ListBox x:Name="HomeLogListBox" ItemsSource="{Binding LogLines}"
                                                  Style="{StaticResource LogListBoxStyle}"
                                                  Background="{StaticResource Brush.Surface}"
@@ -1037,8 +1200,8 @@
                                         </Grid>
                                     </Grid>
                                 </Grid>
-                            </Border>
-                        </Grid>
+                            </Grid>
+                        </Border>
                     </Grid>
 
                     <views:SettingsView x:Name="SettingsView" Visibility="Collapsed" />
@@ -1091,8 +1254,8 @@
                         </Border>
                     </Grid>
                 </Grid>
-            </ui:NavigationView.ContentOverlay>
-        </ui:NavigationView>
+            </Grid>
+        </Grid>
 
     </Grid>
         <Grid x:Name="PreviewOverlay" Panel.ZIndex="200" Visibility="Collapsed"

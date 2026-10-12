@@ -3,6 +3,7 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  xmlns:views="clr-namespace:NarutoAutoGUI.Views"
+                 xmlns:models="clr-namespace:NarutoAutoGUI.Models"
                  Title="NarutoAutoGUI"
                  Icon="pack://application:,,,/Assets/app.ico"
                  Width="1180"
@@ -845,7 +846,12 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Text="运行动态" Style="{StaticResource Sidebar.CardTitle}" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="运行动态" Style="{StaticResource Sidebar.CardTitle}" />
+                                            <TextBlock x:Name="RunLogCountText" Margin="8,0,0,0" FontSize="12"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{StaticResource Brush.Text.Muted}" />
+                                        </StackPanel>
                                         <Button x:Name="ClearActivityButton" Grid.Column="1" ToolTip="清空面板中的运行动态"
                                                 Style="{StaticResource Activity.ClearButton}"
                                                 Click="ClearActivity_Click"
@@ -874,17 +880,19 @@
                                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                                                  AutomationProperties.Name="运行动态"
-                                                 AutomationProperties.HelpText="最新动态在顶部，仅显示 MaaNOP 用户运行日志">
+                                                 AutomationProperties.HelpText="最新在顶部，按任务分组，仅显示 MaaNOP 用户运行日志">
                                             <ListBox.ItemContainerStyle>
                                                 <Style TargetType="{x:Type ListBoxItem}"
                                                        BasedOn="{StaticResource LogListBoxItemStyle}">
+                                                    <!-- A group heading always sits on top, so the newest
+                                                         entry is the second row. -->
                                                     <Style.Triggers>
                                                         <DataTrigger Value="True">
                                                             <DataTrigger.Binding>
                                                                 <MultiBinding
                                                                     Converter="{StaticResource Activity.IsLatest}">
                                                                     <Binding />
-                                                                    <Binding Path="ItemsSource[0]"
+                                                                    <Binding Path="ItemsSource[1]"
                                                                              RelativeSource="{RelativeSource
                                                                         AncestorType=ListBox}" />
                                                                 </MultiBinding>
@@ -895,8 +903,23 @@
                                                     </Style.Triggers>
                                                 </Style>
                                             </ListBox.ItemContainerStyle>
-                                            <ListBox.ItemTemplate>
-                                                <DataTemplate>
+                                            <ListBox.Resources>
+                                                <DataTemplate DataType="{x:Type models:RunLogGroup}">
+                                                    <Grid Margin="6,8,6,2" Focusable="False">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding Label}" FontSize="11.5"
+                                                                   FontWeight="SemiBold" MaxWidth="240"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{StaticResource Brush.Text.Muted}" />
+                                                        <Border Grid.Column="1" Height="1" Margin="8,0,0,0"
+                                                                VerticalAlignment="Center"
+                                                                Background="{StaticResource Brush.Border.Subtle}" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                                <DataTemplate DataType="{x:Type models:LogEntry}">
                                                     <Border MinHeight="28" Padding="6,5"
                                                             BorderBrush="#EDF2F8" BorderThickness="0,0,0,1">
                                                         <Grid>
@@ -915,7 +938,7 @@
                                                         </Grid>
                                                     </Border>
                                                 </DataTemplate>
-                                            </ListBox.ItemTemplate>
+                                            </ListBox.Resources>
                                         </ListBox>
                                         <Grid IsHitTestVisible="False">
                                             <Grid.Style>

@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -778,7 +779,7 @@ internal static partial class SelfTestRunner
             false, null, Guid.NewGuid(), Guid.NewGuid(), "Task");
         var diagnosticEntry = userEntry with { Sequence = 2, Source = "runtime.task" };
         var visibleEntries = new[] { userEntry, diagnosticEntry }
-            .Select(MainWindow.CreateUserFacingRunLogEntry)
+            .Select(entry => MainWindow.CreateUserFacingRunLogEntry(entry))
             .Where(entry => entry is not null)
             .Cast<LogEntry>()
             .ToArray();
@@ -790,9 +791,59 @@ internal static partial class SelfTestRunner
             throw new InvalidOperationException("GUI 运行日志 source、timestamp 或 message 路由验证失败。 ");
         }
 
+        VerifyRunLogGroups(userEntry);
         MainWindow.WriteWorkerDiagnosticLog(logger, userEntry);
         MainWindow.WriteWorkerDiagnosticLog(logger, diagnosticEntry);
         logger.Info("GUI diagnostic only");
+    }
+
+    // Run logs keep their Run and Plan Item, take the Run Plan's task label, and group by Plan Item newest first.
+    private static void VerifyRunLogGroups(WorkerLogEntry template)
+    {
+        var runId = Guid.NewGuid();
+        var (first, second) = (Guid.NewGuid(), Guid.NewGuid());
+        var empty = JsonDocument.Parse("{}").RootElement.Clone();
+        RunPlanItem Item(Guid id) => new(id, "Daily", "日常任务", "Entry", empty, empty);
+        var plan = new RunPlan(1, DateTime.UtcNow, new ProjectProvenance("self-test", "1", 1, "self-test"),
+            "self-test", empty, [Item(first), Item(second)]);
+        var record = new WorkerAdmissionRecord(Guid.NewGuid(), "token", 1, Environment.ProcessId, "self-test",
+            DateTime.UtcNow);
+        var snapshot = WorkerCoordinatorSelfTest.CreateSnapshot(record, 0) with {
+            LastRun = new RunSnapshot(runId, "digest", RunState.Succeeded, DateTime.UtcNow, null, null, null, null,
+                null, plan, [], null, null)
+        };
+        LogEntry Create(Guid? planItemId, string? taskName) => MainWindow.CreateUserFacingRunLogEntry(template with {
+            RunId = planItemId is null ? null : runId, PlanItemId = planItemId, TaskName = taskName
+        }, snapshot)!;
+        var firstLog = Create(first, "Daily");
+        var secondLog = Create(second, "Daily");
+        var fallback = Create(Guid.NewGuid(), "Fallback");
+        var environment = Create(null, null);
+        Require(firstLog.RunId == runId && firstLog.PlanItemId == first && firstLog.TaskLabel == "日常任务"
+            && fallback.TaskLabel == "Fallback" && environment.TaskLabel is null && environment.PlanItemId is null,
+            "运行日志必须保留 RunId 与 PlanItemId，标签按 Run Plan TaskLabel、TaskName 回退。");
+
+        var items = new ObservableCollection<object>();
+        var feed = new RunLogFeed(items, capacity: 3);
+        object[] Headings() => items.OfType<RunLogGroup>().ToArray();
+        Require(feed.Add(firstLog) == 2 && feed.Add(firstLog with { Message = "later" }) == 1
+            && items[0] is RunLogGroup { PlanItemId: var top } && top == first && Headings().Length == 1
+            && ReferenceEquals(items[1], items.OfType<LogEntry>().First()) && items[1] is LogEntry { Message: "later" },
+            "同一 Plan Item 的新日志必须加入当前分组顶部，标题随之移动且不重复。");
+        Require(feed.Add(secondLog) == 2 && Headings().Length == 2,
+            "同一 TaskName、不同 PlanItemId 必须产生不同分组。");
+        feed.Add(environment);
+        feed.Add(environment with { Message = "newer" });
+        Require(feed.EntryCount == 3 && items.Count == 5
+            && items[0] is RunLogGroup { Label: RunLogFeed.EnvironmentLabel }
+            && items[^1] is LogEntry { PlanItemId: var oldest } && oldest == second,
+            "超过上限时必须移除最旧的日志及其空分组，没有 PlanItemId 的日志归入运行环境。");
+        feed.Clear();
+        Require(items.Count == 0 && feed.EntryCount == 0, "清空后所有分组都必须消失。");
+        feed.Add(firstLog with { TaskLabel = "Daily" });
+        feed.Add(firstLog);
+        Require(Headings().Length == 1 && items[0] is RunLogGroup { Label: "日常任务" },
+            "分组标题在 Run Plan 标签可用后必须更新为该标签。");
     }
 
     private static void VerifyUnsupportedProjectConstraints(string testDirectory, string sourceProjectDirectory)

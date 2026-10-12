@@ -67,6 +67,7 @@ public partial class MainWindow : FluentWindow
     private ProjectPlanModule? _projectPlan;
     private RunStartAttempt? _pendingStartAttempt;
     private ScrollViewer? _homeLogScrollViewer;
+    private readonly RunLogFeed _runLog;
     private CancellationTokenSource? _previewPollingCancellation;
     private Task? _previewPollingTask;
     private Guid? _previewWorkerInstanceId;
@@ -117,6 +118,7 @@ public partial class MainWindow : FluentWindow
         string? applicationDirectory = null, Func<CancellationToken, Task<EngineCheckResult>>? checkForUpdate = null)
     {
         InitializeComponent();
+        _runLog = new RunLogFeed(LogLines, MaximumGuiLogEntries);
         DataContext = this;
         BindConfigurationEditable(ConfigurationTabs);
         BindConfigurationEditable(NewConfigurationButton);
@@ -150,7 +152,8 @@ public partial class MainWindow : FluentWindow
         RefreshRuntimeControls();
     }
 
-    public ObservableCollection<LogEntry> LogLines { get; } = [];
+    // Run logs newest first, each stretch from one Plan Item headed by its RunLogGroup.
+    public ObservableCollection<object> LogLines { get; } = [];
 
     internal event EventHandler? HiddenToTray;
 
@@ -1625,17 +1628,25 @@ public partial class MainWindow : FluentWindow
     internal static bool IsUserFacingRunLog(WorkerLogEntry entry) =>
         string.Equals(entry.Source, ProtocolConstants.MaaNopRunLogSource, StringComparison.Ordinal);
 
-    internal static LogEntry? CreateUserFacingRunLogEntry(WorkerLogEntry workerEntry)
+    // The task label comes from the Run Plan the Worker reports, falling back to the name the log carries.
+    internal static LogEntry? CreateUserFacingRunLogEntry(WorkerLogEntry workerEntry, WorkerSnapshot? snapshot = null)
     {
         if (!IsUserFacingRunLog(workerEntry)) {
             return null;
         }
 
         var timestampUtc = DateTime.SpecifyKind(workerEntry.TimestampUtc, DateTimeKind.Utc);
+        string? label = null;
+        if (workerEntry.PlanItemId is { } planItemId) {
+            label = new[] { snapshot?.ActiveRun, snapshot?.LastRun }.OfType<RunSnapshot>()
+                .SelectMany(run => run.Plan.Items).FirstOrDefault(item => item.PlanItemId == planItemId)?.TaskLabel;
+            label = string.IsNullOrWhiteSpace(label) ? workerEntry.TaskName : label;
+        }
         return new LogEntry(
             new DateTimeOffset(timestampUtc).ToLocalTime(),
             ParseWorkerLogLevel(workerEntry.Level),
-            workerEntry.Message);
+            workerEntry.Message, workerEntry.RunId, workerEntry.PlanItemId,
+            string.IsNullOrWhiteSpace(label) ? null : label);
     }
 
     internal static void WriteWorkerDiagnosticLog(AppLogger logger, WorkerLogEntry entry) =>
@@ -1648,18 +1659,16 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        var entry = CreateUserFacingRunLogEntry(workerEntry);
+        var entry = CreateUserFacingRunLogEntry(workerEntry, _workerSnapshot.WorkerSnapshot);
         if (entry is null) {
             return;
         }
         var shouldFollow = _followLogs && IsLogNearTop();
         var previousOffset = _homeLogScrollViewer?.VerticalOffset ?? 0;
-        LogLines.Insert(0, entry);
-        while (LogLines.Count > MaximumGuiLogEntries) {
-            LogLines.RemoveAt(LogLines.Count - 1);
-        }
-        if (!shouldFollow && LogLines.Count > 1) {
-            _homeLogScrollViewer?.ScrollToVerticalOffset(previousOffset + 1);
+        var inserted = _runLog.Add(entry);
+        UpdateRunLogCount();
+        if (!shouldFollow && _runLog.EntryCount > 1) {
+            _homeLogScrollViewer?.ScrollToVerticalOffset(previousOffset + inserted);
         }
 
         if (shouldFollow) {
@@ -1912,9 +1921,13 @@ public partial class MainWindow : FluentWindow
 
     private void ClearActivity_Click(object sender, RoutedEventArgs e)
     {
-        LogLines.Clear();
+        _runLog.Clear();
+        UpdateRunLogCount();
         _followLogs = true;
     }
+
+    private void UpdateRunLogCount() =>
+        RunLogCountText.Text = _runLog.EntryCount == 0 ? string.Empty : $"{_runLog.EntryCount} 条";
 
     private bool IsLogNearTop()
     {
@@ -1924,8 +1937,8 @@ public partial class MainWindow : FluentWindow
 
     private void ScrollLogsToLatest()
     {
-        if (_followLogs && LogLines.FirstOrDefault() is LogEntry latestLine) {
-            HomeLogListBox.ScrollIntoView(latestLine);
+        if (_followLogs && LogLines.FirstOrDefault() is { } latestHeading) {
+            HomeLogListBox.ScrollIntoView(latestHeading);
         }
     }
 

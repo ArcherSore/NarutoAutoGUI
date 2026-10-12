@@ -1,10 +1,13 @@
 using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Security.Principal;
 using NarutoAutoGUI.Infrastructure;
+using NarutoAutoGUI.Models;
 using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
+using NarutoAutoGUI.Views;
 
 namespace NarutoAutoGUI.Worker;
 
@@ -278,7 +281,9 @@ internal static partial class WorkerCoordinatorSelfTest
         CancellationToken cancellationToken)
     {
         var timestamp = DateTime.UtcNow;
-        var stranded = CreateEntry(7, ProtocolConstants.MaaNopRunLogSource, "recovered-after-eof", timestamp);
+        var stranded = CreateEntry(7, ProtocolConstants.MaaNopRunLogSource, "recovered-after-eof", timestamp) with {
+            RunId = Guid.NewGuid(), PlanItemId = Guid.NewGuid(), TaskName = "Recovered"
+        };
         await using (var disconnected = await OpenConnectionAsync(
             pipeName, record, lastLogSequence: 5, cancellationToken)) {
             await disconnected.WriteAsync(CreateLogEvent(record.WorkerInstanceId, stranded), cancellationToken);
@@ -293,6 +298,15 @@ internal static partial class WorkerCoordinatorSelfTest
         await WaitForCountAsync(received, expectedCount: 6, cancellationToken);
         if (!received.Select(entry => entry.Sequence).SequenceEqual([1L, 2L, 3L, 4L, 5L, 7L])) {
             throw new InvalidOperationException("Coordinator 断线重连或 eviction gap 恢复失败。 ");
+        }
+        // A log recovered after reconnecting keeps its Plan Item, so the activity panel files it under its task.
+        var items = new ObservableCollection<object>();
+        var feed = new RunLogFeed(items, 10);
+        feed.Add(MainWindow.CreateUserFacingRunLogEntry(received.ToArray()[^2])!);
+        feed.Add(MainWindow.CreateUserFacingRunLogEntry(received.Last())!);
+        if (items[0] is not RunLogGroup { Label: "Recovered", PlanItemId: var group }
+            || group != stranded.PlanItemId || items.OfType<RunLogGroup>().Count() != 2) {
+            throw new InvalidOperationException("断线重连补回的日志未进入其 Plan Item 分组。 ");
         }
     }
 
@@ -386,7 +400,7 @@ internal static partial class WorkerCoordinatorSelfTest
         }
     }
 
-    private static WorkerSnapshot CreateSnapshot(
+    internal static WorkerSnapshot CreateSnapshot(
         WorkerAdmissionRecord record, long lastLogSequence, RunSnapshot? activeRun = null)
     {
         var available = new DependencyCheck(true, "self-test", null);

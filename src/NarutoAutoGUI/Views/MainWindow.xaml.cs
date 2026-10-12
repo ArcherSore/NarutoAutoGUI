@@ -83,6 +83,7 @@ public partial class MainWindow : FluentWindow
     private bool _taskShelfExpanded;
     private readonly Dictionary<string, bool> _taskGroupExpanded = new(StringComparer.Ordinal);
     private bool _navigationPreferenceLoaded;
+    private string _configurationLockText = string.Empty;
     private string? _expandedTaskName;
     private string? _dragTaskName;
     private WpfPoint _dragStartPoint;
@@ -120,7 +121,6 @@ public partial class MainWindow : FluentWindow
         InitializeComponent();
         _runLog = new RunLogFeed(LogLines, MaximumGuiLogEntries);
         DataContext = this;
-        BindConfigurationEditable(ConfigurationTabs);
         BindConfigurationEditable(NewConfigurationButton);
         _logger = logger;
         _applicationDirectory = applicationDirectory ?? AppContext.BaseDirectory;
@@ -148,6 +148,7 @@ public partial class MainWindow : FluentWindow
         PreviewKeyDown += MainWindow_PreviewKeyDown;
         IsVisibleChanged += MainWindow_IsVisibleChanged;
         StateChanged += MainWindow_StateChanged;
+        SizeChanged += (_, _) => UpdateConfigurationLockText();
         SwitchSection(MainSection.Home);
         RefreshRuntimeControls();
     }
@@ -223,6 +224,7 @@ public partial class MainWindow : FluentWindow
             _onboardingClosed = true;
             EndOnboarding(handled: false);
             RemovePreviewWindowHook();
+            RemoveConfigurationWheelHook();
             _updateCancellation?.Cancel();
             StopPreviewPolling();
             _sessionManager.StateChanged -= OnSessionStateChanged;
@@ -2038,8 +2040,10 @@ public partial class MainWindow : FluentWindow
 
         SetValue(ConfigurationEditableProperty, state.ConfigurationEditable);
         ConfigurationLockBadge.Visibility = Visible(state.ConfigurationLock is not null);
-        ConfigurationLockText.Text = state.ConfigurationLock == LockReason.RunActive
+        _configurationLockText = state.ConfigurationLock == LockReason.RunActive
             ? "任务运行中，配置已锁定" : "运行环境处理中，配置暂时锁定";
+        UpdateConfigurationLockText();
+        RefreshConfigurationTabStates();
 
         static Visibility Visible(bool visible) => visible ? Visibility.Visible : Visibility.Collapsed;
 
@@ -2058,6 +2062,15 @@ public partial class MainWindow : FluentWindow
             button.ToolTip = reason ?? toolTip;
             AutomationProperties.SetHelpText(button, reason ?? string.Empty);
         }
+    }
+
+    // Below the reference width the badge shrinks to its icon and a short word; the full reason stays in the tooltip.
+    private void UpdateConfigurationLockText()
+    {
+        var compact = ActualWidth is > 0 and < 1180;
+        ConfigurationLockText.Text = compact ? "已锁定" : _configurationLockText;
+        ConfigurationLockBadge.ToolTip = compact ? _configurationLockText : null;
+        AutomationProperties.SetName(ConfigurationLockBadge, _configurationLockText);
     }
 
     private void ShowActionableError(string title, Exception exception, string recovery, bool offerLogDirectory)

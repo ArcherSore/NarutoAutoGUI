@@ -21,73 +21,105 @@
                  TextOptions.TextRenderingMode="ClearType"
                  WindowStartupLocation="CenterScreen">
     <ui:FluentWindow.Resources>
+        <views:ScrollEdgeVisibilityConverter x:Key="Scroll.EdgeVisibility" />
+        <!-- Configuration tabs are segments on one tinted bar. The scroll bar stays hidden; edge fades show where
+             more tabs are clipped, and the add button sits outside the scroller. -->
+        <Color x:Key="Configuration.BarColor">#E9EDF3</Color>
+        <Color x:Key="Configuration.BarColor.Clear">#00E9EDF3</Color>
+        <LinearGradientBrush x:Key="Configuration.FadeLeft" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Offset="0" Color="{StaticResource Configuration.BarColor}" />
+            <GradientStop Offset="1" Color="{StaticResource Configuration.BarColor.Clear}" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="Configuration.FadeRight" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Offset="0" Color="{StaticResource Configuration.BarColor.Clear}" />
+            <GradientStop Offset="1" Color="{StaticResource Configuration.BarColor}" />
+        </LinearGradientBrush>
         <ControlTemplate x:Key="Configuration.Scroll" TargetType="ScrollViewer">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
                 <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" />
-                <ScrollBar x:Name="PART_HorizontalScrollBar" Grid.Row="1" Orientation="Horizontal" Minimum="0"
-                           Maximum="{TemplateBinding ScrollableWidth}" ViewportSize="{TemplateBinding ViewportWidth}"
-                           Value="{Binding HorizontalOffset, Mode=OneWay,
-                               RelativeSource={RelativeSource TemplatedParent}}"
-                           Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}" />
+                <Border x:Name="LeftFade" Width="28" HorizontalAlignment="Left" IsHitTestVisible="False"
+                        Background="{StaticResource Configuration.FadeLeft}">
+                    <Border.Visibility>
+                        <MultiBinding Converter="{StaticResource Scroll.EdgeVisibility}" ConverterParameter="Left">
+                            <Binding Path="HorizontalOffset" RelativeSource="{RelativeSource TemplatedParent}" />
+                            <Binding Path="ScrollableWidth" RelativeSource="{RelativeSource TemplatedParent}" />
+                        </MultiBinding>
+                    </Border.Visibility>
+                </Border>
+                <Border x:Name="RightFade" Width="28" HorizontalAlignment="Right" IsHitTestVisible="False"
+                        Background="{StaticResource Configuration.FadeRight}">
+                    <Border.Visibility>
+                        <MultiBinding Converter="{StaticResource Scroll.EdgeVisibility}" ConverterParameter="Right">
+                            <Binding Path="HorizontalOffset" RelativeSource="{RelativeSource TemplatedParent}" />
+                            <Binding Path="ScrollableWidth" RelativeSource="{RelativeSource TemplatedParent}" />
+                        </MultiBinding>
+                    </Border.Visibility>
+                </Border>
             </Grid>
         </ControlTemplate>
+        <Style x:Key="Configuration.Bar" TargetType="Border">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="3" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{StaticResource Configuration.BarColor}" />
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="Configuration.Tab" TargetType="TabItem">
-            <Setter Property="Height" Value="38" />
-            <Setter Property="MinWidth" Value="64" />
-            <Setter Property="MaxWidth" Value="180" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinWidth" Value="48" />
+            <Setter Property="MaxWidth" Value="200" />
+            <Setter Property="Margin" Value="0,0,2,0" />
             <Setter Property="FontWeight" Value="Normal" />
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
             <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Grid Background="{TemplateBinding Background}">
-                            <Border BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1,1,0,0"
-                                    CornerRadius="4,4,0,0" />
-                            <ContentPresenter ContentSource="Header" Margin="14,0,6,0"
-                                              VerticalAlignment="Center" />
-                            <Border x:Name="Accent" Height="3" VerticalAlignment="Bottom" Visibility="Collapsed"
-                                    Background="{StaticResource Brush.Primary}" />
-                        </Grid>
+                        <Border x:Name="Segment" Background="{TemplateBinding Background}" CornerRadius="6"
+                                BorderThickness="1" BorderBrush="Transparent">
+                            <ContentPresenter ContentSource="Header" Margin="11,0,4,0" VerticalAlignment="Center" />
+                        </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#8CFFFFFF" />
+                                <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+                            </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
                                 <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
                                 <Setter Property="FontWeight" Value="SemiBold" />
-                                <Setter TargetName="Accent" Property="Visibility" Value="Visible" />
+                                <Setter TargetName="Segment" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect BlurRadius="3" ShadowDepth="1" Direction="270"
+                                                          Opacity="0.14" Color="#182230" />
+                                    </Setter.Value>
+                                </Setter>
                             </Trigger>
-                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                <Setter Property="BorderBrush" Value="{StaticResource Brush.Primary.Border}" />
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Segment" Property="BorderBrush"
+                                        Value="{StaticResource Brush.Primary}" />
                             </Trigger>
-                            <!-- Locked tabs keep the active underline so the running configuration stays visible. -->
-                            <MultiTrigger>
-                                <MultiTrigger.Conditions>
-                                    <Condition Property="IsEnabled" Value="False" />
-                                    <Condition Property="IsSelected" Value="False" />
-                                </MultiTrigger.Conditions>
-                                <Setter Property="Foreground" Value="{StaticResource Brush.Text.Disabled}" />
-                            </MultiTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
         <Style x:Key="Configuration.Add" TargetType="Button" BasedOn="{StaticResource SubtleButtonStyle}">
-            <Setter Property="Width" Value="36" />
-            <Setter Property="Height" Value="38" />
-            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="MinWidth" Value="28" />
+            <Setter Property="Margin" Value="2,0,0,0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="0,4,0,0"
-                                BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,1,1,0">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="6">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                     </ControlTemplate>
@@ -95,7 +127,7 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{StaticResource Brush.Primary.Surface}" />
+                    <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
                     <Setter Property="Foreground" Value="{StaticResource Brush.Primary}" />
                 </Trigger>
                 <Trigger Property="IsEnabled" Value="False">
@@ -104,8 +136,8 @@
             </Style.Triggers>
         </Style>
         <Style x:Key="Configuration.Delete" TargetType="Button">
-            <Setter Property="Width" Value="14" />
-            <Setter Property="Height" Value="20" />
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Height" Value="18" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{StaticResource Brush.Text.Muted}" />
             <Setter Property="Opacity" Value="0.55" />
@@ -113,7 +145,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="10">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                     </ControlTemplate>
@@ -137,10 +169,6 @@
                     <Setter Property="Opacity" Value="1" />
                     <Setter Property="Background" Value="{StaticResource Brush.Error.Surface}" />
                 </Trigger>
-                <DataTrigger Binding="{Binding IsEnabled, RelativeSource={RelativeSource AncestorType=TabItem}}"
-                             Value="False">
-                    <Setter Property="Visibility" Value="Hidden" />
-                </DataTrigger>
                 <Trigger Property="IsEnabled" Value="False">
                     <Setter Property="Visibility" Value="Hidden" />
                 </Trigger>
@@ -182,7 +210,6 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
-        <views:ScrollEdgeVisibilityConverter x:Key="Scroll.EdgeVisibility" />
         <LinearGradientBrush x:Key="Scroll.FadeTop" StartPoint="0,0" EndPoint="0,1">
             <GradientStop Offset="0" Color="{StaticResource Color.Neutral.50}" />
             <GradientStop Offset="1" Color="{StaticResource Color.Neutral.50.Clear}" />
@@ -462,10 +489,54 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <StackPanel Grid.Row="0" Orientation="Horizontal">
-                            <TextBlock Text="任务" Style="{StaticResource WindowTitleTextStyle}" />
-                            <!-- Sits in the title row so locking and unlocking never shifts the workspace. -->
-                            <Border x:Name="ConfigurationLockBadge" Margin="12,0,0,0" Padding="8,3,10,3"
+                        <!-- One header row: the tab bar shrinks and scrolls while the title and lock badge keep their
+                             size, so locking, unlocking and adding tabs never shift the workspace. -->
+                        <Grid Grid.Row="0" Height="36">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="任务" VerticalAlignment="Center"
+                                       Style="{StaticResource WindowTitleTextStyle}" />
+                            <Border x:Name="ConfigurationBar" Grid.Column="1" Margin="16,0" HorizontalAlignment="Left"
+                                    Style="{StaticResource Configuration.Bar}"
+                                    Visibility="{Binding Visibility, ElementName=TaskWorkspacePanel}">
+                                <DockPanel PreviewMouseDown="ConfigurationActions_PreviewMouseDown"
+                                           PreviewKeyDown="ConfigurationActions_PreviewKeyDown">
+                                    <Button x:Name="NewConfigurationButton" DockPanel.Dock="Right"
+                                            Style="{StaticResource Configuration.Add}"
+                                            ToolTip="新建空配置" AutomationProperties.Name="新建空配置"
+                                            Click="NewConfigurationButton_Click">
+                                        <ui:SymbolIcon Symbol="Add16" FontSize="15" />
+                                    </Button>
+                                    <TabControl x:Name="ConfigurationTabs" BorderThickness="0" Padding="0"
+                                                Background="Transparent"
+                                                SelectionChanged="ConfigurationTabs_SelectionChanged"
+                                                PreviewKeyDown="ConfigurationTabs_PreviewKeyDown"
+                                                IsVisibleChanged="ConfigurationTabs_IsVisibleChanged"
+                                                AutomationProperties.Name="任务配置">
+                                        <TabControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </TabControl.ItemsPanel>
+                                        <TabControl.Template>
+                                            <ControlTemplate TargetType="TabControl">
+                                                <ScrollViewer x:Name="ConfigurationScroll"
+                                                              Template="{StaticResource Configuration.Scroll}"
+                                                              HorizontalScrollBarVisibility="Hidden"
+                                                              VerticalScrollBarVisibility="Disabled"
+                                                    PreviewMouseWheel="ConfigurationScroll_PreviewMouseWheel"
+                                                              CanContentScroll="False" Focusable="False">
+                                                    <ItemsPresenter KeyboardNavigation.TabNavigation="Once" />
+                                                </ScrollViewer>
+                                            </ControlTemplate>
+                                        </TabControl.Template>
+                                    </TabControl>
+                                </DockPanel>
+                            </Border>
+                            <Border x:Name="ConfigurationLockBadge" Grid.Column="2" Padding="8,3,10,3"
                                     VerticalAlignment="Center" CornerRadius="11" Visibility="Collapsed"
                                     Background="{StaticResource Brush.Surface.Disabled}">
                                 <StackPanel Orientation="Horizontal">
@@ -477,7 +548,7 @@
                                                AutomationProperties.LiveSetting="Polite" />
                                 </StackPanel>
                             </Border>
-                        </StackPanel>
+                        </Grid>
 
                         <Border x:Name="ProjectValidationBorder"
                                 Grid.Row="1"
@@ -528,46 +599,9 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
-                            <Grid Grid.Row="0" Margin="0,0,8,12">
-                                <Border Height="1" Margin="0,37,0,0" VerticalAlignment="Top"
-                                        Background="{StaticResource Brush.Border}" />
-                                <DockPanel HorizontalAlignment="Left"
-                                           PreviewMouseDown="ConfigurationActions_PreviewMouseDown"
-                                           PreviewKeyDown="ConfigurationActions_PreviewKeyDown">
-                                    <Button x:Name="NewConfigurationButton" DockPanel.Dock="Right"
-                                            VerticalAlignment="Top" Style="{StaticResource Configuration.Add}"
-                                            ToolTip="新建空配置" AutomationProperties.Name="新建空配置"
-                                            Click="NewConfigurationButton_Click">
-                                        <ui:SymbolIcon Symbol="Add24" FontSize="16" />
-                                    </Button>
-                                    <TabControl x:Name="ConfigurationTabs" BorderThickness="0"
-                                                Background="Transparent"
-                                                SelectionChanged="ConfigurationTabs_SelectionChanged"
-                                                AutomationProperties.Name="任务配置">
-                                        <TabControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <StackPanel Orientation="Horizontal" />
-                                            </ItemsPanelTemplate>
-                                        </TabControl.ItemsPanel>
-                                        <TabControl.Template>
-                                            <ControlTemplate TargetType="TabControl">
-                                                <ScrollViewer x:Name="ConfigurationScroll"
-                                                              Template="{StaticResource Configuration.Scroll}"
-                                                              HorizontalScrollBarVisibility="Auto"
-                                                              VerticalScrollBarVisibility="Disabled"
-                                                    PreviewMouseWheel="ConfigurationScroll_PreviewMouseWheel"
-                                                              CanContentScroll="False" Focusable="False">
-                                                    <ItemsPresenter KeyboardNavigation.TabNavigation="Once" />
-                                                </ScrollViewer>
-                                            </ControlTemplate>
-                                        </TabControl.Template>
-                                    </TabControl>
-                                </DockPanel>
-                            </Grid>
-                            <Grid Grid.Row="1" Margin="-8,0,8,0">
+                            <Grid Grid.Row="0" Margin="-8,0,8,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
@@ -592,7 +626,7 @@
                             </Grid>
 
                             <Border x:Name="TaskShelfContent" Visibility="Collapsed"
-                                    Grid.Row="2" MaxHeight="280"
+                                    Grid.Row="1" MaxHeight="280"
                                     Margin="0,4,0,0"
                                     Padding="0,2,0,0"
                                     Style="{StaticResource TaskShelfSurfaceStyle}">
@@ -617,14 +651,14 @@
                                 </Grid>
                             </Border>
 
-                            <Border Grid.Row="3" Height="1"
+                            <Border Grid.Row="2" Height="1"
                                     Margin="0,10,0,14"
                                     Background="{StaticResource Brush.Border}"
                                     SnapsToDevicePixels="True" />
 
-                            <TextBlock Grid.Row="4" Text="执行计划"
+                            <TextBlock Grid.Row="3" Text="执行计划"
                                        Style="{StaticResource SectionTitleTextStyle}" />
-                            <ScrollViewer x:Name="PlanScroll" Grid.Row="5"
+                            <ScrollViewer x:Name="PlanScroll" Grid.Row="4"
                                           Template="{StaticResource Scroll.Faded}"
                                           VerticalScrollBarVisibility="Auto"
                                           HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">

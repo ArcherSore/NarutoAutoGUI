@@ -46,6 +46,7 @@ internal static partial class SelfTestRunner
             VerifyConfigurationFallback(testDirectory, projectDirectory);
             VerifyInvalidConfigurationIsolation(testDirectory, projectDirectory);
             VerifyConfigurationTabs(logger, testDirectory, projectDirectory);
+            VerifyConfigurationHeader(logger, testDirectory);
             VerifyBlankParameterLabels(logger, testDirectory);
             VerifyDraftSummarySync(logger, testDirectory);
             VerifyParameterInspector(testDirectory, projectDirectory);

@@ -139,8 +139,12 @@ internal static partial class SelfTestRunner
                     or Wpf.Ui.Controls.ToggleSwitch).ToArray();
             SetBusy(true);
             add.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
-            if (tabs.IsEnabled || add.IsEnabled || project.Configurations.Count != 2) {
-                throw new InvalidOperationException("Start in-flight 必须锁住新增和 Tab 操作。");
+            tabs.SelectedIndex = 1;
+            if (!tabs.IsEnabled || add.IsEnabled || project.Configurations.Count != 2 || tabs.SelectedIndex != 0
+                || project.ActiveConfigurationId != project.Configurations[0].Id
+                || ConfigurationDescendants(tabs).OfType<System.Windows.Controls.Button>()
+                    .Any(button => button.IsEnabled)) {
+                throw new InvalidOperationException("Start in-flight 必须锁住新增、切换与删除，但标签条保持可用。");
             }
             var buttons = ConfigurationDescendants(items).OfType<System.Windows.Controls.Button>().ToArray();
             string NameOf(System.Windows.DependencyObject element) =>

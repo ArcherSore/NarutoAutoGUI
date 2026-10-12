@@ -4,7 +4,8 @@ using System.Windows.Data;
 
 namespace NarutoAutoGUI.Views;
 
-// Shows an edge fade only while content is clipped on that edge: values are VerticalOffset and ScrollableHeight.
+// Shows an edge fade only while content is clipped on that edge: values are the offset and scrollable length on
+// one axis, and the parameter names the start edge ("Top" or "Left") or the end edge.
 public sealed class ScrollEdgeVisibilityConverter : IMultiValueConverter
 {
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
@@ -12,7 +13,7 @@ public sealed class ScrollEdgeVisibilityConverter : IMultiValueConverter
         if (values is not [double offset, double scrollable]) {
             return Visibility.Collapsed;
         }
-        var clipped = Equals(parameter, "Top") ? offset > 0.5 : offset < scrollable - 0.5;
+        var clipped = parameter is "Top" or "Left" ? offset > 0.5 : offset < scrollable - 0.5;
         return clipped ? Visibility.Visible : Visibility.Collapsed;
     }
 

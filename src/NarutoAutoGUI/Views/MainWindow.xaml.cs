@@ -32,7 +32,6 @@ using WpfMessageBox = System.Windows.MessageBox;
 using WpfMouseEventArgs = System.Windows.Input.MouseEventArgs;
 using WpfPoint = System.Windows.Point;
 using WpfTextBox = System.Windows.Controls.TextBox;
-using WpfToolTip = System.Windows.Controls.ToolTip;
 using FluentWindow = Wpf.Ui.Controls.FluentWindow;
 using WpfOrientation = System.Windows.Controls.Orientation;
 using WpfSymbolIcon = Wpf.Ui.Controls.SymbolIcon;
@@ -1295,14 +1294,14 @@ public partial class MainWindow : FluentWindow
         }
         var panel = new ParameterInputsPanel();
         foreach (var input in row.Inputs) {
-            var header = new StackPanel { Orientation = WpfOrientation.Horizontal, MinHeight = 20 };
+            var header = new StackPanel { MinHeight = 20 };
             header.Children.Add(new TextBlock {
                 Text = input.Label, Style = (Style)FindResource("Inspector.InputLabel")
             });
             if (!string.IsNullOrWhiteSpace(input.HelpText)) {
-                var information = CreateDescriptionInfoButton(input.HelpText, $"{input.Label} 的说明");
-                information.Margin = new Thickness(2, 0, 0, 0);
-                header.Children.Add(information);
+                header.Children.Add(new TextBlock {
+                    Text = input.HelpText, Style = (Style)FindResource("Inspector.Description")
+                });
             }
             notes[input.Input.Name] = new StackPanel();
             panel.Children.Add(new StackPanel {
@@ -1386,8 +1385,8 @@ public partial class MainWindow : FluentWindow
     {
         view.Row.IsInvalid = row.IsInvalid;
         view.CaseNotes.Children.Clear();
-        foreach (var note in new[] { row.CaseDescription, row.DefaultHint }.OfType<string>()) {
-            view.CaseNotes.Children.Add(CreateInspectorNote(note, "Inspector.Note"));
+        if (row.CaseDescription is { } caseDescription) {
+            view.CaseNotes.Children.Add(CreateInspectorNote(caseDescription, "Inspector.Note"));
         }
         foreach (var input in row.Inputs) {
             if (!view.InputNotes.TryGetValue(input.Input.Name, out var notes)) {
@@ -1398,9 +1397,6 @@ public partial class MainWindow : FluentWindow
                 var saved = ParameterInspector.ShowValue(input.SavedValue);
                 notes.Children.Add(CreateInspectorNote(draft.Message, "Inspector.Error"));
                 notes.Children.Add(CreateInspectorNote($"未保存，仍使用「{saved}」· Esc 还原", "Inspector.DraftNote"));
-            }
-            if (input.DefaultHint is { } hint) {
-                notes.Children.Add(CreateInspectorNote(hint, "Inspector.Note"));
             }
         }
     }
@@ -1425,25 +1421,6 @@ public partial class MainWindow : FluentWindow
         element, IsEnabledProperty, _configurationEditableBinding ??= new System.Windows.Data.Binding {
             Path = new PropertyPath(ConfigurationEditableProperty), Source = this
         });
-
-    private WpfButton CreateDescriptionInfoButton(string description, string accessibleName)
-    {
-        var toolTip = new WpfToolTip { Content = description, MaxWidth = 320 };
-        var button = CreateIconButton(WpfSymbolRegular.Info12, accessibleName);
-        button.MinWidth = 20;
-        button.MinHeight = 20;
-        button.Padding = new Thickness(2);
-        button.ToolTip = toolTip;
-        ToolTipService.SetInitialShowDelay(button, 250);
-        button.GotKeyboardFocus += (_, _) => toolTip.IsOpen = true;
-        button.LostKeyboardFocus += (_, _) => toolTip.IsOpen = false;
-        button.Click += (_, args) =>
-        {
-            toolTip.IsOpen = !toolTip.IsOpen;
-            args.Handled = true;
-        };
-        return button;
-    }
 
     private WpfButton CreateIconButton(WpfSymbolRegular symbol, string accessibleName)
     {
@@ -2081,7 +2058,6 @@ public partial class MainWindow : FluentWindow
         HomeDesktopVisibilityButton.Tag = state.Desktop.Action == DesktopAction.Hide ? "True" : "False";
         HomeDesktopVisibilityText.Text = desktopText;
         HomeDesktopVisibilityButton.IsEnabled = state.Desktop.Enabled;
-        HomeDesktopVisibilityButton.ToolTip = desktopText;
         AutomationProperties.SetName(HomeDesktopVisibilityButton, desktopText);
 
         var action = state.Action;
@@ -2091,15 +2067,20 @@ public partial class MainWindow : FluentWindow
         RetryEnvironmentButton.IsEnabled = action is RuntimeAction.Retry { Enabled: true };
         StartTaskHeaderButton.Visibility = Visible(action is RuntimeAction.Start);
         StartTaskHeaderButton.IsEnabled = action is RuntimeAction.Start { Enabled: true };
-        Explain(StartTaskHeaderButton, "开始任务", (action as RuntimeAction.Start)?.Blocker);
-        Explain(RetryEnvironmentButton, "重试", (action as RuntimeAction.Retry)?.Blocker);
+        Explain(StartTaskHeaderButton, (action as RuntimeAction.Start)?.Blocker);
+        Explain(RetryEnvironmentButton, (action as RuntimeAction.Retry)?.Blocker);
+        if (action is RuntimeAction.Retry { Target: var retryTarget }) {
+            var retryText = retryTarget == RetryTarget.Prepare ? "重试准备运行环境" : "重试开始任务";
+            RetryEnvironmentText.Text = retryText;
+            AutomationProperties.SetName(RetryEnvironmentButton, retryText);
+        }
         StopTaskHeaderButton.Visibility = Visible(action is RuntimeAction.Stop);
         StopTaskHeaderButton.IsEnabled = action is RuntimeAction.Stop { Enabled: true };
         RecoverEnvironmentButton.Visibility = Visible(action is RuntimeAction.Recover);
         RecoverEnvironmentButton.IsEnabled = action is RuntimeAction.Recover { Enabled: true };
         if (action is RuntimeAction.Recover { Reason: var recovery }) {
             var reason = RecoveryText(recovery);
-            RecoverEnvironmentButton.ToolTip = $"结束桌面分身\n{reason}";
+            RecoverEnvironmentButton.ToolTip = reason;
             AutomationProperties.SetHelpText(RecoverEnvironmentButton, reason);
         }
         RuntimeHeaderProgressRing.Visibility = Visible(action is RuntimeAction.InProgress);
@@ -2111,7 +2092,6 @@ public partial class MainWindow : FluentWindow
             };
             var progressText = kind == ProgressKind.EndingEnvironment
                 ? "正在结束桌面分身" : $"正在{OperationLabel(operation)}";
-            RuntimeHeaderProgressRing.ToolTip = progressText;
             AutomationProperties.SetName(RuntimeHeaderProgressRing, progressText);
             RuntimeProgressText.Text = $"{progressText}…";
         }
@@ -2133,11 +2113,11 @@ public partial class MainWindow : FluentWindow
         static Visibility Visible(bool visible) => visible ? Visibility.Visible : Visibility.Collapsed;
 
         // A blocked Start, or a Retry that would start, says why on hover and to screen readers; the task area
-        // holds the detailed message.
-        static void Explain(FrameworkElement button, string toolTip, StartBlocker? blocker)
+        // holds the detailed message. The visible label needs no tooltip of its own.
+        static void Explain(FrameworkElement button, StartBlocker? blocker)
         {
             var reason = blocker is { } value ? StartBlockerText(value) : null;
-            button.ToolTip = reason ?? toolTip;
+            button.ToolTip = reason;
             AutomationProperties.SetHelpText(button, reason ?? string.Empty);
         }
     }

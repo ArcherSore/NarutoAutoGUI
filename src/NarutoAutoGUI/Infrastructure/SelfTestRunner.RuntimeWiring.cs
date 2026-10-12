@@ -309,7 +309,8 @@ internal static partial class SelfTestRunner
     private static bool ProgressShows(MainWindow window, string text)
     {
         var ring = Named<FrameworkElement>(window, "RuntimeHeaderProgressRing");
-        return HeaderShows(window, "RuntimeHeaderProgressRing", ring.IsEnabled) && Equals(ring.ToolTip, text);
+        return HeaderShows(window, "RuntimeHeaderProgressRing", ring.IsEnabled) && ring.ToolTip is null
+            && System.Windows.Automation.AutomationProperties.GetName(ring) == text;
     }
 
     private static bool ConfigurationEditable(MainWindow window) =>

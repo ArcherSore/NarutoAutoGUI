@@ -23,8 +23,6 @@ internal static partial class SelfTestRunner
         Require(rows[1].Kind == ProjectOptionKind.Select && rows[1].Label == "Mode"
             && rows[2].Kind == ProjectOptionKind.Switch && rows[2].Label == "Nested",
             "无 label 的 select/switch 行应回退到选项名。");
-        Require(rows.All(row => row.DefaultHint is null && row.Inputs.All(input => input.DefaultHint is null)),
-            "跟随默认的值不显示默认提示。");
 
         var directory = CreateComplexInspectorFixture(testDirectory);
         var project = ProjectPlanModule.Open(directory, Path.Combine(directory, "config.json"));
@@ -55,21 +53,18 @@ internal static partial class SelfTestRunner
         };
         rows = ParameterInspector.Derive(project.GetConfiguration("StressTask"), drafts, others);
         var inputs = rows[0].Inputs;
-        Require(inputs[0].DefaultHint == "默认：978-1012" && inputs[1].DefaultHint is null
-            && rows[1].DefaultHint is null, "默认提示只在显式值与默认值不同时出现。");
         Require(rows[0].IsInvalid && inputs[2].Draft?.Text == "maybe" && inputs[2].SavedValue == "true"
-            && inputs[2].DisplayValue == "maybe" && inputs[2].DefaultHint is null && !rows[1].IsInvalid,
+            && inputs[2].DisplayValue == "maybe" && !rows[1].IsInvalid,
             "草稿状态必须给出草稿文本、提示与已保存值。");
 
         project.SetSelectedCase("Level1", "Shallow");
         rows = ParameterInspector.Derive(project.GetConfiguration("StressTask"), none, others);
         Require(rows.Select(row => row.Option.Name).SequenceEqual(new[] {
             "ServerRange", "Mode", "Nested", "Level1"
-        }) && rows[3].DefaultHint == "默认：Deep" && rows[3].CaseDescription is null,
-            "切换 case 后子行必须消失，并提示默认 case。");
+        }) && rows[3].CaseDescription is null, "切换 case 后子行必须消失，case 说明随之消失。");
         project.SetSelectedCase("Level1", "Deep");
         rows = ParameterInspector.Derive(project.GetConfiguration("StressTask"), none, others);
-        Require(rows.Count == 6 && rows[3].DefaultHint is null, "切回默认 case 后子行恢复且不再提示默认值。");
+        Require(rows.Count == 6, "切回默认 case 后子行恢复。");
     }
 
     private static void VerifyPlanItemHeaders(AppLogger logger, string testDirectory)
@@ -158,11 +153,17 @@ internal static partial class SelfTestRunner
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(window)!;
             project.AddTask("StressTask");
             project.AddTask("ThirdTask");
+            project.SetInputValue("ServerRange", "server_range", "979");
+            project.SetInputValue("ServerRange", "retry_count", "5");
             typeof(MainWindow).GetMethod("EndOnboarding", System.Reflection.BindingFlags.Instance
                 | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { true });
             SetOnboardingField(window, "_expandedTaskName", "StressTask");
             InvokeOnboarding(window, "RenderTaskPlan");
             var items = (System.Windows.DependencyObject)window.FindName("PlanItemsPanel");
+            var notes = ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBlock>().ToArray();
+            Require(notes.Any(note => note.Text == "Number of retry attempts")
+                && notes.All(note => !note.Text.StartsWith("默认：", StringComparison.Ordinal)),
+                "输入说明必须直接可见，显式值偏离默认时也不显示默认提示。");
             var planScroll = (System.Windows.Controls.ScrollViewer)window.FindName("PlanScroll");
             var screenshots = Environment.GetEnvironmentVariable("NARUTO_TASK_SCREENSHOTS");
             foreach (var (width, stacked) in new[] { (920, true), (1180, false), (1440, false) }) {
@@ -240,6 +241,7 @@ internal static partial class SelfTestRunner
             tasks.Add(task);
         }
         var definitions = json["option"]!.AsObject();
+        definitions["ServerRange"]!["inputs"]![1]!["description"] = "Number of retry attempts";
         definitions["Level1"] = JsonNode.Parse("""
             {"type": "select", "label": "", "default_case": "Deep", "cases": [
               {"name": "Deep", "description": "Goes one level deeper", "option": ["Level2"]},

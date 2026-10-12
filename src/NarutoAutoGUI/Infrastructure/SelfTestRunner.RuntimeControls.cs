@@ -48,14 +48,14 @@ internal static partial class SelfTestRunner
                 Require(shown.SequenceEqual([control]), $"{action} 应只显示 {control}，实际为 {string.Join("、", shown)}。");
                 var element = Named<FrameworkElement>(window, control);
                 Require(progress is null ? element.IsEnabled == enabled
-                    : Equals(element.ToolTip, progress) && AutomationProperties.GetName(element) == progress,
+                    : element.ToolTip is null && AutomationProperties.GetName(element) == progress,
                     $"{action} 的可用性或进度说明不符。");
             }
 
-            // A disabled Start or Retry-to-Start explains itself on hover and to screen readers; enabled ones keep
-            // their usual tooltip.
-            foreach (var (action, control, toolTip, helpText) in new (RuntimeAction, string, string, string)[] {
-                (new RuntimeAction.Start(true), "StartTaskHeaderButton", "开始任务", ""),
+            // A disabled Start or Retry-to-Start explains itself on hover and to screen readers; enabled ones carry
+            // no tooltip, as their visible label says it all.
+            foreach (var (action, control, toolTip, helpText) in new (RuntimeAction, string, string?, string)[] {
+                (new RuntimeAction.Start(true), "StartTaskHeaderButton", null, ""),
                 (new RuntimeAction.Start(false, StartBlocker.CommandsUnavailable), "StartTaskHeaderButton",
                     "当前操作完成后可开始任务", "当前操作完成后可开始任务"),
                 (new RuntimeAction.Start(false, StartBlocker.ProjectNotLoaded), "StartTaskHeaderButton",
@@ -66,8 +66,8 @@ internal static partial class SelfTestRunner
                     "当前配置未通过校验，请先修正任务参数", "当前配置未通过校验，请先修正任务参数"),
                 (new RuntimeAction.Start(false, StartBlocker.RuntimeNotReady), "StartTaskHeaderButton",
                     "运行环境尚未就绪，请稍候", "运行环境尚未就绪，请稍候"),
-                (new RuntimeAction.Retry(RetryTarget.Prepare, true), "RetryEnvironmentButton", "重试", ""),
-                (new RuntimeAction.Retry(RetryTarget.Start, true), "RetryEnvironmentButton", "重试", ""),
+                (new RuntimeAction.Retry(RetryTarget.Prepare, true), "RetryEnvironmentButton", null, ""),
+                (new RuntimeAction.Retry(RetryTarget.Start, true), "RetryEnvironmentButton", null, ""),
                 (new RuntimeAction.Retry(RetryTarget.Start, false, StartBlocker.NoTasks), "RetryEnvironmentButton",
                     "请先在执行计划中添加任务", "请先在执行计划中添加任务")
             }) {
@@ -77,7 +77,18 @@ internal static partial class SelfTestRunner
                     && AutomationProperties.GetHelpText(button) == helpText, $"{action} 的说明不符。");
             }
 
-            // Recovery is named for what it does and says why it is needed, whether or not it can run now.
+            // The retry button names what it retries.
+            foreach (var (target, label) in new (RetryTarget, string)[] {
+                (RetryTarget.Prepare, "重试准备运行环境"), (RetryTarget.Start, "重试开始任务")
+            }) {
+                window.ApplyRuntimeControls(new RuntimeControlState(
+                    new RuntimeAction.Retry(target, true), true, null, idleDesktop, true, null));
+                Require(Named<TextBlock>(window, "RetryEnvironmentText").Text == label
+                    && AutomationProperties.GetName(Named<FrameworkElement>(window, "RetryEnvironmentButton")) == label,
+                    $"{target} 的重试按钮应写明重试什么。");
+            }
+
+            // Recovery is named for what it does; its tooltip says why it is needed, whether or not it can run now.
             foreach (var (reason, text) in new (RecoveryReason, string)[] {
                 (RecoveryReason.StopUnconfirmed, "任务未能确认结束，MaaNOP 可能仍在运行"),
                 (RecoveryReason.RuntimeFaulted, "运行环境故障，Worker 无法继续执行任务"),
@@ -88,7 +99,7 @@ internal static partial class SelfTestRunner
                     window.ApplyRuntimeControls(new RuntimeControlState(
                         new RuntimeAction.Recover(enabled, reason), true, null, idleDesktop, true, null));
                     var button = Named<FrameworkElement>(window, "RecoverEnvironmentButton");
-                    Require(Equals(button.ToolTip, $"结束桌面分身\n{text}") && ToolTipService.GetShowOnDisabled(button)
+                    Require(Equals(button.ToolTip, text) && ToolTipService.GetShowOnDisabled(button)
                         && AutomationProperties.GetName(button) == "结束桌面分身"
                         && AutomationProperties.GetHelpText(button) == text, $"{reason} 的恢复说明不符。");
                 }
@@ -116,7 +127,7 @@ internal static partial class SelfTestRunner
                 window.ApplyRuntimeControls(state with { Desktop = desktop });
                 var button = Named<WpfButton>(window, "HomeDesktopVisibilityButton");
                 Require(Named<AccessText>(window, "HomeDesktopVisibilityText").Text == text
-                    && button.IsEnabled == desktop.Enabled && Equals(button.ToolTip, text)
+                    && button.IsEnabled == desktop.Enabled && button.ToolTip is null
                     && AutomationProperties.GetName(button) == text
                     && Equals(button.Tag, desktop.Action == DesktopAction.Hide ? "True" : "False"),
                     $"{desktop} 的分身按钮显示不符。");

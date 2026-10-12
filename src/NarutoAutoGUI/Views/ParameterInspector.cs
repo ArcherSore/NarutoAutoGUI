@@ -7,8 +7,7 @@ internal sealed record InputDraft(string Text, string Message);
 
 // A lone input is named and described by its row; one of several also names its own label.
 internal sealed record InspectorInput(
-    ProjectInputEditor Input, string Label, string AccessibleName, string HelpText, InputDraft? Draft,
-    string? DefaultHint)
+    ProjectInputEditor Input, string Label, string AccessibleName, string HelpText, InputDraft? Draft)
 {
     internal string SavedValue => Input.Value;
     internal string DisplayValue => Draft?.Text ?? Input.Value;
@@ -17,8 +16,7 @@ internal sealed record InspectorInput(
 // One inspector row per option: a select or switch, or an input option with all of its inputs side by side.
 internal sealed record InspectorRow(
     ProjectOptionEditor Option, string Label, int Depth, bool IsGlobal, string Description,
-    string? CaseDescription, string? DefaultHint, IReadOnlyList<string> SharedWith,
-    IReadOnlyList<InspectorInput> Inputs)
+    string? CaseDescription, IReadOnlyList<string> SharedWith, IReadOnlyList<InspectorInput> Inputs)
 {
     internal ProjectOptionKind Kind => Option.Kind;
     internal bool IsInvalid => Inputs.Any(input => input.Draft is not null);
@@ -45,10 +43,8 @@ internal static class ParameterInspector
             .ToArray();
     }
 
-    // An empty value is spelled out so a hint never ends in nothing.
+    // An empty value is spelled out so a note never ends in nothing.
     internal static string ShowValue(string value) => value.Length == 0 ? "空" : value;
-
-    private static string FormatDefault(string value) => $"默认：{ShowValue(value)}";
 
     private static IEnumerable<(ProjectOptionEditor Option, int Depth)> Flatten(
         IEnumerable<ProjectOptionEditor> options, int depth)
@@ -69,25 +65,19 @@ internal static class ParameterInspector
         var single = option.Inputs.Count == 1;
         var description = FirstNonBlank(option.Description, single ? option.Inputs[0].Description : null)
             ?? string.Empty;
-        // The default is pointed out only when an explicit value differs from it.
         if (option.Kind != ProjectOptionKind.Input) {
             var selected = option.Cases.SingleOrDefault(item => item.Name == option.SelectedCase);
-            var defaultCase = option.Cases.SingleOrDefault(item => item.Name == option.DefaultCase);
-            var differs = option.IsExplicit && option.SelectedCase != option.DefaultCase && defaultCase is not null;
-            var defaultHint = differs ? FormatDefault(defaultCase!.Label) : null;
             return new InspectorRow(option, label, depth, global, description, FirstNonBlank(selected?.Description),
-                defaultHint, sharedWith, []);
+                sharedWith, []);
         }
         var inputs = option.Inputs.Select(input => {
             var draft = drafts.GetValueOrDefault((option.Name, input.Name));
-            var differs = draft is null && input.IsExplicit && input.Value != input.DefaultValue;
             // An input without a label keeps the old fallback: the option label, then the option name.
             var inputLabel = FirstNonBlank(input.Label, option.Label) ?? option.Name;
             var name = single || inputLabel == label ? label : $"{label} · {inputLabel}";
-            return new InspectorInput(input, inputLabel, name, single ? description : input.Description, draft,
-                differs ? FormatDefault(input.DefaultValue) : null);
+            return new InspectorInput(input, inputLabel, name, single ? description : input.Description, draft);
         }).ToArray();
-        return new InspectorRow(option, label, depth, global, description, null, null, sharedWith, inputs);
+        return new InspectorRow(option, label, depth, global, description, null, sharedWith, inputs);
     }
 
     private static string? FirstNonBlank(params string?[] values) =>

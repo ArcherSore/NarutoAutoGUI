@@ -497,21 +497,18 @@ internal static partial class SelfTestRunner
             var catalogScroll = (System.Windows.Controls.ScrollViewer)window.FindName("AvailableTasksScroll");
             var planScroll = (System.Windows.Controls.ScrollViewer)window.FindName("PlanScroll");
             var search = (System.Windows.Controls.TextBox)window.FindName("TaskSearchBox");
-            if (search.Visibility != System.Windows.Visibility.Collapsed) {
-                throw new InvalidOperationException("搜索框默认不应占据任务区空间。");
-            }
             if (shelf.Visibility != System.Windows.Visibility.Collapsed) {
-                throw new InvalidOperationException("可用任务应默认收起。");
+                throw new InvalidOperationException("添加任务面板应默认收起。");
             }
             ClickOnboarding(window, "TaskShelfHeaderButton");
             foreach (var width in new[] { 1440, 920 }) {
                 window.Width = width;
                 window.Height = width == 920 ? 640 : 900;
                 PumpOnboarding();
-                if (shelf.ActualHeight > Math.Min(280, workspace.ActualHeight / 3) + 1
-                    || catalogScroll.ScrollableHeight <= 0 || planScroll.ViewportHeight < 100
+                if (shelf.ActualHeight > Math.Min(340, workspace.ActualHeight * 0.44) + 1
+                    || catalogScroll.ScrollableHeight <= 0 || planScroll.ActualHeight < 131.5
                     || catalogScroll.ExtentWidth > catalogScroll.ViewportWidth + 1) {
-                    throw new InvalidOperationException("分类任务区必须限高、可滚动，并为执行计划保留空间。");
+                    throw new InvalidOperationException("添加任务面板必须限高、独立滚动，并为执行计划保留最小高度。");
                 }
                 var planTop = planScroll.TranslatePoint(new System.Windows.Point(), workspace).Y;
                 var planOffset = planScroll.VerticalOffset;
@@ -532,7 +529,7 @@ internal static partial class SelfTestRunner
                     planScroll.ScrollToBottom();
                     PumpOnboarding();
                     if (planScroll.VerticalOffset <= 0 || catalogScroll.VerticalOffset != 0) {
-                        throw new InvalidOperationException("执行计划必须独立滚动。");
+                        throw new InvalidOperationException("面板打开时执行计划仍须独立滚动。");
                     }
                     planScroll.ScrollToTop();
                 }
@@ -541,10 +538,6 @@ internal static partial class SelfTestRunner
             if (first.IsExpanded) {
                 throw new InvalidOperationException("分类应遵循 default_expand=false。");
             }
-            ClickOnboarding(window, "TaskSearchToggleButton");
-            if (search.Visibility != System.Windows.Visibility.Visible) {
-                throw new InvalidOperationException("点击搜索入口应展开输入框。");
-            }
             search.Text = "RealTask";
             PumpOnboarding();
             var matches = catalog.Children.OfType<System.Windows.Controls.Expander>().ToArray();
@@ -552,8 +545,9 @@ internal static partial class SelfTestRunner
                 .Where(button => button.Tag is ProjectTaskChoice).ToArray();
             if (matches.Length != 2 || matches.Any(section => !section.IsExpanded) || chips.Length != 2
                 || chips.Any(chip => !chip.IsEnabled || !System.Windows.Automation.AutomationProperties.GetName(chip)
-                    .StartsWith("已添加", StringComparison.Ordinal))) {
-                throw new InvalidOperationException("搜索应展开所有匹配分类，多组任务共享已添加状态。");
+                    .StartsWith("已添加", StringComparison.Ordinal))
+                || ((System.Windows.Controls.TextBlock)window.FindName("AvailableTaskCountText")).Text != "1 / 38") {
+                throw new InvalidOperationException("搜索应展开所有匹配分类、显示匹配数，多组任务共享已添加状态。");
             }
             var planItems = (System.Windows.Controls.Panel)window.FindName("PlanItemsPanel");
             var cards = planItems.Children.Count;
@@ -568,14 +562,16 @@ internal static partial class SelfTestRunner
             if (catalog.Children.Count != 1 || catalog.Children[0] is not System.Windows.Controls.TextBlock) {
                 throw new InvalidOperationException("无搜索结果应显示空态。");
             }
-            search.RaiseEvent(new System.Windows.Input.KeyEventArgs(
+            // Esc reaches the window from wherever focus is, here a plan card outside the panel.
+            void Escape() => planItems.RaiseEvent(new System.Windows.Input.KeyEventArgs(
                 System.Windows.Input.Keyboard.PrimaryDevice, System.Windows.PresentationSource.FromVisual(window),
                 0, System.Windows.Input.Key.Escape) {
-                RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent
+                RoutedEvent = System.Windows.Input.Keyboard.KeyDownEvent
             });
+            Escape();
             PumpOnboarding();
-            if (search.Visibility != System.Windows.Visibility.Collapsed || search.Text.Length != 0) {
-                throw new InvalidOperationException("Esc 应清空并关闭任务搜索。");
+            if (shelf.Visibility != System.Windows.Visibility.Visible || search.Text.Length != 0) {
+                throw new InvalidOperationException("第一次 Esc 只应清空搜索。");
             }
             first = catalog.Children.OfType<System.Windows.Controls.Expander>().First();
             if (first.IsExpanded) {
@@ -588,23 +584,60 @@ internal static partial class SelfTestRunner
                 throw new InvalidOperationException("刷新任务计划不应重置分类展开状态。");
             }
             catalog.Children.OfType<System.Windows.Controls.Expander>().First().IsExpanded = false;
-            ClickOnboarding(window, "TaskSearchToggleButton");
-            search.Text = "RealTask";
-            ClickOnboarding(window, "TaskSearchToggleButton");
-            if (search.Visibility != System.Windows.Visibility.Collapsed || search.Text.Length != 0) {
-                throw new InvalidOperationException("关闭搜索按钮应清空并收起输入框。");
+            Escape();
+            PumpOnboarding();
+            if (shelf.Visibility != System.Windows.Visibility.Collapsed) {
+                throw new InvalidOperationException("搜索为空时 Esc 应关闭添加任务面板。");
             }
             ClickOnboarding(window, "TaskShelfHeaderButton");
-            ClickOnboarding(window, "TaskSearchToggleButton");
-            if (shelf.Visibility != System.Windows.Visibility.Visible
-                || search.Visibility != System.Windows.Visibility.Visible) {
-                throw new InvalidOperationException("可用任务收起时，搜索入口应同时展开任务区。");
-            }
             search.Text = "RealTask";
             ClickOnboarding(window, "TaskShelfHeaderButton");
-            if (search.Text.Length != 0 || search.Visibility != System.Windows.Visibility.Collapsed) {
-                throw new InvalidOperationException("收起任务区不得遗留隐藏的搜索筛选。");
+            if (search.Text.Length != 0 || shelf.Visibility != System.Windows.Visibility.Collapsed) {
+                throw new InvalidOperationException("完成添加不得遗留隐藏的搜索筛选。");
             }
+
+            ClickOnboarding(window, "TaskShelfHeaderButton");
+            System.Windows.Controls.Button Chip(string label) => ConfigurationDescendants(catalog)
+                .OfType<System.Windows.Controls.Button>().Single(button =>
+                    System.Windows.Automation.AutomationProperties.GetName(button) == $"添加任务：{label}");
+            var expanded = typeof(MainWindow).GetField("_expandedTaskName",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            var expandedBefore = expanded.GetValue(window);
+            foreach (var label in new[] { "日常任务 2", "日常任务 3" }) {
+                Chip(label).RaiseEvent(new System.Windows.RoutedEventArgs(
+                    System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                PumpOnboarding();
+            }
+            var addedBadge = (System.Windows.FrameworkElement)window.FindName("AddedTasksBadge");
+            var added = planItems.Children.OfType<System.Windows.Controls.Border>()
+                .Single(card => card.Tag is ProjectTaskChoice { Label: "日常任务 3" });
+            var shown = added.TransformToAncestor(planScroll).TransformBounds(
+                new System.Windows.Rect(0, 0, added.ActualWidth, added.ActualHeight));
+            if (shown.Top < 0 || shown.Bottom > planScroll.ViewportHeight + 1
+                || System.Windows.SystemParameters.ClientAreaAnimation
+                && added.ReadLocalValue(System.Windows.Controls.Border.BorderBrushProperty)
+                    == System.Windows.DependencyProperty.UnsetValue) {
+                throw new InvalidOperationException("新添加的任务应滚入视野并高亮。");
+            }
+            if (shelf.Visibility != System.Windows.Visibility.Visible || planItems.Children.Count <= cards
+                || ((System.Windows.Controls.TextBlock)window.FindName("AddedTasksText")).Text != "已添加 2 项"
+                || addedBadge.ToolTip as string != "日常任务 2、日常任务 3"
+                || !Equals(expanded.GetValue(window), expandedBefore)) {
+                throw new InvalidOperationException("连续添加时面板保持打开、统计本次添加，且新任务不自动展开。");
+            }
+            ClickOnboarding(window, "TaskShelfHeaderButton");
+            ClickOnboarding(window, "TaskShelfHeaderButton");
+            if (addedBadge.Visibility != System.Windows.Visibility.Collapsed) {
+                throw new InvalidOperationException("重新打开面板应重新统计本次添加。");
+            }
+            SetOnboardingField(window, "_pendingOperation", PendingOperation.PreparingEnvironment);
+            InvokeOnboarding(window, "RefreshRuntimeControls");
+            if (shelf.Visibility != System.Windows.Visibility.Collapsed
+                || ((System.Windows.UIElement)window.FindName("TaskShelfHeaderButton")).IsEnabled) {
+                throw new InvalidOperationException("锁定时添加任务面板应收起且按钮禁用。");
+            }
+            SetOnboardingField(window, "_pendingOperation", PendingOperation.None);
+            InvokeOnboarding(window, "RefreshRuntimeControls");
             ClickOnboarding(window, "TaskShelfHeaderButton");
             var screenshotDirectory = Environment.GetEnvironmentVariable("NARUTO_TASK_SCREENSHOTS");
             if (!string.IsNullOrEmpty(screenshotDirectory)) {

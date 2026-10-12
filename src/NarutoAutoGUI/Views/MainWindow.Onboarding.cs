@@ -172,7 +172,7 @@ public partial class MainWindow
     {
         var empty = _projectPlan!.SelectedTaskNames.Count == 0;
         (OnboardingTitle.Text, OnboardingDescription.Text) = _onboardingStep switch {
-            0 => ("配置自动化任务", "从“可用任务”添加要执行的任务，并调整执行顺序。\n顶部标签可以保存多套独立配置。"),
+            0 => ("配置自动化任务", "点击“添加任务”选择要执行的任务，并拖动调整执行顺序。\n顶部标签可以保存多套独立配置。"),
             1 when empty => ("查看说明并设置参数", "添加任务后，会在执行计划中出现任务卡片。\n"
                 + "你可以通过 ⓘ 查看任务说明，并在卡片中调整参数。"),
             1 => ("查看说明并设置参数", "点击 ⓘ 查看任务说明，并在卡片中调整运行参数。\n"

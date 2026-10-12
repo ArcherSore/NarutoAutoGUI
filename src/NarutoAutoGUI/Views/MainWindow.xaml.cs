@@ -81,6 +81,8 @@ public partial class MainWindow : FluentWindow
     private bool _projectConfigurationValid;
     private bool _updatingOptionEditors;
     private bool _taskShelfExpanded;
+    // Labels of the tasks added since the add-task panel was last opened.
+    private readonly List<string> _addedSinceShelfOpened = [];
     private readonly Dictionary<string, bool> _taskGroupExpanded = new(StringComparer.Ordinal);
     private bool _navigationPreferenceLoaded;
     private string _configurationLockText = string.Empty;
@@ -122,6 +124,8 @@ public partial class MainWindow : FluentWindow
         _runLog = new RunLogFeed(LogLines, MaximumGuiLogEntries);
         DataContext = this;
         BindConfigurationEditable(NewConfigurationButton);
+        BindConfigurationEditable(TaskShelfHeaderButton);
+        BindConfigurationEditable(EmptyPlanAddButton);
         _logger = logger;
         _applicationDirectory = applicationDirectory ?? AppContext.BaseDirectory;
         _checkForUpdate = checkForUpdate ?? CheckWithEngineAsync;
@@ -146,6 +150,7 @@ public partial class MainWindow : FluentWindow
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
         PreviewKeyDown += MainWindow_PreviewKeyDown;
+        KeyDown += MainWindow_KeyDown;
         IsVisibleChanged += MainWindow_IsVisibleChanged;
         StateChanged += MainWindow_StateChanged;
         SizeChanged += (_, _) => UpdateConfigurationLockText();
@@ -462,16 +467,29 @@ public partial class MainWindow : FluentWindow
     private void TaskShelfHeaderButton_Click(object sender, RoutedEventArgs e)
         => SetTaskShelfExpanded(!_taskShelfExpanded);
 
+    // The panel stays open while several tasks are added; each opening counts its additions afresh.
     private void SetTaskShelfExpanded(bool expanded)
     {
         if (!expanded) {
-            SetTaskSearchVisible(false);
+            TaskSearchBox.Clear();
+        } else if (!_taskShelfExpanded) {
+            _addedSinceShelfOpened.Clear();
+            UpdateAddedTasks();
         }
         _taskShelfExpanded = expanded;
-        TaskShelfContent.Visibility = _taskShelfExpanded ? Visibility.Visible : Visibility.Collapsed;
-        TaskShelfHeaderButton.IsChecked = _taskShelfExpanded;
-        AutomationProperties.SetHelpText(
-            TaskShelfHeaderButton, _taskShelfExpanded ? "可用任务已展开" : "可用任务已收起");
+        TaskShelfContent.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+        EmptyPlanAddButton.Visibility = expanded ? Visibility.Collapsed : Visibility.Visible;
+        TaskShelfHeaderIcon.Symbol = expanded ? WpfSymbolRegular.ChevronUp16 : WpfSymbolRegular.Add16;
+        TaskShelfHeaderText.Text = expanded ? "完成添加" : "添加任务";
+        AutomationProperties.SetName(TaskShelfHeaderButton, TaskShelfHeaderText.Text);
+        AutomationProperties.SetHelpText(TaskShelfHeaderButton, expanded ? "可用任务已展开" : "可用任务已收起");
+    }
+
+    private void UpdateAddedTasks()
+    {
+        AddedTasksBadge.Visibility = _addedSinceShelfOpened.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        AddedTasksText.Text = $"已添加 {_addedSinceShelfOpened.Count} 项";
+        AddedTasksBadge.ToolTip = string.Join("、", _addedSinceShelfOpened);
     }
 
     private void AddTaskButton_Click(object sender, RoutedEventArgs e)
@@ -483,9 +501,12 @@ public partial class MainWindow : FluentWindow
             if (!RequireProject().AddTask(task.Name)) {
                 return;
             }
-            _expandedTaskName = task.Name;
             _pendingStartAttempt = null;
+            _addedSinceShelfOpened.Add(task.Label);
+            UpdateAddedTasks();
             RenderTaskPlan();
+            // The plan keeps its shape: the new card is shown and highlighted rather than expanded.
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => LocatePlanItem(task.Name));
             _logger.Info($"已添加执行计划任务：{task.Name}。 ");
         } catch (Exception exception) {
             HandleProjectEditError("添加执行计划任务失败", exception);
@@ -494,8 +515,14 @@ public partial class MainWindow : FluentWindow
 
     private void LocatePlanItemButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is WpfButton { Tag: ProjectTaskChoice task }
-            && _planItemContainers.TryGetValue(task.Name, out var card)) {
+        if (sender is WpfButton { Tag: ProjectTaskChoice task }) {
+            LocatePlanItem(task.Name);
+        }
+    }
+
+    private void LocatePlanItem(string taskName)
+    {
+        if (_planItemContainers.TryGetValue(taskName, out var card)) {
             BringIntoPlanView(card);
             FlashPlanItem(card);
         }
@@ -873,30 +900,20 @@ public partial class MainWindow : FluentWindow
         return panel;
     }
 
-    private void TaskSearchToggleButton_Click(object sender, RoutedEventArgs e)
-        => SetTaskSearchVisible(TaskSearchBox.Visibility != Visibility.Visible);
-
-    private void SetTaskSearchVisible(bool visible)
+    // Esc first clears the search, then closes the panel, wherever focus is. It arrives here only when no editor
+    // used it, so reverting a parameter draft or cancelling a rename keeps its own Esc.
+    private void MainWindow_KeyDown(object sender, WpfKeyEventArgs e)
     {
-        TaskSearchBox.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        TaskSearchToggleIcon.Symbol = visible ? WpfSymbolRegular.Dismiss16 : WpfSymbolRegular.Search16;
-        TaskSearchToggleButton.ToolTip = visible ? "关闭搜索（Esc）" : "搜索任务";
-        AutomationProperties.SetName(TaskSearchToggleButton, visible ? "关闭任务搜索" : "展开任务搜索");
-        if (visible) {
-            SetTaskShelfExpanded(true);
-            TaskSearchBox.Focus();
-        } else {
+        if (e.Key != Key.Escape || !_taskShelfExpanded || HomeView.Visibility != Visibility.Visible) {
+            return;
+        }
+        if (TaskSearchBox.Text.Length != 0) {
             TaskSearchBox.Clear();
+        } else {
+            SetTaskShelfExpanded(false);
+            TaskShelfHeaderButton.Focus();
         }
-    }
-
-    private void TaskSearchBox_PreviewKeyDown(object sender, WpfKeyEventArgs e)
-    {
-        if (e.Key == Key.Escape) {
-            SetTaskSearchVisible(false);
-            TaskSearchToggleButton.Focus();
-            e.Handled = true;
-        }
+        e.Handled = true;
     }
 
     private void TaskSearchBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -909,7 +926,7 @@ public partial class MainWindow : FluentWindow
 
     private void TaskWorkspacePanel_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        TaskShelfContent.MaxHeight = Math.Min(280, Math.Max(0, e.NewSize.Height / 3));
+        TaskShelfContent.MaxHeight = Math.Min(340, Math.Max(0, e.NewSize.Height * 0.44));
     }
 
     private void RenderPlanItems(ProjectPlanModule project)
@@ -924,6 +941,8 @@ public partial class MainWindow : FluentWindow
         EmptyPlanPanel.Visibility = project.SelectedTaskNames.Count == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
+        PlanCountText.Text = $"{project.SelectedTaskNames.Count} 项";
+        EmptyPlanText.Text = $"从 {project.Tasks.Count} 个可用任务中选择要执行的任务";
 
         foreach (var taskName in project.SelectedTaskNames) {
             AddDropIndicator();
@@ -2039,6 +2058,9 @@ public partial class MainWindow : FluentWindow
         }
 
         SetValue(ConfigurationEditableProperty, state.ConfigurationEditable);
+        if (!state.ConfigurationEditable && _taskShelfExpanded) {
+            SetTaskShelfExpanded(false);
+        }
         ConfigurationLockBadge.Visibility = Visible(state.ConfigurationLock is not null);
         _configurationLockText = state.ConfigurationLock == LockReason.RunActive
             ? "任务运行中，配置已锁定" : "运行环境处理中，配置暂时锁定";

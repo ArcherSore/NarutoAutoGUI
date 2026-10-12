@@ -270,9 +270,9 @@ public partial class MainWindow
                 // A rejected value is a typo, not a failure: keep the text and explain it under the field.
                 // The saved value is unchanged; the draft survives re-rendering until it is fixed or Esc restores it.
                 var message = tag.PatternMessage ?? problem;
-                _invalidInputDrafts[tag.Key] = (textBox.Text, message);
-                ShowOptionInputError(textBox, tag.Error, message);
-                RefreshParameterSummaries();
+                _invalidInputDrafts[tag.Key] = new InputDraft(textBox.Text, message);
+                ShowOptionInputError(textBox, message);
+                RefreshParameterDisplays();
                 _logger.Info($"MaaNOP input 未通过校验，未保存：option={tag.OptionName}，input={tag.InputName}。 ");
                 return false;
             }
@@ -280,7 +280,7 @@ public partial class MainWindow
             _invalidInputDrafts.Remove(tag.Key);
             textBox.Tag = tag with { Value = textBox.Text, Submitted = true };
             _pendingStartAttempt = null;
-            ShowOptionInputError(textBox, tag.Error, null);
+            ShowOptionInputError(textBox, null);
             RefreshAfterOptionSaved(rebuildCards: false);
             return true;
         } catch (Exception exception) {

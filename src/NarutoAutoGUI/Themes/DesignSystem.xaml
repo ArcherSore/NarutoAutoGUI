@@ -72,6 +72,9 @@
     <SolidColorBrush x:Key="Brush.Error.Border" Color="{StaticResource Color.Error.Border}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Error.Foreground" Color="{StaticResource Color.Error.Foreground}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Transparent" Color="Transparent" po:Freeze="True" />
+    <!-- Parameter inspector: nested rows sit on a faint tint beside a guide line. -->
+    <SolidColorBrush x:Key="Brush.Parameter.Nested" Color="#FBFCFE" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Parameter.Guide" Color="#DCE3EC" po:Freeze="True" />
 
     <!-- Typography and dimensions -->
     <FontFamily x:Key="FontFamily.Ui">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI</FontFamily>
@@ -82,8 +85,8 @@
     <sys:Double x:Key="FontSize.Body">13</sys:Double>
     <sys:Double x:Key="FontSize.Label">12</sys:Double>
     <sys:Double x:Key="FontSize.Meta">12</sys:Double>
-    <!-- Shared height for parameter text boxes, dropdowns and switches so mixed editor rows line up. -->
-    <sys:Double x:Key="Height.OptionEditor">36</sys:Double>
+    <!-- Shared height for parameter text boxes, dropdowns and switches so inspector rows line up. -->
+    <sys:Double x:Key="Height.OptionEditor">32</sys:Double>
     <!-- Edge fade of clipped scroll areas; bring-into-view pads by the same amount. -->
     <sys:Double x:Key="Height.ScrollFade">24</sys:Double>
     <sys:Double x:Key="Opacity.Disabled">0.45</sys:Double>
@@ -783,12 +786,72 @@
         <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
     </Style>
 
-    <Style x:Key="OptionTileStyle" TargetType="{x:Type Border}">
-        <Setter Property="MinWidth" Value="220" />
-        <Setter Property="Padding" Value="4,4,4,6" />
-        <Setter Property="Background" Value="{StaticResource Brush.Transparent}" />
-        <Setter Property="BorderThickness" Value="0" />
+    <!-- The expanded card's parameter area and the inspector table inside it. -->
+    <Style x:Key="ParameterEditorStyle" TargetType="{x:Type Border}">
+        <Setter Property="Padding" Value="14,12,14,14" />
+        <Setter Property="Background" Value="{StaticResource Brush.Surface.Option}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Subtle}" />
+        <Setter Property="BorderThickness" Value="0,1,0,0" />
+        <Setter Property="CornerRadius" Value="0,0,6,6" />
+    </Style>
+
+    <Style x:Key="Inspector.Table" TargetType="{x:Type Border}">
+        <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Subtle}" />
+        <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+        <Setter Property="Padding" Value="0,0,0,1" />
+    </Style>
+
+    <Style x:Key="Inspector.Row" TargetType="{x:Type Panel}">
+        <Setter Property="Background" Value="{StaticResource Brush.Transparent}" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource Brush.Parameter.Nested}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="Inspector.Label" TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style x:Key="Inspector.Note" TargetType="{x:Type TextBlock}">
+        <Setter Property="Margin" Value="0,3,0,0" />
+        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Muted}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style x:Key="Inspector.Description" TargetType="{x:Type TextBlock}" BasedOn="{StaticResource Inspector.Note}">
+        <Setter Property="Margin" Value="0,2,0,0" />
+    </Style>
+
+    <Style x:Key="Inspector.DraftNote" TargetType="{x:Type TextBlock}" BasedOn="{StaticResource Inspector.Note}">
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+    </Style>
+
+    <Style x:Key="Inspector.Error" TargetType="{x:Type TextBlock}" BasedOn="{StaticResource Inspector.Note}">
+        <Setter Property="Margin" Value="0,4,0,0" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Error.Foreground}" />
+    </Style>
+
+    <Style x:Key="Inspector.Shared" TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="Inspector.InputLabel" TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
     <Style x:Key="TaskDescriptionDrawerStyle" TargetType="{x:Type Border}">

@@ -90,8 +90,9 @@ public partial class MainWindow : FluentWindow
     private readonly Dictionary<string, Border> _planItemContainers = new(StringComparer.Ordinal);
     private readonly List<(TextBlock Summary, string TaskName)> _planItemSummaries = [];
 
-    private readonly Dictionary<(Guid, string, string), (string Text, string Message)> _invalidInputDrafts = new();
+    private readonly Dictionary<(Guid, string, string), InputDraft> _invalidInputDrafts = new();
     private readonly Dictionary<(Guid, string, string), WpfTextBox> _optionInputEditors = new();
+    private readonly Dictionary<string, InspectorRowView> _inspectorRows = new(StringComparer.Ordinal);
     private System.Windows.Data.Binding? _configurationEditableBinding;
     private static readonly string[] SwitchOnCaseNames = ["Yes", "Y", "On", "True", "Enable", "Enabled"];
 
@@ -100,14 +101,14 @@ public partial class MainWindow : FluentWindow
         "ConfigurationEditable", typeof(bool), typeof(MainWindow), new PropertyMetadata(true));
 
     private sealed record OptionInputTag(Guid ConfigurationId, string OptionName, string InputName, string Value,
-        TextBlock Error, string? PatternMessage, bool Submitted = false)
+        string? PatternMessage, bool Submitted = false)
     {
         internal (Guid, string, string) Key => (ConfigurationId, OptionName, InputName);
     }
 
-    // One parameter tile: an input of an input option, or a whole select/switch option.
-    private sealed record ParameterField(
-        ProjectOptionEditor Option, ProjectInputEditor? Input, string Label, string Description);
+    // The parts of a shown inspector row that change in place when a value is saved or a draft appears.
+    private sealed record InspectorRowView(
+        ParameterRowPanel Row, StackPanel CaseNotes, IReadOnlyDictionary<string, StackPanel> InputNotes);
 
     internal MainWindow(
         AppLogger logger,
@@ -535,10 +536,9 @@ public partial class MainWindow : FluentWindow
             return false;
         }
         var match = project.SelectedTaskNames.OrderBy(name => name == _expandedTaskName ? 0 : 1)
-            .SelectMany(taskName => EnumerateFields(GetConfigurationOrEmpty(taskName))
-                .Where(field => field.Input is not null)
-                .Select(field => (Task: taskName, Option: field.Option.Name,
-                    Key: (project.ActiveConfigurationId, field.Option.Name, field.Input!.Name))))
+            .SelectMany(taskName => DeriveInspectorRows(taskName, GetConfigurationOrEmpty(taskName), shared: false)
+                .SelectMany(row => row.Inputs.Select(input => (Task: taskName, Option: row.Option.Name,
+                    Key: (project.ActiveConfigurationId, row.Option.Name, input.Input.Name)))))
             .FirstOrDefault(item => _invalidInputDrafts.ContainsKey(item.Key));
         if (match.Task is null) {
             return false;
@@ -557,9 +557,11 @@ public partial class MainWindow : FluentWindow
         return true;
     }
 
+    // The header is the only expansion toggle; a task without parameters has nothing to expand.
     private void PlanItemHeader_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not WpfButton { Tag: ProjectTaskChoice task }) {
+        if (sender is not WpfButton { Tag: ProjectTaskChoice task }
+            || _expandedTaskName != task.Name && !HasParameters(GetConfigurationOrEmpty(task.Name))) {
             return;
         }
         _expandedTaskName = _expandedTaskName == task.Name ? null : task.Name;
@@ -669,40 +671,33 @@ public partial class MainWindow : FluentWindow
         _invalidInputDrafts.Remove(tag.Key);
         editor.Text = tag.Value;
         editor.SelectAll();
-        ShowOptionInputError(editor, tag.Error, null);
-        RefreshParameterSummaries();
+        ShowOptionInputError(editor, null);
+        RefreshParameterDisplays();
         e.Handled = true;
     }
 
-    private void ShowOptionInputError(WpfTextBox editor, TextBlock error, string? message)
+    // The message itself is shown under the field by the inspector row; the editor only changes its border.
+    private void ShowOptionInputError(WpfTextBox editor, string? message)
     {
         if (message is null) {
             editor.ClearValue(BorderBrushProperty);
-            error.Visibility = Visibility.Collapsed;
         } else {
             editor.BorderBrush = (WpfBrush)FindResource("Brush.Error");
-            error.Text = message;
-            error.Visibility = Visibility.Visible;
         }
         AutomationProperties.SetItemStatus(editor, message ?? string.Empty);
     }
 
-    private void SaveSelectedCase(Guid configurationId, string optionName, string caseName, FrameworkElement selector)
+    private void SaveSelectedCase(Guid configurationId, string optionName, string caseName)
     {
         if (_updatingOptionEditors || !CurrentControls.ConfigurationEditable) {
             return;
         }
 
         try {
-            var before = GetExpandedOptions();
+            var before = GetExpandedOptionNames();
             _ = RequireProject().SetSelectedCase(configurationId, optionName, caseName);
             _pendingStartAttempt = null;
-            var after = GetExpandedOptions();
-            var optionsChanged = !before.Select(item => item.Name).SequenceEqual(after.Select(item => item.Name));
-            if (!optionsChanged) {
-                selector.ToolTip = GetCaseToolTip(after.First(item => item.Name == optionName));
-            }
-            RefreshAfterOptionSaved(optionsChanged);
+            RefreshAfterOptionSaved(!before.SequenceEqual(GetExpandedOptionNames()));
             _logger.Info($"已保存 MaaNOP explicit case：option={optionName}。 ");
         } catch (Exception exception) {
             HandleOperationError("保存 MaaNOP select/switch option 失败", exception);
@@ -765,13 +760,14 @@ public partial class MainWindow : FluentWindow
                 _updatingOptionEditors = false;
             }
         } else {
-            RefreshParameterSummaries();
+            RefreshParameterDisplays();
         }
         RefreshConfigurationValidity(project);
     }
 
-    private ProjectOptionEditor[] GetExpandedOptions() => _expandedTaskName is not { } taskName ? []
-        : EnumerateOptions(GetConfigurationOrEmpty(taskName)).ToArray();
+    private string[] GetExpandedOptionNames() => _expandedTaskName is not { } taskName ? []
+        : DeriveInspectorRows(taskName, GetConfigurationOrEmpty(taskName), shared: false)
+            .Select(row => row.Option.Name).ToArray();
 
     private void RenderAvailableTaskShelf(ProjectPlanModule project)
     {
@@ -919,6 +915,7 @@ public partial class MainWindow : FluentWindow
         _planItemSummaries.Clear();
         _taskDescriptionButtons.Clear();
         _optionInputEditors.Clear();
+        _inspectorRows.Clear();
         EmptyPlanPanel.Visibility = project.SelectedTaskNames.Count == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -969,10 +966,14 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private static bool HasParameters(ProjectConfigurationView configuration) =>
+        configuration.GlobalOptions.Count + configuration.TaskOptions.Count != 0;
+
     private Border CreatePlanItem(ProjectTaskChoice task, bool expanded)
     {
         var configuration = GetConfigurationOrEmpty(task.Name);
-        var hasParameters = EnumerateFields(configuration).Any();
+        var hasParameters = HasParameters(configuration);
+        expanded &= hasParameters;
         var container = new Border {
             Tag = task,
             Style = (Style)FindResource(expanded ? "PlanItemExpandedStyle" : "PlanItemStyle")
@@ -996,17 +997,16 @@ public partial class MainWindow : FluentWindow
 
         layout.Children.Add(CreatePlanItemHeader(task, expanded, hasParameters, configuration));
 
-        if (expanded && hasParameters) {
-            var editor = CreateParameterEditor(configuration);
-            var editorBorder = new Border {
-                Margin = new Thickness(12, 0, 12, 10),
-                Padding = new Thickness(0, 8, 0, 0),
-                BorderBrush = (WpfBrush)FindResource("Brush.Border.Subtle"),
-                BorderThickness = new Thickness(0, 1, 0, 0),
-                Child = editor
+        if (expanded) {
+            var editor = new Border {
+                Style = (Style)FindResource("ParameterEditorStyle"),
+                Child = CreateParameterInspector(task.Name, configuration)
             };
-            Grid.SetRow(editorBorder, 1);
-            layout.Children.Add(editorBorder);
+            // A wide card lines the inspector up with the task label; a narrow one gives it the full width.
+            container.SizeChanged += (_, args) =>
+                editor.Padding = new Thickness(args.NewSize.Width >= 600 ? 44 : 14, 12, 14, 14);
+            Grid.SetRow(editor, 1);
+            layout.Children.Add(editor);
         }
         container.Child = layout;
         return container;
@@ -1064,7 +1064,7 @@ public partial class MainWindow : FluentWindow
                 VerticalAlignment = VerticalAlignment.Center
             };
             _planItemSummaries.Add((summaryText, task.Name));
-            FillParameterSummary(summaryText, configuration);
+            FillParameterSummary(summaryText, task.Name, configuration);
             Grid.SetColumn(summaryText, 2);
             title.Children.Add(summaryText);
         }
@@ -1073,10 +1073,9 @@ public partial class MainWindow : FluentWindow
             Content = showSummary ? title : label,
             Style = (Style)FindResource("PlanHeaderButtonStyle")
         };
-        var state = hasParameters ? (expanded ? "已展开" : "已折叠") : (expanded ? "已选中" : "未选中");
-        AutomationProperties.SetName(main, $"{task.Label}，{state}");
-        AutomationProperties.SetHelpText(main, hasParameters
-            ? (expanded ? "点击折叠参数" : "点击展开参数") : (expanded ? "点击取消选中" : "点击选中任务"));
+        AutomationProperties.SetName(main,
+            $"{task.Label}，{(hasParameters ? (expanded ? "已展开" : "已折叠") : "没有可配置的参数")}");
+        AutomationProperties.SetHelpText(main, hasParameters ? (expanded ? "点击收起参数" : "点击展开参数") : string.Empty);
         main.Click += PlanItemHeader_Click;
         Grid.SetColumn(main, 1);
         header.Children.Add(main);
@@ -1099,92 +1098,181 @@ public partial class MainWindow : FluentWindow
         return header;
     }
 
-    // An unfixed invalid draft replaces the saved value in red, so folded cards agree with the field and Start block.
-    private void FillParameterSummary(TextBlock summary, ProjectConfigurationView configuration)
+    // Drafts are those of the active configuration; sharing is only worked out for the expanded card.
+    private IReadOnlyList<InspectorRow> DeriveInspectorRows(
+        string taskName, ProjectConfigurationView configuration, bool shared)
     {
-        var configurationId = RequireProject().ActiveConfigurationId;
+        var project = RequireProject();
+        var drafts = _invalidInputDrafts.Where(pair => pair.Key.Item1 == project.ActiveConfigurationId)
+            .ToDictionary(pair => (pair.Key.Item2, pair.Key.Item3), pair => pair.Value);
+        (string, ProjectConfigurationView)[] others = !shared ? [] : project.SelectedTaskNames
+            .Where(name => name != taskName)
+            .Select(name => (project.Tasks.SingleOrDefault(task => task.Name == name)?.Label ?? name,
+                GetConfigurationOrEmpty(name)))
+            .ToArray();
+        return ParameterInspector.Derive(configuration, drafts, others);
+    }
+
+    // An unfixed invalid draft replaces the saved value in red, so folded cards agree with the field and Start block.
+    private void FillParameterSummary(TextBlock summary, string taskName, ProjectConfigurationView configuration)
+    {
         summary.Inlines.Clear();
-        foreach (var field in EnumerateFields(configuration)) {
-            if (summary.Inlines.Count != 0) {
-                summary.Inlines.Add(new System.Windows.Documents.Run(" · "));
+        foreach (var row in DeriveInspectorRows(taskName, configuration, shared: false)) {
+            var parts = row.Kind == ProjectOptionKind.Input
+                ? row.Inputs.Select(input => (input.Label, Value: input.DisplayValue, Invalid: input.Draft is not null))
+                : [(row.Label, Value: row.SelectedCase?.Label ?? string.Empty, Invalid: false)];
+            foreach (var (label, value, invalid) in parts) {
+                if (summary.Inlines.Count != 0) {
+                    summary.Inlines.Add(new System.Windows.Documents.Run(" · "));
+                }
+                var run = new System.Windows.Documents.Run($"{label}：{value}");
+                if (invalid) {
+                    run.Foreground = (WpfBrush)FindResource("Brush.Error.Foreground");
+                }
+                summary.Inlines.Add(run);
             }
-            var run = new System.Windows.Documents.Run();
-            if (field.Input is not { } input) {
-                var selected = field.Option.Cases.Single(item => item.Name == field.Option.SelectedCase);
-                run.Text = $"{field.Label}：{selected.Label}";
-            } else if (_invalidInputDrafts.TryGetValue(
-                (configurationId, field.Option.Name, input.Name), out var draft)) {
-                run.Text = $"{field.Label}：{draft.Text}";
-                run.Foreground = (WpfBrush)FindResource("Brush.Error.Foreground");
-            } else {
-                run.Text = $"{field.Label}：{input.Value}";
-            }
-            summary.Inlines.Add(run);
         }
     }
 
-    // Drafts change without saving, so only the folded summaries are refreshed; the focused editor stays in place.
-    private void RefreshParameterSummaries()
+    // Saving a value or keeping a draft refreshes folded summaries and the open inspector's notes in place, so the
+    // focused editor and a switch's animation are not rebuilt.
+    private void RefreshParameterDisplays()
     {
         foreach (var (summary, taskName) in _planItemSummaries) {
-            FillParameterSummary(summary, GetConfigurationOrEmpty(taskName));
+            FillParameterSummary(summary, taskName, GetConfigurationOrEmpty(taskName));
+        }
+        if (_expandedTaskName is not { } expanded || _inspectorRows.Count == 0) {
+            return;
+        }
+        foreach (var row in DeriveInspectorRows(expanded, GetConfigurationOrEmpty(expanded), shared: false)) {
+            if (_inspectorRows.TryGetValue(row.Option.Name, out var view)) {
+                ApplyInspectorRow(view, row);
+            }
         }
     }
 
-    private FrameworkElement CreateParameterEditor(ProjectConfigurationView configuration)
+    private Border CreateParameterInspector(string taskName, ProjectConfigurationView configuration)
     {
-        var panel = new ResponsiveWrapPanel();
-        foreach (var field in EnumerateFields(configuration)) {
-            panel.Children.Add(field.Input is { } input ? CreateInputEditor(field, input) : CreateCaseEditor(field));
+        var table = new StackPanel();
+        foreach (var row in DeriveInspectorRows(taskName, configuration, shared: true)) {
+            table.Children.Add(CreateInspectorRow(row, separated: table.Children.Count != 0));
+        }
+        return new Border { Style = (Style)FindResource("Inspector.Table"), Child = table };
+    }
+
+    private ParameterRowPanel CreateInspectorRow(InspectorRow row, bool separated)
+    {
+        var label = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        label.Children.Add(new TextBlock { Text = row.Label, Style = (Style)FindResource("Inspector.Label") });
+        if (!string.IsNullOrWhiteSpace(row.Description)) {
+            label.Children.Add(new TextBlock {
+                Text = row.Description, Style = (Style)FindResource("Inspector.Description")
+            });
+        }
+        if (row.IsGlobal || row.SharedWith.Count != 0) {
+            label.Children.Add(CreateSharedHint(row));
+        }
+        var caseNotes = new StackPanel();
+        var inputNotes = new Dictionary<string, StackPanel>(StringComparer.Ordinal);
+        var value = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        if (row.Kind == ProjectOptionKind.Input) {
+            value.Children.Add(CreateInputCells(row, inputNotes));
+        } else {
+            value.Children.Add(CreateCaseSelector(row));
+            value.Children.Add(caseNotes);
+        }
+        var panel = new ParameterRowPanel {
+            Depth = row.Depth, Separated = separated, Style = (Style)FindResource("Inspector.Row"),
+            LineBrush = (WpfBrush)FindResource("Brush.Border.Subtle"),
+            GuideBrush = (WpfBrush)FindResource("Brush.Parameter.Guide"),
+            InvalidBrush = (WpfBrush)FindResource("Brush.Error"),
+            Children = {
+                new Border {
+                    Padding = new Thickness(12 + row.Depth * ParameterRowPanel.IndentStep, 8, 12, 8), Child = label
+                },
+                new Border { Padding = new Thickness(10, 6, 10, 6), Child = value }
+            }
+        };
+        if (row.Depth > 0) {
+            panel.Background = (WpfBrush)FindResource("Brush.Parameter.Nested");
+        }
+        var view = new InspectorRowView(panel, caseNotes, inputNotes);
+        _inspectorRows[row.Option.Name] = view;
+        ApplyInspectorRow(view, row);
+        return panel;
+    }
+
+    private StackPanel CreateSharedHint(InspectorRow row)
+    {
+        var icon = CreateSymbolIcon(WpfSymbolRegular.Link16);
+        icon.Width = icon.Height = icon.FontSize = 12;
+        icon.Margin = new Thickness(0, 0, 4, 0);
+        icon.Foreground = (WpfBrush)FindResource("Brush.Text.Muted");
+        var text = row.IsGlobal ? "所有任务共用" : $"与 {row.SharedWith.Count} 个任务共用";
+        var hint = new StackPanel {
+            Orientation = WpfOrientation.Horizontal, Margin = new Thickness(0, 2, 0, 0),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Left, Background = WpfBrushes.Transparent,
+            ToolTip = row.IsGlobal ? "全局参数：执行计划中的所有任务共用一个值"
+                : $"同一配置中共用一个值：\n{string.Join("、", row.SharedWith)}",
+            Children = { icon, new TextBlock { Text = text, Style = (Style)FindResource("Inspector.Shared") } }
+        };
+        AutomationProperties.SetName(hint, row.IsGlobal ? text : $"{text}：{string.Join("、", row.SharedWith)}");
+        return hint;
+    }
+
+    private FrameworkElement CreateInputCells(InspectorRow row, Dictionary<string, StackPanel> notes)
+    {
+        if (row.Inputs.Count == 1) {
+            var input = row.Inputs[0];
+            notes[input.Input.Name] = new StackPanel();
+            return new StackPanel { Children = { LimitWidth(CreateInputEditor(row, input)), notes[input.Input.Name] } };
+        }
+        var panel = new ParameterInputsPanel();
+        foreach (var input in row.Inputs) {
+            var header = new StackPanel { Orientation = WpfOrientation.Horizontal, MinHeight = 20 };
+            header.Children.Add(new TextBlock {
+                Text = input.Label, Style = (Style)FindResource("Inspector.InputLabel")
+            });
+            if (!string.IsNullOrWhiteSpace(input.HelpText)) {
+                var information = CreateDescriptionInfoButton(input.HelpText, $"{input.Label} 的说明");
+                information.Margin = new Thickness(2, 0, 0, 0);
+                header.Children.Add(information);
+            }
+            notes[input.Input.Name] = new StackPanel();
+            panel.Children.Add(new StackPanel {
+                Children = { header, CreateInputEditor(row, input), notes[input.Input.Name] }
+            });
         }
         return panel;
     }
 
-    private Border CreateInputEditor(ParameterField parameter, ProjectInputEditor input)
+    private Wpf.Ui.Controls.TextBox CreateInputEditor(InspectorRow row, InspectorInput input)
     {
-        var content = new StackPanel();
-        content.Children.Add(CreateParameterLabel(parameter.Label, parameter.Description));
-        // MaxWidth is the minimum tile width minus padding, so a long hint never forces a full-width row.
-        var error = new TextBlock {
-            Margin = new Thickness(0, 4, 0, 0), MaxWidth = 212,
-            HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
-            Style = (Style)FindResource("SecondaryTextStyle"),
-            Foreground = (WpfBrush)FindResource("Brush.Error.Foreground"), Visibility = Visibility.Collapsed
-        };
-        AutomationProperties.SetLiveSetting(error, AutomationLiveSetting.Polite);
-        var tag = new OptionInputTag(
-            _projectPlan!.ActiveConfigurationId, parameter.Option.Name, input.Name, input.Value, error,
-            input.PatternMessage);
+        var tag = new OptionInputTag(_projectPlan!.ActiveConfigurationId, row.Option.Name, input.Input.Name,
+            input.SavedValue, input.Input.PatternMessage);
         var editor = new Wpf.Ui.Controls.TextBox {
-            Margin = new Thickness(0, 5, 0, 0),
             Style = (Style)FindResource("Option.TextBox"),
-            Text = input.Value,
+            Text = input.DisplayValue,
             Tag = tag,
-            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
-            ToolTip = input.PatternMessage
+            ToolTip = input.Input.PatternMessage
         };
-        AutomationProperties.SetName(editor, parameter.Label);
-        if (!string.IsNullOrWhiteSpace(parameter.Description)) {
-            AutomationProperties.SetHelpText(editor, parameter.Description);
+        AutomationProperties.SetName(editor, input.AccessibleName);
+        if (!string.IsNullOrWhiteSpace(input.HelpText)) {
+            AutomationProperties.SetHelpText(editor, input.HelpText);
         }
         editor.LostKeyboardFocus += OptionInputTextBox_LostKeyboardFocus;
         editor.PreviewKeyDown += OptionInputTextBox_PreviewKeyDown;
         BindConfigurationEditable(editor);
-        content.Children.Add(editor);
-        content.Children.Add(error);
         _optionInputEditors[tag.Key] = editor;
-        if (_invalidInputDrafts.TryGetValue(tag.Key, out var draft)) {
-            editor.Text = draft.Text;
-            ShowOptionInputError(editor, error, draft.Message);
+        if (input.Draft is { } draft) {
+            ShowOptionInputError(editor, draft.Message);
         }
-        return new Border { Style = (Style)FindResource("OptionTileStyle"), Child = content };
+        return editor;
     }
 
-    private Border CreateCaseEditor(ParameterField parameter)
+    private FrameworkElement CreateCaseSelector(InspectorRow row)
     {
-        var option = parameter.Option;
-        var content = new StackPanel();
-        content.Children.Add(CreateParameterLabel(parameter.Label, parameter.Description));
+        var option = row.Option;
         var configurationId = _projectPlan!.ActiveConfigurationId;
         System.Windows.Controls.Control selector;
         FrameworkElement field;
@@ -1198,38 +1286,65 @@ public partial class MainWindow : FluentWindow
                 VerticalAlignment = VerticalAlignment.Center
             };
             toggle.Click += (_, _) =>
-                SaveSelectedCase(configurationId, option.Name, toggle.IsChecked == true ? on.Name : off.Name, toggle);
+                SaveSelectedCase(configurationId, option.Name, toggle.IsChecked == true ? on.Name : off.Name);
             selector = toggle;
             field = new Grid { Height = (double)FindResource("Height.OptionEditor"), Children = { toggle } };
         } else {
             var comboBox = new WpfComboBox {
                 ItemsSource = option.Cases,
                 DisplayMemberPath = nameof(ProjectCaseEditor.Label),
-                SelectedItem = option.Cases.Single(item => item.Name == option.SelectedCase),
-                Style = (Style)FindResource("Option.ComboBox"),
-                HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch
+                SelectedItem = row.SelectedCase,
+                Style = (Style)FindResource("Option.ComboBox")
             };
             comboBox.SelectionChanged += (_, _) => {
                 if (comboBox.SelectedItem is ProjectCaseEditor selected) {
-                    SaveSelectedCase(configurationId, option.Name, selected.Name, comboBox);
+                    SaveSelectedCase(configurationId, option.Name, selected.Name);
                 }
             };
             selector = comboBox;
-            field = comboBox;
+            field = LimitWidth(comboBox);
         }
-        field.Margin = new Thickness(0, 5, 0, 0);
-        selector.ToolTip = GetCaseToolTip(option);
-        AutomationProperties.SetName(selector, parameter.Label);
-        if (!string.IsNullOrWhiteSpace(parameter.Description)) {
-            AutomationProperties.SetHelpText(selector, parameter.Description);
+        AutomationProperties.SetName(selector, row.Label);
+        if (!string.IsNullOrWhiteSpace(row.Description)) {
+            AutomationProperties.SetHelpText(selector, row.Description);
         }
         BindConfigurationEditable(selector);
-        content.Children.Add(field);
-        return new Border { Style = (Style)FindResource("OptionTileStyle"), Child = content };
+        return field;
     }
 
-    private static string GetCaseToolTip(ProjectOptionEditor option) => option.IsExplicit ? "当前值由用户显式设置"
-        : $"当前跟随项目默认：{option.Cases.Single(item => item.Name == option.DefaultCase).Label}";
+    // A single editor keeps a readable width on a wide card and still shrinks with a narrow one.
+    private static Grid LimitWidth(UIElement editor) =>
+        new() { ColumnDefinitions = { new ColumnDefinition { MaxWidth = 340 } }, Children = { editor } };
+
+    private void ApplyInspectorRow(InspectorRowView view, InspectorRow row)
+    {
+        view.Row.IsInvalid = row.IsInvalid;
+        view.CaseNotes.Children.Clear();
+        foreach (var note in new[] { row.CaseDescription, row.DefaultHint }.OfType<string>()) {
+            view.CaseNotes.Children.Add(CreateInspectorNote(note, "Inspector.Note"));
+        }
+        foreach (var input in row.Inputs) {
+            if (!view.InputNotes.TryGetValue(input.Input.Name, out var notes)) {
+                continue;
+            }
+            notes.Children.Clear();
+            if (input.Draft is { } draft) {
+                var saved = ParameterInspector.ShowValue(input.SavedValue);
+                notes.Children.Add(CreateInspectorNote(draft.Message, "Inspector.Error"));
+                notes.Children.Add(CreateInspectorNote($"未保存，仍使用「{saved}」· Esc 还原", "Inspector.DraftNote"));
+            }
+            if (input.DefaultHint is { } hint) {
+                notes.Children.Add(CreateInspectorNote(hint, "Inspector.Note"));
+            }
+        }
+    }
+
+    private TextBlock CreateInspectorNote(string text, string style)
+    {
+        var note = new TextBlock { Text = text, Style = (Style)FindResource(style) };
+        AutomationProperties.SetLiveSetting(note, AutomationLiveSetting.Polite);
+        return note;
+    }
 
     // PI switch cases carry no on/off flag; MaaNOP names them Yes/No, so an affirmative name marks "on",
     // otherwise the first case does.
@@ -1244,29 +1359,6 @@ public partial class MainWindow : FluentWindow
         element, IsEnabledProperty, _configurationEditableBinding ??= new System.Windows.Data.Binding {
             Path = new PropertyPath(ConfigurationEditableProperty), Source = this
         });
-
-    private Grid CreateParameterLabel(string label, string? description)
-    {
-        // Same height with or without the info button, so editors in one row start on the same line.
-        var header = new Grid { MinHeight = 20 };
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.Children.Add(new TextBlock {
-            Text = label,
-            FontWeight = FontWeights.SemiBold,
-            FontSize = (double)FindResource("FontSize.Label"),
-            Foreground = (WpfBrush)FindResource("Brush.Text.Primary"),
-            TextWrapping = TextWrapping.Wrap,
-            VerticalAlignment = VerticalAlignment.Center
-        });
-        if (!string.IsNullOrWhiteSpace(description)) {
-            var information = CreateDescriptionInfoButton(description, $"{label} 的说明");
-            information.Margin = new Thickness(4, 0, 0, 0);
-            Grid.SetColumn(information, 1);
-            header.Children.Add(information);
-        }
-        return header;
-    }
 
     private WpfButton CreateDescriptionInfoButton(string description, string accessibleName)
     {
@@ -1434,35 +1526,6 @@ public partial class MainWindow : FluentWindow
     {
         ProjectValidationText.Text = exception.GetBaseException().Message;
         ProjectValidationBorder.Visibility = Visibility.Visible;
-    }
-
-    // Labels fall back from input to option to option name; a PI may declare either label as "".
-    private static IEnumerable<ParameterField> EnumerateFields(ProjectConfigurationView configuration)
-    {
-        foreach (var option in EnumerateOptions(configuration)) {
-            var label = string.IsNullOrWhiteSpace(option.Label) ? option.Name : option.Label;
-            if (option.Kind != ProjectOptionKind.Input) {
-                yield return new ParameterField(option, null, label, option.Description);
-            } else {
-                foreach (var input in option.Inputs) {
-                    yield return new ParameterField(option, input,
-                        string.IsNullOrWhiteSpace(input.Label) ? label : input.Label,
-                        string.IsNullOrWhiteSpace(input.Description) ? option.Description : input.Description);
-                }
-            }
-        }
-    }
-
-    private static IEnumerable<ProjectOptionEditor> EnumerateOptions(ProjectConfigurationView configuration) =>
-        configuration.GlobalOptions.SelectMany(Flatten)
-            .Concat(configuration.TaskOptions.SelectMany(Flatten));
-
-    private static IEnumerable<ProjectOptionEditor> Flatten(ProjectOptionEditor option)
-    {
-        yield return option;
-        foreach (var child in option.ActiveChildren.SelectMany(Flatten)) {
-            yield return child;
-        }
     }
 
     private async Task RunOperationAsync(PendingOperation pending, Func<Task> operation)

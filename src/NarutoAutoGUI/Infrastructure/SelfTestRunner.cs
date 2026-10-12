@@ -47,6 +47,9 @@ internal static partial class SelfTestRunner
             VerifyConfigurationTabs(logger, testDirectory, projectDirectory);
             VerifyBlankParameterLabels(logger, testDirectory);
             VerifyDraftSummarySync(logger, testDirectory);
+            VerifyParameterInspector(testDirectory, projectDirectory);
+            VerifyPlanItemHeaders(logger, testDirectory);
+            VerifyParameterInspectorWindow(logger, testDirectory);
             VerifyProjectPlan(testDirectory, projectDirectory);
             VerifyTaskCatalogVariants(testDirectory, projectDirectory);
             VerifyTaskGroups(testDirectory, projectDirectory);
@@ -61,7 +64,7 @@ internal static partial class SelfTestRunner
             VerifyRdpClientClsid();
             VerifyChildSessionPresence(logger);
             VerifyTaskDescriptionMarkup();
-            VerifyResponsiveOptionLayout();
+            VerifyParameterRowLayout();
             VerifyUnsupportedProjectConstraints(testDirectory, projectDirectory);
             VerifyInvalidProjectInterfaces(testDirectory, projectDirectory);
             VerifyProtocolFrame();
@@ -98,7 +101,7 @@ internal static partial class SelfTestRunner
                 + "ordered pipeline override; nested dormant intent; "
                 + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
                 + "PI structure/default/graph validation; typed input validation; "
-                + "task catalog/description; ordered task plan persistence; responsive option layout; "
+                + "task catalog/description; ordered task plan persistence; parameter inspector layout; "
                 + "MaaNOP Config v2/migration/independent tabs; onboarding tour; RunPlan digest; "
                 + "IPC framing; preview schema; "
                 + "log sequence tracking/recovery; Worker Instance replacement; stale Admission recovery; "
@@ -680,15 +683,6 @@ internal static partial class SelfTestRunner
             legacyDocument.ContentStart, legacyDocument.ContentEnd).Text.TrimEnd();
         if (text != legacy || MarkdownDocument.Create(string.Empty, _ => { }).Blocks.Count != 0) {
             throw new InvalidOperationException("旧 HTML 不应剥离标签或转换换行；空说明应为空文档。");
-        }
-    }
-
-    private static void VerifyResponsiveOptionLayout()
-    {
-        if (ResponsiveWrapPanel.CalculateColumnCount(450, 220, 12, 3) != 1
-            || ResponsiveWrapPanel.CalculateColumnCount(600, 220, 12, 3) != 2
-            || ResponsiveWrapPanel.CalculateColumnCount(900, 220, 12, 3) != 3) {
-            throw new InvalidOperationException("响应式 option 一至三列退化规则验证失败。");
         }
     }
 

@@ -324,10 +324,15 @@
              so a locked dropdown or switch fades as a whole; the text box has its own disabled colours. -->
         <Style x:Key="Option.TextBox" TargetType="ui:TextBox" BasedOn="{StaticResource {x:Type ui:TextBox}}">
             <Setter Property="Height" Value="{StaticResource Height.OptionEditor}" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="10,5,10,5" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="ClearButtonEnabled" Value="False" />
         </Style>
         <Style x:Key="Option.ComboBox" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
             <Setter Property="Height" Value="{StaticResource Height.OptionEditor}" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="10,5,10,5" />
             <Style.Triggers>
                 <Trigger Property="IsEnabled" Value="False">
                     <Setter Property="Opacity" Value="{StaticResource Opacity.Disabled}" />

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using NarutoAutoGUI.ProjectModel;
 
 namespace NarutoAutoGUI.Infrastructure;
@@ -99,7 +99,8 @@ internal static partial class SelfTestRunner
             typeof(Views.MainWindow).GetMethod("RenderTaskPlan", flags)!.Invoke(window, null);
             var items = (System.Windows.DependencyObject)window.FindName("PlanItemsPanel");
             var retry = ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
-                .Single(item => System.Windows.Automation.AutomationProperties.GetName(item) == "Retry count");
+                .Single(item => System.Windows.Automation.AutomationProperties.GetName(item)
+                    == "Server range · Retry count");
             retry.Text = "3";
             retry.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(
                 System.Windows.Input.Keyboard.PrimaryDevice, 0, retry, tabs) {
@@ -110,7 +111,8 @@ internal static partial class SelfTestRunner
                 throw new InvalidOperationException("显式提交等于默认值的输入也必须保留。");
             }
             var input = ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
-                .Single(item => System.Windows.Automation.AutomationProperties.GetName(item) == "Server");
+                .Single(item => System.Windows.Automation.AutomationProperties.GetName(item)
+                    == "Server range · Server");
             input.Text = "979";
             tabs.SelectedIndex = 1;
             input.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(
@@ -169,7 +171,7 @@ internal static partial class SelfTestRunner
     {
         System.Windows.Controls.TextBox Server() => ConfigurationDescendants(items)
             .OfType<System.Windows.Controls.TextBox>()
-            .Single(item => System.Windows.Automation.AutomationProperties.GetName(item) == "Server");
+            .Single(item => System.Windows.Automation.AutomationProperties.GetName(item) == "Server range · Server");
         System.Windows.Controls.TextBlock? Hint() => ConfigurationDescendants(items)
             .OfType<System.Windows.Controls.TextBlock>()
             .SingleOrDefault(item => item.Text == "Use ranges such as 978 or 978-1012"
@@ -299,7 +301,8 @@ internal static partial class SelfTestRunner
             System.Windows.Documents.Run? OtherSummary(string text) => ConfigurationDescendants(items)
                 .OfType<System.Windows.Documents.Run>().SingleOrDefault(run => run.Text == text);
             var input = ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
-                .Single(item => System.Windows.Automation.AutomationProperties.GetName(item) == "Server");
+                .Single(item => System.Windows.Automation.AutomationProperties.GetName(item)
+                    == "Server range · Server");
             input.Text = "978-,";
             input.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(
                 System.Windows.Input.Keyboard.PrimaryDevice, 0, input, null) {

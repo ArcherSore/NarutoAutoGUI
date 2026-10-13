@@ -80,6 +80,7 @@ public partial class MainWindow : FluentWindow
     private bool _updatingOptionEditors;
     private bool _taskShelfExpanded;
     private double? _preferredRuntimeSidebarWidth;
+    private double? _savedRuntimeSidebarWidth;
     private bool _updatingRuntimeSidebarWidth;
     private bool _runtimeSidebarDragging;
     private bool _runtimeSidebarKeyboardCue;
@@ -142,6 +143,7 @@ public partial class MainWindow : FluentWindow
         _settings = new ApplicationSettings(_applicationDirectory, logger,
             CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding, OpenAfdianAsync);
         SettingsView.DataContext = _settings.Page;
+        _savedRuntimeSidebarWidth = _preferredRuntimeSidebarWidth = LoadRuntimeSidebarWidth();
         _sessionManager = sessionManager;
         _workerCoordinator = workerCoordinator;
         _environment = environment;
@@ -388,7 +390,12 @@ public partial class MainWindow : FluentWindow
             _runtimeSidebarKeyboardCue = false;
         } else if (e.RoutedEvent == System.Windows.Controls.Primitives.Thumb.DragCompletedEvent) {
             _runtimeSidebarDragging = false;
+            SaveRuntimeSidebarWidth();
         } else if (e is KeyboardEventArgs) {
+            if (e.RoutedEvent == LostKeyboardFocusEvent) {
+                // Arrow-key resizing has no drag end; leaving the splitter finishes it.
+                SaveRuntimeSidebarWidth();
+            }
             // Like a focus rectangle, focus shows the handle only when it came from the keyboard.
             _runtimeSidebarKeyboardCue = e.RoutedEvent != LostKeyboardFocusEvent
                 && InputManager.Current.MostRecentInputDevice is KeyboardDevice;
@@ -406,6 +413,44 @@ public partial class MainWindow : FluentWindow
         }
         VisualStateManager.GoToState(splitter, _runtimeSidebarDragging ? "Dragging"
             : splitter.IsMouseOver ? "Hover" : keyboard ? "Keyboard" : "Hidden", true);
+    }
+
+    private string RuntimeSidebarWidthPath =>
+        Path.Combine(_applicationDirectory, "config", "runtime-sidebar-width.txt");
+
+    // The saved width is the user's preference; layout still clamps it to the space each window size allows.
+    private double? LoadRuntimeSidebarWidth()
+    {
+        try {
+            if (!File.Exists(RuntimeSidebarWidthPath)) {
+                return null;
+            }
+            var text = File.ReadAllText(RuntimeSidebarWidthPath).Trim();
+            if (!double.TryParse(text, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var width)
+                || !double.IsFinite(width) || width <= 0) {
+                throw new InvalidDataException($"侧栏宽度必须为正数：{text}");
+            }
+            return width;
+        } catch (Exception exception) {
+            _logger.Warn("读取运行控制栏宽度失败，已使用默认宽度。", exception);
+            return null;
+        }
+    }
+
+    private void SaveRuntimeSidebarWidth()
+    {
+        if (_preferredRuntimeSidebarWidth is not { } width || width == _savedRuntimeSidebarWidth) {
+            return;
+        }
+        try {
+            Directory.CreateDirectory(Path.GetDirectoryName(RuntimeSidebarWidthPath)!);
+            File.WriteAllText(RuntimeSidebarWidthPath,
+                width.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+            _savedRuntimeSidebarWidth = width;
+        } catch (Exception exception) {
+            _logger.Warn("保存运行控制栏宽度失败。", exception);
+        }
     }
 
     // The console takes about a third of the home page, bounded so neither it nor the task area gets cramped.

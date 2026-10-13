@@ -12,7 +12,8 @@ internal static partial class SelfTestRunner
 {
     private static void VerifyRuntimeSidebarResize(AppLogger logger, string testDirectory)
     {
-        RunOnboardingScenario(logger, Path.Combine(testDirectory, "sidebar-resize"), (window, _) => {
+        var persisted = 0.0;
+        RunOnboardingScenario(logger, Path.Combine(testDirectory, "sidebar-resize"), (window, directory) => {
             typeof(MainWindow).GetMethod("EndOnboarding", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(window, new object[] { true });
             var home = Named<Grid>(window, "HomeView");
@@ -50,8 +51,17 @@ internal static partial class SelfTestRunner
             PumpOnboarding(300);
             Require(!HandleInnerHalfDrags(), "手柄隐藏后应立即不再遮挡侧栏。");
 
+            var preference = Path.Combine(directory, "config", "runtime-sidebar-width.txt");
+            double? Saved() => File.Exists(preference) ? double.Parse(File.ReadAllText(preference),
+                System.Globalization.CultureInfo.InvariantCulture) : null;
+            Require(Saved() is null && Math.Abs(column.Width.Value - Math.Min(
+                    MainWindow.SidebarWidth(LayoutInformation.GetLayoutSlot(home).Width) + console.Margin.Right,
+                    column.MaxWidth)) < 1, "首次使用应保持默认侧栏宽度，且不写入偏好。");
+
             // Small screens start the sidebar at its minimum; widen it first so it can move both ways.
             Drag(-60);
+            Require(Saved() == column.Width.Value, "拖动结束后应保存侧栏宽度。");
+            var saved = Saved();
             var originalWidth = console.ActualWidth;
             var originalPreviewHeight = preview.ActualHeight;
             var originalLogHeight = log.ActualHeight;
@@ -60,11 +70,13 @@ internal static partial class SelfTestRunner
             Require(Math.Abs(console.ActualWidth - (originalWidth - 20)) < 1
                 && preview.ActualHeight < originalPreviewHeight && log.ActualHeight > originalLogHeight,
                 "拖动尚未结束时，侧栏变窄应实时缩小 Preview 并增加日志高度。");
+            Require(Saved() == saved, "拖动过程中不应持续写入侧栏宽度。");
             MoveDrag(-40);
             Require(Math.Abs(console.ActualWidth - (originalWidth + 20)) < 1
                 && preview.ActualHeight > originalPreviewHeight && log.ActualHeight < originalLogHeight,
                 "反向拖动应实时放大 Preview 并减少日志高度。");
             EndDrag();
+            Require(Saved() == column.Width.Value && Saved() != saved, "拖动结束后应保存最终宽度。");
             AssertLayout();
 
             // Window resizing must clamp the displayed width without discarding the user's wider preference.
@@ -118,6 +130,11 @@ internal static partial class SelfTestRunner
             KeyDown(System.Windows.Input.Key.Left);
             Require(Math.Abs(console.ActualWidth - (preferred + splitter.KeyboardIncrement)) < 1,
                 "原生方向键应可调整侧栏宽度。");
+            Require(Saved() != column.Width.Value, "方向键调整过程中不应写入侧栏宽度。");
+            splitter.RaiseEvent(new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice, 0, splitter, null) {
+                RoutedEvent = Keyboard.LostKeyboardFocusEvent
+            });
+            Require(Saved() == column.Width.Value, "方向键调整后离开分隔器应保存宽度。");
             preferred = console.ActualWidth;
             StartDrag();
             MoveDrag(30);
@@ -145,6 +162,7 @@ internal static partial class SelfTestRunner
             Require(Named<UIElement>(window, "PreviewOverlay").Visibility == Visibility.Collapsed,
                 "放大预览应可以正常关闭。");
             AssertLayout();
+            persisted = Saved()!.Value;
 
             void StartDrag() => splitter.RaiseEvent(new DragStartedEventArgs(0, 0) {
                 RoutedEvent = Thumb.DragStartedEvent
@@ -189,6 +207,34 @@ internal static partial class SelfTestRunner
                         <= home.ActualWidth + 0.5, "左右栏必须处于主页边界内。");
             }
         });
-        Console.WriteLine("RUNTIME SIDEBAR RESIZE PASS: native drag/key events, bounds, 16:9, log space, navigation.");
+        VerifyRuntimeSidebarRestore(logger, testDirectory, persisted);
+        Console.WriteLine("RUNTIME SIDEBAR RESIZE PASS: native drag/key events, bounds, 16:9, log space, navigation, "
+            + "persistence.");
+    }
+
+    // A restart restores the saved width through the same clamp as window resizing; bad files fall back to default.
+    private static void VerifyRuntimeSidebarRestore(AppLogger logger, string testDirectory, double persisted)
+    {
+        var saved = persisted.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        foreach (var (name, content) in new[] {
+            ("restore", saved), ("restore-wide", "9999"), ("restore-narrow", "1"), ("restore-invalid", "宽")
+        }) {
+            RunOnboardingScenario(logger, Path.Combine(testDirectory, $"sidebar-{name}"), (window, directory) => {
+                var home = Named<Grid>(window, "HomeView");
+                var column = Named<ColumnDefinition>(window, "RuntimeSidebarColumn");
+                var margin = Named<FrameworkElement>(window, "RuntimeSidebar").Margin.Right;
+                var expected = name == "restore-invalid"
+                    ? Math.Min(MainWindow.SidebarWidth(LayoutInformation.GetLayoutSlot(home).Width) + margin,
+                        column.MaxWidth)
+                    : Math.Clamp(double.Parse(content, System.Globalization.CultureInfo.InvariantCulture),
+                        column.MinWidth, column.MaxWidth);
+                Require(Math.Abs(column.Width.Value - expected) < 0.5
+                    && File.ReadAllText(Path.Combine(directory, "config", "runtime-sidebar-width.txt")) == content,
+                    $"启动时应在宽度边界内恢复保存的侧栏宽度（{name}），无效值使用默认宽度，且不改写偏好。");
+            }, project => {
+                Directory.CreateDirectory(Path.Combine(project, "config"));
+                File.WriteAllText(Path.Combine(project, "config", "runtime-sidebar-width.txt"), content);
+            });
+        }
     }
 }

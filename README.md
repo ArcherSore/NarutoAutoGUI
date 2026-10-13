@@ -29,11 +29,19 @@
 
 产物位于 `artifacts\NarutoAutoGUI\win-x64`。
 
-自动自检：
+日常开发验证（增量 GUI 构建 + GUI 自检，完整输出保存至 `artifacts/validation/`）：
 
 ```powershell
-.\src\NarutoAutoGUI\scripts\test-automated.ps1
+.\src\NarutoAutoGUI\scripts\verify.ps1
 ```
+
+完整自动验证（增量 GUI/Worker 构建 + GUI、Worker、Updater、Rust tests/Clippy）：
+
+```powershell
+.\src\NarutoAutoGUI\scripts\verify.ps1 -Suite All
+```
+
+定向验证与发布验证要求见 [AGENTS.md](AGENTS.md)。原 `test-automated.ps1` 保留详细输出入口。
 
 开发入口：[领域术语](CONTEXT.md)、[当前架构](docs/ARCHITECTURE.md)、[架构决策](docs/adr/)、
 [GUI 开发说明](src/NarutoAutoGUI/README.md)。当前工作与验收条件在 [GitHub Issues](https://github.com/ArcherSore/NarutoAutoGUI/issues)。

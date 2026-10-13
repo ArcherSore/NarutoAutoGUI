@@ -2,10 +2,12 @@
 param(
     [string]$GuiDll,
     [string]$WorkerDll,
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+    [switch]$NoBuild
 )
 
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 
 $projectDirectory = Split-Path -Parent $PSScriptRoot
 $repositoryRoot = (Resolve-Path (Join-Path $projectDirectory '..\..')).Path
@@ -48,15 +50,17 @@ foreach ($entry in @($GuiDll, $WorkerDll)) {
     Push-Location (Split-Path $entryPath)
     try {
         dotnet $entryPath --self-test
-        if ($LASTEXITCODE -ne 0) { throw "自动自检失败：$entryPath，退出码 $LASTEXITCODE" }
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     } finally { Pop-Location }
 }
 
 Write-Host "自动自检通过。RDP/UAC/托盘等交互流程仍需按文档手动回归。"
 
-dotnet run --project (Join-Path $repositoryRoot 'src\NarutoAutoUpdater.Tests') -c $Configuration `
-    -p:BuildInParallel=false
-if ($LASTEXITCODE -ne 0) { throw "Updater 自动化测试失败，退出码 $LASTEXITCODE" }
+$updaterArgs = @('run', '--project', (Join-Path $repositoryRoot 'src\NarutoAutoUpdater.Tests'),
+    '-c', $Configuration, '-p:BuildInParallel=false')
+if ($NoBuild) { $updaterArgs += '--no-build' }
+dotnet @updaterArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $cargo = (Get-Command cargo -ErrorAction SilentlyContinue).Source
 if (-not $cargo) {
@@ -66,7 +70,7 @@ if (-not $cargo) {
 Push-Location $repositoryRoot
 try {
     & $cargo test --locked --manifest-path src/MaaNOP.UpdateEngine/Cargo.toml
-    if ($LASTEXITCODE -ne 0) { throw 'Rust Engine tests failed.' }
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & $cargo clippy --locked --manifest-path src/MaaNOP.UpdateEngine/Cargo.toml --all-targets -- -D warnings
-    if ($LASTEXITCODE -ne 0) { throw 'Rust Engine Clippy failed.' }
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally { Pop-Location }

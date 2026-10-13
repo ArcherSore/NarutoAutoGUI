@@ -4,21 +4,26 @@ Windows x64 / .NET 10 WPF 程序。需要管理员权限和交互式桌面。
 
 ## 构建与自动自检
 
-完整发布脚本需要 .NET 10 SDK。
+日常验证需要 .NET 10 SDK；完整验证还需要仓库固定的 Rust MSVC 工具链。
 
 在仓库根目录运行：
 
 ```powershell
-.\src\NarutoAutoGUI\scripts\build.ps1
-.\src\NarutoAutoGUI\scripts\test-automated.ps1
+.\src\NarutoAutoGUI\scripts\verify.ps1
+.\src\NarutoAutoGUI\scripts\verify.ps1 -Suite All
 ```
 
-发布目录为 `artifacts\NarutoAutoGUI\win-x64`，并包含 `worker\NarutoAutoWorker.exe` 及固定 runtime。
+`verify.ps1` 增量构建后运行自检，只输出摘要，完整日志保存在 `artifacts/validation/`。
+可选 `-Suite Project/Support/RuntimeControls/Worker/Updater/Engine`（每次选择一个分类）；
+只有源码及依赖未变、刚成功构建时，才用 `-NoBuild` 重跑测试。分类范围见根目录 [AGENTS.md](../../AGENTS.md)。
+
+完整发布仍使用 `scripts/build.ps1`；发布目录为 `artifacts\NarutoAutoGUI\win-x64`，
+并包含 `worker\NarutoAutoWorker.exe` 及固定 runtime。
 自检通过 `dotnet NarutoAutoGUI.dll --self-test` 运行，不触发 apphost 的 UAC manifest，也不初始化 RDP。
 通知 tracker、诊断 ZIP 与 Settings 离屏布局可定向验证：
 
 ```powershell
-dotnet .\src\NarutoAutoGUI\bin\x64\Release\net10.0-windows\win-x64\NarutoAutoGUI.dll --self-test --support-only
+.\src\NarutoAutoGUI\scripts\verify.ps1 -Suite Support
 ```
 
 ## 运行时文件

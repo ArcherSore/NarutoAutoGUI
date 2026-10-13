@@ -25,7 +25,7 @@ internal sealed class ApplicationSettings
         }
         CheckOnStartup = new SettingsToggle(SaveUpdatePreference);
         SaveOnError = CreateFrameworkToggle(applicationDirectory, "save-on-error", defaultValue: true);
-        SaveDraw = CreateFrameworkToggle(applicationDirectory, "save-draw", defaultValue: false);
+        SaveDraw = CreateFrameworkToggle(applicationDirectory, "save-draw", defaultValue: true);
         DebugMode = CreateFrameworkToggle(applicationDirectory, "debug-mode", defaultValue: false);
         CheckUpdate = new SettingsAction(checkUpdate);
         ExportDiagnostics = new SettingsAction(exportDiagnostics);

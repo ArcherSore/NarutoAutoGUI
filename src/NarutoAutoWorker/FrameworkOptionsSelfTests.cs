@@ -13,7 +13,7 @@ internal static class FrameworkOptionsSelfTests
         try {
             var defaults = JsonSerializer.Deserialize<MaaFrameworkOptions>("{}", ProtocolJson.Options)!;
             if (defaults != new MaaFrameworkOptions()) {
-                throw new InvalidOperationException("省略框架选项必须保留 true/false/false 默认值。");
+                throw new InvalidOperationException("省略框架选项必须保留 true/true/false 默认值。");
             }
             var log = new List<(string Level, string Message)>();
             var options = new MaaFrameworkOptions(false, true, true);

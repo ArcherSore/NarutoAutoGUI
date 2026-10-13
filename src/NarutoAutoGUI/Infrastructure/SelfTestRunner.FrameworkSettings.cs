@@ -15,11 +15,11 @@ internal static partial class SelfTestRunner
         }
         var settings = Create();
         if (settings.CreateFrameworkOptions() != new MaaFrameworkOptions() || Directory.Exists(directory)) {
-            throw new InvalidOperationException("框架开关默认值必须为 true/false/false，读取不得写配置。");
+            throw new InvalidOperationException("框架开关默认值必须为 true/true/false，读取不得写配置。");
         }
         var cases = new (Func<ApplicationSettings, SettingsToggle> Select, string Name, bool Default)[] {
             (s => s.SaveOnError, "save-on-error", true),
-            (s => s.SaveDraw, "save-draw", false),
+            (s => s.SaveDraw, "save-draw", true),
             (s => s.DebugMode, "debug-mode", false)
         };
         foreach (var (select, name, defaultValue) in cases) {

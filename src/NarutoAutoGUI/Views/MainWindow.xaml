@@ -354,6 +354,237 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+        <!-- Runtime sidebar resize handle: invisible at rest. Hover, drag and keyboard focus show a round handle
+             centred on the console's left border; MainWindow places it and picks the state. -->
+        <ControlTemplate x:Key="Console.ResizeHandle" TargetType="GridSplitter">
+            <ControlTemplate.Resources>
+                <QuarticEase x:Key="Handle.Pop" EasingMode="EaseOut" />
+                <QuadraticEase x:Key="Handle.Out" EasingMode="EaseOut" />
+                <QuadraticEase x:Key="Handle.In" EasingMode="EaseIn" />
+            </ControlTemplate.Resources>
+            <Grid Background="{TemplateBinding Background}">
+                <VisualStateManager.VisualStateGroups>
+                    <VisualStateGroup x:Name="HandleStates">
+                        <VisualStateGroup.Transitions>
+                            <!-- A 60 ms intent delay so sweeping across the gap never flashes, then a short pop. -->
+                            <VisualTransition From="Hidden" To="Hover">
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetName="Handle" Storyboard.TargetProperty="Opacity"
+                                                     To="1" BeginTime="0:0:0.06" Duration="0:0:0.14"
+                                                     EasingFunction="{StaticResource Handle.Pop}" />
+                                    <DoubleAnimation Storyboard.TargetName="HandleScale"
+                                                     Storyboard.TargetProperty="ScaleX" To="1" BeginTime="0:0:0.06"
+                                                     Duration="0:0:0.18" EasingFunction="{StaticResource Handle.Pop}" />
+                                    <DoubleAnimation Storyboard.TargetName="HandleScale"
+                                                     Storyboard.TargetProperty="ScaleY" To="1" BeginTime="0:0:0.06"
+                                                     Duration="0:0:0.18" EasingFunction="{StaticResource Handle.Pop}" />
+                                    <DoubleAnimation Storyboard.TargetName="Tether" Storyboard.TargetProperty="Opacity"
+                                                     To="1" BeginTime="0:0:0.06" Duration="0:0:0.14"
+                                                     EasingFunction="{StaticResource Handle.Out}" />
+                                    <DoubleAnimation Storyboard.TargetName="TetherScale"
+                                                     Storyboard.TargetProperty="ScaleY" To="0.75" BeginTime="0:0:0.06"
+                                                     Duration="0:0:0.18" EasingFunction="{StaticResource Handle.Pop}" />
+                                    <BooleanAnimationUsingKeyFrames Storyboard.TargetName="Handle"
+                                                                    Storyboard.TargetProperty="IsHitTestVisible">
+                                        <DiscreteBooleanKeyFrame KeyTime="0" Value="True" />
+                                    </BooleanAnimationUsingKeyFrames>
+                                </Storyboard>
+                            </VisualTransition>
+                            <VisualTransition From="Hidden" To="Keyboard">
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetName="Handle" Storyboard.TargetProperty="Opacity"
+                                                     To="1" BeginTime="0:0:0.06" Duration="0:0:0.14"
+                                                     EasingFunction="{StaticResource Handle.Pop}" />
+                                    <DoubleAnimation Storyboard.TargetName="HandleScale"
+                                                     Storyboard.TargetProperty="ScaleX" To="1" BeginTime="0:0:0.06"
+                                                     Duration="0:0:0.18" EasingFunction="{StaticResource Handle.Pop}" />
+                                    <DoubleAnimation Storyboard.TargetName="HandleScale"
+                                                     Storyboard.TargetProperty="ScaleY" To="1" BeginTime="0:0:0.06"
+                                                     Duration="0:0:0.18" EasingFunction="{StaticResource Handle.Pop}" />
+                                    <DoubleAnimation Storyboard.TargetName="Tether" Storyboard.TargetProperty="Opacity"
+                                                     To="1" BeginTime="0:0:0.06" Duration="0:0:0.14"
+                                                     EasingFunction="{StaticResource Handle.Out}" />
+                                    <DoubleAnimation Storyboard.TargetName="TetherScale"
+                                                     Storyboard.TargetProperty="ScaleY" To="0.75" BeginTime="0:0:0.06"
+                                                     Duration="0:0:0.18" EasingFunction="{StaticResource Handle.Pop}" />
+                                    <DoubleAnimation Storyboard.TargetName="FocusRing"
+                                                     Storyboard.TargetProperty="Opacity" To="1" Duration="0" />
+                                    <DoubleAnimation Storyboard.TargetName="DiscShadow"
+                                                     Storyboard.TargetProperty="Opacity" To="0" Duration="0" />
+                                </Storyboard>
+                            </VisualTransition>
+                        </VisualStateGroup.Transitions>
+                        <!-- Fades out in 90 ms and keeps its last position. -->
+                        <VisualState x:Name="Hidden">
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Handle" Storyboard.TargetProperty="Opacity"
+                                                 To="0" Duration="0:0:0.09"
+                                                 EasingFunction="{StaticResource Handle.In}" />
+                                <DoubleAnimation Storyboard.TargetName="HandleScale" Storyboard.TargetProperty="ScaleX"
+                                                 To="0.7" Duration="0:0:0.09"
+                                                 EasingFunction="{StaticResource Handle.In}" />
+                                <DoubleAnimation Storyboard.TargetName="HandleScale" Storyboard.TargetProperty="ScaleY"
+                                                 To="0.7" Duration="0:0:0.09"
+                                                 EasingFunction="{StaticResource Handle.In}" />
+                                <DoubleAnimation Storyboard.TargetName="Tether" Storyboard.TargetProperty="Opacity"
+                                                 To="0" Duration="0:0:0.09"
+                                                 EasingFunction="{StaticResource Handle.In}" />
+                                <DoubleAnimation Storyboard.TargetName="TetherScale" Storyboard.TargetProperty="ScaleY"
+                                                 To="0.6" Duration="0:0:0.09"
+                                                 EasingFunction="{StaticResource Handle.In}" />
+                                <ColorAnimation Storyboard.TargetName="DiscFill" Storyboard.TargetProperty="Color"
+                                                To="{StaticResource Color.Neutral.0}" Duration="0:0:0.12" />
+                                <ColorAnimation Storyboard.TargetName="DiscStroke" Storyboard.TargetProperty="Color"
+                                                To="{StaticResource Color.Indigo.200}" Duration="0:0:0.12" />
+                            </Storyboard>
+                        </VisualState>
+                        <VisualState x:Name="Hover">
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Handle" Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="0:0:0.14"
+                                                 EasingFunction="{StaticResource Handle.Pop}" />
+                                <DoubleAnimation Storyboard.TargetName="HandleScale" Storyboard.TargetProperty="ScaleX"
+                                                 To="1" Duration="0:0:0.18"
+                                                 EasingFunction="{StaticResource Handle.Pop}" />
+                                <DoubleAnimation Storyboard.TargetName="HandleScale" Storyboard.TargetProperty="ScaleY"
+                                                 To="1" Duration="0:0:0.18"
+                                                 EasingFunction="{StaticResource Handle.Pop}" />
+                                <DoubleAnimation Storyboard.TargetName="Tether" Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="0:0:0.14"
+                                                 EasingFunction="{StaticResource Handle.Out}" />
+                                <DoubleAnimation Storyboard.TargetName="TetherScale" Storyboard.TargetProperty="ScaleY"
+                                                 To="0.75" Duration="0:0:0.18"
+                                                 EasingFunction="{StaticResource Handle.Pop}" />
+                                <BooleanAnimationUsingKeyFrames Storyboard.TargetName="Handle"
+                                                                Storyboard.TargetProperty="IsHitTestVisible">
+                                    <DiscreteBooleanKeyFrame KeyTime="0" Value="True" />
+                                </BooleanAnimationUsingKeyFrames>
+                                <ColorAnimation Storyboard.TargetName="DiscFill" Storyboard.TargetProperty="Color"
+                                                To="{StaticResource Color.Neutral.0}" Duration="0:0:0.12" />
+                                <ColorAnimation Storyboard.TargetName="DiscStroke" Storyboard.TargetProperty="Color"
+                                                To="{StaticResource Color.Indigo.200}" Duration="0:0:0.12" />
+                            </Storyboard>
+                        </VisualState>
+                        <!-- Pressed tint, primary ring and a longer primary edge segment; no fill, no motion. -->
+                        <VisualState x:Name="Dragging">
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Handle" Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="0:0:0.1" />
+                                <DoubleAnimation Storyboard.TargetName="HandleScale" Storyboard.TargetProperty="ScaleX"
+                                                 To="1" Duration="0:0:0.1" />
+                                <DoubleAnimation Storyboard.TargetName="HandleScale" Storyboard.TargetProperty="ScaleY"
+                                                 To="1" Duration="0:0:0.1" />
+                                <DoubleAnimation Storyboard.TargetName="Tether" Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="0:0:0.1" />
+                                <DoubleAnimation Storyboard.TargetName="TetherScale" Storyboard.TargetProperty="ScaleY"
+                                                 To="1" Duration="0:0:0.14"
+                                                 EasingFunction="{StaticResource Handle.Out}" />
+                                <DoubleAnimation Storyboard.TargetName="TetherStrong"
+                                                 Storyboard.TargetProperty="Opacity" To="1" Duration="0" />
+                                <BooleanAnimationUsingKeyFrames Storyboard.TargetName="Handle"
+                                                                Storyboard.TargetProperty="IsHitTestVisible">
+                                    <DiscreteBooleanKeyFrame KeyTime="0" Value="True" />
+                                </BooleanAnimationUsingKeyFrames>
+                                <ColorAnimation Storyboard.TargetName="DiscFill" Storyboard.TargetProperty="Color"
+                                                To="{StaticResource Color.Indigo.100}" Duration="0:0:0.1" />
+                                <ColorAnimation Storyboard.TargetName="DiscStroke" Storyboard.TargetProperty="Color"
+                                                To="{StaticResource Color.Indigo.600}" Duration="0:0:0.1" />
+                                <DoubleAnimation Storyboard.TargetName="DiscShadow" Storyboard.TargetProperty="Opacity"
+                                                 To="0.1" Duration="0:0:0.1" />
+                            </Storyboard>
+                        </VisualState>
+                        <!-- The hover look at mid-height, with a focus ring in place of the shadow. -->
+                        <VisualState x:Name="Keyboard">
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Handle" Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="0:0:0.14"
+                                                 EasingFunction="{StaticResource Handle.Pop}" />
+                                <DoubleAnimation Storyboard.TargetName="HandleScale" Storyboard.TargetProperty="ScaleX"
+                                                 To="1" Duration="0:0:0.18"
+                                                 EasingFunction="{StaticResource Handle.Pop}" />
+                                <DoubleAnimation Storyboard.TargetName="HandleScale" Storyboard.TargetProperty="ScaleY"
+                                                 To="1" Duration="0:0:0.18"
+                                                 EasingFunction="{StaticResource Handle.Pop}" />
+                                <DoubleAnimation Storyboard.TargetName="Tether" Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="0:0:0.14"
+                                                 EasingFunction="{StaticResource Handle.Out}" />
+                                <DoubleAnimation Storyboard.TargetName="TetherScale" Storyboard.TargetProperty="ScaleY"
+                                                 To="0.75" Duration="0:0:0.18"
+                                                 EasingFunction="{StaticResource Handle.Pop}" />
+                                <DoubleAnimation Storyboard.TargetName="FocusRing" Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="0:0:0.12" />
+                                <DoubleAnimation Storyboard.TargetName="DiscShadow" Storyboard.TargetProperty="Opacity"
+                                                 To="0" Duration="0:0:0.12" />
+                                <ColorAnimation Storyboard.TargetName="DiscFill" Storyboard.TargetProperty="Color"
+                                                To="{StaticResource Color.Neutral.0}" Duration="0:0:0.12" />
+                                <ColorAnimation Storyboard.TargetName="DiscStroke" Storyboard.TargetProperty="Color"
+                                                To="{StaticResource Color.Indigo.200}" Duration="0:0:0.12" />
+                            </Storyboard>
+                        </VisualState>
+                    </VisualStateGroup>
+                </VisualStateManager.VisualStateGroups>
+                <!-- Reaches 10 DIP over the console so the handle can straddle its border. -->
+                <Grid Margin="0,0,-10,0">
+                    <!-- Edge segment: lights the console's own border around the handle, clipped clear of the
+                         10 DIP rounded corners. -->
+                    <Grid Width="1" Margin="0,10,9,10" HorizontalAlignment="Right" ClipToBounds="True"
+                          IsHitTestVisible="False">
+                        <Grid x:Name="Tether" Height="96" VerticalAlignment="Top" Opacity="0"
+                              RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <ScaleTransform x:Name="TetherScale" ScaleY="0.6" />
+                            </Grid.RenderTransform>
+                            <Border>
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#008FA8DA" Offset="0" />
+                                        <GradientStop Color="#8FA8DA" Offset="0.5" />
+                                        <GradientStop Color="#008FA8DA" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                            <Border x:Name="TetherStrong" Opacity="0">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#003156A3" Offset="0" />
+                                        <GradientStop Color="{StaticResource Color.Indigo.600}" Offset="0.5" />
+                                        <GradientStop Color="#003156A3" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                    <!-- Hit-testable only while shown, so at rest it never covers the console's controls. -->
+                    <Grid x:Name="Handle" Width="20" Height="20" HorizontalAlignment="Right" VerticalAlignment="Top"
+                          Opacity="0" IsHitTestVisible="False" RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
+                            <ScaleTransform x:Name="HandleScale" ScaleX="0.7" ScaleY="0.7" />
+                        </Grid.RenderTransform>
+                        <Grid x:Name="FocusRing" Margin="-4" Opacity="0">
+                            <Ellipse Stroke="#993156A3" StrokeThickness="2" />
+                            <Ellipse Margin="2" Stroke="{StaticResource Brush.Surface}" StrokeThickness="2" />
+                        </Grid>
+                        <Ellipse StrokeThickness="1">
+                            <Ellipse.Fill>
+                                <SolidColorBrush x:Name="DiscFill" Color="{StaticResource Color.Neutral.0}" />
+                            </Ellipse.Fill>
+                            <Ellipse.Stroke>
+                                <SolidColorBrush x:Name="DiscStroke" Color="{StaticResource Color.Indigo.200}" />
+                            </Ellipse.Stroke>
+                            <Ellipse.Effect>
+                                <DropShadowEffect x:Name="DiscShadow" BlurRadius="7" ShadowDepth="1" Direction="270"
+                                                  Opacity="0.16" Color="{StaticResource Color.Neutral.900}" />
+                            </Ellipse.Effect>
+                        </Ellipse>
+                        <Viewbox Width="12" Height="12">
+                            <Path Width="16" Height="16" Stroke="{StaticResource Brush.Primary}" StrokeThickness="1.4"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                  Data="M2.5,8 H13.5 M5,5.5 L2.5,8 L5,10.5 M11,5.5 L13.5,8 L11,10.5" />
+                        </Viewbox>
+                    </Grid>
+                </Grid>
+            </Grid>
+        </ControlTemplate>
         <!-- Runtime console: one card whose sections are divided by hairlines. -->
         <Style x:Key="Console.Card" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
@@ -579,7 +810,7 @@
                     <!-- Settings owns its definition-driven view and namescope. -->
                     <Grid x:Name="HomeView">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" MinWidth="320" />
+                            <ColumnDefinition Width="*" MinWidth="420" />
                             <ColumnDefinition x:Name="RuntimeSidebarColumn" Width="392" />
                         </Grid.ColumnDefinitions>
                         <Grid Grid.Column="0">
@@ -807,6 +1038,16 @@
                     </Grid>
 
                         </Grid>
+                        <!-- The 16 DIP gap between the task area and the console is the hit target; neither card
+                             moves. Raised above the console so the shown handle's inner half also drags. -->
+                        <GridSplitter x:Name="RuntimeSidebarSplitter" Grid.Column="0" Width="16" Margin="0,14,0,16"
+                                      Panel.ZIndex="1" HorizontalAlignment="Right" VerticalAlignment="Stretch"
+                                      Background="Transparent" Template="{StaticResource Console.ResizeHandle}"
+                                      FocusVisualStyle="{x:Null}"
+                                      ResizeDirection="Columns" ResizeBehavior="CurrentAndNext" ShowsPreview="False"
+                                      Cursor="SizeWE" KeyboardIncrement="10"
+                                      AutomationProperties.Name="调整运行控制栏宽度"
+                                      AutomationProperties.HelpText="拖动或使用左右方向键调整宽度" />
                         <!-- One runtime console: run control, game preview and grouped activity as sections. -->
                         <Border x:Name="RuntimeSidebar" Grid.Column="1" Margin="0,14,16,16"
                                 Style="{StaticResource Console.Card}">
@@ -814,7 +1055,7 @@
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" MinHeight="120" />
+                                    <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
                                 <StackPanel x:Name="RuntimeControlCard" Margin="16,12,16,16">
                                     <Grid Height="28" Margin="0,0,-8,0">

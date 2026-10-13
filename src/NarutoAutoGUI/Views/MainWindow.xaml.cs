@@ -79,6 +79,12 @@ public partial class MainWindow : FluentWindow
     private bool _projectConfigurationValid;
     private bool _updatingOptionEditors;
     private bool _taskShelfExpanded;
+    private double? _preferredRuntimeSidebarWidth;
+    private bool _updatingRuntimeSidebarWidth;
+    private bool _runtimeSidebarDragging;
+    private bool _runtimeSidebarKeyboardCue;
+    private static readonly DependencyPropertyDescriptor RuntimeSidebarWidthProperty =
+        DependencyPropertyDescriptor.FromProperty(ColumnDefinition.WidthProperty, typeof(ColumnDefinition));
     // Labels of the tasks added since the add-task panel was last opened.
     private readonly List<string> _addedSinceShelfOpened = [];
     private readonly Dictionary<string, bool> _taskGroupExpanded = new(StringComparer.Ordinal);
@@ -158,6 +164,13 @@ public partial class MainWindow : FluentWindow
         IsVisibleChanged += MainWindow_IsVisibleChanged;
         StateChanged += MainWindow_StateChanged;
         SizeChanged += (_, _) => UpdateConfigurationLockText();
+        RuntimeSidebarWidthProperty.AddValueChanged(RuntimeSidebarColumn, RuntimeSidebarColumn_WidthChanged);
+        foreach (var routedEvent in new[] {
+            MouseEnterEvent, MouseLeaveEvent, MouseMoveEvent, GotKeyboardFocusEvent, LostKeyboardFocusEvent,
+            PreviewKeyDownEvent, SizeChangedEvent, System.Windows.Controls.Primitives.Thumb.DragStartedEvent,
+            System.Windows.Controls.Primitives.Thumb.DragCompletedEvent }) {
+            RuntimeSidebarSplitter.AddHandler(routedEvent, new RoutedEventHandler(RuntimeSidebarHandle_Update), true);
+        }
         HomeView.SizeChanged += (_, _) => RuntimeSidebarVisibility(
             HomeView.Visibility == Visibility.Visible ? MainSection.Home : MainSection.Settings);
         _runTimer.Tick += (_, _) => RefreshRunTiming();
@@ -238,6 +251,7 @@ public partial class MainWindow : FluentWindow
             RemovePreviewWindowHook();
             RemoveConfigurationWheelHook();
             _runTimer.Stop();
+            RuntimeSidebarWidthProperty.RemoveValueChanged(RuntimeSidebarColumn, RuntimeSidebarColumn_WidthChanged);
             _updateCancellation?.Cancel();
             StopPreviewPolling();
             _sessionManager.StateChanged -= OnSessionStateChanged;
@@ -337,10 +351,61 @@ public partial class MainWindow : FluentWindow
 
     private void RuntimeSidebarVisibility(MainSection section)
     {
-        RuntimeSidebar.Visibility = section == MainSection.Home ? Visibility.Visible : Visibility.Collapsed;
-        RuntimeSidebarColumn.Width = section == MainSection.Home
-            ? new GridLength(SidebarWidth(HomeView.ActualWidth) + RuntimeSidebar.Margin.Right)
-            : new GridLength(0);
+        var visible = section == MainSection.Home;
+        RuntimeSidebar.Visibility = RuntimeSidebarSplitter.Visibility = visible
+            ? Visibility.Visible : Visibility.Collapsed;
+        _updatingRuntimeSidebarWidth = true;
+        try {
+            // ActualWidth can exceed the allotted space when the columns' minimum sizes no longer fit.
+            var homeWidth = System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(HomeView).Width;
+            var minimum = visible ? 340 + RuntimeSidebar.Margin.Right : 0;
+            var maximum = visible ? Math.Max(minimum, Math.Min(540 + RuntimeSidebar.Margin.Right,
+                homeWidth - HomeView.ColumnDefinitions[0].MinWidth)) : 0;
+            RuntimeSidebarColumn.MinWidth = minimum;
+            RuntimeSidebarColumn.MaxWidth = maximum;
+            var preferred = _preferredRuntimeSidebarWidth
+                ?? SidebarWidth(homeWidth) + RuntimeSidebar.Margin.Right;
+            RuntimeSidebarColumn.Width = new GridLength(Math.Clamp(preferred, minimum, maximum));
+        } finally {
+            _updatingRuntimeSidebarWidth = false;
+        }
+    }
+
+    private void RuntimeSidebarColumn_WidthChanged(object? sender, EventArgs e)
+    {
+        // Observe native mouse, keyboard and automation resizing; automatic layout never replaces the preference.
+        if (!_updatingRuntimeSidebarWidth) {
+            _preferredRuntimeSidebarWidth = RuntimeSidebarColumn.Width.Value;
+        }
+    }
+
+    // The GridSplitter does all resizing; this only places its handle and picks the visual state.
+    private void RuntimeSidebarHandle_Update(object sender, RoutedEventArgs e)
+    {
+        var splitter = RuntimeSidebarSplitter;
+        if (e.RoutedEvent == System.Windows.Controls.Primitives.Thumb.DragStartedEvent) {
+            _runtimeSidebarDragging = true;
+            _runtimeSidebarKeyboardCue = false;
+        } else if (e.RoutedEvent == System.Windows.Controls.Primitives.Thumb.DragCompletedEvent) {
+            _runtimeSidebarDragging = false;
+        } else if (e is KeyboardEventArgs) {
+            // Like a focus rectangle, focus shows the handle only when it came from the keyboard.
+            _runtimeSidebarKeyboardCue = e.RoutedEvent != LostKeyboardFocusEvent
+                && InputManager.Current.MostRecentInputDevice is KeyboardDevice;
+        }
+        var pointer = _runtimeSidebarDragging || splitter.IsMouseOver;
+        var keyboard = _runtimeSidebarKeyboardCue && splitter.IsKeyboardFocused;
+        if ((pointer || keyboard) && splitter.Template.FindName("Handle", splitter) is FrameworkElement handle
+            && splitter.Template.FindName("Tether", splitter) is FrameworkElement tether) {
+            // Follow the pointer, kept 24 DIP from the console's ends so it clears the rounded corners.
+            var y = Math.Clamp(pointer ? Mouse.GetPosition(splitter).Y : splitter.ActualHeight / 2,
+                24, Math.Max(24, splitter.ActualHeight - 24));
+            handle.Margin = new Thickness(0, y - handle.Height / 2, 0, 0);
+            // The edge segment's clip starts 10 DIP down, below the corner radius.
+            tether.Margin = new Thickness(0, y - 10 - tether.Height / 2, 0, 0);
+        }
+        VisualStateManager.GoToState(splitter, _runtimeSidebarDragging ? "Dragging"
+            : splitter.IsMouseOver ? "Hover" : keyboard ? "Keyboard" : "Hidden", true);
     }
 
     // The console takes about a third of the home page, bounded so neither it nor the task area gets cramped.

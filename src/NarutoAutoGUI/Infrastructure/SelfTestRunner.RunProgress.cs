@@ -85,6 +85,7 @@ internal static partial class SelfTestRunner
     {
         Require(MainWindow.SidebarWidth(600) == 340 && MainWindow.SidebarWidth(1200) == 420
             && MainWindow.SidebarWidth(2000) == 540, "侧栏宽度应为主页内容的 35%，限制在 340–540。");
+        VerifyRuntimeSidebarResize(logger, testDirectory);
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "runtime-console"), (window, _) => {
             typeof(MainWindow).GetMethod("EndOnboarding", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(window, new object[] { true });

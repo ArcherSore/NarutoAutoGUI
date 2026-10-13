@@ -529,16 +529,22 @@ internal static class RunSelfTests
     }
 
     // C5: a reader on another thread snapshots throughout each Run. Snapshots hold the state lock for a few
-    // milliseconds, so the reader pauses between reads to let the Run progress meanwhile.
+    // milliseconds, so the reader pauses between reads to let the Run progress meanwhile. The Run waits once until
+    // the reader has seen it advance, since a slow machine's sleep can otherwise outlast the whole Run.
     private static async Task VerifyConcurrentSnapshotsAsync(RunHarness harness)
     {
         for (var iteration = 0; iteration < 3; iteration++) {
             var observed = new List<WorkerSnapshot>();
+            var sawProgress = 0;
             using var done = new CancellationTokenSource();
             var reader = Task.Run(() =>
             {
                 while (!done.IsCancellationRequested) {
-                    observed.Add(harness.Host.GetSnapshot());
+                    var snapshot = harness.Host.GetSnapshot();
+                    observed.Add(snapshot);
+                    if (snapshot.ActiveRun?.CurrentPlanItemIndex > 0) {
+                        Volatile.Write(ref sawProgress, 1);
+                    }
                     Thread.Sleep(1);
                 }
             });
@@ -547,6 +553,7 @@ internal static class RunSelfTests
                 execution.Complete(RuntimeExecutionOutcome.Succeeded);
                 execution = await harness.Executions.ExecutingAsync(item.PlanItemId);
                 execution.ReportRunning();
+                SpinWait.SpinUntil(() => Volatile.Read(ref sawProgress) == 1, 5000);
             }
             execution.Complete(RuntimeExecutionOutcome.Succeeded);
             await TerminalAsync(harness, request.RunId);

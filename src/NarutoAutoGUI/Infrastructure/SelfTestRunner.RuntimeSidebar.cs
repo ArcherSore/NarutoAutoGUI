@@ -50,6 +50,8 @@ internal static partial class SelfTestRunner
             PumpOnboarding(300);
             Require(!HandleInnerHalfDrags(), "手柄隐藏后应立即不再遮挡侧栏。");
 
+            // Small screens start the sidebar at its minimum; widen it first so it can move both ways.
+            Drag(-60);
             var originalWidth = console.ActualWidth;
             var originalPreviewHeight = preview.ActualHeight;
             var originalLogHeight = log.ActualHeight;
@@ -67,7 +69,9 @@ internal static partial class SelfTestRunner
 
             // Window resizing must clamp the displayed width without discarding the user's wider preference.
             Drag(-10000);
-            Require(Math.Abs(console.ActualWidth - 540) < 1, "右侧栏应有最大宽度边界。");
+            var widest = console.ActualWidth;
+            Require(Math.Abs(widest - Math.Min(540, column.MaxWidth - console.Margin.Right)) < 1,
+                "右侧栏应有最大宽度边界。");
             window.Width = 920;
             window.Height = 640;
             PumpOnboarding();
@@ -93,7 +97,7 @@ internal static partial class SelfTestRunner
             window.Width = 1440;
             PumpOnboarding();
             ClickOnboarding(window, "HomeNavigationItem");
-            Require(Math.Abs(console.ActualWidth - 540) < 1, "返回首页且空间恢复后应恢复用户宽度。");
+            Require(Math.Abs(console.ActualWidth - widest) < 1, "返回首页且空间恢复后应恢复用户宽度。");
 
             Drag(10000);
             Require(Math.Abs(console.ActualWidth - 340) < 1, "右侧栏应有最小宽度边界。");

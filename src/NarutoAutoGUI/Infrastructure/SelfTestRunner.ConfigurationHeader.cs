@@ -59,7 +59,9 @@ internal static partial class SelfTestRunner
                     && scroll.ComputedHorizontalScrollBarVisibility != Visibility.Visible && scroll.ScrollableWidth > 0,
                     $"{width} 宽度下 14 个配置锁定时，页头应为单行，标题、锁定徽标与新建按钮完整可见。");
             }
-            Require(((TextBlock)window.FindName("ConfigurationLockText")).Text != "已锁定", "宽于 1180 时锁定徽标显示完整说明。");
+            // A small CI screen clamps the window below 1180, where the compact badge is the expected form.
+            Require(((TextBlock)window.FindName("ConfigurationLockText")).Text != "已锁定" == window.ActualWidth >= 1180,
+                "宽于 1180 时锁定徽标显示完整说明。");
             window.Width = 920;
             PumpOnboarding();
             Require(((TextBlock)window.FindName("ConfigurationLockText")).Text == "已锁定"

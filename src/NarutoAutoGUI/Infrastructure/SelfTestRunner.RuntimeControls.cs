@@ -116,7 +116,8 @@ internal static partial class SelfTestRunner
                     state with { ConfigurationEditable = editable, ConfigurationLock = lockReason });
                 Require(Named<UIElement>(window, "NewConfigurationButton").IsEnabled == editable
                     && Named<UIElement>(window, "ConfigurationLockBadge").IsVisible == text is not null
-                    && (text is null || Named<TextBlock>(window, "ConfigurationLockText").Text == text),
+                    && (text is null || AutomationProperties.GetName(
+                        Named<FrameworkElement>(window, "ConfigurationLockBadge")) == text),
                     $"配置可编辑={editable}、锁定原因={lockReason} 的显示不符。");
             }
 

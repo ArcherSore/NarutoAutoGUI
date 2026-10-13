@@ -318,7 +318,8 @@ internal static partial class SelfTestRunner
 
     private static string? LockText(MainWindow window) =>
         Named<UIElement>(window, "ConfigurationLockBadge").IsVisible
-            ? Named<TextBlock>(window, "ConfigurationLockText").Text : null;
+            ? System.Windows.Automation.AutomationProperties.GetName(Named<UIElement>(window, "ConfigurationLockBadge"))
+            : null;
 
     private static void Click(MainWindow window, string name)
     {

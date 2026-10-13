@@ -163,6 +163,13 @@ internal static partial class SelfTestRunner
             if (!editors.All(editor => editor.IsEnabled) || LockBadgeShown()) {
                 throw new InvalidOperationException("解除运行锁后必须恢复编辑并隐藏锁定说明。");
             }
+            var drag = buttons.Single(button => NameOf(button) == "拖动以调整顺序");
+            var remove = buttons.Single(button => NameOf(button).StartsWith("从执行计划移除", StringComparison.Ordinal));
+            if (new[] { drag, remove }.Any(button => button.Height != 32
+                    || button.VerticalAlignment != System.Windows.VerticalAlignment.Center)
+                || !Equals(drag.ToolTip, "拖动以调整顺序") || !Equals(remove.ToolTip, "从执行计划移除")) {
+                throw new InvalidOperationException("任务卡片操作按钮应为 32×32 并带 ToolTip，不随卡片高度拉伸。");
+            }
         } finally {
             window.AllowClose();
             window.Close();

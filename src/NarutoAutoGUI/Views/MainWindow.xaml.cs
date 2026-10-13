@@ -1123,7 +1123,7 @@ public partial class MainWindow : FluentWindow
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var dragHandle = CreateIconButton(WpfSymbolRegular.ReOrderDotsVertical20, "拖动以调整顺序");
+        var dragHandle = CreateIconButton(WpfSymbolRegular.ReOrderDotsVertical20, "拖动以调整顺序", "拖动以调整顺序");
         dragHandle.Tag = task;
         dragHandle.Cursor = WpfCursors.SizeAll;
         dragHandle.PreviewMouseLeftButtonDown += PlanDragHandle_PreviewMouseLeftButtonDown;
@@ -1190,7 +1190,7 @@ public partial class MainWindow : FluentWindow
         _planItemStatuses[task.Name] = badge with { Status = status };
 
         if (!string.IsNullOrWhiteSpace(task.Description)) {
-            var information = CreateIconButton(WpfSymbolRegular.Info16, $"查看 {task.Label} 的任务描述");
+            var information = CreateIconButton(WpfSymbolRegular.Info16, $"查看 {task.Label} 的任务描述", "查看任务说明");
             information.Tag = task;
             information.Click += TaskDescriptionButton_Click;
             _taskDescriptionButtons[task.Name] = information;
@@ -1198,7 +1198,8 @@ public partial class MainWindow : FluentWindow
             header.Children.Add(information);
         }
 
-        var remove = CreateIconButton(WpfSymbolRegular.Dismiss16, $"从执行计划移除 {task.Label}");
+        var remove = CreateIconButton(WpfSymbolRegular.Dismiss16, $"从执行计划移除 {task.Label}", "从执行计划移除");
+        remove.Style = (Style)FindResource("TaskRemoveButtonStyle");
         remove.Tag = task;
         remove.Click += RemovePlanItemButton_Click;
         BindConfigurationEditable(remove);
@@ -1487,11 +1488,12 @@ public partial class MainWindow : FluentWindow
             Path = new PropertyPath(ConfigurationEditableProperty), Source = this
         });
 
-    private WpfButton CreateIconButton(WpfSymbolRegular symbol, string accessibleName)
+    private WpfButton CreateIconButton(WpfSymbolRegular symbol, string accessibleName, string toolTip)
     {
         var button = new WpfButton {
             Content = CreateSymbolIcon(symbol),
-            Style = (Style)FindResource("TaskIconButtonStyle")
+            Style = (Style)FindResource("TaskIconButtonStyle"),
+            ToolTip = toolTip
         };
         AutomationProperties.SetName(button, accessibleName);
         return button;
@@ -2123,6 +2125,7 @@ public partial class MainWindow : FluentWindow
         HomeDesktopVisibilityButton.Tag = state.Desktop.Action == DesktopAction.Hide ? "True" : "False";
         HomeDesktopVisibilityText.Text = desktopText;
         HomeDesktopVisibilityButton.IsEnabled = state.Desktop.Enabled;
+        HomeDesktopVisibilityButton.ToolTip = DesktopToggleText(state.Desktop);
         AutomationProperties.SetName(HomeDesktopVisibilityButton, desktopText);
 
         var action = state.Action;
@@ -2202,15 +2205,13 @@ public partial class MainWindow : FluentWindow
         _ => "上次结束桌面分身未确认"
     };
 
+    // The desktop chip's tooltip says what the click does, or why it is unavailable.
+    private static string DesktopToggleText(DesktopToggle desktop) => !desktop.Enabled ? "运行环境就绪后可显示桌面分身"
+        : desktop.Action == DesktopAction.Hide ? "隐藏桌面分身窗口，任务继续在后台运行"
+        : "在独立窗口中显示桌面分身，可直接操作游戏";
+
     private void ApplyMoreMenu(RuntimeControlState state)
     {
-        var hide = state.Desktop.Action == DesktopAction.Hide;
-        DesktopMenuItem.Header = hide ? "隐藏桌面分身" : "显示桌面分身";
-        DesktopMenuIcon.Symbol = hide ? WpfSymbolRegular.EyeOff16 : WpfSymbolRegular.Eye16;
-        DesktopMenuItem.IsEnabled = state.Desktop.Enabled;
-        DesktopMenuItem.InputGestureText = state.Desktop.Enabled ? string.Empty : "未就绪";
-        ExpandPreviewMenuItem.IsEnabled = state.PreviewWorker is not null;
-        ExpandPreviewMenuItem.InputGestureText = state.PreviewWorker is null ? "暂无画面" : string.Empty;
         var endBlocker = EndEnvironmentBlocker(state);
         EndEnvironmentMenuItem.IsEnabled = endBlocker is null;
         EndEnvironmentMenuItem.InputGestureText = endBlocker ?? string.Empty;

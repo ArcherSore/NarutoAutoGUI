@@ -764,9 +764,73 @@
         <Setter Property="FocusVisualStyle" Value="{StaticResource TasksFocusVisualStyle}" />
     </Style>
 
+    <!-- Plan item actions: a 32 DIP hit target drawing a centred 28 DIP highlight, so hover and focus never span
+         the card height. The focus ring hugs the highlight. -->
+    <Style x:Key="TaskIconFocusVisualStyle">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Border BorderBrush="{StaticResource Brush.TasksAccent}" BorderThickness="2" CornerRadius="8"
+                            SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="TaskIconButtonStyle" TargetType="{x:Type Button}"
            BasedOn="{StaticResource CompactIconButtonStyle}">
-        <Setter Property="Template" Value="{StaticResource TaskButtonTemplate}" />
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource TaskIconFocusVisualStyle}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Grid Background="{StaticResource Brush.Transparent}">
+                        <Border Margin="2" Background="{TemplateBinding Background}"
+                                CornerRadius="{StaticResource Radius.Control}" SnapsToDevicePixels="True" />
+                        <ContentPresenter x:Name="TaskIconContent" HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="TaskIconContent" Property="Opacity"
+                                    Value="{StaticResource Opacity.Disabled}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsMouseOver" Value="True" />
+                    <Condition Property="IsEnabled" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+            </MultiTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="TaskRemoveButtonStyle" TargetType="{x:Type Button}"
+           BasedOn="{StaticResource TaskIconButtonStyle}">
+        <Style.Triggers>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsMouseOver" Value="True" />
+                    <Condition Property="IsEnabled" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{StaticResource Brush.Error.Surface}" />
+                <Setter Property="Foreground" Value="{StaticResource Brush.Error}" />
+            </MultiTrigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsPressed" Value="True" />
+                    <Condition Property="IsEnabled" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{StaticResource Brush.Error.Border}" />
+            </MultiTrigger>
+        </Style.Triggers>
     </Style>
 
     <Style x:Key="PlanHeaderButtonStyle"

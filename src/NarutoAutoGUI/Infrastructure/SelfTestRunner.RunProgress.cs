@@ -113,22 +113,22 @@ internal static partial class SelfTestRunner
             SetPreviewExpanded(true);
 
             var desktop = new DesktopToggle(DesktopAction.Show, true);
-            foreach (var (state, desktopReason, previewReason, endReason) in new (RuntimeControlState, string, string,
-                string)[] {
-                (new(new RuntimeAction.Start(true), true, null, desktop, true, Guid.NewGuid()), "", "", ""),
-                (new(new RuntimeAction.Stop(true), false, LockReason.RunActive, desktop, true, null), "", "暂无画面", ""),
+            // The Preview header and the desktop chip own enlarge and show/hide; the menu does not repeat them.
+            Require(window.FindName("DesktopMenuItem") is null && window.FindName("ExpandPreviewMenuItem") is null,
+                "更多操作菜单不应重复放大画面或显示/隐藏分身。");
+            foreach (var (state, endReason) in new (RuntimeControlState, string)[] {
+                (new(new RuntimeAction.Start(true), true, null, desktop, true, Guid.NewGuid()), ""),
+                (new(new RuntimeAction.Stop(true), false, LockReason.RunActive, desktop, true, null), ""),
                 (new(new RuntimeAction.Prepare(true), true, null, desktop with { Enabled = false }, true, null),
-                    "未就绪", "暂无画面", "未创建"),
+                    "未创建"),
                 (new(new RuntimeAction.InProgress(ProgressKind.PreparingEnvironment), false, LockReason.RuntimeBusy,
-                    desktop with { Enabled = false }, false, null), "未就绪", "暂无画面", "处理中"),
+                    desktop with { Enabled = false }, false, null), "处理中"),
                 (new(new RuntimeAction.Recover(true, RecoveryReason.WorkerLost), false, LockReason.RuntimeBusy,
-                    desktop, true, null), "", "暂无画面", "")
+                    desktop, true, null), "")
             }) {
                 window.ApplyRuntimeControls(state);
-                var items = new[] { "DesktopMenuItem", "ExpandPreviewMenuItem", "EndEnvironmentMenuItem" }
-                    .Select(name => Named<System.Windows.Controls.MenuItem>(window, name)).ToArray();
-                Require(items.Zip(new[] { desktopReason, previewReason, endReason }).All(pair =>
-                        pair.First.IsEnabled == (pair.Second.Length == 0) && pair.First.InputGestureText == pair.Second)
+                var end = Named<System.Windows.Controls.MenuItem>(window, "EndEnvironmentMenuItem");
+                Require(end.IsEnabled == (endReason.Length == 0) && end.InputGestureText == endReason
                     && Named<System.Windows.Controls.MenuItem>(window, "OpenLogsMenuItem").IsEnabled,
                     $"{state.Action} 时更多操作菜单的可用性或原因不符。");
             }

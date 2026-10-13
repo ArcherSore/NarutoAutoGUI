@@ -120,17 +120,21 @@ internal static partial class SelfTestRunner
                     $"配置可编辑={editable}、锁定原因={lockReason} 的显示不符。");
             }
 
-            foreach (var (desktop, text) in new (DesktopToggle, string)[] {
-                (new DesktopToggle(DesktopAction.Hide, true), "隐藏分身"),
-                (new DesktopToggle(DesktopAction.Show, false), "显示分身")
+            // The chip shows over an empty picture too: it follows the session, and is never invisible but clickable.
+            foreach (var (desktop, text, toolTip) in new (DesktopToggle, string, string)[] {
+                (new DesktopToggle(DesktopAction.Hide, true), "隐藏分身", "隐藏桌面分身窗口，任务继续在后台运行"),
+                (new DesktopToggle(DesktopAction.Show, true), "显示分身", "在独立窗口中显示桌面分身，可直接操作游戏"),
+                (new DesktopToggle(DesktopAction.Show, false), "显示分身", "运行环境就绪后可显示桌面分身")
             }) {
                 window.ApplyRuntimeControls(state with { Desktop = desktop });
+                PumpOnboarding();
                 var button = Named<WpfButton>(window, "HomeDesktopVisibilityButton");
                 Require(Named<AccessText>(window, "HomeDesktopVisibilityText").Text == text
-                    && button.IsEnabled == desktop.Enabled && button.ToolTip is null
-                    && AutomationProperties.GetName(button) == text
-                    && Equals(button.Tag, desktop.Action == DesktopAction.Hide ? "True" : "False"),
-                    $"{desktop} 的分身按钮显示不符。");
+                    && button.IsEnabled == desktop.Enabled && Equals(button.ToolTip, toolTip)
+                    && ToolTipService.GetShowOnDisabled(button) && AutomationProperties.GetName(button) == text
+                    && Equals(button.Tag, desktop.Action == DesktopAction.Hide ? "True" : "False")
+                    && !Named<UIElement>(window, "HomePreviewImage").IsVisible
+                    && button.IsVisible && button.Opacity == 1, $"{desktop} 的分身按钮显示不符。");
             }
         });
         Console.WriteLine("RUNTIME CONTROL MAPPING PASS: header actions, configuration lock and desktop toggle.");

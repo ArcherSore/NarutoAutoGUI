@@ -653,32 +653,50 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
-        <!-- Shortcuts over the live picture appear while it is hovered or holds keyboard focus. -->
-        <Style x:Key="Preview.Overlay" TargetType="StackPanel">
-            <Setter Property="Opacity" Value="0" />
-            <Style.Triggers>
-                <MultiDataTrigger>
-                    <MultiDataTrigger.Conditions>
-                        <Condition Binding="{Binding Visibility, ElementName=HomePreviewImage}" Value="Visible" />
-                        <Condition Binding="{Binding IsMouseOver, ElementName=PreviewCardContent}" Value="True" />
-                    </MultiDataTrigger.Conditions>
-                    <Setter Property="Opacity" Value="1" />
-                </MultiDataTrigger>
-                <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                    <Setter Property="Opacity" Value="1" />
-                </Trigger>
-            </Style.Triggers>
+        <!-- Desktop show/hide chip pinned to the picture's bottom-left corner. It is always shown while the Preview
+             is expanded; availability follows the session, not the picture. -->
+        <Style x:Key="Preview.ChipFocus">
+            <Setter Property="Control.Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Border Margin="-3" BorderBrush="{StaticResource Brush.Primary}" BorderThickness="2"
+                                CornerRadius="17" SnapsToDevicePixels="True" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
-        <Style x:Key="Preview.OverlayButton" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
-            <Setter Property="Height" Value="30" />
-            <Setter Property="MinHeight" Value="30" />
-            <Setter Property="Padding" Value="10,0" />
-            <Setter Property="Background" Value="#A80A0E14" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Foreground" Value="White" />
+        <Style x:Key="Preview.DesktopChip" TargetType="Button">
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="8,0,10,0" />
+            <Setter Property="Background" Value="#9E0A0E14" />
+            <Setter Property="BorderBrush" Value="#24FFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Inverse}" />
+            <Setter Property="FontFamily" Value="{StaticResource FontFamily.Ui}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource Preview.ChipFocus}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14"
+                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#D90A0E14" />
+                    <Setter Property="Background" Value="#DB0A0E14" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#2E5F6E80" />
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                    <Setter Property="Foreground" Value="{StaticResource Brush.Text.Disabled}" />
+                    <Setter Property="Cursor" Value="Arrow" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -1082,18 +1100,6 @@
                                             <ui:SymbolIcon Symbol="MoreHorizontal20" FontSize="18" />
                                             <Button.ContextMenu>
                                                 <ContextMenu x:Name="RuntimeMoreMenu">
-                                                    <MenuItem x:Name="DesktopMenuItem" Header="显示桌面分身"
-                                                              Click="HomeDesktopVisibilityButton_Click">
-                                                        <MenuItem.Icon>
-                                                            <ui:SymbolIcon x:Name="DesktopMenuIcon" Symbol="Eye16" />
-                                                        </MenuItem.Icon>
-                                                    </MenuItem>
-                                                    <MenuItem x:Name="ExpandPreviewMenuItem" Header="放大游戏画面"
-                                                              Click="ExpandPreview_Click">
-                                                        <MenuItem.Icon>
-                                                            <Path Style="{StaticResource Preview.ExpandIcon}" />
-                                                        </MenuItem.Icon>
-                                                    </MenuItem>
                                                     <MenuItem x:Name="OpenLogsMenuItem" Header="打开日志目录"
                                                               Click="OpenLogsMenuItem_Click">
                                                         <MenuItem.Icon>
@@ -1245,54 +1251,45 @@
                                                                    Foreground="{StaticResource Brush.Text.Secondary}" />
                                                 </Grid>
                                             </Border>
-                                            <!-- Desktop and enlarge shortcuts float over a live picture on hover. -->
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                                                        VerticalAlignment="Bottom" Margin="0,0,8,8"
-                                                        Style="{StaticResource Preview.Overlay}">
-                                                <Button x:Name="HomeDesktopVisibilityButton" IsEnabled="False"
-                                                        Style="{StaticResource Preview.OverlayButton}"
-                                                        AutomationProperties.Name="显示分身"
-                                                        Click="HomeDesktopVisibilityButton_Click">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <Viewbox Width="16" Height="16" Margin="0,0,6,0">
-                                                            <Path Width="24" Height="24" StrokeThickness="2"
-                                                                  Stroke="{Binding Foreground,
-                                                                   RelativeSource={RelativeSource AncestorType=Button}}"
-                                                                  StrokeLineJoin="Round" StrokeStartLineCap="Round"
-                                                                  StrokeEndLineCap="Round">
-                                                                <Path.Style>
-                                                                    <Style TargetType="{x:Type Path}">
-                                                                        <Setter Property="Data"
-                                                                             Value="M9,19 L4,19 Q2,19 2,17 L2,4 Q2,2 4,2
-                                                                                       L19,2 Q21,2 21,4 L21,9
-                                                                                       M9,16 Q16,7 23,16 Q16,25 9,16 Z
-                                                                                       M18,16 A2,2 0 1 1 14,16
-                                                                                       A2,2 0 1 1 18,16" />
-                                                                        <Style.Triggers>
-                                                                            <DataTrigger Value="True"
-                                                                                Binding="{Binding Tag,
-                                                                                    RelativeSource={RelativeSource
-                                                                                        AncestorType=Button}}">
-                                                                                <Setter Property="Data"
-                                                                                    Value="M3,3 L21,21 M9,5 Q17,2 23,12
-                                                                                          Q21,16 19,17 M15,19 Q7,22 1,12
-                                                                                      Q3,8 5,7 M9,9 A4,4 0 0 0 15,15" />
-                                                                            </DataTrigger>
-                                                                        </Style.Triggers>
-                                                                    </Style>
-                                                                </Path.Style>
-                                                            </Path>
-                                                        </Viewbox>
-                                                        <AccessText x:Name="HomeDesktopVisibilityText" Text="显示分身"
-                                                                    VerticalAlignment="Center" />
-                                                    </StackPanel>
-                                                </Button>
-                                                <Button Margin="6,0,0,0" Style="{StaticResource Preview.OverlayButton}"
-                                                        ToolTip="放大游戏画面" AutomationProperties.Name="放大游戏画面"
-                                                        Click="ExpandPreview_Click">
-                                                    <Path Style="{StaticResource Preview.ExpandIcon}" />
-                                                </Button>
-                                            </StackPanel>
+                                            <Button x:Name="HomeDesktopVisibilityButton" IsEnabled="False"
+                                                    HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                                    Margin="8,0,0,8" Style="{StaticResource Preview.DesktopChip}"
+                                                    ToolTipService.ShowOnDisabled="True"
+                                                    AutomationProperties.Name="显示分身"
+                                                    Click="HomeDesktopVisibilityButton_Click">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <!-- Open-in-window to show; a minimised window to hide. -->
+                                                    <Viewbox Width="14" Height="14" Margin="0,0,6,0">
+                                                        <Path Width="24" Height="24" StrokeThickness="1.8"
+                                                              Stroke="{Binding Foreground,
+                                                                  RelativeSource={RelativeSource AncestorType=Button}}"
+                                                              StrokeLineJoin="Round" StrokeStartLineCap="Round"
+                                                              StrokeEndLineCap="Round">
+                                                            <Path.Style>
+                                                                <Style TargetType="{x:Type Path}">
+                                                                    <Setter Property="Data"
+                                                                            Value="M10,4 L5,4 Q3,4 3,6 L3,18 Q3,20 5,20
+                                                                                   L17,20 Q19,20 19,18 L19,13
+                                                                                   M14,3 L21,3 L21,10 M21,3 L12,12" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Value="True"
+                                                                            Binding="{Binding Tag,
+                                                                                RelativeSource={RelativeSource
+                                                                                    AncestorType=Button}}">
+                                                                            <Setter Property="Data"
+                                                                                Value="M5,4 L19,4 Q21,4 21,6 L21,17
+                                                                                       Q21,19 19,19 L5,19 Q3,19 3,17
+                                                                                       L3,6 Q3,4 5,4 Z M8,13 L16,13" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Path.Style>
+                                                        </Path>
+                                                    </Viewbox>
+                                                    <AccessText x:Name="HomeDesktopVisibilityText" Text="显示分身"
+                                                                VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
                                         </Grid>
                                     </StackPanel>
                                 </Border>

@@ -177,6 +177,43 @@ internal static partial class SelfTestRunner
         }
     }
 
+    // The added-tasks badge counts additions to the shown configuration, never ones made to another list.
+    // Runs with the task panel open, so the configuration switch happens mid-session.
+    private static void VerifyAddedTasksPerConfiguration(Views.MainWindow window)
+    {
+        var project = (ProjectPlanModule)typeof(Views.MainWindow).GetField("_projectPlan",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(window)!;
+        var tabs = (System.Windows.Controls.TabControl)window.FindName("ConfigurationTabs");
+        var catalog = (System.Windows.DependencyObject)window.FindName("AvailableTasksPanel");
+        var badge = (System.Windows.UIElement)window.FindName("AddedTasksBadge");
+        var text = (System.Windows.Controls.TextBlock)window.FindName("AddedTasksText");
+        void AddFirstAvailable() => ConfigurationDescendants(catalog).OfType<System.Windows.Controls.Button>()
+            .First(button => System.Windows.Automation.AutomationProperties.GetName(button)
+                .StartsWith("添加任务：", StringComparison.Ordinal))
+            .RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+
+        ClickOnboarding(window, "NewConfigurationButton");
+        AddFirstAvailable();
+        AddFirstAvailable();
+        var second = project.Configurations[1].SelectedTasks.ToArray();
+        if (tabs.SelectedIndex != 1 || text.Text != "已添加 2 项" || second.Length != 2) {
+            throw new InvalidOperationException("在第二份配置中连续添加应统计 2 项。");
+        }
+        var first = project.Configurations[0].SelectedTasks.ToArray();
+        tabs.SelectedIndex = 0;
+        if (badge.Visibility != System.Windows.Visibility.Collapsed
+            || ((System.Windows.UIElement)window.FindName("TaskShelfContent")).Visibility
+                != System.Windows.Visibility.Visible
+            || !project.Configurations[1].SelectedTasks.SequenceEqual(second)
+            || !project.Configurations[0].SelectedTasks.SequenceEqual(first)) {
+            throw new InvalidOperationException("切换配置应清零已添加统计、保持面板打开，且不改动任一配置的任务。");
+        }
+        AddFirstAvailable();
+        if (text.Text != "已添加 1 项" || project.Configurations[0].SelectedTasks.Count != first.Length + 1) {
+            throw new InvalidOperationException("切换后只应统计当前配置的添加。");
+        }
+    }
+
     private static void VerifyInlineOptionEditing(
         Views.MainWindow window, ProjectPlanModule project, System.Windows.DependencyObject items)
     {

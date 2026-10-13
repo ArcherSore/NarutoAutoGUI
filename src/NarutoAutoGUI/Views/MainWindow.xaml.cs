@@ -533,7 +533,7 @@ public partial class MainWindow : FluentWindow
     private void TaskShelfHeaderButton_Click(object sender, RoutedEventArgs e)
         => SetTaskShelfExpanded(!_taskShelfExpanded);
 
-    // The panel stays open while several tasks are added; each opening counts its additions afresh.
+    // The panel stays open while several tasks are added; each opening or configuration counts its additions afresh.
     private void SetTaskShelfExpanded(bool expanded)
     {
         if (!expanded) {

@@ -266,7 +266,13 @@ public partial class MainWindow
             return;
         }
         try {
+            var previous = _projectPlan?.ActiveConfigurationId;
             change();
+            if (_projectPlan?.ActiveConfigurationId != previous) {
+                // The added-tasks badge counts additions to the shown list, so another list starts afresh.
+                _addedSinceShelfOpened.Clear();
+                UpdateAddedTasks();
+            }
             _pendingStartAttempt = null;
             _expandedTaskName = null;
             _dragTaskName = null;

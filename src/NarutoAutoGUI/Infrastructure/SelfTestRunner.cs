@@ -637,6 +637,7 @@ internal static partial class SelfTestRunner
             if (addedBadge.Visibility != System.Windows.Visibility.Collapsed) {
                 throw new InvalidOperationException("重新打开面板应重新统计本次添加。");
             }
+            VerifyAddedTasksPerConfiguration(window);
             SetOnboardingField(window, "_pendingOperation", PendingOperation.PreparingEnvironment);
             InvokeOnboarding(window, "RefreshRuntimeControls");
             if (shelf.Visibility != System.Windows.Visibility.Collapsed

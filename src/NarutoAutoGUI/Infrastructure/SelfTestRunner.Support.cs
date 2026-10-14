@@ -370,16 +370,22 @@ internal static partial class SelfTestRunner
                     return;
                 }
                 Directory.CreateDirectory(output);
-                var root = (FrameworkElement)window.FindName("WindowOverlayRoot");
-                var bitmap = new RenderTargetBitmap(
-                    (int)root.ActualWidth, (int)root.ActualHeight, 96, 96, PixelFormats.Pbgra32);
-                bitmap.Render(root);
-                var encoder = new PngBitmapEncoder();
-                encoder.Frames.Add(BitmapFrame.Create(bitmap));
-                using var file = File.Create(Path.Combine(output, $"settings-{suffix}.png"));
-                encoder.Save(file);
+                SaveScreenshot(window, Path.Combine(output, $"settings-{suffix}.png"));
             }
         });
+    }
+
+    // Renders the whole window, overlays included, for the optional visual QA captures.
+    private static void SaveScreenshot(Views.MainWindow window, string path)
+    {
+        var root = (FrameworkElement)window.FindName("WindowOverlayRoot");
+        var bitmap = new RenderTargetBitmap(
+            (int)root.ActualWidth, (int)root.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(root);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var file = File.Create(path);
+        encoder.Save(file);
     }
 
     private static WorkerCoordinatorSnapshot CreateNotificationSnapshot(RunState state)

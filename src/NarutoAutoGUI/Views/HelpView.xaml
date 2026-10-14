@@ -1,0 +1,424 @@
+<UserControl x:Class="NarutoAutoGUI.Views.HelpView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:views="clr-namespace:NarutoAutoGUI.Views">
+    <UserControl.Resources>
+        <!-- FAQ page: the Settings layout (24 px margin, 820 px column, titled sections of row cards) with rows that
+             expand. Answer text uses 21 px lines; UI labels are chips and keys are caps (see HelpMarkup). -->
+        <!-- Answers slide open over 0.2 s and the chevron turns in 0.18 s, both on the CSS "ease" curve. -->
+        <Storyboard x:Key="Help.Open">
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="Answer"
+                                           Storyboard.TargetProperty="(views:RevealDecorator.Reveal)">
+                <SplineDoubleKeyFrame KeyTime="0:0:0.2" Value="1" KeySpline="0.25,0.1 0.25,1" />
+            </DoubleAnimationUsingKeyFrames>
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="Chevron"
+                Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)">
+                <SplineDoubleKeyFrame KeyTime="0:0:0.18" Value="180" KeySpline="0.25,0.1 0.25,1" />
+            </DoubleAnimationUsingKeyFrames>
+        </Storyboard>
+        <Storyboard x:Key="Help.Close">
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="Answer"
+                                           Storyboard.TargetProperty="(views:RevealDecorator.Reveal)">
+                <SplineDoubleKeyFrame KeyTime="0:0:0.2" Value="0" KeySpline="0.25,0.1 0.25,1" />
+            </DoubleAnimationUsingKeyFrames>
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="Chevron"
+                Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)">
+                <SplineDoubleKeyFrame KeyTime="0:0:0.18" Value="0" KeySpline="0.25,0.1 0.25,1" />
+            </DoubleAnimationUsingKeyFrames>
+        </Storyboard>
+        <Style x:Key="Help.Text" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="LineHeight" Value="21" />
+            <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style x:Key="Help.Heading" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="LineHeight" Value="19.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style x:Key="Help.Chip" TargetType="Border">
+            <Setter Property="Padding" Value="6,1" />
+            <Setter Property="Margin" Value="1,0" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Background" Value="{StaticResource Brush.Surface.Disabled}" />
+        </Style>
+        <!-- The 17 px line matches the browser's content box, so a chip is 19 px tall like the approved design. -->
+        <Style x:Key="Help.ChipText" TargetType="TextBlock">
+            <Setter Property="LineHeight" Value="17" />
+            <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+        </Style>
+        <Style x:Key="Help.ChipSeparator" TargetType="TextBlock">
+            <Setter Property="LineHeight" Value="17" />
+            <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+            <Setter Property="Margin" Value="4,0" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Muted}" />
+        </Style>
+        <Style x:Key="Help.Key" TargetType="Border">
+            <Setter Property="MinWidth" Value="22" />
+            <Setter Property="Padding" Value="6,0" />
+            <Setter Property="BorderThickness" Value="1,1,1,2" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
+        </Style>
+        <Style x:Key="Help.KeyText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LineHeight" Value="18" />
+            <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+        </Style>
+
+        <!-- Answer blocks open with a paragraph; every later block and list item keeps a fixed gap above it. -->
+        <Style x:Key="Help.StepGap" TargetType="ContentPresenter">
+            <Setter Property="Margin" Value="0,10,0,0" />
+            <Style.Triggers>
+                <Trigger Property="ItemsControl.AlternationIndex" Value="0">
+                    <Setter Property="Margin" Value="0" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="Help.OptionGap" TargetType="ContentPresenter" BasedOn="{StaticResource Help.StepGap}">
+            <Setter Property="Margin" Value="0,6,0,0" />
+        </Style>
+        <DataTemplate DataType="{x:Type views:HelpParagraph}">
+            <TextBlock Style="{StaticResource Help.Text}" views:HelpMarkup.Text="{Binding Text}" />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type views:HelpChoice}">
+            <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding Options}" AlternationCount="2147483647"
+                          ItemContainerStyle="{StaticResource Help.OptionGap}" Focusable="False">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" MinWidth="64" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" Style="{StaticResource Help.Text}"
+                                       Foreground="{StaticResource Brush.Text.Primary}" />
+                            <TextBlock Grid.Column="1" Margin="8,0,0,0" Style="{StaticResource Help.Text}"
+                                       views:HelpMarkup.Text="{Binding Text}" />
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type views:HelpSteps}">
+            <StackPanel Margin="0,10,0,0">
+                <TextBlock x:Name="StepsTitle" Margin="0,4,0,8" Style="{StaticResource Help.Heading}"
+                           Foreground="{StaticResource Brush.Text.Primary}" views:HelpMarkup.Text="{Binding Title}" />
+                <ItemsControl ItemsSource="{Binding Items}" AlternationCount="2147483647"
+                              ItemContainerStyle="{StaticResource Help.StepGap}" Focusable="False">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Border Width="21" Height="21" CornerRadius="10.5" HorizontalAlignment="Left"
+                                        VerticalAlignment="Top" Background="{StaticResource Brush.Primary.Surface}">
+                                    <TextBlock Text="{Binding Number}" FontSize="11" FontWeight="SemiBold"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Foreground="{StaticResource Brush.Primary}" />
+                                </Border>
+                                <TextBlock Margin="32,0,0,0" Style="{StaticResource Help.Text}"
+                                           views:HelpMarkup.Text="{Binding Text}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Title}" Value="{x:Null}">
+                    <Setter TargetName="StepsTitle" Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type views:HelpTip}">
+            <Border Margin="0,12,0,0" Padding="12,8" CornerRadius="6"
+                    Background="{StaticResource Brush.Primary.Surface}">
+                <DockPanel>
+                    <ui:SymbolIcon Symbol="Lightbulb16" FontSize="16" Margin="0,2,8,0" VerticalAlignment="Top"
+                                   Foreground="{StaticResource Brush.Primary}" />
+                    <TextBlock LineHeight="20" Style="{StaticResource Help.Text}"
+                               views:HelpMarkup.Text="{Binding Text}" />
+                </DockPanel>
+            </Border>
+        </DataTemplate>
+
+        <!-- Question header: blue-gray while open or hovered, one step darker when both. -->
+        <Style x:Key="Help.HeaderFocus">
+            <Setter Property="Control.Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Border BorderBrush="{StaticResource Brush.Primary}" BorderThickness="2"
+                                SnapsToDevicePixels="True" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Help.QuestionHeader" TargetType="ToggleButton">
+            <Setter Property="Background" Value="{StaticResource Brush.Transparent}" />
+            <Setter Property="Padding" Value="16,12,12,12" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource Help.HeaderFocus}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Brush.Surface.Subdued}" />
+                </Trigger>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Brush.Surface.Subdued}" />
+                </Trigger>
+                <MultiTrigger>
+                    <MultiTrigger.Conditions>
+                        <Condition Property="IsChecked" Value="True" />
+                        <Condition Property="IsMouseOver" Value="True" />
+                    </MultiTrigger.Conditions>
+                    <Setter Property="Background" Value="{StaticResource Brush.Surface.Disabled}" />
+                </MultiTrigger>
+            </Style.Triggers>
+        </Style>
+        <!-- Rows after the first are separated by a hairline, as in Settings. -->
+        <Style x:Key="Help.Row" TargetType="Border">
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Subtle}" />
+            <Setter Property="BorderThickness" Value="0,1,0,0" />
+            <Style.Triggers>
+                <DataTrigger Value="0" Binding="{Binding (ItemsControl.AlternationIndex),
+                    RelativeSource={RelativeSource AncestorType=ContentPresenter}}">
+                    <Setter Property="BorderThickness" Value="0" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <DataTemplate x:Key="Help.Question" DataType="{x:Type views:HelpQuestion}">
+            <Border Style="{StaticResource Help.Row}">
+                <StackPanel>
+                    <ToggleButton Style="{StaticResource Help.QuestionHeader}" IsChecked="{Binding IsExpanded}"
+                                  AutomationProperties.Name="{Binding Title}">
+                        <DockPanel>
+                            <Grid DockPanel.Dock="Right" Width="28" Height="28" Margin="16,0,0,0"
+                                  VerticalAlignment="Center">
+                                <ui:SymbolIcon x:Name="Chevron" Symbol="ChevronDown16" FontSize="16"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               RenderTransformOrigin="0.5,0.5"
+                                               Foreground="{StaticResource Brush.Text.Secondary}">
+                                    <ui:SymbolIcon.RenderTransform>
+                                        <RotateTransform />
+                                    </ui:SymbolIcon.RenderTransform>
+                                </ui:SymbolIcon>
+                            </Grid>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock x:Name="Question" Text="{Binding Title}"
+                                           Style="{StaticResource Help.Heading}" />
+                                <TextBlock x:Name="Summary" Margin="0,2,0,0" FontSize="12" LineHeight="18"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{StaticResource Brush.Text.Secondary}"
+                                           views:HelpMarkup.Text="{Binding Summary}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </ToggleButton>
+                    <views:RevealDecorator x:Name="Answer">
+                        <Border Padding="16,14,56,18" BorderThickness="0,1,0,0"
+                                BorderBrush="{StaticResource Brush.Border.Subtle}"
+                                Background="{StaticResource Brush.Surface}">
+                            <ItemsControl ItemsSource="{Binding Blocks}" Focusable="False" />
+                        </Border>
+                    </views:RevealDecorator>
+                </StackPanel>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                    <Setter TargetName="Question" Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+                    <Setter TargetName="Summary" Property="Visibility" Value="Collapsed" />
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard Storyboard="{StaticResource Help.Open}" />
+                    </DataTrigger.EnterActions>
+                    <DataTrigger.ExitActions>
+                        <BeginStoryboard Storyboard="{StaticResource Help.Close}" />
+                    </DataTrigger.ExitActions>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- Feedback actions: compact neutral buttons that only turn blue on hover and focus. -->
+        <Style x:Key="Help.ActionButton" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Body}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Style.Triggers>
+                <MultiTrigger>
+                    <MultiTrigger.Conditions>
+                        <Condition Property="IsMouseOver" Value="True" />
+                        <Condition Property="IsEnabled" Value="True" />
+                    </MultiTrigger.Conditions>
+                    <Setter Property="Foreground" Value="{StaticResource Brush.Primary}" />
+                    <Setter Property="Background" Value="{StaticResource Brush.Primary.Surface}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource Brush.Primary.Border}" />
+                </MultiTrigger>
+                <MultiTrigger>
+                    <MultiTrigger.Conditions>
+                        <Condition Property="IsPressed" Value="True" />
+                        <Condition Property="IsEnabled" Value="True" />
+                    </MultiTrigger.Conditions>
+                    <Setter Property="Background" Value="{StaticResource Brush.Primary.SurfaceHover}" />
+                </MultiTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="Help.ActionIcon" TargetType="ui:SymbolIcon">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Margin" Value="0,0,5,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}"
+                             Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource Brush.Primary}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <!-- No BasedOn: size, weight and hover color are inherited from the button. -->
+        <Style x:Key="Help.ActionText" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="Help.Status" TargetType="TextBlock" BasedOn="{StaticResource SecondaryTextStyle}">
+            <Setter Property="Margin" Value="0,4,0,0" />
+            <Style.Triggers>
+                <Trigger Property="Text" Value="">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24" MaxWidth="820">
+            <TextBlock Text="常见问题" Style="{StaticResource WindowTitleTextStyle}" />
+            <TextBlock Text="遇到问题时先在这里自查，大多数情况按步骤操作即可解决。" Margin="0,4,0,0"
+                       Style="{StaticResource SecondaryTextStyle}" />
+            <ItemsControl ItemsSource="{Binding Sections}" Focusable="False">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,20,0,0">
+                            <TextBlock Text="{Binding Title}" Style="{StaticResource SectionTitleTextStyle}" />
+                            <views:ClippingBorder Margin="0,8,0,0" Background="{StaticResource Brush.Surface}"
+                                                  BorderBrush="{StaticResource Brush.Border.Subtle}"
+                                                  BorderThickness="1" CornerRadius="{StaticResource Radius.Section}">
+                                <ItemsControl ItemsSource="{Binding Questions}" AlternationCount="2147483647"
+                                              ItemTemplate="{StaticResource Help.Question}" Focusable="False" />
+                            </views:ClippingBorder>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <StackPanel Margin="0,20,0,0">
+                <TextBlock Text="仍未解决？" Style="{StaticResource SectionTitleTextStyle}" />
+                <Border Margin="0,8,0,0" Background="{StaticResource Brush.Surface}"
+                        BorderBrush="{StaticResource Brush.Border.Subtle}" BorderThickness="1"
+                        CornerRadius="{StaticResource Radius.Section}">
+                    <StackPanel>
+                        <Grid Margin="16,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="导出诊断包" Style="{StaticResource Help.Heading}" />
+                                <TextBlock Text="打包运行日志，方便后续定位问题。" Margin="0,4,0,0"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                                <TextBlock Text="{Binding ExportDiagnostics.Status}"
+                                           Style="{StaticResource Help.Status}"
+                                           AutomationProperties.LiveSetting="Polite" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Margin="24,0,0,0" Style="{StaticResource Help.ActionButton}"
+                                    Command="{Binding ExportDiagnostics}" AutomationProperties.Name="导出诊断包">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Archive16" Style="{StaticResource Help.ActionIcon}" />
+                                    <TextBlock Text="导出" Style="{StaticResource Help.ActionText}" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <Border Padding="16,12" BorderThickness="0,1,0,0"
+                                BorderBrush="{StaticResource Brush.Border.Subtle}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="联系与反馈" Style="{StaticResource Help.Heading}" />
+                                    <TextBlock Text="通过 GitHub Issue 或 QQ 联系作者。" Margin="0,4,0,0"
+                                               Style="{StaticResource SecondaryTextStyle}" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                        <TextBlock Text="QQ" Style="{StaticResource MutedTextStyle}" />
+                                        <TextBlock Text="{Binding Qq}" Margin="6,0,0,0"
+                                                   Style="{StaticResource MonospaceMetaTextStyle}"
+                                                   Foreground="{StaticResource Brush.Text.Primary}" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding OpenIssues.Status}" Style="{StaticResource Help.Status}"
+                                               AutomationProperties.LiveSetting="Polite" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Margin="24,0,0,0" Orientation="Horizontal"
+                                            VerticalAlignment="Center">
+                                    <Button Style="{StaticResource Help.ActionButton}" Command="{Binding OpenIssues}"
+                                            AutomationProperties.Name="提交 Issue">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Symbol="Open16" Style="{StaticResource Help.ActionIcon}" />
+                                            <TextBlock Text="提交 Issue" Style="{StaticResource Help.ActionText}" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Margin="8,0,0,0" Style="{StaticResource Help.ActionButton}"
+                                            Command="{Binding CopyQq}" AutomationProperties.Name="复制 QQ 号">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon>
+                                                <ui:SymbolIcon.Style>
+                                                    <Style TargetType="ui:SymbolIcon"
+                                                           BasedOn="{StaticResource Help.ActionIcon}">
+                                                        <Setter Property="Symbol" Value="Copy16" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding QqCopied}" Value="True">
+                                                                <Setter Property="Symbol" Value="Checkmark16" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </ui:SymbolIcon.Style>
+                                            </ui:SymbolIcon>
+                                            <TextBlock>
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock"
+                                                           BasedOn="{StaticResource Help.ActionText}">
+                                                        <Setter Property="Text" Value="复制 QQ" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding QqCopied}" Value="True">
+                                                                <Setter Property="Text" Value="已复制" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

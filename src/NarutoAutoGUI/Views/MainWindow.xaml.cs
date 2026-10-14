@@ -48,11 +48,14 @@ public partial class MainWindow : FluentWindow
     private enum MainSection
     {
         Home,
+        Help,
         Settings
     }
 
     private readonly AppLogger _logger;
     private readonly ApplicationSettings _settings;
+    private readonly HelpPageModel _help;
+    private MainSection _section;
     private readonly string _applicationDirectory;
     private readonly ChildSessionManager _sessionManager;
     private readonly WorkerCoordinator _workerCoordinator;
@@ -143,6 +146,8 @@ public partial class MainWindow : FluentWindow
         _settings = new ApplicationSettings(_applicationDirectory, logger,
             CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding, OpenAfdianAsync);
         SettingsView.DataContext = _settings.Page;
+        HelpView.DataContext = _help = new HelpPageModel(
+            _settings.ExportDiagnostics, new SettingsAction(OpenIssuesAsync), ReportCopyFailure);
         _savedRuntimeSidebarWidth = _preferredRuntimeSidebarWidth = LoadRuntimeSidebarWidth();
         _sessionManager = sessionManager;
         _workerCoordinator = workerCoordinator;
@@ -173,8 +178,7 @@ public partial class MainWindow : FluentWindow
             System.Windows.Controls.Primitives.Thumb.DragCompletedEvent }) {
             RuntimeSidebarSplitter.AddHandler(routedEvent, new RoutedEventHandler(RuntimeSidebarHandle_Update), true);
         }
-        HomeView.SizeChanged += (_, _) => RuntimeSidebarVisibility(
-            HomeView.Visibility == Visibility.Visible ? MainSection.Home : MainSection.Settings);
+        HomeView.SizeChanged += (_, _) => RuntimeSidebarVisibility(_section);
         _runTimer.Tick += (_, _) => RefreshRunTiming();
         SwitchSection(MainSection.Home);
         RefreshRuntimeControls();
@@ -287,6 +291,7 @@ public partial class MainWindow : FluentWindow
 
     private void SwitchSection(MainSection section)
     {
+        _section = section;
         CloseTaskDescriptionDrawer();
         HomeView.Visibility = section == MainSection.Home
             ? Visibility.Visible
@@ -295,8 +300,10 @@ public partial class MainWindow : FluentWindow
         SettingsView.Visibility = section == MainSection.Settings
             ? Visibility.Visible
             : Visibility.Collapsed;
+        HelpView.Visibility = section == MainSection.Help ? Visibility.Visible : Visibility.Collapsed;
 
         HomeNavigationItem.IsActive = section == MainSection.Home;
+        HelpNavigationItem.IsActive = section == MainSection.Help;
         SettingsNavigationItem.IsActive = section == MainSection.Settings;
         UpdatePreviewPolling();
         ReevaluateOnboarding();
@@ -1074,19 +1081,31 @@ public partial class MainWindow : FluentWindow
         ApplyPlanItemStatuses(CurrentRunProgress);
     }
 
-    private Task OpenAfdianAsync()
+    private Task OpenAfdianAsync() =>
+        OpenWebPageAsync(_settings.OpenAfdian, "https://afdian.com/a/archersore", "爱发电", "爱发电赞助页面");
+
+    private Task OpenIssuesAsync() => OpenWebPageAsync(
+        _help.OpenIssues, "https://github.com/ArcherSore/MaaNOP/issues", "GitHub Issues", "GitHub Issues 页面");
+
+    private Task OpenWebPageAsync(SettingsAction action, string address, string site, string page)
     {
-        const string address = "https://afdian.com/a/archersore";
         try {
             Process.Start(new ProcessStartInfo(address) { UseShellExecute = true });
-            _settings.OpenAfdian.Status = string.Empty;
+            action.Status = string.Empty;
         } catch (Exception exception) {
-            _settings.OpenAfdian.Status = "无法打开爱发电，请检查默认浏览器设置。";
-            _logger.Warn("打开爱发电赞助页面失败。", exception);
+            action.Status = $"无法打开{site}，请检查默认浏览器设置。";
+            _logger.Warn($"打开{page}失败。", exception);
             WpfMessageBox.Show(this, $"请手动访问：{address}\n\n按 Ctrl+C 可复制此提示中的网址。",
-                "无法打开爱发电", MessageBoxButton.OK, MessageBoxImage.Information);
+                $"无法打开{site}", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         return Task.CompletedTask;
+    }
+
+    private void ReportCopyFailure(Exception exception)
+    {
+        _logger.Warn("复制 QQ 号失败。", exception);
+        WpfMessageBox.Show(this, $"剪贴板暂时不可用，请手动记下 QQ 号：{_help.Qq}",
+            "无法复制 QQ 号", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void OpenTaskDescriptionLink(Uri uri)

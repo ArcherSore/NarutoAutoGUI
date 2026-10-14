@@ -783,7 +783,7 @@
                 <ColumnDefinition Width="64" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <!-- A fixed 64 px rail on every page: icon above label, home on top, update and settings at the bottom. -->
+            <!-- A fixed 64 px rail on every page: icon above label, home on top, update, help, settings below. -->
             <Border x:Name="MainNavigation" BorderThickness="0,0,1,0" BorderBrush="{StaticResource Rail.Border}"
                     Background="{StaticResource Brush.Canvas}" AutomationProperties.Name="导航">
                 <DockPanel Margin="0,6,0,10">
@@ -801,6 +801,14 @@
                         <StackPanel>
                             <ui:SymbolIcon Symbol="Settings24" FontSize="20" HorizontalAlignment="Center" />
                             <TextBlock Text="设置" Style="{StaticResource Rail.Label}" />
+                        </StackPanel>
+                    </views:RailItem>
+                    <views:RailItem x:Name="HelpNavigationItem" DockPanel.Dock="Bottom" Tag="Help"
+                                    Style="{StaticResource Rail.Item}" ToolTip="帮助"
+                                    AutomationProperties.Name="帮助" Click="NavigationItem_Click">
+                        <StackPanel>
+                            <ui:SymbolIcon Symbol="QuestionCircle24" FontSize="20" HorizontalAlignment="Center" />
+                            <TextBlock Text="帮助" Style="{StaticResource Rail.Label}" />
                         </StackPanel>
                     </views:RailItem>
                     <views:RailItem x:Name="UpdateNavigationItem" DockPanel.Dock="Bottom"
@@ -1443,6 +1451,7 @@
                     </Grid>
 
                     <views:SettingsView x:Name="SettingsView" Visibility="Collapsed" />
+                    <views:HelpView x:Name="HelpView" Visibility="Collapsed" />
 
                     <Grid x:Name="TaskDescriptionOverlay"
                           Panel.ZIndex="100"

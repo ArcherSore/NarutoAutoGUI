@@ -144,7 +144,8 @@ public partial class MainWindow : FluentWindow
         _applicationDirectory = applicationDirectory ?? AppContext.BaseDirectory;
         _checkForUpdate = checkForUpdate ?? CheckWithEngineAsync;
         _settings = new ApplicationSettings(_applicationDirectory, logger,
-            CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding, OpenAfdianAsync);
+            CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding, OpenAfdianAsync,
+            ManageChildSessionCredentialsAsync);
         SettingsView.DataContext = _settings.Page;
         HelpView.DataContext = _help = new HelpPageModel(
             _settings.ExportDiagnostics, new SettingsAction(OpenIssuesAsync), ReportCopyFailure);
@@ -301,6 +302,9 @@ public partial class MainWindow : FluentWindow
             ? Visibility.Visible
             : Visibility.Collapsed;
         HelpView.Visibility = section == MainSection.Help ? Visibility.Visible : Visibility.Collapsed;
+        if (section == MainSection.Settings) {
+            RefreshChildSessionCredentialStatus();
+        }
 
         HomeNavigationItem.IsActive = section == MainSection.Home;
         HelpNavigationItem.IsActive = section == MainSection.Help;

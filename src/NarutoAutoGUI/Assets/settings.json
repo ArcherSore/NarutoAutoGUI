@@ -27,6 +27,20 @@
       ]
     },
     {
+      "id": "child-session",
+      "title": "桌面分身",
+      "items": [
+        {
+          "id": "child-session-credentials",
+          "type": "action",
+          "title": "自动登录 Windows 账户",
+          "description": "使用 PIN 或 Windows Hello 登录的电脑，创建或恢复桌面分身时可能每次都要输入账户密码。保存后将自动填写。",
+          "buttonText": "管理凭据",
+          "actionId": "childSession.credentials"
+        }
+      ]
+    },
+    {
       "id": "support",
       "title": "帮助与诊断",
       "items": [

@@ -240,13 +240,15 @@ internal static partial class SelfTestRunner
     private static void RunOnboardingScenario(AppLogger logger, string directory,
         Action<MainWindow, string> verify, Action<string>? beforeLoad = null, bool recoveryCompleted = false,
         Func<CancellationToken, Task<Updates.EngineCheckResult>>? checkForUpdate = null,
-        Func<Task>? requestExit = null)
+        Func<Task>? requestExit = null, ChildSessionCredentialStore? credentials = null)
     {
         var projectDirectory = CreateProjectFixture(directory);
         beforeLoad?.Invoke(projectDirectory);
         Directory.CreateDirectory(Path.Combine(projectDirectory, "config"));
         File.WriteAllText(Path.Combine(projectDirectory, "config", "update-check.txt"), "false");
-        using var session = new ChildSessionManager(logger);
+        // Settings reads the saved credential; the scenario never touches the real Windows Credential Manager.
+        using var session = new ChildSessionManager(logger,
+            credentials: credentials ?? new ChildSessionCredentialStore(logger, new MemoryCredentialVault()));
         var coordinator = new WorkerCoordinator(logger, Path.Combine(directory, "tour-state"), "unused.exe",
             $"NarutoAutoGUI.Tour.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
         var window = new MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),

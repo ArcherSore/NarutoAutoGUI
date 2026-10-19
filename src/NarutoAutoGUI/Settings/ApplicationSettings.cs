@@ -10,7 +10,8 @@ internal sealed class ApplicationSettings
     private readonly AppLogger _logger;
 
     internal ApplicationSettings(string applicationDirectory, AppLogger logger,
-        Func<Task> checkUpdate, Func<Task> exportDiagnostics, Action replayOnboarding, Func<Task> openAfdian)
+        Func<Task> checkUpdate, Func<Task> exportDiagnostics, Action replayOnboarding, Func<Task> openAfdian,
+        Func<Task> manageChildSessionCredentials)
     {
         _updatePreferencePath = Path.Combine(applicationDirectory, "config", "update-check.txt");
         _closePreferencePath = Path.Combine(applicationDirectory, "config", "close-to-tray.txt");
@@ -31,6 +32,7 @@ internal sealed class ApplicationSettings
         ExportDiagnostics = new SettingsAction(exportDiagnostics);
         ReplayOnboarding = new SettingsAction(() => { replayOnboarding(); return Task.CompletedTask; });
         OpenAfdian = new SettingsAction(openAfdian) { ToolTip = "在默认浏览器中打开爱发电赞助页面" };
+        ChildSessionCredentials = new SettingsAction(manageChildSessionCredentials);
         Registry.Toggles.Add("update.checkOnStartup", CheckOnStartup);
         Registry.Toggles.Add("application.closeToTray", CloseToTray);
         Registry.Toggles.Add("framework.saveOnError", SaveOnError);
@@ -40,6 +42,7 @@ internal sealed class ApplicationSettings
         Registry.Actions.Add("diagnostics.export", ExportDiagnostics);
         Registry.Actions.Add("onboarding.replay", ReplayOnboarding);
         Registry.Actions.Add("support.openAfdian", OpenAfdian);
+        Registry.Actions.Add("childSession.credentials", ChildSessionCredentials);
         Registry.Values.Add("update.currentVersion", CurrentVersion);
         try {
             Page = Registry.Bind(SettingsDefinition.Load());
@@ -60,6 +63,7 @@ internal sealed class ApplicationSettings
     internal SettingsAction ExportDiagnostics { get; }
     internal SettingsAction ReplayOnboarding { get; }
     internal SettingsAction OpenAfdian { get; }
+    internal SettingsAction ChildSessionCredentials { get; }
     internal SettingsValue CurrentVersion { get; } = new() { Text = "—" };
 
     internal MaaFrameworkOptions CreateFrameworkOptions() => new(SaveOnError.Value, SaveDraw.Value, DebugMode.Value);

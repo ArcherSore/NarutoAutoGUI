@@ -19,6 +19,8 @@ GUI 不加载 MaaFramework 执行任务。Worker 不读取或修改用户任务�
 
 GUI 启动时检查已有 Child Session，必要时恢复 RDP 预览宿主。创建或恢复后，程序在独立 Windows Session 中运行。隐藏桌面分身只隐藏宿主窗口，保留 RDP 连接及其中程序。
 
+用户可在设置中保存用于 Child Session 登录的 Windows 账户密码。它只存于 Windows 凭据管理器，仅在建立 RDP 连接时读取并提交给 ActiveX，不进入配置、日志或诊断包；登录是否成功以 RDP 登录完成为准。未保存或无法读取时保持 Windows 原有的密码提示。
+
 RuntimeEnvironment 是运行环境生命周期的唯一所有者：持有应用操作闸门，负责准备与结束运行环境。退出、托盘、主窗口恢复操作与安装更新都以同一顺序结束运行环境：先在时限内正常停止 Active Run（失败时以注销恢复），再注销 Child Session，并在时限内确认 Child Session 已结束、已跟踪的 Worker 已退出，之后才丢弃 Admission。无法确认时如实报告"结束未确认"并保留 Admission，可再次结束。结束期间主窗口显示进度并暂停其他命令。
 
 GUI 以真实 Windows 进程和 Session 身份核验 Worker，再通过受限的本机 Named Pipe 接纳连接。同一 Child Session 只接纳一个 Worker。GUI 只在能证明 Worker 已不存在或 Child Session 已确认注销时丢弃 Admission，无法确认时拒绝准备；每次启动 Worker 前还会确认目标 Child Session 中没有 Worker 进程。断线时，已接纳 Worker 可继续运行；GUI 重连后取得新的完整 Snapshot 才能重新作出执行决策。Worker 不具备跨进程退出恢复 Run 的能力。
@@ -45,6 +47,6 @@ GUI 负责更新界面、用户确认和运行环境关闭；Rust Update Engine 
 
 ## 当前支持边界
 
-支持按顺序执行不重复的顶层 MaaNOP task、多份独立配置、只读连续预览和完整包更新。当前不支持同一 task 的多实例独立参数、依赖图、条件或并行调度，也不支持自动登录、游戏画面输入控制、录制、可调预览帧率或可调 Child Session 分辨率/DPI。
+支持按顺序执行不重复的顶层 MaaNOP task、多份独立配置、只读连续预览和完整包更新。当前不支持同一 task 的多实例独立参数、依赖图、条件或并行调度，也不支持游戏自动登录、游戏画面输入控制、录制、可调预览帧率或可调 Child Session 分辨率/DPI。
 
 设计取舍见 [ADR](adr/)；领域术语见 [CONTEXT](../CONTEXT.md)。

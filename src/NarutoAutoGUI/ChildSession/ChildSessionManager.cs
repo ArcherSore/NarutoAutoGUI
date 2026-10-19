@@ -5,6 +5,9 @@ namespace NarutoAutoGUI.ChildSession;
 
 internal sealed class ChildSessionManager : IDisposable
 {
+    private const string SavedCredentialFailureHint = "\n\n本次连接提交了设置中保存的 Windows 登录凭据。"
+        + "如果账户或密码填写有误或已更改，请在“设置 → 桌面分身”中更新或删除后重试。";
+
     private readonly AppLogger _logger;
     private readonly Func<uint?> _getChildSessionId;
     private readonly Func<IReadOnlyCollection<uint>> _enumerateSessions;
@@ -17,15 +20,20 @@ internal sealed class ChildSessionManager : IDisposable
     // The optional delegates are self-test seams; production always queries and logs off through WTS.
     internal ChildSessionManager(
         AppLogger logger, Func<uint?>? getChildSessionId = null,
-        Func<IReadOnlyCollection<uint>>? enumerateSessions = null, Func<uint?>? terminateChildSession = null)
+        Func<IReadOnlyCollection<uint>>? enumerateSessions = null, Func<uint?>? terminateChildSession = null,
+        ChildSessionCredentialStore? credentials = null)
     {
         _logger = logger;
         _getChildSessionId = getChildSessionId ?? ChildSessionService.TryGetChildSessionId;
         _enumerateSessions = enumerateSessions ?? ChildSessionService.EnumerateSessionIds;
         _terminateChildSession = terminateChildSession ?? (() => ChildSessionService.TerminateChildSession(wait: true));
+        Credentials = credentials ?? new ChildSessionCredentialStore(logger);
     }
 
     internal event EventHandler<ChildSessionSnapshot>? StateChanged;
+
+    // The optional Windows logon saved in Settings, read only when an RDP connection is made.
+    internal ChildSessionCredentialStore Credentials { get; }
 
     internal ChildSessionSnapshot Snapshot { get; private set; } = ChildSessionSnapshot.Empty;
 
@@ -57,6 +65,7 @@ internal sealed class ChildSessionManager : IDisposable
         try {
             ThrowIfDisposed();
             uint? currentSessionId = null;
+            var savedCredentialSubmitted = false;
             try {
                 currentSessionId = QueryChildSessionId();
                 var connectedState = SafeConnectedState();
@@ -92,12 +101,23 @@ internal sealed class ChildSessionManager : IDisposable
                 preview.Activate();
                 _logger.Info("正在连接 RDP Child Session（固定 1920×1080 @ 100%，SmartSizing 仅用于预览）。");
 
-                await service.ConnectAsync(cancellationToken);
+                // Read just before connecting, so the password is held only for this logon attempt.
+                var credential = Credentials.Load();
+                if (credential is not null) {
+                    savedCredentialSubmitted = true;
+                    _logger.Info("将向 RDP 提交设置中保存的 Windows 登录凭据，登录结果以 RDP 登录完成为准。");
+                }
+                await service.ConnectAsync(cancellationToken, credential);
 
                 var sessionId = service.ChildSessionId
                     ?? throw new InvalidOperationException("RDP 登录完成后未取得 childSessionId。");
                 preview.Text = $"NarutoAutoGUI Child Session #{sessionId} (1920x1080 @ 100%)";
-                _logger.Info($"Child Session 已连接：childSessionId={sessionId}，ConnectedState={service.ConnectedState}。");
+                _logger.Info($"Child Session 已连接：childSessionId={sessionId}，ConnectedState={service.ConnectedState}"
+                    + (savedCredentialSubmitted ? "（本次 RDP 登录提交了保存的 Windows 登录凭据）。" : "。"));
+                if (preview.Host.SavedCredentialRejected) {
+                    _logger.Warn("Windows 未接受保存的登录凭据，本次通过 Windows 登录界面手动完成登录。"
+                        + "如果密码已更改，请在“设置 → 桌面分身”中更新。");
+                }
                 SetPreviewVisibility(showPreview);
                 return sessionId;
             } catch (Exception exception) {
@@ -115,9 +135,15 @@ internal sealed class ChildSessionManager : IDisposable
                 }
 
                 _logger.Error("RDP Child Session 创建或恢复失败。", exception);
+                var detail = exception.GetBaseException().Message
+                    + (savedCredentialSubmitted ? SavedCredentialFailureHint : string.Empty);
                 UpdateState(
-                    ChildSessionState.Faulted, SafeChildSessionId(currentSessionId),
-                    SafeConnectedState(), exception.GetBaseException().Message);
+                    ChildSessionState.Faulted, SafeChildSessionId(currentSessionId), SafeConnectedState(), detail);
+                if (savedCredentialSubmitted) {
+                    // Error dialogs show the innermost message, so the hint goes without an inner exception; the
+                    // original failure is logged above.
+                    throw new InvalidOperationException(detail);
+                }
                 throw;
             }
         } finally {

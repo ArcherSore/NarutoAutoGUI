@@ -4,7 +4,7 @@ namespace NarutoAutoGUI.ChildSession;
 
 internal sealed class ChildSessionProgramService
 {
-    private static readonly TimeSpan VerificationTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan VerificationTimeout = TimeSpan.FromSeconds(30);
     private readonly AppLogger _logger;
 
     internal ChildSessionProgramService(AppLogger logger)
@@ -29,34 +29,22 @@ internal sealed class ChildSessionProgramService
 
         _logger.Info($"正在 Child Session {childSessionId} 中启动：{fullPath}");
         _logger.Debug($"启动参数：{arguments}；工作目录：{workDir}。");
+        VerifiedChildSessionProcessLaunch launched;
         try {
-            await ChildSessionProcessLauncher.LaunchAsync(childSessionId, fullPath, arguments, workDir);
-            _logger.Debug($"Task Scheduler COM RunEx 已提交：{processName}，SessionId={childSessionId}。");
-        } catch (Exception exception) {
-            _logger.Error($"程序启动请求失败：{fullPath}，Child Session={childSessionId}。", exception);
-            throw;
+            launched = await ChildSessionProcessLauncher.LaunchVerifiedAsync(childSessionId, fullPath, arguments,
+                workDir, launchedProcessName, VerificationTimeout, cancellationToken);
+        } catch (InvalidOperationException exception) {
+            var message =
+                $"已提交 {processName} 启动请求，但 {VerificationTimeout.TotalSeconds:0} 秒内未在 Child Session "
+                + $"{childSessionId} 中枚举到 {processName}"
+                + (launchedProcessName is null ? "。" : $" 或 {launchedProcessName}。")
+                + "请打开完整桌面检查启动提示，确认微端可以正常启动后重试准备运行环境。";
+            _logger.Warn(message, exception);
+            throw new InvalidOperationException(message, exception);
         }
 
-        var deadline = DateTime.UtcNow + VerificationTimeout;
-        while (DateTime.UtcNow < deadline) {
-            cancellationToken.ThrowIfCancellationRequested();
-            var launched = FindLaunchProcess(
-                ChildSessionNativeMethods.EnumerateProcesses(), childSessionId, processName, launchedProcessName);
-            if (launched.ProcessId != 0) {
-                _logger.Info($"程序启动验证成功：{launched.Name}，PID={launched.ProcessId}，SessionId={childSessionId}。");
-                return;
-            }
-
-            await Task.Delay(500, cancellationToken);
-        }
-
-        var exceptionMessage =
-            $"已提交 {processName} 启动请求，但 {VerificationTimeout.TotalSeconds:0} 秒内未在 Child Session "
-            + $"{childSessionId} 中枚举到 {processName}"
-            + (launchedProcessName is null ? "。" : $" 或 {launchedProcessName}。")
-            + "请打开完整桌面检查启动提示，确认微端可以正常启动后重试准备运行环境。";
-        _logger.Warn(exceptionMessage);
-        throw new InvalidOperationException(exceptionMessage);
+        _logger.Info($"程序启动验证成功：{processName}，PID={launched.ProcessId}，SessionId={launched.SessionId}，"
+            + $"TaskState={launched.TaskState}，LastTaskResult={launched.LastTaskResult}。");
     }
 
     internal static (uint ProcessId, uint SessionId, string Name) FindLaunchProcess(

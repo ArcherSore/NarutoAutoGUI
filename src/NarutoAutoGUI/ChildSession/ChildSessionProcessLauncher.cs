@@ -14,7 +14,7 @@ internal sealed record VerifiedChildSessionProcessLaunch(
 // This file has been modified and is distributed as part of NarutoAutoGUI (GPL-3.0-only).
 // Reuses the verified approach: Windows Task Scheduler COM (Schedule.Service) with a temporary
 // task, RunEx(flags = TASK_RUN_USE_SESSION_ID, sessionId = childSessionId) to start the process
-// inside the Child Session, then delete the temporary task.
+// inside the Child Session, then delete the temporary task once the new process is observed.
 //
 // Deviations (justified):
 //  - RunLevel = LeastPrivilege (0) instead of Highest (1). BetterGI uses Highest because it needs
@@ -31,28 +31,29 @@ internal static class ChildSessionProcessLauncher
     private const int TaskRunLevelHighest = 1;
     private const int TaskRunUseSessionId = 0x4;
 
-    internal static Task LaunchAsync(
-        uint childSessionId, string executablePath, string arguments = "",
-        string? workingDirectory = null)
-    {
-        return LaunchAtRunLevelAsync(
-            childSessionId, executablePath, arguments, workingDirectory, TaskRunLevelLeastPrivilege);
-    }
-
-    internal static Task LaunchElevatedAsync(
-        uint childSessionId, string executablePath, string arguments = "",
-        string? workingDirectory = null)
-    {
-        return LaunchAtRunLevelAsync(childSessionId, executablePath, arguments, workingDirectory, TaskRunLevelHighest);
-    }
-
-    // Worker-only strengthening path. Existing Demo/program launch callers continue using the
-    // methods above and retain their verified submit-and-cleanup behavior. This overload keeps the
-    // temporary task registered until a new target process is observed in the requested Session.
+    // Both paths keep the temporary task registered until a new target process is observed in the requested
+    // Session. Deleting the task right after RunEx can drop a start that a freshly created Session has not run yet.
     internal static Task<VerifiedChildSessionProcessLaunch> LaunchElevatedVerifiedAsync(
         uint childSessionId, string executablePath, string arguments = "",
         string? workingDirectory = null, TimeSpan? verificationTimeout = null,
         CancellationToken cancellationToken = default)
+    {
+        return LaunchVerifiedAtRunLevelAsync(childSessionId, executablePath, arguments, workingDirectory,
+            TaskRunLevelHighest, null, verificationTimeout, cancellationToken);
+    }
+
+    // A bootstrap launcher may exit after handing off, so the process it starts also counts as launched.
+    internal static Task<VerifiedChildSessionProcessLaunch> LaunchVerifiedAsync(
+        uint childSessionId, string executablePath, string arguments, string? workingDirectory,
+        string? handoffProcessName, TimeSpan verificationTimeout, CancellationToken cancellationToken = default)
+    {
+        return LaunchVerifiedAtRunLevelAsync(childSessionId, executablePath, arguments, workingDirectory,
+            TaskRunLevelLeastPrivilege, handoffProcessName, verificationTimeout, cancellationToken);
+    }
+
+    private static Task<VerifiedChildSessionProcessLaunch> LaunchVerifiedAtRunLevelAsync(
+        uint childSessionId, string executablePath, string arguments, string? workingDirectory, int runLevel,
+        string? handoffProcessName, TimeSpan? verificationTimeout, CancellationToken cancellationToken)
     {
         var fullPath = ValidateExecutablePath(executablePath);
         var workDir = string.IsNullOrWhiteSpace(workingDirectory)
@@ -66,26 +67,15 @@ internal static class ChildSessionProcessLauncher
         return Task.Run(
             () => LaunchWithTemporaryTask(
                     childSessionId, fullPath, arguments, workDir,
-                    TaskRunLevelHighest, timeout, cancellationToken)
-                ?? throw new InvalidOperationException("Worker 启动验证没有返回进程结果。"),
+                    runLevel, timeout, cancellationToken, handoffProcessName)
+                ?? throw new InvalidOperationException("进程启动验证没有返回进程结果。"),
             cancellationToken);
-    }
-
-    private static Task LaunchAtRunLevelAsync(
-        uint childSessionId, string executablePath, string arguments,
-        string? workingDirectory, int runLevel)
-    {
-        var fullPath = ValidateExecutablePath(executablePath);
-        var workDir = string.IsNullOrWhiteSpace(workingDirectory)
-            ? (Path.GetDirectoryName(fullPath) ?? AppContext.BaseDirectory)
-            : workingDirectory;
-        return Task.Run(() => LaunchWithTemporaryTask(childSessionId, fullPath, arguments, workDir, runLevel));
     }
 
     private static VerifiedChildSessionProcessLaunch? LaunchWithTemporaryTask(
         uint childSessionId, string executablePath, string arguments,
         string workingDirectory, int runLevel, TimeSpan? verificationTimeout = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, string? handoffProcessName = null)
     {
         // Guard: the target Child Session must still be the one the caller expects.
         var actual = ChildSessionNativeMethods.TryGetChildSessionId();
@@ -111,11 +101,12 @@ internal static class ChildSessionProcessLauncher
         object? runningTaskObj = null;
         var taskRegistered = false;
         var processName = Path.GetFileName(executablePath);
+        bool IsTarget((uint ProcessId, uint SessionId, string Name) process) => process.SessionId == childSessionId
+            && (string.Equals(process.Name, processName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(process.Name, handoffProcessName, StringComparison.OrdinalIgnoreCase));
         var existingProcessIds = verificationTimeout is null
             ? null
-            : ChildSessionNativeMethods.EnumerateProcesses()
-                .Where(process => process.SessionId == childSessionId
-                                  && string.Equals(process.Name, processName, StringComparison.OrdinalIgnoreCase))
+            : ChildSessionNativeMethods.EnumerateProcesses().Where(IsTarget)
                 .Select(process => process.ProcessId)
                 .ToHashSet();
 
@@ -168,8 +159,7 @@ internal static class ChildSessionProcessLauncher
                 while (DateTime.UtcNow < deadline) {
                     cancellationToken.ThrowIfCancellationRequested();
                     var launched = ChildSessionNativeMethods.EnumerateProcesses()
-                        .FirstOrDefault(process => process.SessionId == childSessionId
-                            && string.Equals(process.Name, processName, StringComparison.OrdinalIgnoreCase)
+                        .FirstOrDefault(process => IsTarget(process)
                             && existingProcessIds!.Contains(process.ProcessId) == false);
                     if (launched.ProcessId != 0) {
                         return new VerifiedChildSessionProcessLaunch(
@@ -195,7 +185,7 @@ internal static class ChildSessionProcessLauncher
             var taskState = TryGetIntProperty(runningTaskObj, "State");
             var lastTaskResult = TryGetIntProperty(registeredTaskObj, "LastTaskResult");
             throw new InvalidOperationException(
-                $"Task Scheduler Worker 启动或验证失败；Child Session={childSessionId}，"
+                $"Task Scheduler 启动或验证 {processName} 失败；Child Session={childSessionId}，"
                 + $"TaskState={FormatDiagnostic(taskState)}，"
                 + $"LastTaskResult={FormatDiagnostic(lastTaskResult)}。",
                 exception);

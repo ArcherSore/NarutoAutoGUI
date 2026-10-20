@@ -21,7 +21,6 @@ internal static partial class SelfTestRunner
             var splitter = Named<GridSplitter>(window, "RuntimeSidebarSplitter");
             var console = Named<FrameworkElement>(window, "RuntimeSidebar");
             var control = Named<FrameworkElement>(window, "RuntimeControlCard");
-            var preview = Named<FrameworkElement>(window, "PreviewScreen");
             var log = Named<FrameworkElement>(window, "HomeLogListBox");
             var controlTop = control.TransformToAncestor(home).Transform(new Point()).Y;
             var controlHeight = control.ActualHeight;
@@ -63,18 +62,14 @@ internal static partial class SelfTestRunner
             Require(Saved() == column.Width.Value, "拖动结束后应保存侧栏宽度。");
             var saved = Saved();
             var originalWidth = console.ActualWidth;
-            var originalPreviewHeight = preview.ActualHeight;
-            var originalLogHeight = log.ActualHeight;
+            var logInset = console.ActualWidth - log.ActualWidth;
             StartDrag();
             MoveDrag(20);
             Require(Math.Abs(console.ActualWidth - (originalWidth - 20)) < 1
-                && preview.ActualHeight < originalPreviewHeight && log.ActualHeight > originalLogHeight,
-                "拖动尚未结束时，侧栏变窄应实时缩小 Preview 并增加日志高度。");
+                && Math.Abs(console.ActualWidth - log.ActualWidth - logInset) < 1, "拖动尚未结束时，侧栏和日志应实时变窄。");
             Require(Saved() == saved, "拖动过程中不应持续写入侧栏宽度。");
             MoveDrag(-40);
-            Require(Math.Abs(console.ActualWidth - (originalWidth + 20)) < 1
-                && preview.ActualHeight > originalPreviewHeight && log.ActualHeight < originalLogHeight,
-                "反向拖动应实时放大 Preview 并减少日志高度。");
+            Require(Math.Abs(console.ActualWidth - (originalWidth + 20)) < 1, "反向拖动应实时加宽侧栏。");
             EndDrag();
             Require(Saved() == column.Width.Value && Saved() != saved, "拖动结束后应保存最终宽度。");
             AssertLayout();
@@ -144,15 +139,7 @@ internal static partial class SelfTestRunner
             ClickOnboarding(window, "HomeNavigationItem");
             Require(Math.Abs(console.ActualWidth - preferred) < 1, "取消拖拽后应保留原宽度。");
 
-            var expandedLogHeight = log.ActualHeight;
-            typeof(MainWindow).GetMethod("SetPreviewExpanded", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .Invoke(window, new object[] { false });
-            PumpOnboarding();
-            Require(log.ActualHeight > expandedLogHeight + 100, "收起 Preview 后日志应填充剩余高度。");
             Drag(20);
-            typeof(MainWindow).GetMethod("SetPreviewExpanded", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .Invoke(window, new object[] { true });
-            PumpOnboarding();
             AssertLayout();
             persisted = Saved()!.Value;
 
@@ -186,8 +173,6 @@ internal static partial class SelfTestRunner
 
             void AssertLayout()
             {
-                Require(Math.Abs(preview.ActualHeight - preview.ActualWidth * 9 / 16) < 1,
-                    "调整宽度后 Preview 必须保持 16:9。");
                 Require(Math.Abs(control.TransformToAncestor(home).Transform(new Point()).Y - controlTop) < 1
                     && Math.Abs(control.ActualHeight - controlHeight) < 1, "运行控制顶部位置和布局应保持稳定。");
                 Require(log.ActualHeight > 0 && log.TransformToAncestor(console)
@@ -200,7 +185,7 @@ internal static partial class SelfTestRunner
             }
         });
         VerifyRuntimeSidebarRestore(logger, testDirectory, persisted);
-        Console.WriteLine("RUNTIME SIDEBAR RESIZE PASS: native drag/key events, bounds, 16:9, log space, navigation, "
+        Console.WriteLine("RUNTIME SIDEBAR RESIZE PASS: native drag/key events, bounds, log space, navigation, "
             + "persistence.");
     }
 

@@ -30,7 +30,6 @@ public partial class MainWindow
     private IInputElement? _onboardingPreviousFocus;
     private string? _onboardingPreviousExpandedTask;
     private bool _onboardingPreviousShelfExpanded;
-    private bool _onboardingPreviousPreviewExpanded;
     private double _onboardingPreviousScroll;
     private readonly RectangleGeometry _onboardingHole = new();
     private Rect _onboardingTargetBounds = Rect.Empty;
@@ -64,7 +63,6 @@ public partial class MainWindow
             _onboardingReplay = replay;
             _onboardingPreviousExpandedTask = _expandedTaskName;
             _onboardingPreviousShelfExpanded = _taskShelfExpanded;
-            _onboardingPreviousPreviewExpanded = PreviewCardContent.Visibility == Visibility.Visible;
             _onboardingPreviousScroll = PlanScroll.VerticalOffset;
             _onboardingActive = true;
             _onboardingPaused = false;
@@ -100,9 +98,6 @@ public partial class MainWindow
             if (_onboardingReplay && _onboardingStep == 1 && _projectPlan!.SelectedTaskNames.Count > 0) {
                 _expandedTaskName = _projectPlan.SelectedTaskNames[0];
                 RenderTaskPlan();
-            }
-            if (_onboardingStep == 3) {
-                SetPreviewExpanded(true);
             }
             await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Loaded, cancellation.Token);
             if (_onboardingStep == 1) {
@@ -156,7 +151,7 @@ public partial class MainWindow
             return RuntimeControlCard;
         }
         if (step == 3) {
-            return PreviewCard;
+            return DesktopViewButton;
         }
         var first = _projectPlan?.SelectedTaskNames.FirstOrDefault();
         if (first is not null && _planItemContainers.TryGetValue(first, out var card)) {
@@ -178,8 +173,7 @@ public partial class MainWindow
             1 => ("查看说明并设置参数", "点击 ⓘ 查看任务说明，并在卡片中调整运行参数。\n"
                 + "开始前建议先确认任务所需的游戏初始界面。"),
             2 => ("启动自动化", "配置完成后从这里开始。\n按钮会根据当前状态自动切换为准备环境、开始任务或停止任务。"),
-            _ => ("观看桌面分身", "运行环境就绪后，可在独立窗口中观看分身画面。\n"
-                + "点击观看打开只读分身小窗；放大后可手动允许操作。")
+            _ => ("观看桌面分身", "运行环境就绪后，点这里打开只读小窗。\n放大后可允许操作，关闭小窗不中断任务。")
         };
         OnboardingCounter.Text = $"{_onboardingStep + 1} / 4";
         AutomationProperties.SetName(OnboardingCounter, $"第 {_onboardingStep + 1} 步，共 4 步");
@@ -470,7 +464,6 @@ public partial class MainWindow
                     .Contains(_onboardingPreviousExpandedTask ?? "") == true
                     ? _onboardingPreviousExpandedTask : null;
                 SetTaskShelfExpanded(_onboardingPreviousShelfExpanded);
-                SetPreviewExpanded(_onboardingPreviousPreviewExpanded);
                 if (_projectPlan is not null) {
                     RenderTaskPlan();
                 }

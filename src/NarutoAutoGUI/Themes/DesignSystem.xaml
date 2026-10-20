@@ -81,6 +81,10 @@
     <SolidColorBrush x:Key="Brush.Rail.Active" Color="#E6EDFA" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Progress.Track" Color="#E3E8EF" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Warning.Surface" Color="#FFF4E5" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Warning.SurfaceHover" Color="#FDE8C8" po:Freeze="True" />
+    <!-- Title bar buttons beside WPF-UI's caption buttons share their hover overlay. -->
+    <SolidColorBrush x:Key="Brush.TitleBar.Hover" Color="#1A000000" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.TitleBar.Pressed" Color="#26000000" po:Freeze="True" />
 
     <!-- Typography and dimensions -->
     <FontFamily x:Key="FontFamily.Ui">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI</FontFamily>

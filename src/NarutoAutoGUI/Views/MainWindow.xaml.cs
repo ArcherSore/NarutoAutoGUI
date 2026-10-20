@@ -339,9 +339,9 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void HomeDesktopVisibilityButton_Click(object sender, RoutedEventArgs e)
+    private void DesktopViewButton_Click(object sender, RoutedEventArgs e)
     {
-        if (CurrentControls.Desktop is not { Enabled: true } desktop) {
+        if (_onboardingActive || CurrentControls.Desktop is not { Enabled: true } desktop) {
             return;
         }
         if (desktop.Action == DesktopAction.Hide) {
@@ -1856,8 +1856,8 @@ public partial class MainWindow : FluentWindow
 
     private void MainWindow_StateChanged(object? sender, EventArgs e) => ReevaluateOnboarding();
 
-    // Shares the desktop chip's operation, so a dropped RDP connection is recovered the same way.
-    private async void ExpandPreview_Click(object sender, RoutedEventArgs e)
+    // Shares the desktop toggle's operation, so a dropped RDP connection is recovered the same way.
+    private async void LargeDesktopMenuItem_Click(object sender, RoutedEventArgs e)
     {
         if (_onboardingActive || !CurrentControls.Desktop.Enabled) {
             return;
@@ -1904,15 +1904,6 @@ public partial class MainWindow : FluentWindow
             handled = true;
         }
         return 0;
-    }
-
-    private void TogglePreview_Click(object sender, RoutedEventArgs e)
-        => SetPreviewExpanded(PreviewCardContent.Visibility != Visibility.Visible);
-
-    private void SetPreviewExpanded(bool expanded)
-    {
-        PreviewCardContent.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
-        PreviewChevron.Symbol = expanded ? WpfSymbolRegular.ChevronUp16 : WpfSymbolRegular.ChevronDown16;
     }
 
     private void OnWorkerLogReceived(object? sender, WorkerLogEntry entry)
@@ -2017,13 +2008,11 @@ public partial class MainWindow : FluentWindow
     internal void ApplyRuntimeControls(RuntimeControlState state)
     {
         var desktopText = state.Desktop.Action == DesktopAction.Hide ? "隐藏分身" : "观看分身";
-        HomeDesktopVisibilityButton.Tag = state.Desktop.Action == DesktopAction.Hide ? "True" : "False";
-        HomeDesktopVisibilityText.Text = desktopText;
-        HomeDesktopVisibilityButton.IsEnabled = state.Desktop.Enabled;
-        HomeDesktopVisibilityButton.ToolTip = DesktopToggleText(state.Desktop);
-        AutomationProperties.SetName(HomeDesktopVisibilityButton, desktopText);
-        HomePreviewPlaceholder.Content = DesktopCardText(state.Desktop);
-        ExpandPreviewButton.IsEnabled = state.Desktop.Enabled;
+        DesktopViewButton.Tag = state.Desktop.Action == DesktopAction.Hide ? "True" : "False";
+        DesktopViewButton.IsEnabled = state.Desktop.Enabled;
+        DesktopViewButton.ToolTip = DesktopToggleText(state.Desktop);
+        AutomationProperties.SetName(DesktopViewButton, desktopText);
+        LargeDesktopMenuItem.IsEnabled = state.Desktop.Enabled;
 
         var action = state.Action;
         PrepareEnvironmentButton.Visibility = Visible(action is RuntimeAction.Prepare);
@@ -2106,11 +2095,6 @@ public partial class MainWindow : FluentWindow
     private static string DesktopToggleText(DesktopToggle desktop) => !desktop.Enabled ? "运行环境就绪后可显示桌面分身"
         : desktop.Action == DesktopAction.Hide ? "隐藏桌面分身窗口，任务继续在后台运行"
         : "在置顶只读小窗中观看桌面分身";
-
-    // The card has no picture of its own; it says where the desktop is shown and how to open it.
-    private static string DesktopCardText(DesktopToggle desktop) => desktop.Action == DesktopAction.Hide
-        ? "分身窗口已打开；放大后可手动允许操作"
-        : desktop.Enabled ? "点击「观看分身」在置顶只读小窗中查看" : "运行环境就绪后可观看分身画面";
 
     private void ApplyMoreMenu(RuntimeControlState state)
     {
@@ -2246,13 +2230,6 @@ public partial class MainWindow : FluentWindow
         : $"用时 {ElapsedText(progress.StartedAtUtc, progress.EndedAtUtc)}";
 
     private void RunProgressBar_SizeChanged(object sender, SizeChangedEventArgs e) => DrawRunProgressBar();
-
-    private void PreviewScreen_SizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        if (e.WidthChanged) {
-            PreviewScreen.Height = e.NewSize.Width * 9 / 16;
-        }
-    }
 
     // Fill covers finished items only; the running item is marked by its position, never by an invented percentage.
     private void DrawRunProgressBar()

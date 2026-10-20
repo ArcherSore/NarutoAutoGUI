@@ -121,29 +121,26 @@ internal static partial class SelfTestRunner
                     $"配置可编辑={editable}、锁定原因={lockReason} 的显示不符。");
             }
 
-            // The chip shows over an empty picture too: it follows the session, and is never invisible but clickable.
-            // The card text follows the same state, so it never offers a window that is already open or unavailable.
-            foreach (var (desktop, text, toolTip, card) in new (DesktopToggle, string, string, string)[] {
-                (new DesktopToggle(DesktopAction.Hide, true), "隐藏分身", "隐藏桌面分身窗口，任务继续在后台运行",
-                    "分身窗口已打开；放大后可手动允许操作"),
-                (new DesktopToggle(DesktopAction.Hide, false), "隐藏分身", "运行环境就绪后可显示桌面分身",
-                    "分身窗口已打开；放大后可手动允许操作"),
-                (new DesktopToggle(DesktopAction.Show, true), "观看分身", "在置顶只读小窗中观看桌面分身",
-                    "点击「观看分身」在置顶只读小窗中查看"),
-                (new DesktopToggle(DesktopAction.Show, false), "观看分身", "运行环境就绪后可显示桌面分身",
-                    "运行环境就绪后可观看分身画面")
+            // The header toggle follows the session and is never invisible but clickable; it is tinted while the
+            // window is shown, and the menu's large window follows the same availability.
+            foreach (var (desktop, text, toolTip) in new (DesktopToggle, string, string)[] {
+                (new DesktopToggle(DesktopAction.Hide, true), "隐藏分身", "隐藏桌面分身窗口，任务继续在后台运行"),
+                (new DesktopToggle(DesktopAction.Hide, false), "隐藏分身", "运行环境就绪后可显示桌面分身"),
+                (new DesktopToggle(DesktopAction.Show, true), "观看分身", "在置顶只读小窗中观看桌面分身"),
+                (new DesktopToggle(DesktopAction.Show, false), "观看分身", "运行环境就绪后可显示桌面分身")
             }) {
                 window.ApplyRuntimeControls(state with { Desktop = desktop });
                 PumpOnboarding();
-                var button = Named<WpfButton>(window, "HomeDesktopVisibilityButton");
-                Require(Named<AccessText>(window, "HomeDesktopVisibilityText").Text == text
-                    && button.IsEnabled == desktop.Enabled && Equals(button.ToolTip, toolTip)
+                var button = Named<WpfButton>(window, "DesktopViewButton");
+                var shown = desktop.Action == DesktopAction.Hide;
+                Require(button.IsEnabled == desktop.Enabled && Equals(button.ToolTip, toolTip)
                     && ToolTipService.GetShowOnDisabled(button) && AutomationProperties.GetName(button) == text
-                    && Equals(button.Tag, desktop.Action == DesktopAction.Hide ? "True" : "False")
-                    && button.IsVisible && button.Opacity == 1, $"{desktop} 的分身按钮显示不符。");
-                Require(Equals(Named<ContentControl>(window, "HomePreviewPlaceholder").Content, card)
-                    && Named<WpfButton>(window, "ExpandPreviewButton").IsEnabled == desktop.Enabled,
-                    $"{desktop} 的分身卡片说明或大窗入口不符。");
+                    && Equals(button.Tag, shown ? "True" : "False") && button.IsVisible && button.Opacity == 1
+                    && button.Background.ToString() == (shown && desktop.Enabled
+                        ? window.FindResource("Brush.Primary.Surface").ToString() : "#00FFFFFF"),
+                    $"{desktop} 的分身按钮显示不符。");
+                var large = Named<System.Windows.Controls.MenuItem>(window, "LargeDesktopMenuItem");
+                Require(large.IsEnabled == desktop.Enabled, $"{desktop} 的大窗入口不符。");
             }
         });
         Console.WriteLine("RUNTIME CONTROL MAPPING PASS: header actions, configuration lock and desktop toggle.");

@@ -57,7 +57,7 @@ internal static partial class SelfTestRunner
         WithRuntimeControlWindow(logger, Path.Combine(directory, "restore"), window => {
             PumpUntil(() => operations.Entered == 1, "启动时应开始恢复已有分身。");
             Require(ProgressShows(window, "正在准备运行环境") && LockText(window) == "运行环境处理中，配置暂时锁定"
-                && !Named<UIElement>(window, "HomeDesktopVisibilityButton").IsEnabled, "恢复分身期间应显示准备进度并锁定配置。");
+                && !Named<UIElement>(window, "DesktopViewButton").IsEnabled, "恢复分身期间应显示准备进度并锁定配置。");
             operations.Release();
             PumpUntil(() => ConfigurationEditable(window), "恢复操作结束后应解除配置锁定。");
             Require(ProgressShows(window, "正在准备运行环境"), "分身仍处于 Existing 时应保持准备进度。");
@@ -101,7 +101,7 @@ internal static partial class SelfTestRunner
                 bool? progressDuringLogoff = null;
                 wts.DuringLogoff = _ => {
                     progressDuringLogoff = ProgressShows(window, "正在结束桌面分身") && !ConfigurationEditable(window)
-                        && !Named<UIElement>(window, "HomeDesktopVisibilityButton").IsEnabled;
+                        && !Named<UIElement>(window, "DesktopViewButton").IsEnabled;
                     Task.Run(async () => await pipe.DisposeAsync()).GetAwaiter().GetResult();
                     Require(disconnected.Task.Wait(5000), "注销分身时未观察到 Worker 断线。");
                 };

@@ -295,35 +295,6 @@
             </Grid>
         </ControlTemplate>
         <SolidColorBrush x:Key="Preview.Border" Color="#DCE6F5" />
-        <SolidColorBrush x:Key="Preview.Surface" Color="#F2F6FB" />
-        <Geometry x:Key="Preview.Monitor">M3,3 L21,3 Q23,3 23,5 L23,18 Q23,20 21,20
-            L3,20 Q1,20 1,18 L1,5 Q1,3 3,3 M12,20 L12,24 M7,24 L17,24</Geometry>
-        <Geometry x:Key="Preview.Expand">M7,1 L2,1 Q1,1 1,2 L1,7 M17,1 L22,1 Q23,1 23,2 L23,7
-            M1,17 L1,22 Q1,23 2,23 L7,23 M17,23 L22,23 Q23,23 23,22 L23,17</Geometry>
-        <Style x:Key="Preview.ExpandIcon" TargetType="Path">
-            <Setter Property="Data" Value="{StaticResource Preview.Expand}" />
-            <Setter Property="Width" Value="13" />
-            <Setter Property="Height" Value="13" />
-            <Setter Property="Stretch" Value="Uniform" />
-            <Setter Property="StrokeThickness" Value="2" />
-            <Setter Property="StrokeStartLineCap" Value="Round" />
-            <Setter Property="StrokeEndLineCap" Value="Round" />
-            <Setter Property="Stroke"
-                    Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}" />
-        </Style>
-        <DataTemplate x:Key="Preview.Empty">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Path Data="{StaticResource Preview.Monitor}" Width="34" Height="32" Stretch="Uniform"
-                      Stroke="#B6C2D1" StrokeThickness="1.8" StrokeStartLineCap="Round"
-                      StrokeEndLineCap="Round" Margin="0,0,0,8" />
-                <TextBlock Text="{Binding Tag, RelativeSource={RelativeSource AncestorType=ContentControl}}"
-                           FontSize="13" FontWeight="SemiBold" TextAlignment="Center"
-                           Foreground="{Binding Foreground,
-                               RelativeSource={RelativeSource AncestorType=ContentControl}}" />
-                <TextBlock Text="{Binding}" FontSize="11" TextAlignment="Center" Margin="0,6,0,0"
-                           Foreground="#8A98AC" />
-            </StackPanel>
-        </DataTemplate>
         <Style x:Key="Preview.IconFocus">
             <Setter Property="Control.Template">
                 <Setter.Value>
@@ -653,50 +624,47 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
-        <!-- Desktop show/hide chip pinned to the picture's bottom-left corner. It is always shown while the Preview
-             is expanded; availability follows the session, not the picture. -->
-        <Style x:Key="Preview.ChipFocus">
-            <Setter Property="Control.Template">
-                <Setter.Value>
-                    <ControlTemplate>
-                        <Border Margin="-3" BorderBrush="{StaticResource Brush.Primary}" BorderThickness="2"
-                                CornerRadius="17" SnapsToDevicePixels="True" />
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="Preview.DesktopChip" TargetType="Button">
-            <Setter Property="Height" Value="28" />
-            <Setter Property="Padding" Value="8,0,10,0" />
-            <Setter Property="Background" Value="#9E0A0E14" />
-            <Setter Property="BorderBrush" Value="#24FFFFFF" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Inverse}" />
-            <Setter Property="FontFamily" Value="{StaticResource FontFamily.Ui}" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="FocusVisualStyle" Value="{StaticResource Preview.ChipFocus}" />
+        <!-- Header icon toggle sized like Preview.IconButton. Tag="True" tints it while its window is shown;
+             disabled leaves only a muted glyph. -->
+        <Style x:Key="Console.ToggleIconButton" TargetType="Button">
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource Preview.IconFocus}" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14"
-                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
-                            <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True" />
+                        <Border Background="{TemplateBinding Background}" CornerRadius="{StaticResource Radius.Control}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#DB0A0E14" />
+                    <Setter Property="Background" Value="{StaticResource Brush.Surface.Disabled}" />
                 </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Brush.Border}" />
+                </Trigger>
+                <Trigger Property="Tag" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Brush.Primary.Surface}" />
+                    <Setter Property="Foreground" Value="{StaticResource Brush.Primary}" />
+                </Trigger>
+                <MultiTrigger>
+                    <MultiTrigger.Conditions>
+                        <Condition Property="Tag" Value="True" />
+                        <Condition Property="IsMouseOver" Value="True" />
+                    </MultiTrigger.Conditions>
+                    <Setter Property="Background" Value="{StaticResource Brush.Primary.SurfaceHover}" />
+                </MultiTrigger>
                 <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Background" Value="#2E5F6E80" />
-                    <Setter Property="BorderBrush" Value="Transparent" />
+                    <Setter Property="Background" Value="Transparent" />
                     <Setter Property="Foreground" Value="{StaticResource Brush.Text.Disabled}" />
-                    <Setter Property="Cursor" Value="Arrow" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -1066,12 +1034,12 @@
                                       Cursor="SizeWE" KeyboardIncrement="10"
                                       AutomationProperties.Name="调整运行控制栏宽度"
                                       AutomationProperties.HelpText="拖动或使用左右方向键调整宽度" />
-                        <!-- One runtime console: run control, game preview and grouped activity as sections. -->
+                        <!-- One runtime console: run control and grouped activity as sections. The desktop viewer
+                             is its own window, toggled from the run control header. -->
                         <Border x:Name="RuntimeSidebar" Grid.Column="1" Margin="0,14,16,16"
                                 Style="{StaticResource Console.Card}">
                             <Grid>
                                 <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
@@ -1081,6 +1049,7 @@
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="运行控制" Style="{StaticResource Console.SectionTitle}" />
@@ -1093,13 +1062,25 @@
                                                            FontWeight="SemiBold" VerticalAlignment="Center" />
                                             </StackPanel>
                                         </Border>
-                                        <Button x:Name="RuntimeMoreButton" Grid.Column="3"
+                                        <Button x:Name="DesktopViewButton" Grid.Column="3" IsEnabled="False"
+                                                Style="{StaticResource Console.ToggleIconButton}"
+                                                AutomationProperties.Name="观看分身"
+                                                Click="DesktopViewButton_Click">
+                                            <ui:SymbolIcon Symbol="Desktop20" FontSize="18" />
+                                        </Button>
+                                        <Button x:Name="RuntimeMoreButton" Grid.Column="4"
                                                 Style="{StaticResource Preview.IconButton}"
                                                 ToolTip="更多操作" AutomationProperties.Name="更多操作"
                                                 Click="RuntimeMoreButton_Click">
                                             <ui:SymbolIcon Symbol="MoreHorizontal20" FontSize="18" />
                                             <Button.ContextMenu>
                                                 <ContextMenu x:Name="RuntimeMoreMenu">
+                                                    <MenuItem x:Name="LargeDesktopMenuItem" Header="大窗查看分身"
+                                                              Click="LargeDesktopMenuItem_Click">
+                                                        <MenuItem.Icon>
+                                                            <ui:SymbolIcon Symbol="ArrowMaximize16" />
+                                                        </MenuItem.Icon>
+                                                    </MenuItem>
                                                     <MenuItem x:Name="OpenLogsMenuItem" Header="打开日志目录"
                                                               Click="OpenLogsMenuItem_Click">
                                                         <MenuItem.Icon>
@@ -1203,87 +1184,7 @@
                                     </Grid>
                                 </StackPanel>
 
-                                <Border x:Name="PreviewCard" Grid.Row="1" Style="{StaticResource Console.Section}">
-                                    <StackPanel>
-                                        <Grid Style="{StaticResource Console.SectionHeader}">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="桌面分身" Style="{StaticResource Console.SectionTitle}" />
-                                            <Button x:Name="ExpandPreviewButton" Grid.Column="2"
-                                                    Style="{StaticResource Preview.IconButton}"
-                                                    ToolTip="大窗查看分身" AutomationProperties.Name="大窗查看分身"
-                                                    Click="ExpandPreview_Click">
-                                                <Path Style="{StaticResource Preview.ExpandIcon}" />
-                                            </Button>
-                                            <Button Grid.Column="3" Style="{StaticResource Preview.IconButton}"
-                                                    ToolTip="展开或收起分身状态" AutomationProperties.Name="展开或收起分身状态"
-                                                    Click="TogglePreview_Click">
-                                                <ui:SymbolIcon x:Name="PreviewChevron" Symbol="ChevronUp16"
-                                                               FontSize="16" />
-                                            </Button>
-                                        </Grid>
-                                        <Grid x:Name="PreviewCardContent" Margin="12,0,12,12">
-                                            <!-- Kept at 16:9 from its width, so empty-state text keeps its size. -->
-                                            <Border x:Name="PreviewScreen" CornerRadius="6" ClipToBounds="True"
-                                                    Background="{StaticResource Preview.Surface}"
-                                                    BorderBrush="{StaticResource Brush.Border.Subtle}"
-                                                    BorderThickness="1"
-                                                    SizeChanged="PreviewScreen_SizeChanged">
-                                                <Grid>
-                                                    <ContentControl x:Name="HomePreviewPlaceholder"
-                                                                    ContentTemplate="{StaticResource Preview.Empty}"
-                                                                    Tag="桌面分身"
-                                                                   Foreground="{StaticResource Brush.Text.Secondary}" />
-                                                </Grid>
-                                            </Border>
-                                            <Button x:Name="HomeDesktopVisibilityButton" IsEnabled="False"
-                                                    HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                                                    Margin="8,0,0,8" Style="{StaticResource Preview.DesktopChip}"
-                                                    ToolTipService.ShowOnDisabled="True"
-                                                    AutomationProperties.Name="观看分身"
-                                                    Click="HomeDesktopVisibilityButton_Click">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <!-- Open-in-window to show; a minimised window to hide. -->
-                                                    <Viewbox Width="14" Height="14" Margin="0,0,6,0">
-                                                        <Path Width="24" Height="24" StrokeThickness="1.8"
-                                                              Stroke="{Binding Foreground,
-                                                                  RelativeSource={RelativeSource AncestorType=Button}}"
-                                                              StrokeLineJoin="Round" StrokeStartLineCap="Round"
-                                                              StrokeEndLineCap="Round">
-                                                            <Path.Style>
-                                                                <Style TargetType="{x:Type Path}">
-                                                                    <Setter Property="Data"
-                                                                            Value="M10,4 L5,4 Q3,4 3,6 L3,18 Q3,20 5,20
-                                                                                   L17,20 Q19,20 19,18 L19,13
-                                                                                   M14,3 L21,3 L21,10 M21,3 L12,12" />
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Value="True"
-                                                                            Binding="{Binding Tag,
-                                                                                RelativeSource={RelativeSource
-                                                                                    AncestorType=Button}}">
-                                                                            <Setter Property="Data"
-                                                                                Value="M5,4 L19,4 Q21,4 21,6 L21,17
-                                                                                       Q21,19 19,19 L5,19 Q3,19 3,17
-                                                                                       L3,6 Q3,4 5,4 Z M8,13 L16,13" />
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </Path.Style>
-                                                        </Path>
-                                                    </Viewbox>
-                                                    <AccessText x:Name="HomeDesktopVisibilityText" Text="观看分身"
-                                                                VerticalAlignment="Center" />
-                                                </StackPanel>
-                                            </Button>
-                                        </Grid>
-                                    </StackPanel>
-                                </Border>
-
-                                <Grid Grid.Row="2">
+                                <Grid Grid.Row="1">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="*" />

@@ -1,0 +1,145 @@
+<ui:FluentWindow x:Class="NarutoAutoGUI.ChildSession.RdpPreviewWindow"
+                 x:ClassModifier="internal"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:wfi="clr-namespace:System.Windows.Forms.Integration;assembly=WindowsFormsIntegration"
+                 Title="桌面分身"
+                 Icon="pack://application:,,,/Assets/app.ico"
+                 Width="1280"
+                 Height="754"
+                 MinWidth="480"
+                 MinHeight="300"
+                 FontFamily="{StaticResource FontFamily.Ui}"
+                 FontSize="12"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="None"
+                 WindowStartupLocation="CenterScreen"
+                 SnapsToDevicePixels="True"
+                 UseLayoutRounding="True"
+                 TextOptions.TextFormattingMode="Display">
+    <!-- Colours come from the design system, so the viewer follows the application theme. -->
+    <ui:FluentWindow.Resources>
+        <!-- Overrides the app's implicit TextBlock colour and size, which would not follow the button state. -->
+        <Style x:Key="Viewer.ButtonText" TargetType="{x:Type TextBlock}">
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground"
+                    Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+        </Style>
+        <Style x:Key="Viewer.Focus">
+            <Setter Property="Control.Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Border Margin="2" BorderBrush="{StaticResource Brush.Primary}" BorderThickness="2"
+                                CornerRadius="4" SnapsToDevicePixels="True" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- Flat, square title bar buttons in the caption buttons' manner. Tag="On" marks unlocked input. -->
+        <Style x:Key="Viewer.TitleButton" TargetType="{x:Type Button}">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="MinWidth" Value="40" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Body}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource Viewer.Focus}" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Brush.TitleBar.Hover}" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Brush.TitleBar.Pressed}" />
+                </Trigger>
+                <Trigger Property="Tag" Value="On">
+                    <Setter Property="Background" Value="{StaticResource Brush.Warning.Surface}" />
+                    <Setter Property="Foreground" Value="{StaticResource Brush.Warning.Foreground}" />
+                </Trigger>
+                <MultiTrigger>
+                    <MultiTrigger.Conditions>
+                        <Condition Property="Tag" Value="On" />
+                        <Condition Property="IsMouseOver" Value="True" />
+                    </MultiTrigger.Conditions>
+                    <Setter Property="Background" Value="{StaticResource Brush.Warning.SurfaceHover}" />
+                </MultiTrigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="Foreground" Value="{StaticResource Brush.Text.Disabled}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </ui:FluentWindow.Resources>
+
+    <!-- Focusable so locking can pull keyboard focus out of the RDP window. It paints the canvas itself, because
+         WPF-UI resets the window background to its own theme brush. -->
+    <Grid x:Name="ViewerRoot" Background="{StaticResource Brush.Canvas}" Focusable="True"
+          FocusVisualStyle="{x:Null}" KeyboardNavigation.IsTabStop="False">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header and status text ignore hit testing, so they drag the window like the empty caption. -->
+        <ui:TitleBar x:Name="ViewerTitleBar" Height="32" Background="{StaticResource Brush.Canvas}">
+            <ui:TitleBar.Icon>
+                <ui:ImageIcon Source="pack://application:,,,/Assets/app.png" />
+            </ui:TitleBar.Icon>
+            <ui:TitleBar.Header>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" IsHitTestVisible="False">
+                    <Ellipse x:Name="StatusDot" Width="8" Height="8" Margin="0,0,8,0" VerticalAlignment="Center"
+                             Fill="{StaticResource Brush.Primary}" />
+                    <TextBlock Text="桌面分身" FontSize="12" VerticalAlignment="Center"
+                               Foreground="{StaticResource Brush.Text.Body}" />
+                </StackPanel>
+            </ui:TitleBar.Header>
+            <ui:TitleBar.CenterContent>
+                <TextBlock x:Name="StatusText" Margin="12,0,12,0" FontSize="12" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" IsHitTestVisible="False"
+                           Foreground="{StaticResource Brush.Text.Muted}" />
+            </ui:TitleBar.CenterContent>
+            <ui:TitleBar.TrailingContent>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Top">
+                    <Button x:Name="InputButton" Style="{StaticResource Viewer.TitleButton}" Click="InputButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon x:Name="InputIcon" Symbol="LockClosed16" FontSize="16" />
+                            <TextBlock x:Name="InputText" Style="{StaticResource Viewer.ButtonText}" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="SizeButton" Style="{StaticResource Viewer.TitleButton}" Click="SizeButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon x:Name="SizeIcon" Symbol="ArrowMaximize16" FontSize="16" />
+                            <TextBlock x:Name="SizeText" Style="{StaticResource Viewer.ButtonText}" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="PinButton" Style="{StaticResource Viewer.TitleButton}" Padding="0"
+                            Click="PinButton_Click">
+                        <ui:SymbolIcon x:Name="PinIcon" Symbol="Pin16" FontSize="16" />
+                    </Button>
+                </StackPanel>
+            </ui:TitleBar.TrailingContent>
+        </ui:TitleBar>
+
+        <!-- The 1 DIP inset and 2 DIP frame keep the RDP child window off the resize border. The frame turns
+             amber while input reaches the Child Session. -->
+        <Grid x:Name="PictureArea" Grid.Row="1" Margin="1,0,1,1" SizeChanged="PictureArea_SizeChanged">
+            <Border x:Name="PictureFrame" BorderThickness="2" BorderBrush="{StaticResource Brush.Canvas}"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <wfi:WindowsFormsHost x:Name="RdpFormsHost" />
+            </Border>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

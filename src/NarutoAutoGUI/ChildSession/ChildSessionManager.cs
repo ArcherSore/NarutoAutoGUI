@@ -10,7 +10,7 @@ internal sealed class ChildSessionManager : IDisposable
     private readonly Func<IReadOnlyCollection<uint>> _enumerateSessions;
     private readonly Func<uint?> _terminateChildSession;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
-    private RdpPreviewForm? _previewForm;
+    private RdpPreviewWindow? _previewWindow;
     private ChildSessionService? _service;
     private bool _disposed;
 
@@ -82,11 +82,11 @@ internal sealed class ChildSessionManager : IDisposable
                               + $"RdpWrapper={ChildSessionService.IsRdpWrapPresent()}（仅信息）。");
                 ChildSessionService.EnsureChildSessionsEnabled();
 
-                var preview = new RdpPreviewForm();
+                var preview = new RdpPreviewWindow();
                 var service = new ChildSessionService(preview);
                 preview.Host.ConnectionFailed += OnConnectionFailed;
-                preview.FormClosing += OnPreviewFormClosing;
-                _previewForm = preview;
+                preview.Closing += OnPreviewClosing;
+                _previewWindow = preview;
                 _service = service;
 
                 // AxHost creation and interactive credential prompts require a visible native window.
@@ -98,7 +98,6 @@ internal sealed class ChildSessionManager : IDisposable
 
                 var sessionId = service.ChildSessionId
                     ?? throw new InvalidOperationException("RDP 登录完成后未取得 childSessionId。");
-                preview.Text = $"NarutoAutoGUI Child Session #{sessionId} (1920x1080 @ 100%)";
                 _logger.Info($"Child Session 已连接：childSessionId={sessionId}，ConnectedState={service.ConnectedState}。");
                 SetPreviewVisibility(showPreview, large);
                 return sessionId;
@@ -130,7 +129,7 @@ internal sealed class ChildSessionManager : IDisposable
     // Shows the window without changing the mode of an already visible one.
     internal void ShowPreview()
     {
-        if (_previewForm is null || SafeConnectedState() != 1) {
+        if (_previewWindow is null || SafeConnectedState() != 1) {
             throw new InvalidOperationException("桌面分身尚未建立 RDP 连接，请先创建或恢复连接。");
         }
 
@@ -139,7 +138,7 @@ internal sealed class ChildSessionManager : IDisposable
 
     internal void HidePreview()
     {
-        if (_previewForm is null || SafeConnectedState() != 1) {
+        if (_previewWindow is null || SafeConnectedState() != 1) {
             return;
         }
 
@@ -188,7 +187,7 @@ internal sealed class ChildSessionManager : IDisposable
 
     private void SetPreviewVisibility(bool show, bool? large = null)
     {
-        if (_previewForm is null || _service is null) {
+        if (_previewWindow is null || _service is null) {
             return;
         }
 
@@ -199,9 +198,9 @@ internal sealed class ChildSessionManager : IDisposable
         }
 
         if (show) {
-            _previewForm.ShowViewing(large);
+            _previewWindow.ShowViewing(large);
         } else {
-            _previewForm.Hide();
+            _previewWindow.HideViewing();
         }
 
         var sessionId = _service.ChildSessionId ?? SafeChildSessionId(Snapshot.ChildSessionId);
@@ -212,14 +211,14 @@ internal sealed class ChildSessionManager : IDisposable
         _logger.Info(show ? "已显示子桌面。" : "已隐藏子桌面（RDP 连接保持存活）。");
     }
 
-    private void OnPreviewFormClosing(object? sender, System.Windows.Forms.FormClosingEventArgs e)
+    private void OnPreviewClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (_disposed || Snapshot.State == ChildSessionState.Disconnecting) {
             return;
         }
 
         e.Cancel = true;
-        _previewForm?.Hide();
+        _previewWindow?.HideViewing();
         var connectedState = SafeConnectedState();
         if (connectedState != 1) {
             _logger.Info($"关闭子桌面窗口已转换为隐藏；RDP 当前状态为 {connectedState}，保留现有故障/连接中状态。");
@@ -245,9 +244,9 @@ internal sealed class ChildSessionManager : IDisposable
 
     private void DisposePreview(bool disconnect)
     {
-        var preview = _previewForm;
+        var preview = _previewWindow;
         var service = _service;
-        _previewForm = null;
+        _previewWindow = null;
         _service = null;
 
         if (preview is null) {
@@ -255,7 +254,7 @@ internal sealed class ChildSessionManager : IDisposable
         }
 
         preview.Host.ConnectionFailed -= OnConnectionFailed;
-        preview.FormClosing -= OnPreviewFormClosing;
+        preview.Closing -= OnPreviewClosing;
         if (disconnect) {
             try {
                 service?.Disconnect();
@@ -265,8 +264,8 @@ internal sealed class ChildSessionManager : IDisposable
             }
         }
 
+        // Closing the window disposes the RDP host.
         preview.Close();
-        preview.Dispose();
     }
 
     private int SafeConnectedState()

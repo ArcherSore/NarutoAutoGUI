@@ -80,7 +80,7 @@ internal static partial class SelfTestRunner
             && RunProgress.FormatDuration(TimeSpan.FromMinutes(61)) == "1:01:00", "用时格式不符。");
     }
 
-    // The console is one card with three sections; collapsing the preview gives its height to the activity log.
+    // The console is one card with two sections; the activity log takes all height below the run control.
     private static void VerifyRuntimeConsole(AppLogger logger, string testDirectory)
     {
         Require(MainWindow.SidebarWidth(600) == 340 && MainWindow.SidebarWidth(1200) == 420
@@ -92,8 +92,11 @@ internal static partial class SelfTestRunner
             var console = Named<FrameworkElement>(window, "RuntimeSidebar");
             var home = Named<FrameworkElement>(window, "HomeView");
             var log = Named<FrameworkElement>(window, "HomeLogListBox");
-            Require(new[] { "RuntimeControlCard", "PreviewCard", "HomeLogListBox", "RuntimeMoreButton" }
-                .All(name => console.IsAncestorOf(Named<Visual>(window, name))), "运行控制台应包含三个分区。");
+            var control = Named<FrameworkElement>(window, "RuntimeControlCard");
+            Require(console.IsAncestorOf(control) && console.IsAncestorOf(log)
+                && new[] { "DesktopViewButton", "RuntimeMoreButton" }
+                    .All(name => control.IsAncestorOf(Named<Visual>(window, name))),
+                "运行控制台应包含运行控制与运行动态，分身开关和更多操作位于运行控制标题行。");
             foreach (var width in new[] { 920, 1180, 1440 }) {
                 window.Width = width;
                 window.Height = width == 920 ? 640 : width == 1180 ? 760 : 900;
@@ -104,18 +107,15 @@ internal static partial class SelfTestRunner
                     && console.TransformToAncestor(home).Transform(new Point(console.ActualWidth, 0)).X
                         <= home.ActualWidth + 0.5, $"{width} 宽度下侧栏宽度或主页布局不符。");
             }
-            var before = log.ActualHeight;
-            void SetPreviewExpanded(bool expanded) => typeof(MainWindow).GetMethod("SetPreviewExpanded",
-                BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, new object[] { expanded });
-            SetPreviewExpanded(false);
-            PumpOnboarding();
-            Require(log.ActualHeight > before + 100, "收起游戏画面后运行动态应填满剩余高度。");
-            SetPreviewExpanded(true);
+            // Only the activity header separates the run control from the log, which reaches the card's bottom.
+            var logTop = log.TransformToAncestor(console).Transform(new Point()).Y;
+            var controlBottom = control.TransformToAncestor(console).Transform(new Point(0, control.ActualHeight)).Y;
+            Require(logTop - controlBottom < 70 && console.ActualHeight - (logTop + log.ActualHeight) < 12,
+                "运行动态应填满运行控制以下的全部高度。");
 
             var desktop = new DesktopToggle(DesktopAction.Show, true);
-            // The Preview header and the desktop chip own enlarge and show/hide; the menu does not repeat them.
-            Require(window.FindName("DesktopMenuItem") is null && window.FindName("ExpandPreviewMenuItem") is null,
-                "更多操作菜单不应重复放大画面或显示/隐藏分身。");
+            // The header toggle owns show/hide; the menu only adds the large window it cannot open directly.
+            Require(window.FindName("DesktopMenuItem") is null, "更多操作菜单不应重复显示/隐藏分身。");
             foreach (var (state, endReason) in new (RuntimeControlState, string)[] {
                 (new(new RuntimeAction.Start(true), true, null, desktop, true), ""),
                 (new(new RuntimeAction.Stop(true), false, LockReason.RunActive, desktop, true), ""),
@@ -129,7 +129,9 @@ internal static partial class SelfTestRunner
                 window.ApplyRuntimeControls(state);
                 var end = Named<System.Windows.Controls.MenuItem>(window, "EndEnvironmentMenuItem");
                 Require(end.IsEnabled == (endReason.Length == 0) && end.InputGestureText == endReason
-                    && Named<System.Windows.Controls.MenuItem>(window, "OpenLogsMenuItem").IsEnabled,
+                    && Named<System.Windows.Controls.MenuItem>(window, "OpenLogsMenuItem").IsEnabled
+                    && Named<System.Windows.Controls.MenuItem>(window, "LargeDesktopMenuItem").IsEnabled
+                        == state.Desktop.Enabled,
                     $"{state.Action} 时更多操作菜单的可用性或原因不符。");
             }
 

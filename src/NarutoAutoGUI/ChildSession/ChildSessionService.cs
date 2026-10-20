@@ -13,13 +13,13 @@ namespace NarutoAutoGUI.ChildSession;
 // Dropped: DI/logging/DispatcherTimer/retry-reconnect/InstanceService/Config/WPF window.
 // Kept: the connect->await LoginCompleted(timeout 60s)->report failure flow, and the
 // enable / query / logoff surface (delegated to ChildSessionNativeMethods).
-// All ActiveX access happens on the UI thread (caller is the RdpPreviewForm, single STA thread).
+// All ActiveX access happens on the UI thread (caller is the RdpPreviewWindow, single STA thread).
 internal sealed class ChildSessionService
 {
     private static readonly DrawingSize DefaultDesktopSize = new(1920, 1080);
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(60);
 
-    private readonly RdpPreviewForm _form;
+    private readonly RdpPreviewWindow _window;
     private readonly RdpActiveXHost _host;
     private TaskCompletionSource<bool>? _connectionTcs;
     private ChildSessionConnectionFailedEventArgs? _lastFailure;
@@ -30,10 +30,10 @@ internal sealed class ChildSessionService
 
     public ChildSessionConnectionFailedEventArgs? LastFailure => _lastFailure;
 
-    public ChildSessionService(RdpPreviewForm form)
+    public ChildSessionService(RdpPreviewWindow window)
     {
-        _form = form;
-        _host = form.Host;
+        _window = window;
+        _host = window.Host;
     }
 
     public static bool IsChildSessionsEnabled() =>

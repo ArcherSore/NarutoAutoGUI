@@ -57,7 +57,7 @@ internal static partial class SelfTestRunner
             AssertOnboardingStep(window, 1, "配置自动化任务");
             ClickOnboarding(window, "OnboardingNext");
             AssertOnboardingStep(window, 2, "查看说明并设置参数");
-            ClickOnboarding(window, "ExpandPreviewButton");
+            ClickOnboarding(window, "DesktopViewButton");
             ClickOnboarding(window, "UpdateNavigationItem");
             if (((UIElement)window.FindName("UpdateOverlay")).Visibility != Visibility.Collapsed) {
                 throw new InvalidOperationException("Tour 期间底层分身大窗/更新入口不能打开。");

@@ -26,6 +26,22 @@ internal sealed class RdpActiveXHost : AxHost
     private ChildSessionConnectionFailedEventArgs? _lastConnectionDiagnostic;
     private bool _disconnectRequested;
     private bool _smartSizingEnabled = true;
+    private bool _inputBlocked = true;
+    private bool _loggedIn;
+
+    internal void SetInputBlocked(bool blocked)
+    {
+        _inputBlocked = blocked;
+        if (_loggedIn && IsHandleCreated) {
+            // Native disabling blocks input to the host and its child HWNDs, while painting continues.
+            EnableWindow(Handle, !blocked);
+            TabStop = !blocked;
+        }
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnableWindow(nint window, [MarshalAs(UnmanagedType.Bool)] bool enabled);
 
     internal event EventHandler? LoginCompleted;
 
@@ -156,6 +172,8 @@ internal sealed class RdpActiveXHost : AxHost
 
     private void OnLoginComplete()
     {
+        _loggedIn = true;
+        SetInputBlocked(_inputBlocked);
         _connectionAttemptInProgress = false;
         _connectionFailureReported = false;
         _lastConnectionDiagnostic = null;
@@ -420,20 +438,4 @@ internal sealed class ChildSessionConnectionFailedEventArgs(
     public string Message { get; } = message;
     public int ErrorCode { get; } = errorCode;
     public int? ExtendedErrorCode { get; } = extendedErrorCode;
-}
-
-// Minimal host window. The child desktop stays fixed at 1920x1080; this preview window
-// is smaller and uses SmartSizing so the RDP view scales to fit.
-internal sealed class RdpPreviewForm : Form
-{
-    internal RdpActiveXHost Host { get; }
-
-    internal RdpPreviewForm()
-    {
-        Text = "MaaNOP Child Session (connecting...)";
-        ClientSize = new DrawingSize(1280, 720);
-        StartPosition = FormStartPosition.CenterScreen;
-        Host = new RdpActiveXHost { Dock = DockStyle.Fill };
-        Controls.Add(Host);
-    }
 }

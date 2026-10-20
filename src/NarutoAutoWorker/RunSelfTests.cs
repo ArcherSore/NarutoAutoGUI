@@ -39,7 +39,7 @@ internal static class RunSelfTests
         await ScenarioAsync("C4", VerifyCompletionRacesStopAsync);
         await ScenarioAsync("C5", VerifyConcurrentSnapshotsAsync);
         await ScenarioAsync("W2", VerifyStopSurvivesWriteFailureAsync);
-        await ScenarioAsync("W5", VerifyPreviewNeedsReadyAsync, initialize: false);
+        await ScenarioAsync("W5", VerifyUnknownOperationRejectedAsync);
     }
 
     // C1 applies to every scenario: no execution member may be called while the state lock is held.
@@ -597,18 +597,10 @@ internal static class RunSelfTests
         Expect(harness.Host.GetSnapshot().ActiveRun?.State == RunState.Stopping, "写出失败不得改变 Stopping 状态。");
     }
 
-    private static async Task VerifyPreviewNeedsReadyAsync(RunHarness harness)
+    private static async Task VerifyUnknownOperationRejectedAsync(RunHarness harness)
     {
-        harness.ReadinessFailure = new StructuredReason("DependencyMissing", "scripted readiness failure");
-        await harness.Host.InitializeAsync(CancellationToken.None);
-        var worker = (await harness.SnapshotAsync()).WorkerInstanceId;
-        var preview = new PreviewRequest(worker, Guid.NewGuid());
-        foreach (var operation in new[] { ProtocolOperations.PreviewStart, ProtocolOperations.PreviewRenew }) {
-            var response = await harness.RequestAsync(operation, preview);
-            Expect(response is { Success: false, Error.Code: "worker_not_ready" }, $"NotReady 时 {operation} 应被拒绝。");
-        }
-        Expect((await harness.RequestAsync(ProtocolOperations.PreviewStop, preview)).Success == true,
-            "NotReady 时 preview.stop 仍应可用。");
+        var response = await harness.RequestAsync("preview.start", new { });
+        Expect(response is { Success: false, Error.Code: "invalid_request" }, "未知 operation 应返回 invalid_request。");
     }
 
     private static async Task<(RunStartRequest Request, ScriptedExecution First)> StartRunningAsync(

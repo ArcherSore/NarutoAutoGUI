@@ -60,7 +60,7 @@ internal static class FrameworkOptionsSelfTests
             new ProjectProvenance("test", "1", 1, "unused"),
             new Win32ControllerDefinition("test", "class", "window", "Cache", "Send", "Send"),
             [new ResourceDefinition("test", [blockedRoot])], new AgentDefinition("unused", [], blockedRoot));
-        using var host = new WorkerHost(new WorkerArguments(instance, new string('t', 32), "unused"), manifest);
+        var host = new WorkerHost(new WorkerArguments(instance, new string('t', 32), "unused"), manifest);
         host.InitializeAsync(CancellationToken.None).GetAwaiter().GetResult();
         var snapshot = host.GetSnapshot();
         if (snapshot.WorkerState != WorkerState.NotReady || snapshot.WorkerReason?.Code != "FrameworkOptionsFailed"

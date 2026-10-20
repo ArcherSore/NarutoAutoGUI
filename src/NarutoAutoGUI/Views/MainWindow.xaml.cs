@@ -42,7 +42,7 @@ namespace NarutoAutoGUI.Views;
 public partial class MainWindow : FluentWindow
 {
     private const int MaximumGuiLogEntries = 1000;
-    private HwndSource? _previewWindowSource;
+    private HwndSource? _modalWindowSource;
     private const string PlanItemDragDataFormat = "NarutoAutoGUI.PlanItem";
 
     private enum MainSection
@@ -69,11 +69,6 @@ public partial class MainWindow : FluentWindow
     private RunStartAttempt? _pendingStartAttempt;
     private ScrollViewer? _homeLogScrollViewer;
     private readonly RunLogFeed _runLog;
-    private CancellationTokenSource? _previewPollingCancellation;
-    private Task? _previewPollingTask;
-    private Guid? _previewWorkerInstanceId;
-    private int _previewPollingGeneration;
-    private volatile bool _previewPaused;
     private bool _allowClose;
     private PendingOperation _pendingOperation;
     private bool _environmentPreparationFailed;
@@ -254,12 +249,11 @@ public partial class MainWindow : FluentWindow
         if (_allowClose) {
             _onboardingClosed = true;
             EndOnboarding(handled: false);
-            RemovePreviewWindowHook();
+            RemoveModalWindowHook();
             RemoveConfigurationWheelHook();
             _runTimer.Stop();
             RuntimeSidebarWidthProperty.RemoveValueChanged(RuntimeSidebarColumn, RuntimeSidebarColumn_WidthChanged);
             _updateCancellation?.Cancel();
-            StopPreviewPolling();
             _sessionManager.StateChanged -= OnSessionStateChanged;
             _workerCoordinator.StateChanged -= OnWorkerStateChanged;
             _environment.StateChanged -= OnEnvironmentStateChanged;
@@ -305,14 +299,13 @@ public partial class MainWindow : FluentWindow
         HomeNavigationItem.IsActive = section == MainSection.Home;
         HelpNavigationItem.IsActive = section == MainSection.Help;
         SettingsNavigationItem.IsActive = section == MainSection.Settings;
-        UpdatePreviewPolling();
         ReevaluateOnboarding();
     }
 
     private async void ShowSessionButton_Click(object sender, RoutedEventArgs e) =>
         await RunOperationAsync(
             PendingOperation.ShowingDesktop,
-            async () => await _sessionManager.EnsureConnectedAsync(showPreview: true));
+            async () => await _sessionManager.EnsureConnectedAsync(showPreview: true, large: false));
 
     private void HideSessionButton_Click(object sender, RoutedEventArgs e)
     {
@@ -764,11 +757,6 @@ public partial class MainWindow : FluentWindow
         }
         if (e.Key == Key.Escape && UpdateOverlay.Visibility == Visibility.Visible) {
             CloseUpdate_Click(sender, e);
-            e.Handled = true;
-            return;
-        }
-        if (e.Key == Key.Escape && PreviewOverlay.Visibility == Visibility.Visible) {
-            ClosePreview_Click(sender, e);
             e.Handled = true;
             return;
         }
@@ -1864,145 +1852,38 @@ public partial class MainWindow : FluentWindow
     }
 
     private void MainWindow_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
-    {
-        UpdatePreviewPolling();
-        ReevaluateOnboarding();
-    }
+        => ReevaluateOnboarding();
 
-    private void MainWindow_StateChanged(object? sender, EventArgs e)
-    {
-        UpdatePreviewPolling();
-        ReevaluateOnboarding();
-    }
+    private void MainWindow_StateChanged(object? sender, EventArgs e) => ReevaluateOnboarding();
 
-    private void UpdatePreviewPolling()
+    // Shares the desktop chip's operation, so a dropped RDP connection is recovered the same way.
+    private async void ExpandPreview_Click(object sender, RoutedEventArgs e)
     {
-        var paused = WindowState == WindowState.Minimized;
-        if (paused && !_previewPaused) {
-            ShowPreviewPlaceholder("窗口恢复后继续显示");
-        }
-        _previewPaused = paused;
-        if (!TryGetPreviewTarget(out var workerId)) {
-            StopPreviewPolling();
+        if (_onboardingActive || !CurrentControls.Desktop.Enabled) {
             return;
         }
-        if (_previewWorkerInstanceId == workerId && _previewPollingTask is { IsCompleted: false }) {
-            return;
-        }
-        StopPreviewPolling();
-        _previewWorkerInstanceId = workerId;
-        var generation = _previewPollingGeneration;
-        var cancellation = new CancellationTokenSource();
-        _previewPollingCancellation = cancellation;
-        var client = new LivePreviewClient(_workerCoordinator,
-            error => _logger.Warn("Preview 传输失败。", error));
-        _previewPollingTask = Task.Run(async () =>
-        {
-            try {
-                await client.RunAsync(workerId,
-                    action => Dispatcher.InvokeAsync(action, DispatcherPriority.Background, cancellation.Token).Task,
-                    (frame, pixels) =>
-                    {
-                        if (_previewPaused || _previewPollingGeneration != generation
-                            || cancellation.IsCancellationRequested
-                            || !TryGetPreviewTarget(out var current) || current != workerId) {
-                            return;
-                        }
-                        PresentPreviewFrame(frame, pixels);
-                    }, cancellation.Token, () => _previewPaused);
-            } catch (OperationCanceledException) when (cancellation.IsCancellationRequested) {
-            } finally {
-                cancellation.Dispose();
-            }
-        });
+        await RunOperationAsync(
+            PendingOperation.ShowingDesktop,
+            async () => await _sessionManager.EnsureConnectedAsync(showPreview: true, large: true));
     }
 
-    // RuntimeControls decides whether the runtime allows Preview; the window adds its own visibility checks.
-    private bool TryGetPreviewTarget(out Guid workerId)
-    {
-        if (CurrentControls.PreviewWorker is Guid worker && IsVisible && HomeView.Visibility == Visibility.Visible
-            && (PreviewCardContent.Visibility == Visibility.Visible
-                || PreviewOverlay.Visibility == Visibility.Visible)) {
-            workerId = worker;
-            return true;
-        }
-        workerId = Guid.Empty;
-        return false;
-    }
-
-    private void StopPreviewPolling()
-    {
-        _previewPollingGeneration++;
-        var cancellation = _previewPollingCancellation;
-        _previewPollingCancellation = null;
-        _previewPollingTask = null;
-        _previewWorkerInstanceId = null;
-        try {
-            cancellation?.Cancel();
-        } catch (ObjectDisposedException) {
-            // The background reader may already have completed.
-        }
-        ShowPreviewPlaceholder();
-    }
-
-    private void ExpandPreview_Click(object sender, RoutedEventArgs e)
-    {
-        if (_onboardingActive) {
-            return;
-        }
-        PreviewOverlay.Visibility = Visibility.Visible;
-        UpdateExpandedPreviewSize();
-        MainNavigation.IsEnabled = false;
-        EnsureModalWindowHook();
-        PreviewOverlay.Focus();
-        UpdatePreviewPolling();
-    }
-
-    private bool IsGlobalModalOpen => PreviewOverlay.Visibility == Visibility.Visible
-        || UpdateOverlay.Visibility == Visibility.Visible;
+    private bool IsGlobalModalOpen => UpdateOverlay.Visibility == Visibility.Visible;
 
     private void EnsureModalWindowHook()
     {
-        if (_previewWindowSource is null && PresentationSource.FromVisual(MainWindowContent) is HwndSource source) {
-            _previewWindowSource = source;
-            source.AddHook(PreviewWindowHook);
+        if (_modalWindowSource is null && PresentationSource.FromVisual(MainWindowContent) is HwndSource source) {
+            _modalWindowSource = source;
+            source.AddHook(ModalWindowHook);
         }
     }
 
-    private void PreviewOverlay_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateExpandedPreviewSize();
-
-    private void UpdateExpandedPreviewSize()
+    private void RemoveModalWindowHook()
     {
-        if (ExpandedPreviewCard is null || PreviewOverlay.Visibility != Visibility.Visible) {
-            return;
-        }
-        // Card chrome: 48px header, 8px image inset on each side, and 1px outer border.
-        var image = HomePreviewImage.Source as BitmapSource;
-        var aspectRatio = image is null ? 16.0 / 9 : (double)image.PixelWidth / image.PixelHeight;
-        var availableWidth = Math.Max(1, PreviewOverlay.ActualWidth - 80 - 18);
-        var availableHeight = Math.Max(1, PreviewOverlay.ActualHeight - 80 - 66);
-        var imageWidth = Math.Min(availableWidth, availableHeight * aspectRatio);
-        ExpandedPreviewCard.Width = imageWidth + 18;
-        ExpandedPreviewCard.Height = imageWidth / aspectRatio + 66;
+        _modalWindowSource?.RemoveHook(ModalWindowHook);
+        _modalWindowSource = null;
     }
 
-    private void ClosePreview_Click(object sender, RoutedEventArgs e)
-    {
-        PreviewOverlay.Visibility = Visibility.Collapsed;
-        RemovePreviewWindowHook();
-        MainNavigation.IsEnabled = true;
-        ExpandPreviewButton.Focus();
-        UpdatePreviewPolling();
-        ReevaluateOnboarding();
-    }
-
-    private void RemovePreviewWindowHook()
-    {
-        _previewWindowSource?.RemoveHook(PreviewWindowHook);
-        _previewWindowSource = null;
-    }
-
-    private nint PreviewWindowHook(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+    private nint ModalWindowHook(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
         if (!IsGlobalModalOpen) {
             return 0;
@@ -2032,55 +1913,6 @@ public partial class MainWindow : FluentWindow
     {
         PreviewCardContent.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
         PreviewChevron.Symbol = expanded ? WpfSymbolRegular.ChevronUp16 : WpfSymbolRegular.ChevronDown16;
-        UpdatePreviewPolling();
-    }
-
-    private void PresentPreviewFrame(PreviewFrameInfo? frame, byte[] pixels)
-    {
-        if (frame is { State: PreviewState.Streaming, Revision: > 0 }) {
-            DisplayPreviewFrame(frame, pixels);
-        } else {
-            ShowPreviewPlaceholder(frame?.State == PreviewState.WaitingForWindow
-                ? "等待游戏窗口" : "等待游戏画面", interrupted: frame is null
-                    || frame.State is PreviewState.Unavailable or PreviewState.Retiring);
-        }
-    }
-
-    private void DisplayPreviewFrame(PreviewFrameInfo frame, byte[] pixels)
-    {
-        if (HomePreviewImage.Source is not WriteableBitmap image
-            || image.PixelWidth != frame.Width || image.PixelHeight != frame.Height) {
-            image = new WriteableBitmap(frame.Width, frame.Height, 96, 96, PixelFormats.Bgr32, null);
-            HomePreviewImage.Source = image;
-            UpdateExpandedPreviewSize();
-        }
-        image.WritePixels(new Int32Rect(0, 0, frame.Width, frame.Height), pixels, frame.Width * 4, 0);
-        PreviewLiveText.Text = $"实时 · {frame.Width}×{frame.Height}";
-        PreviewLiveIndicator.Visibility = Visibility.Visible;
-        PreviewScreen.Background = (WpfBrush)FindResource("Preview.Live");
-        HomePreviewImage.Visibility = Visibility.Visible;
-        HomePreviewPlaceholder.Visibility = Visibility.Collapsed;
-    }
-
-    // The empty picture says whether a picture is on its way, was cut off, or needs the runtime first.
-    private void ShowPreviewPlaceholder(string? waiting = null, bool interrupted = false)
-    {
-        var action = CurrentControls.Action;
-        var (title, detail) = interrupted ? ("画面已中断", "正在重新连接游戏画面…")
-            : waiting is not null ? ("正在连接画面…", waiting)
-            : action is RuntimeAction.Recover or RuntimeAction.Retry { Target: RetryTarget.Prepare }
-                ? ("画面已中断", "运行环境恢复后重新显示")
-            : action is RuntimeAction.InProgress { Kind: ProgressKind.PreparingEnvironment }
-                ? ("正在连接画面…", "运行环境准备中")
-            : ("暂无画面", "准备运行环境后显示游戏画面");
-        HomePreviewImage.Source = null;
-        HomePreviewPlaceholder.Tag = title;
-        HomePreviewPlaceholder.Content = detail;
-        PreviewLiveIndicator.Visibility = Visibility.Collapsed;
-        PreviewScreen.Background = (WpfBrush)FindResource("Preview.Surface");
-        UpdateExpandedPreviewSize();
-        HomePreviewImage.Visibility = Visibility.Collapsed;
-        HomePreviewPlaceholder.Visibility = Visibility.Visible;
     }
 
     private void OnWorkerLogReceived(object? sender, WorkerLogEntry entry)
@@ -2175,22 +2007,23 @@ public partial class MainWindow : FluentWindow
         _pendingOperation, _environmentPreparationFailed, _exitInProgress, _environment.Ending,
         _environment.EndUnconfirmed));
 
-    // The only refresh path for runtime inputs; changes that are purely visual call UpdatePreviewPolling alone.
+    // The only refresh path for runtime inputs.
     private void RefreshRuntimeControls()
     {
         ReevaluateOnboarding();
         ApplyRuntimeControls(CurrentControls);
-        UpdatePreviewPolling();
     }
 
     internal void ApplyRuntimeControls(RuntimeControlState state)
     {
-        var desktopText = state.Desktop.Action == DesktopAction.Hide ? "隐藏分身" : "显示分身";
+        var desktopText = state.Desktop.Action == DesktopAction.Hide ? "隐藏分身" : "观看分身";
         HomeDesktopVisibilityButton.Tag = state.Desktop.Action == DesktopAction.Hide ? "True" : "False";
         HomeDesktopVisibilityText.Text = desktopText;
         HomeDesktopVisibilityButton.IsEnabled = state.Desktop.Enabled;
         HomeDesktopVisibilityButton.ToolTip = DesktopToggleText(state.Desktop);
         AutomationProperties.SetName(HomeDesktopVisibilityButton, desktopText);
+        HomePreviewPlaceholder.Content = DesktopCardText(state.Desktop);
+        ExpandPreviewButton.IsEnabled = state.Desktop.Enabled;
 
         var action = state.Action;
         PrepareEnvironmentButton.Visibility = Visible(action is RuntimeAction.Prepare);
@@ -2272,7 +2105,12 @@ public partial class MainWindow : FluentWindow
     // The desktop chip's tooltip says what the click does, or why it is unavailable.
     private static string DesktopToggleText(DesktopToggle desktop) => !desktop.Enabled ? "运行环境就绪后可显示桌面分身"
         : desktop.Action == DesktopAction.Hide ? "隐藏桌面分身窗口，任务继续在后台运行"
-        : "在独立窗口中显示桌面分身，可直接操作游戏";
+        : "在置顶只读小窗中观看桌面分身";
+
+    // The card has no picture of its own; it says where the desktop is shown and how to open it.
+    private static string DesktopCardText(DesktopToggle desktop) => desktop.Action == DesktopAction.Hide
+        ? "分身窗口已打开；放大后可手动允许操作"
+        : desktop.Enabled ? "点击「观看分身」在置顶只读小窗中查看" : "运行环境就绪后可观看分身画面";
 
     private void ApplyMoreMenu(RuntimeControlState state)
     {

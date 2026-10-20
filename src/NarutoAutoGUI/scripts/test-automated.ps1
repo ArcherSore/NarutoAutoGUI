@@ -44,7 +44,7 @@ if (-not (Test-Path -LiteralPath $WorkerDll -PathType Leaf)) {
 }
 
 # Running the DLLs through dotnet bypasses the elevated apphost manifests. The self-tests do not
-# initialize RDP/COM or load MaaFramework native runtime. GUI layout tests use offscreen windows.
+# connect RDP or load MaaFramework native runtime. GUI tests create a local RDP control to check input locking.
 foreach ($entry in @($GuiDll, $WorkerDll)) {
     $entryPath = (Resolve-Path -LiteralPath $entry).Path
     Push-Location (Split-Path $entryPath)

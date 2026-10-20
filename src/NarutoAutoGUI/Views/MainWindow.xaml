@@ -745,14 +745,6 @@
         <Grid.Style>
             <Style TargetType="{x:Type Grid}">
                 <Style.Triggers>
-                    <DataTrigger Binding="{Binding Visibility, ElementName=PreviewOverlay}" Value="Visible">
-                        <Setter Property="IsEnabled" Value="False" />
-                        <Setter Property="Effect">
-                            <Setter.Value>
-                                <BlurEffect Radius="12" KernelType="Gaussian" RenderingBias="Performance" />
-                            </Setter.Value>
-                        </Setter>
-                    </DataTrigger>
                     <DataTrigger Binding="{Binding Visibility, ElementName=UpdateOverlay}" Value="Visible">
                         <Setter Property="IsEnabled" Value="False" />
                         <Setter Property="Effect">
@@ -1220,23 +1212,15 @@
                                                 <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="游戏画面" Style="{StaticResource Console.SectionTitle}" />
-                                            <StackPanel x:Name="PreviewLiveIndicator" Grid.Column="1" Margin="10,0,0,0"
-                                                        Orientation="Horizontal" Visibility="Collapsed">
-                                                <Ellipse Width="6" Height="6" VerticalAlignment="Center"
-                                                         Fill="{StaticResource Brush.Success}" />
-                                                <TextBlock x:Name="PreviewLiveText" Margin="6,0,0,0" FontSize="12"
-                                                           VerticalAlignment="Center"
-                                                           Foreground="{StaticResource Brush.Text.Muted}" />
-                                            </StackPanel>
+                                            <TextBlock Text="桌面分身" Style="{StaticResource Console.SectionTitle}" />
                                             <Button x:Name="ExpandPreviewButton" Grid.Column="2"
                                                     Style="{StaticResource Preview.IconButton}"
-                                                    ToolTip="放大游戏画面" AutomationProperties.Name="放大游戏画面"
+                                                    ToolTip="大窗查看分身" AutomationProperties.Name="大窗查看分身"
                                                     Click="ExpandPreview_Click">
                                                 <Path Style="{StaticResource Preview.ExpandIcon}" />
                                             </Button>
                                             <Button Grid.Column="3" Style="{StaticResource Preview.IconButton}"
-                                                    ToolTip="展开或收起游戏画面" AutomationProperties.Name="展开或收起游戏画面"
+                                                    ToolTip="展开或收起分身状态" AutomationProperties.Name="展开或收起分身状态"
                                                     Click="TogglePreview_Click">
                                                 <ui:SymbolIcon x:Name="PreviewChevron" Symbol="ChevronUp16"
                                                                FontSize="16" />
@@ -1250,12 +1234,9 @@
                                                     BorderThickness="1"
                                                     SizeChanged="PreviewScreen_SizeChanged">
                                                 <Grid>
-                                                    <Image x:Name="HomePreviewImage" Stretch="Uniform"
-                                                           RenderOptions.BitmapScalingMode="HighQuality"
-                                                           Visibility="Collapsed" />
                                                     <ContentControl x:Name="HomePreviewPlaceholder"
                                                                     ContentTemplate="{StaticResource Preview.Empty}"
-                                                                    Tag="暂无画面"
+                                                                    Tag="桌面分身"
                                                                    Foreground="{StaticResource Brush.Text.Secondary}" />
                                                 </Grid>
                                             </Border>
@@ -1263,7 +1244,7 @@
                                                     HorizontalAlignment="Left" VerticalAlignment="Bottom"
                                                     Margin="8,0,0,8" Style="{StaticResource Preview.DesktopChip}"
                                                     ToolTipService.ShowOnDisabled="True"
-                                                    AutomationProperties.Name="显示分身"
+                                                    AutomationProperties.Name="观看分身"
                                                     Click="HomeDesktopVisibilityButton_Click">
                                                 <StackPanel Orientation="Horizontal">
                                                     <!-- Open-in-window to show; a minimised window to hide. -->
@@ -1294,7 +1275,7 @@
                                                             </Path.Style>
                                                         </Path>
                                                     </Viewbox>
-                                                    <AccessText x:Name="HomeDesktopVisibilityText" Text="显示分身"
+                                                    <AccessText x:Name="HomeDesktopVisibilityText" Text="观看分身"
                                                                 VerticalAlignment="Center" />
                                                 </StackPanel>
                                             </Button>
@@ -1505,63 +1486,6 @@
         </Grid>
 
     </Grid>
-        <Grid x:Name="PreviewOverlay" Panel.ZIndex="200" Visibility="Collapsed"
-              Focusable="True" KeyboardNavigation.TabNavigation="Cycle" SizeChanged="PreviewOverlay_SizeChanged"
-              KeyboardNavigation.ControlTabNavigation="Cycle" AutomationProperties.Name="放大实时截图">
-            <Button x:Name="PreviewScrim" Background="#300F172A" BorderThickness="0"
-                    Focusable="False" IsTabStop="False" Click="ClosePreview_Click"
-                    AutomationProperties.Name="关闭放大截图遮罩">
-                <Button.Template>
-                    <ControlTemplate TargetType="{x:Type Button}">
-                        <Border Background="{TemplateBinding Background}" />
-                    </ControlTemplate>
-                </Button.Template>
-            </Button>
-            <Border x:Name="ExpandedPreviewCard" Margin="40" HorizontalAlignment="Center"
-                    VerticalAlignment="Center" Background="{StaticResource Brush.Canvas}"
-                    BorderBrush="{StaticResource Preview.Border}" BorderThickness="1"
-                    CornerRadius="{StaticResource Radius.Section}">
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="24" ShadowDepth="6" Opacity="0.2" Color="#0F172A" />
-                </Border.Effect>
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="48" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <Border Background="{StaticResource Brush.Surface}" Padding="16,0"
-                            BorderBrush="{StaticResource Preview.Border}" BorderThickness="0,0,0,1">
-                        <DockPanel>
-                            <Button x:Name="ClosePreviewButton" DockPanel.Dock="Right"
-                                    Style="{StaticResource Preview.IconButton}"
-                                    ToolTip="关闭（Esc）" AutomationProperties.Name="关闭放大截图"
-                                    Click="ClosePreview_Click">
-                                <ui:SymbolIcon Symbol="Dismiss24" FontSize="16"
-                                               Foreground="{StaticResource Brush.Text.Secondary}" />
-                            </Button>
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <Path Data="{StaticResource Preview.Monitor}" Width="16" Height="16"
-                                      Stretch="Uniform" Stroke="{StaticResource Brush.Primary}"
-                                      StrokeThickness="1.8" Margin="0,0,8,0" />
-                                <TextBlock Text="实时截图" Foreground="{StaticResource Brush.Text.Primary}"
-                                           FontWeight="SemiBold" />
-                                <Border Background="#00854A" Padding="6,2" Margin="12,0,0,0" CornerRadius="3"
-                                        Visibility="{Binding Visibility, ElementName=HomePreviewImage}">
-                                    <TextBlock Text="● LIVE" Foreground="White" FontSize="11" />
-                                </Border>
-                            </StackPanel>
-                        </DockPanel>
-                    </Border>
-                    <Grid Grid.Row="1" Margin="8">
-                        <Image Source="{Binding Source, ElementName=HomePreviewImage}" Stretch="Uniform"
-                               RenderOptions.BitmapScalingMode="HighQuality" />
-                        <ContentControl ContentTemplate="{StaticResource Preview.Empty}"
-                                        Foreground="{StaticResource Brush.Text.Secondary}"
-                                        Visibility="{Binding Visibility, ElementName=HomePreviewPlaceholder}" />
-                    </Grid>
-                </Grid>
-            </Border>
-        </Grid>
         <Grid x:Name="UpdateOverlay" Panel.ZIndex="210" Visibility="Collapsed" Focusable="True"
               KeyboardNavigation.TabNavigation="Cycle" KeyboardNavigation.ControlTabNavigation="Cycle"
               SizeChanged="UpdateOverlay_SizeChanged"

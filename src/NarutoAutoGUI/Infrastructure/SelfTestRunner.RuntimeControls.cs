@@ -43,7 +43,7 @@ internal static partial class SelfTestRunner
                 (new RuntimeAction.InProgress(ProgressKind.EndingEnvironment), "RuntimeHeaderProgressRing", true,
                     "正在结束桌面分身")
             }) {
-                window.ApplyRuntimeControls(new RuntimeControlState(action, true, null, idleDesktop, true, null));
+                window.ApplyRuntimeControls(new RuntimeControlState(action, true, null, idleDesktop, true));
                 var shown = ShownHeaderControls(window);
                 Require(shown.SequenceEqual([control]), $"{action} 应只显示 {control}，实际为 {string.Join("、", shown)}。");
                 var element = Named<FrameworkElement>(window, control);
@@ -71,7 +71,7 @@ internal static partial class SelfTestRunner
                 (new RuntimeAction.Retry(RetryTarget.Start, false, StartBlocker.NoTasks), "RetryEnvironmentButton",
                     "请先在执行计划中添加任务", "请先在执行计划中添加任务")
             }) {
-                window.ApplyRuntimeControls(new RuntimeControlState(action, true, null, idleDesktop, true, null));
+                window.ApplyRuntimeControls(new RuntimeControlState(action, true, null, idleDesktop, true));
                 var button = Named<FrameworkElement>(window, control);
                 Require(Equals(button.ToolTip, toolTip) && ToolTipService.GetShowOnDisabled(button)
                     && AutomationProperties.GetHelpText(button) == helpText, $"{action} 的说明不符。");
@@ -82,7 +82,7 @@ internal static partial class SelfTestRunner
                 (RetryTarget.Prepare, "重试准备运行环境"), (RetryTarget.Start, "重试开始任务")
             }) {
                 window.ApplyRuntimeControls(new RuntimeControlState(
-                    new RuntimeAction.Retry(target, true), true, null, idleDesktop, true, null));
+                    new RuntimeAction.Retry(target, true), true, null, idleDesktop, true));
                 Require(Named<TextBlock>(window, "RetryEnvironmentText").Text == label
                     && AutomationProperties.GetName(Named<FrameworkElement>(window, "RetryEnvironmentButton")) == label,
                     $"{target} 的重试按钮应写明重试什么。");
@@ -97,7 +97,7 @@ internal static partial class SelfTestRunner
             }) {
                 foreach (var enabled in new[] { true, false }) {
                     window.ApplyRuntimeControls(new RuntimeControlState(
-                        new RuntimeAction.Recover(enabled, reason), true, null, idleDesktop, true, null));
+                        new RuntimeAction.Recover(enabled, reason), true, null, idleDesktop, true));
                     var button = Named<FrameworkElement>(window, "RecoverEnvironmentButton");
                     Require(Equals(button.ToolTip, text) && ToolTipService.GetShowOnDisabled(button)
                         && AutomationProperties.GetName(button) == "结束桌面分身"
@@ -105,7 +105,7 @@ internal static partial class SelfTestRunner
                 }
             }
 
-            var state = new RuntimeControlState(new RuntimeAction.Prepare(true), true, null, idleDesktop, true, null);
+            var state = new RuntimeControlState(new RuntimeAction.Prepare(true), true, null, idleDesktop, true);
             foreach (var (editable, lockReason, text) in new (bool, LockReason?, string?)[] {
                 (false, LockReason.RunActive, "任务运行中，配置已锁定"),
                 (false, LockReason.RuntimeBusy, "运行环境处理中，配置暂时锁定"),
@@ -122,10 +122,16 @@ internal static partial class SelfTestRunner
             }
 
             // The chip shows over an empty picture too: it follows the session, and is never invisible but clickable.
-            foreach (var (desktop, text, toolTip) in new (DesktopToggle, string, string)[] {
-                (new DesktopToggle(DesktopAction.Hide, true), "隐藏分身", "隐藏桌面分身窗口，任务继续在后台运行"),
-                (new DesktopToggle(DesktopAction.Show, true), "显示分身", "在独立窗口中显示桌面分身，可直接操作游戏"),
-                (new DesktopToggle(DesktopAction.Show, false), "显示分身", "运行环境就绪后可显示桌面分身")
+            // The card text follows the same state, so it never offers a window that is already open or unavailable.
+            foreach (var (desktop, text, toolTip, card) in new (DesktopToggle, string, string, string)[] {
+                (new DesktopToggle(DesktopAction.Hide, true), "隐藏分身", "隐藏桌面分身窗口，任务继续在后台运行",
+                    "分身窗口已打开；放大后可手动允许操作"),
+                (new DesktopToggle(DesktopAction.Hide, false), "隐藏分身", "运行环境就绪后可显示桌面分身",
+                    "分身窗口已打开；放大后可手动允许操作"),
+                (new DesktopToggle(DesktopAction.Show, true), "观看分身", "在置顶只读小窗中观看桌面分身",
+                    "点击「观看分身」在置顶只读小窗中查看"),
+                (new DesktopToggle(DesktopAction.Show, false), "观看分身", "运行环境就绪后可显示桌面分身",
+                    "运行环境就绪后可观看分身画面")
             }) {
                 window.ApplyRuntimeControls(state with { Desktop = desktop });
                 PumpOnboarding();
@@ -134,8 +140,10 @@ internal static partial class SelfTestRunner
                     && button.IsEnabled == desktop.Enabled && Equals(button.ToolTip, toolTip)
                     && ToolTipService.GetShowOnDisabled(button) && AutomationProperties.GetName(button) == text
                     && Equals(button.Tag, desktop.Action == DesktopAction.Hide ? "True" : "False")
-                    && !Named<UIElement>(window, "HomePreviewImage").IsVisible
                     && button.IsVisible && button.Opacity == 1, $"{desktop} 的分身按钮显示不符。");
+                Require(Equals(Named<ContentControl>(window, "HomePreviewPlaceholder").Content, card)
+                    && Named<WpfButton>(window, "ExpandPreviewButton").IsEnabled == desktop.Enabled,
+                    $"{desktop} 的分身卡片说明或大窗入口不符。");
             }
         });
         Console.WriteLine("RUNTIME CONTROL MAPPING PASS: header actions, configuration lock and desktop toggle.");
@@ -185,8 +193,6 @@ internal static partial class SelfTestRunner
         var showEnabled = new DesktopToggle(DesktopAction.Show, true);
         var showDisabled = new DesktopToggle(DesktopAction.Show, false);
         var hideEnabled = new DesktopToggle(DesktopAction.Hide, true);
-        Guid? worker = ScenarioWorkerId;
-        Guid? none = null;
         var preparing = new RuntimeAction.InProgress(ProgressKind.PreparingEnvironment);
         var starting = new RuntimeAction.InProgress(ProgressKind.StartingRun);
         var stopping = new RuntimeAction.InProgress(ProgressKind.StoppingRun);
@@ -196,155 +202,155 @@ internal static partial class SelfTestRunner
         const LockReason runtimeBusy = LockReason.RuntimeBusy;
         return [
             ("无分身冷启动", stopped,
-                new(new RuntimeAction.Prepare(true), true, null, showDisabled, true, none)),
+                new(new RuntimeAction.Prepare(true), true, null, showDisabled, true)),
             ("恢复已有分身", stopped with {
                 Session = ScenarioSession(ChildSessionState.Existing),
                 PendingOperation = PendingOperation.RestoringSession
-            }, new(preparing, false, runtimeBusy, showDisabled, false, none)),
+            }, new(preparing, false, runtimeBusy, showDisabled, false)),
             ("正在显示子桌面", start with { PendingOperation = PendingOperation.ShowingDesktop },
-                new(BlockedStart(StartBlocker.CommandsUnavailable), false, runtimeBusy, showDisabled, false, worker)),
+                new(BlockedStart(StartBlocker.CommandsUnavailable), false, runtimeBusy, showDisabled, false)),
             ("正在创建分身", stopped with {
                 Session = ScenarioSession(ChildSessionState.Connecting),
                 PendingOperation = PendingOperation.PreparingEnvironment
-            }, new(preparing, false, runtimeBusy, showDisabled, false, none)),
+            }, new(preparing, false, runtimeBusy, showDisabled, false)),
             ("分身已连接，正在启动 Worker", start with {
                 Worker = Observed(WorkerObservation.WorkerStarting, null),
                 PendingOperation = PendingOperation.PreparingEnvironment
-            }, new(preparing, false, runtimeBusy, showDisabled, false, none)),
+            }, new(preparing, false, runtimeBusy, showDisabled, false)),
             ("Worker 已连接但仍在启动", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, WorkerState.Starting))
-            }, new(preparing, true, null, showEnabled, true, none)),
+            }, new(preparing, true, null, showEnabled, true)),
             ("就绪，子桌面隐藏", start,
-                new(new RuntimeAction.Start(true), true, null, showEnabled, true, worker)),
+                new(new RuntimeAction.Start(true), true, null, showEnabled, true)),
             ("就绪，子桌面可见", start with { Session = ScenarioSession(ChildSessionState.ConnectedVisible) },
-                new(new RuntimeAction.Start(true), true, null, hideEnabled, true, worker)),
+                new(new RuntimeAction.Start(true), true, null, hideEnabled, true)),
             ("准备失败，Worker 已就绪", start with { EnvironmentPreparationFailed = true },
-                new(retryPrepare, true, null, showEnabled, true, none)),
+                new(retryPrepare, true, null, showEnabled, true)),
             ("准备失败，分身故障", stopped with {
                 Session = ScenarioSession(ChildSessionState.Faulted), EnvironmentPreparationFailed = true
-            }, new(retryPrepare, true, null, showDisabled, true, none)),
+            }, new(retryPrepare, true, null, showDisabled, true)),
             ("配置无效", start with { Project = ready with { ConfigurationValid = false } },
-                new(BlockedStart(StartBlocker.ConfigurationInvalid), true, null, showEnabled, true, worker)),
+                new(BlockedStart(StartBlocker.ConfigurationInvalid), true, null, showEnabled, true)),
             ("执行计划为空", start with { Project = ready with { SelectedTaskCount = 0 } },
-                new(BlockedStart(StartBlocker.NoTasks), true, null, showEnabled, true, worker)),
+                new(BlockedStart(StartBlocker.NoTasks), true, null, showEnabled, true)),
             ("项目未加载", stopped with { Project = ProjectReadiness.NotLoaded },
-                new(new RuntimeAction.Prepare(false), false, null, showDisabled, true, none)),
+                new(new RuntimeAction.Prepare(false), false, null, showDisabled, true)),
             ("Runtime Profile 不一致", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker("other-digest"))
-            }, new(new RuntimeAction.Prepare(true), true, null, showEnabled, true, worker)),
+            }, new(new RuntimeAction.Prepare(true), true, null, showEnabled, true)),
             ("正在开始任务", start with { PendingOperation = PendingOperation.StartingRun },
-                new(starting, false, runActive, showDisabled, false, worker)),
+                new(starting, false, runActive, showDisabled, false)),
             ("Run 启动中", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, active: RunState.Starting))
-            }, new(starting, false, runActive, showEnabled, true, worker)),
+            }, new(starting, false, runActive, showEnabled, true)),
             ("运行中", start with { Worker = Observed(WorkerObservation.Connected, running) },
-                new(new RuntimeAction.Stop(true), false, runActive, showEnabled, true, worker)),
+                new(new RuntimeAction.Stop(true), false, runActive, showEnabled, true)),
             ("正在停止任务", start with {
                 Worker = Observed(WorkerObservation.Connected, running), PendingOperation = PendingOperation.StoppingRun
-            }, new(stopping, false, runActive, showDisabled, false, worker)),
+            }, new(stopping, false, runActive, showDisabled, false)),
             ("Run 停止中", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, active: RunState.Stopping))
-            }, new(stopping, false, runActive, showEnabled, true, worker)),
+            }, new(stopping, false, runActive, showEnabled, true)),
             ("运行中 IPC 暂时断线", start with { Worker = Observed(WorkerObservation.IpcDisconnected, running) },
-                new(Recover(RecoveryReason.WorkerLost), false, runActive, showEnabled, true, none)),
+                new(Recover(RecoveryReason.WorkerLost), false, runActive, showEnabled, true)),
             ("空闲时 IPC 断线", start with { Worker = Observed(WorkerObservation.IpcDisconnected, idle) },
-                new(Recover(RecoveryReason.WorkerLost), false, runtimeBusy, showEnabled, true, none)),
+                new(Recover(RecoveryReason.WorkerLost), false, runtimeBusy, showEnabled, true)),
             ("快照断档等待刷新", start with {
                 Worker = new WorkerCoordinatorSnapshot(WorkerObservation.Connected, false, idle, "scenario")
-            }, new(new RuntimeAction.Prepare(true), false, runtimeBusy, showEnabled, true, none)),
+            }, new(new RuntimeAction.Prepare(true), false, runtimeBusy, showEnabled, true)),
             ("Worker 已退出", start with { Worker = Observed(WorkerObservation.WorkerExited, idle) },
-                new(retryPrepare, true, null, showEnabled, true, none)),
+                new(retryPrepare, true, null, showEnabled, true)),
             ("Worker 已退出，最后快照仍在运行", start with { Worker = Observed(WorkerObservation.WorkerExited, running) },
-                new(retryPrepare, true, null, showEnabled, true, none)),
+                new(retryPrepare, true, null, showEnabled, true)),
             ("Worker 恢复冲突", stopped with { Worker = Observed(WorkerObservation.WorkerRecoveryConflict, null) },
-                new(Recover(RecoveryReason.WorkerLost), false, runtimeBusy, showDisabled, true, none)),
+                new(Recover(RecoveryReason.WorkerLost), false, runtimeBusy, showDisabled, true)),
             ("重启后恢复分身，Worker 恢复冲突", stopped with {
                 Session = ScenarioSession(ChildSessionState.Existing),
                 PendingOperation = PendingOperation.RestoringSession,
                 Worker = Observed(WorkerObservation.WorkerRecoveryConflict, null)
-            }, new(preparing, false, runtimeBusy, showDisabled, false, none)),
+            }, new(preparing, false, runtimeBusy, showDisabled, false)),
             ("上次结束未确认，分身已不存在", stopped with { EndUnconfirmed = true },
-                new(Recover(RecoveryReason.EndUnconfirmed), true, null, showDisabled, true, none)),
+                new(Recover(RecoveryReason.EndUnconfirmed), true, null, showDisabled, true)),
             ("Worker 故障且停止未确认", start with {
                 Worker = Observed(WorkerObservation.Connected,
                     ScenarioWorker(digest, WorkerState.Faulted, active: RunState.Stopping))
-            }, new(Recover(RecoveryReason.StopUnconfirmed), false, runActive, showEnabled, true, none)),
+            }, new(Recover(RecoveryReason.StopUnconfirmed), false, runActive, showEnabled, true)),
             ("Worker 故障且 Run 仍在运行", start with {
                 Worker = Observed(WorkerObservation.Connected,
                     ScenarioWorker(digest, WorkerState.Faulted, active: RunState.Running))
-            }, new(Recover(RecoveryReason.StopUnconfirmed), false, runActive, showEnabled, true, none)),
+            }, new(Recover(RecoveryReason.StopUnconfirmed), false, runActive, showEnabled, true)),
             ("停止未确认后 IPC 断线", start with {
                 Worker = Observed(WorkerObservation.IpcDisconnected,
                     ScenarioWorker(digest, WorkerState.Faulted, active: RunState.Stopping))
-            }, new(Recover(RecoveryReason.WorkerLost), false, runActive, showEnabled, true, none)),
+            }, new(Recover(RecoveryReason.WorkerLost), false, runActive, showEnabled, true)),
             ("清理失败后 Worker 故障", start with {
                 Worker = Observed(WorkerObservation.Connected,
                     ScenarioWorker(digest, WorkerState.Faulted, last: RunState.Failed))
-            }, new(Recover(RecoveryReason.RuntimeFaulted), true, null, showEnabled, true, none)),
+            }, new(Recover(RecoveryReason.RuntimeFaulted), true, null, showEnabled, true)),
             ("Worker 故障时退出中", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, WorkerState.Faulted)),
                 Exiting = true
             }, new(new RuntimeAction.Recover(false, RecoveryReason.RuntimeFaulted), false, runtimeBusy, showDisabled,
-                false, none)),
+                false)),
             ("Worker 故障时正在显示子桌面", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, WorkerState.Faulted)),
                 PendingOperation = PendingOperation.ShowingDesktop
             }, new(new RuntimeAction.Recover(false, RecoveryReason.RuntimeFaulted), false, runtimeBusy, showDisabled,
-                false, none)),
+                false)),
             ("分身已结束，最后快照仍在运行", stopped with {
                 Worker = Observed(WorkerObservation.ChildSessionEnded, running)
-            }, new(new RuntimeAction.Prepare(true), true, null, showDisabled, true, none)),
+            }, new(new RuntimeAction.Prepare(true), true, null, showDisabled, true)),
             ("分身已结束，最后快照仍在停止", stopped with {
                 Worker = Observed(WorkerObservation.ChildSessionEnded,
                     ScenarioWorker(digest, active: RunState.Stopping))
-            }, new(new RuntimeAction.Prepare(true), true, null, showDisabled, true, none)),
+            }, new(new RuntimeAction.Prepare(true), true, null, showDisabled, true)),
             ("上次 Run 失败", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, last: RunState.Failed))
-            }, new(new RuntimeAction.Retry(RetryTarget.Start, true), true, null, showEnabled, true, worker)),
+            }, new(new RuntimeAction.Retry(RetryTarget.Start, true), true, null, showEnabled, true)),
             ("上次 Run 失败且配置无效", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, last: RunState.Failed)),
                 Project = ready with { ConfigurationValid = false }
-            }, new(BlockedRetry(StartBlocker.ConfigurationInvalid), true, null, showEnabled, true, worker)),
+            }, new(BlockedRetry(StartBlocker.ConfigurationInvalid), true, null, showEnabled, true)),
             ("上次 Run 失败且执行计划为空", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, last: RunState.Failed)),
                 Project = ready with { SelectedTaskCount = 0 }
-            }, new(BlockedRetry(StartBlocker.NoTasks), true, null, showEnabled, true, worker)),
+            }, new(BlockedRetry(StartBlocker.NoTasks), true, null, showEnabled, true)),
             ("上次 Run 失败且 Runtime Profile 不一致", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker("other-digest", last: RunState.Failed))
-            }, new(retryPrepare, true, null, showEnabled, true, worker)),
+            }, new(retryPrepare, true, null, showEnabled, true)),
             ("上次 Run 失败且快照断档等待刷新", start with {
                 Worker = new WorkerCoordinatorSnapshot(WorkerObservation.Connected, false,
                     ScenarioWorker(digest, last: RunState.Failed), "scenario")
-            }, new(BlockedRetry(StartBlocker.RuntimeNotReady), false, runtimeBusy, showEnabled, true, none)),
+            }, new(BlockedRetry(StartBlocker.RuntimeNotReady), false, runtimeBusy, showEnabled, true)),
             ("上次 Run 成功", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, last: RunState.Succeeded))
-            }, new(new RuntimeAction.Start(true), true, null, showEnabled, true, worker)),
+            }, new(new RuntimeAction.Start(true), true, null, showEnabled, true)),
             ("Worker 故障", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, WorkerState.Faulted))
-            }, new(Recover(RecoveryReason.RuntimeFaulted), true, null, showEnabled, true, none)),
+            }, new(Recover(RecoveryReason.RuntimeFaulted), true, null, showEnabled, true)),
             ("Worker 依赖未就绪", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, WorkerState.NotReady))
-            }, new(new RuntimeAction.Prepare(true), true, null, showEnabled, true, none)),
+            }, new(new RuntimeAction.Prepare(true), true, null, showEnabled, true)),
             ("退出中", start with { Exiting = true },
-                new(BlockedStart(StartBlocker.CommandsUnavailable), false, runtimeBusy, showDisabled, false, none)),
+                new(BlockedStart(StartBlocker.CommandsUnavailable), false, runtimeBusy, showDisabled, false)),
             ("退出中且运行中", start with { Worker = Observed(WorkerObservation.Connected, running), Exiting = true },
-                new(new RuntimeAction.Stop(false), false, runActive, showDisabled, false, none)),
+                new(new RuntimeAction.Stop(false), false, runActive, showDisabled, false)),
             ("正在结束分身", start with { Session = ScenarioSession(ChildSessionState.Disconnecting) },
-                new(new RuntimeAction.Prepare(false), false, runtimeBusy, showDisabled, false, none)),
+                new(new RuntimeAction.Prepare(false), false, runtimeBusy, showDisabled, false)),
             ("正在结束运行环境", start with { Ending = true },
-                new(ending, false, runtimeBusy, showDisabled, false, worker)),
+                new(ending, false, runtimeBusy, showDisabled, false)),
             ("运行中正在结束运行环境", start with {
                 Worker = Observed(WorkerObservation.Connected, running), Ending = true
-            }, new(ending, false, runActive, showDisabled, false, worker)),
+            }, new(ending, false, runActive, showDisabled, false)),
             ("项目未加载但仍在运行", start with {
                 Worker = Observed(WorkerObservation.Connected, running), Project = ProjectReadiness.NotLoaded
-            }, new(new RuntimeAction.Stop(true), false, null, showEnabled, true, worker)),
+            }, new(new RuntimeAction.Stop(true), false, null, showEnabled, true)),
             ("执行计划为空但仍在运行", start with {
                 Worker = Observed(WorkerObservation.Connected, running), Project = ready with { SelectedTaskCount = 0 }
-            }, new(new RuntimeAction.Stop(true), false, runActive, showEnabled, true, worker)),
+            }, new(new RuntimeAction.Stop(true), false, runActive, showEnabled, true)),
             ("Worker 属于其他 Child Session", start with {
                 Worker = Observed(WorkerObservation.Connected, ScenarioWorker(digest, childSessionId: 8))
-            }, new(new RuntimeAction.Start(true), true, null, showEnabled, true, none))
+            }, new(new RuntimeAction.Start(true), true, null, showEnabled, true))
         ];
 
         static WorkerCoordinatorSnapshot Observed(WorkerObservation observation, WorkerSnapshot? snapshot) =>

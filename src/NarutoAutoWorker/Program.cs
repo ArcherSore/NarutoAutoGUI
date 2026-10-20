@@ -12,9 +12,6 @@ internal static class Program
             if (args.Length == 3 && args[0] == "--framework-diagnostics-self-test") {
                 return FrameworkDiagnosticsSelfTest.Run(args[1], args[2]);
             }
-            if (args.Length == 2 && args[0] == "--preview-buffer-reader") {
-                return PreviewSelfTests.RunBufferReader(args[1]);
-            }
             if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase)) {
                 return WorkerSelfTestRunner.Run(args.Contains("--run-only", StringComparer.OrdinalIgnoreCase));
             }
@@ -34,7 +31,7 @@ internal static class Program
                 eventArgs.Cancel = true;
                 shutdown.Cancel();
             };
-            using var host = new WorkerHost(arguments, manifest);
+            var host = new WorkerHost(arguments, manifest);
             await host.RunAsync(shutdown.Token);
             return 0;
         } catch (Exception exception) {

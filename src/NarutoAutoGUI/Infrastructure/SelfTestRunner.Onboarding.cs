@@ -59,9 +59,8 @@ internal static partial class SelfTestRunner
             AssertOnboardingStep(window, 2, "查看说明并设置参数");
             ClickOnboarding(window, "ExpandPreviewButton");
             ClickOnboarding(window, "UpdateNavigationItem");
-            if (((UIElement)window.FindName("PreviewOverlay")).Visibility != Visibility.Collapsed
-                || ((UIElement)window.FindName("UpdateOverlay")).Visibility != Visibility.Collapsed) {
-                throw new InvalidOperationException("Tour 期间底层 Preview/Update 入口不能叠加模态层。");
+            if (((UIElement)window.FindName("UpdateOverlay")).Visibility != Visibility.Collapsed) {
+                throw new InvalidOperationException("Tour 期间底层分身大窗/更新入口不能打开。");
             }
             window.Width = 920;
             window.Height = 640;
@@ -86,7 +85,7 @@ internal static partial class SelfTestRunner
             ClickOnboarding(window, "OnboardingNext");
             AssertOnboardingStep(window, 3, "启动自动化");
             ClickOnboarding(window, "OnboardingNext");
-            AssertOnboardingStep(window, 4, "查看挂机画面");
+            AssertOnboardingStep(window, 4, "观看桌面分身");
             if (((WpfButton)window.FindName("OnboardingNext")).Content.ToString() != "开始使用") {
                 throw new InvalidOperationException("最后一步必须显示开始使用。");
             }
@@ -207,15 +206,14 @@ internal static partial class SelfTestRunner
             }
         });
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "modal-delay"), (window, directory) => {
-            var preview = (UIElement)window.FindName("PreviewOverlay");
-            preview.Visibility = Visibility.Visible;
+            ((UIElement)window.FindName("UpdateOverlay")).Visibility = Visibility.Visible;
             CompleteOnboardingStartup(window);
             InvokeOnboarding(window, "ReevaluateOnboarding");
             PumpOnboarding(500);
             if (((UIElement)window.FindName("OnboardingOverlay")).Visibility != Visibility.Collapsed) {
-                throw new InvalidOperationException("Preview modal 打开时自动 Tour 必须延后。");
+                throw new InvalidOperationException("更新弹层打开时自动 Tour 必须延后。");
             }
-            ClickOnboarding(window, "ClosePreviewButton");
+            ClickOnboarding(window, "CloseUpdateButton");
             PumpOnboarding(500);
             AssertOnboardingStep(window, 1, "配置自动化任务");
             ClickOnboarding(window, "OnboardingNext");

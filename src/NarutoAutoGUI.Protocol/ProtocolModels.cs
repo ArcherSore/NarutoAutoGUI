@@ -5,7 +5,7 @@ namespace NarutoAutoGUI.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int ProtocolVersion = 3;
+    public const int ProtocolVersion = 4;
     public const int SnapshotVersion = 1;
     public const int LaunchContextVersion = 1;
     public const int PlanVersion = 1;
@@ -15,9 +15,6 @@ public static class ProtocolConstants
     public const int MaximumSnapshotPayloadBytes = 3 * 1024 * 1024;
     public const int MaximumLogMessageBytes = 64 * 1024;
     public const int MaximumLogGetSinceResponseBytes = 1024 * 1024;
-    public const int PreviewIntervalMilliseconds = 34;
-    public const int MaximumPreviewPixelWidth = 640;
-    public const int MaximumPreviewPixelHeight = 360;
     public const string MaaNopRunLogSource = "maanop.run";
 }
 
@@ -28,9 +25,6 @@ public static class ProtocolOperations
     public const string RunStart = "run.start";
     public const string RunStop = "run.stop";
     public const string LogGetSince = "log.getSince";
-    public const string PreviewStart = "preview.start";
-    public const string PreviewRenew = "preview.renew";
-    public const string PreviewStop = "preview.stop";
     public const string WorkerStateChanged = "worker.stateChanged";
     public const string RunStateChanged = "run.stateChanged";
     public const string LogEntry = "log.entry";

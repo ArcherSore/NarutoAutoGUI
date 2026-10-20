@@ -343,34 +343,6 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             cancellationToken);
     }
 
-    internal async Task<PreviewResponse> SendPreviewAsync(
-        string operation, PreviewRequest request, CancellationToken cancellationToken = default)
-    {
-        uint sessionId;
-        int workerPid;
-        lock (_gate) {
-            var worker = Snapshot.WorkerSnapshot;
-            if (Snapshot.Observation != WorkerObservation.Connected || !Snapshot.SnapshotFresh
-                || worker?.WorkerInstanceId != request.WorkerInstanceId) {
-                throw new InvalidOperationException("当前 Worker/Snapshot 不允许预览。");
-            }
-            sessionId = worker.ChildSessionId;
-            workerPid = worker.WorkerPid;
-        }
-        var response = await SendRequestAsync<PreviewRequest, PreviewResponse>(operation, request, cancellationToken);
-        var expected = new PreviewIdentity(request.WorkerInstanceId, sessionId, request.SubscriptionId);
-        if (response.Identity != expected || !Enum.IsDefined(response.State) || response.Generation < 0) {
-            throw new ProtocolException("Preview response identity/state 非法。");
-        }
-        if (response.Descriptor is { } descriptor) {
-            PreviewBuffer.ValidateDescriptor(descriptor);
-            if (descriptor.Identity != expected || descriptor.OwnerPid != workerPid) {
-                throw new ProtocolException("Preview descriptor 不属于当前 Worker。");
-            }
-        }
-        return response;
-    }
-
     internal void ChildSessionEnded()
     {
         WorkerAdmissionRecord? record;

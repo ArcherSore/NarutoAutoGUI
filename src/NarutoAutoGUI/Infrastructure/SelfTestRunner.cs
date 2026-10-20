@@ -75,9 +75,7 @@ internal static partial class SelfTestRunner
             VerifyUnsupportedProjectConstraints(testDirectory, projectDirectory);
             VerifyInvalidProjectInterfaces(testDirectory, projectDirectory);
             VerifyProtocolFrame();
-            VerifyPreviewProtocol();
-            PreviewPresentationSelfTest.Run();
-            VerifyMinimizedPreview(logger, testDirectory);
+            VerifyRdpViewingModes();
             VerifyWorkerLogSequenceTracker();
             VerifyRunLogRouting(logger);
             VerifyRuntimeControlScenarios();
@@ -113,7 +111,7 @@ internal static partial class SelfTestRunner
                 + "PI structure/default/graph validation; typed input validation; "
                 + "task catalog/description; ordered task plan persistence; parameter inspector layout; "
                 + "MaaNOP Config v2/migration/independent tabs; onboarding tour; RunPlan digest; "
-                + "IPC framing; preview schema; "
+                + "IPC framing; RDP viewing modes/input lock; "
                 + "log sequence tracking/recovery; Worker Instance replacement; stale Admission recovery; "
                 + "run-log routing; DEBUG+ file logging");
             return 0;
@@ -756,17 +754,6 @@ internal static partial class SelfTestRunner
         var decoded = reader.ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
         if (decoded?.RequestId != requestId || decoded.Operation != ProtocolOperations.WorkerGetSnapshot) {
             throw new InvalidOperationException("Named Pipe frame round-trip 验证失败。");
-        }
-    }
-
-    private static void VerifyPreviewProtocol()
-    {
-        var identity = new PreviewIdentity(Guid.NewGuid(), 1, Guid.NewGuid());
-        var response = new PreviewResponse(identity, PreviewState.WaitingForWindow, 0, null);
-        var json = JsonSerializer.Serialize(response, ProtocolJson.Options);
-        if (JsonSerializer.Deserialize<PreviewResponse>(json, ProtocolJson.Options) != response
-            || json.Contains("png", StringComparison.OrdinalIgnoreCase)) {
-            throw new InvalidOperationException("Preview 订阅协议 round-trip 失败。");
         }
     }
 

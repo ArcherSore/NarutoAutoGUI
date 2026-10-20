@@ -141,9 +141,7 @@ public partial class MainWindow
             return;
         }
         UpdateOverlay.Visibility = Visibility.Collapsed;
-        if (PreviewOverlay.Visibility != Visibility.Visible) {
-            RemovePreviewWindowHook();
-        }
+        RemoveModalWindowHook();
         if (_updatePreviousFocus is not null) {
             Keyboard.Focus(_updatePreviousFocus);
         }

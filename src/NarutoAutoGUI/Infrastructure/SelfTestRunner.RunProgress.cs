@@ -117,14 +117,14 @@ internal static partial class SelfTestRunner
             Require(window.FindName("DesktopMenuItem") is null && window.FindName("ExpandPreviewMenuItem") is null,
                 "更多操作菜单不应重复放大画面或显示/隐藏分身。");
             foreach (var (state, endReason) in new (RuntimeControlState, string)[] {
-                (new(new RuntimeAction.Start(true), true, null, desktop, true, Guid.NewGuid()), ""),
-                (new(new RuntimeAction.Stop(true), false, LockReason.RunActive, desktop, true, null), ""),
-                (new(new RuntimeAction.Prepare(true), true, null, desktop with { Enabled = false }, true, null),
+                (new(new RuntimeAction.Start(true), true, null, desktop, true), ""),
+                (new(new RuntimeAction.Stop(true), false, LockReason.RunActive, desktop, true), ""),
+                (new(new RuntimeAction.Prepare(true), true, null, desktop with { Enabled = false }, true),
                     "未创建"),
                 (new(new RuntimeAction.InProgress(ProgressKind.PreparingEnvironment), false, LockReason.RuntimeBusy,
-                    desktop with { Enabled = false }, false, null), "处理中"),
+                    desktop with { Enabled = false }, false), "处理中"),
                 (new(new RuntimeAction.Recover(true, RecoveryReason.WorkerLost), false, LockReason.RuntimeBusy,
-                    desktop, true, null), "")
+                    desktop, true), "")
             }) {
                 window.ApplyRuntimeControls(state);
                 var end = Named<System.Windows.Controls.MenuItem>(window, "EndEnvironmentMenuItem");
@@ -145,7 +145,7 @@ internal static partial class SelfTestRunner
                 (new RuntimeAction.Recover(true, RecoveryReason.WorkerLost), "故障", "Worker 失联",
                     "Worker 失联且未确认已退出；也可以等待它重新连接")
             }) {
-                window.ApplyRuntimeControls(new(action, false, LockReason.RuntimeBusy, desktop, true, null));
+                window.ApplyRuntimeControls(new(action, false, LockReason.RuntimeBusy, desktop, true));
                 Require(Named<TextBlock>(window, "RuntimeStatusText").Text == pill
                     && Named<TextBlock>(window, "RuntimeStatusTitle").Text == title
                     && Named<TextBlock>(window, "RuntimeStatusDetail").Text == detail,
@@ -162,20 +162,9 @@ internal static partial class SelfTestRunner
                 SetOnboardingField(window, "_workerSnapshot",
                     new WorkerCoordinatorSnapshot(observation, fresh, null, ""));
                 window.ApplyRuntimeControls(new(new RuntimeAction.InProgress(ProgressKind.PreparingEnvironment),
-                    false, LockReason.RuntimeBusy, desktop, false, null));
+                    false, LockReason.RuntimeBusy, desktop, false));
                 Require(Named<TextBlock>(window, "RuntimeStatusDetail").Text == detail,
                     "准备阶段只能描述已观察到的 Session 和 Worker 状态。");
-            }
-
-            var placeholder = Named<ContentControl>(window, "HomePreviewPlaceholder");
-            foreach (var (frame, title) in new (PreviewFrameInfo?, string)[] {
-                (new(PreviewState.WaitingForWindow, 0, 0, DateTime.UtcNow, 0, 0), "正在连接画面…"),
-                (null, "画面已中断"),
-                (new(PreviewState.Unavailable, 0, 0, DateTime.UtcNow, 0, 0), "画面已中断")
-            }) {
-                typeof(MainWindow).GetMethod("PresentPreviewFrame", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .Invoke(window, new object?[] { frame, Array.Empty<byte>() });
-                Require(Equals(placeholder.Tag, title), "Preview 传输中断与等待画面必须显示不同的空状态。");
             }
         });
     }
@@ -229,7 +218,7 @@ internal static partial class SelfTestRunner
             });
             Require(CardStatus() == "成功" && !timer.IsEnabled, "Run 结束后卡片应显示结果，计时停止。");
             window.ApplyRuntimeControls(new(new RuntimeAction.Prepare(true), true, null,
-                new DesktopToggle(DesktopAction.Show, false), true, null));
+                new DesktopToggle(DesktopAction.Show, false), true));
             Require(Named<UIElement>(window, "RunProgressPanel").IsVisible
                 && Named<TextBlock>(window, "RunProgressCaption").Text == "上次运行：1 成功",
                 "匹配当前配置的 Last Run 不能因运行环境需要重新准备而隐藏。");

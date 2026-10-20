@@ -85,10 +85,7 @@ internal static class RuntimeControls
         var desktop = new DesktopToggle(
             session.State == ChildSessionState.ConnectedVisible ? DesktopAction.Hide : DesktopAction.Show,
             sessionConnected && commandsAvailable);
-        Guid? previewWorker = !exiting && !preparationFailed && pending != PendingOperation.PreparingEnvironment
-            && sessionConnected && fresh && observed.WorkerSnapshot is { WorkerState: WorkerState.Ready } snapshot
-            && snapshot.ChildSessionId == session.ChildSessionId ? snapshot.WorkerInstanceId : null;
-        return new RuntimeControlState(action, editable, configurationLock, desktop, commandsAvailable, previewWorker);
+        return new RuntimeControlState(action, editable, configurationLock, desktop, commandsAvailable);
     }
 
     // The Stop operation rechecks this when it runs, because the Run may move on while the operation waits.
@@ -170,4 +167,4 @@ internal sealed record DesktopToggle(DesktopAction Action, bool Enabled);
 // ConfigurationLock is the lock badge reason; it is null while editing is allowed or no project is loaded.
 internal sealed record RuntimeControlState(
     RuntimeAction Action, bool ConfigurationEditable, LockReason? ConfigurationLock, DesktopToggle Desktop,
-    bool CommandsAvailable, Guid? PreviewWorker);
+    bool CommandsAvailable);

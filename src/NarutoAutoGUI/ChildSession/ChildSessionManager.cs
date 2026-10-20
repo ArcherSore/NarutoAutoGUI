@@ -51,7 +51,9 @@ internal sealed class ChildSessionManager : IDisposable
         }
     }
 
-    internal async Task<uint> EnsureConnectedAsync(bool showPreview, CancellationToken cancellationToken = default)
+    // large selects the viewing size; null keeps the mode of a visible window, and a hidden window opens small.
+    internal async Task<uint> EnsureConnectedAsync(
+        bool showPreview, bool? large = null, CancellationToken cancellationToken = default)
     {
         await _operationLock.WaitAsync(cancellationToken);
         try {
@@ -64,7 +66,7 @@ internal sealed class ChildSessionManager : IDisposable
                     && Snapshot.State is (ChildSessionState.ConnectedVisible
                         or ChildSessionState.ConnectedHidden)
                     && connectedState == 1) {
-                    SetPreviewVisibility(showPreview);
+                    SetPreviewVisibility(showPreview, large);
                     _logger.Debug($"复用已连接的 Child Session {connectedId}，show={showPreview}。");
                     return connectedId;
                 }
@@ -98,7 +100,7 @@ internal sealed class ChildSessionManager : IDisposable
                     ?? throw new InvalidOperationException("RDP 登录完成后未取得 childSessionId。");
                 preview.Text = $"NarutoAutoGUI Child Session #{sessionId} (1920x1080 @ 100%)";
                 _logger.Info($"Child Session 已连接：childSessionId={sessionId}，ConnectedState={service.ConnectedState}。");
-                SetPreviewVisibility(showPreview);
+                SetPreviewVisibility(showPreview, large);
                 return sessionId;
             } catch (Exception exception) {
                 var actualException = exception.GetBaseException();
@@ -125,6 +127,7 @@ internal sealed class ChildSessionManager : IDisposable
         }
     }
 
+    // Shows the window without changing the mode of an already visible one.
     internal void ShowPreview()
     {
         if (_previewForm is null || SafeConnectedState() != 1) {
@@ -183,7 +186,7 @@ internal sealed class ChildSessionManager : IDisposable
         _operationLock.Dispose();
     }
 
-    private void SetPreviewVisibility(bool show)
+    private void SetPreviewVisibility(bool show, bool? large = null)
     {
         if (_previewForm is null || _service is null) {
             return;
@@ -196,9 +199,7 @@ internal sealed class ChildSessionManager : IDisposable
         }
 
         if (show) {
-            _previewForm.Show();
-            _previewForm.WindowState = System.Windows.Forms.FormWindowState.Normal;
-            _previewForm.Activate();
+            _previewForm.ShowViewing(large);
         } else {
             _previewForm.Hide();
         }

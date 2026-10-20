@@ -24,14 +24,14 @@ internal sealed class RunHarness : IAsyncDisposable
     private ProtocolConnection _worker = null!;
     private Task _receiving = Task.CompletedTask;
 
-    private RunHarness(Guid workerId, IPreviewCaptureSource? previewSource)
+    private RunHarness(Guid workerId)
     {
         Executions = new ScriptedExecutionFactory();
         var manifest = new LaunchManifest(ProtocolConstants.LaunchContextVersion, workerId, ProfileDigest,
             "C:\\dummy", Project, new Win32ControllerDefinition("test", "class", "window", "Cache", "Send", "Send"),
             [], new AgentDefinition("python.exe", [], "C:\\dummy"));
         Host = new WorkerHost(new WorkerArguments(workerId, "test", "C:\\dummy"), manifest,
-            previewSource ?? new NoWindowSource(), Executions.Create,
+            Executions.Create,
             _ => Task.FromResult((Dependencies, ReadinessFailure)));
         Executions.Probe = Host.GetSnapshot;
     }
@@ -56,9 +56,9 @@ internal sealed class RunHarness : IAsyncDisposable
     }
 
     internal static async Task<RunHarness> CreateAsync(
-        bool initialize = true, IPreviewCaptureSource? previewSource = null)
+        bool initialize = true)
     {
-        var harness = new RunHarness(Guid.NewGuid(), previewSource);
+        var harness = new RunHarness(Guid.NewGuid());
         await harness.ConnectAsync();
         if (initialize) {
             await harness.Host.InitializeAsync(CancellationToken.None);
@@ -177,16 +177,9 @@ internal sealed class RunHarness : IAsyncDisposable
         }
         await _gui.DisposeAsync();
         await _worker.DisposeAsync();
-        Host.Dispose();
         _shutdown.Dispose();
     }
 
-    private sealed class NoWindowSource : IPreviewCaptureSource
-    {
-        public PreviewTarget? FindTarget() => null;
-        public bool IsValid(PreviewTarget target) => false;
-        public IPreviewCapture Open(PreviewTarget target) => throw new InvalidOperationException("没有预览窗口。");
-    }
 }
 
 // Creates scripted executions. Each execution call probes the Worker state lock from another thread:

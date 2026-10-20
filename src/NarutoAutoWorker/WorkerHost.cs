@@ -6,7 +6,7 @@ using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoWorker;
 
-internal sealed class WorkerHost : IDisposable
+internal sealed class WorkerHost
 {
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(1);
     // Guards only the current connection's event sender; Worker and Run state are owned by RunSupervisor.
@@ -16,15 +16,13 @@ internal sealed class WorkerHost : IDisposable
     private readonly WorkerLogBuffer _logs = new();
     private readonly CancellationTokenSource _shutdown = new();
     private WorkerEventSender? _events;
-    private readonly WorkerPreviewService _preview;
     private readonly RunSupervisor _supervisor;
     private readonly Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>> _checkReadiness;
-    private Guid _connectionId;
 
     // The execution factory and readiness check default to MaaFramework and the dependency probe; self-tests replace
     // them so Run rules can be exercised without native runtime, a game window or Python.
     internal WorkerHost(
-        WorkerArguments arguments, LaunchManifest manifest, IPreviewCaptureSource? previewSource = null,
+        WorkerArguments arguments, LaunchManifest manifest,
         Func<Guid, RunPlanItem, Action, IPlanItemExecution>? createExecution = null,
         Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>>? checkReadiness = null)
     {
@@ -33,10 +31,6 @@ internal sealed class WorkerHost : IDisposable
         _checkReadiness = checkReadiness ?? CheckReadinessAsync;
         _supervisor = new RunSupervisor(manifest, _logs, createExecution ?? CreateRuntimeExecution,
             (level, source, message, runId) => Log(level, source, message, runId), PublishState, _shutdown.Token);
-        var sessionId = (uint)Process.GetCurrentProcess().SessionId;
-        _preview = new WorkerPreviewService(manifest.WorkerInstanceId, sessionId,
-            previewSource ?? new MaaPreviewCaptureSource(manifest, sessionId),
-            (level, source, message) => Log(level, source, message));
     }
 
     internal async Task RunAsync(CancellationToken cancellationToken)
@@ -83,7 +77,7 @@ internal sealed class WorkerHost : IDisposable
     private async Task<(DependencyStatus Status, StructuredReason? Reason)> CheckReadinessAsync(
         CancellationToken cancellationToken)
     {
-        // Apply process-wide options before Ready admits preview controllers or task execution.
+        // Apply process-wide options before Ready admits task execution.
         StructuredReason? optionsFailure = null;
         try {
             WorkerFrameworkOptions.Apply(_manifest.ProjectRoot, _manifest.FrameworkOptions,
@@ -131,8 +125,6 @@ internal sealed class WorkerHost : IDisposable
 
     internal async Task ServeConnectionAsync(ProtocolConnection connection, CancellationToken cancellationToken)
     {
-        var connectionId = Guid.NewGuid();
-        _connectionId = connectionId;
         await using var events = new WorkerEventSender(connection);
         lock (_eventsGate) {
             _events = events;
@@ -150,7 +142,6 @@ internal sealed class WorkerHost : IDisposable
                 }
             }
         } finally {
-            _preview.Disconnect(connectionId);
             lock (_eventsGate) {
                 if (ReferenceEquals(_events, events)) {
                     _events = null;
@@ -184,9 +175,6 @@ internal sealed class WorkerHost : IDisposable
                 ProtocolOperations.LogGetSince => WireEnvelope.Response(
                     request.Operation, requestId,
                     GetLogs(ProtocolJson.Deserialize<LogGetSinceRequest>(request.Data))),
-                ProtocolOperations.PreviewStart or ProtocolOperations.PreviewRenew
-                    or ProtocolOperations.PreviewStop => HandlePreview(request.Operation, requestId,
-                        ProtocolJson.Deserialize<PreviewRequest>(request.Data)),
                 _ => throw new WorkerRequestException("invalid_request", $"未知 operation：{request.Operation}。 ")
             };
         } catch (WorkerRequestException exception) {
@@ -232,16 +220,6 @@ internal sealed class WorkerHost : IDisposable
             throw new WorkerRequestException("invalid_request", "afterSequence 必须 >=0 且 limit 必须 >0。 ");
         }
     }
-
-    private WireEnvelope HandlePreview(string operation, Guid requestId, PreviewRequest request)
-    {
-        if (operation != ProtocolOperations.PreviewStop && !_supervisor.IsReady) {
-            throw new WorkerRequestException("worker_not_ready", "Worker 尚未就绪。");
-        }
-        return WireEnvelope.Response(operation, requestId, _preview.Handle(operation, _connectionId, request));
-    }
-
-    public void Dispose() => _preview.Dispose();
 
     internal WorkerSnapshot GetSnapshot() => _supervisor.GetSnapshot();
 

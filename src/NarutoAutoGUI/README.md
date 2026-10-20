@@ -19,7 +19,7 @@ Windows x64 / .NET 10 WPF 程序。需要管理员权限和交互式桌面。
 
 完整发布仍使用 `scripts/build.ps1`；发布目录为 `artifacts\NarutoAutoGUI\win-x64`，
 并包含 `worker\NarutoAutoWorker.exe` 及固定 runtime。
-自检通过 `dotnet NarutoAutoGUI.dll --self-test` 运行，不触发 apphost 的 UAC manifest，也不初始化 RDP。
+自检通过 `dotnet NarutoAutoGUI.dll --self-test` 运行，不触发 apphost 的 UAC manifest，不连接 RDP；完整 GUI 自检会创建本机 RDP 控件验证输入禁用和窗口模式。
 通知 tracker、诊断 ZIP 与 Settings 离屏布局可定向验证：
 
 ```powershell
@@ -56,7 +56,7 @@ MaaNOP 项目根目录固定为应用程序目录，`interface.json` 直接从 `
 
 ## 操作语义
 
-- 首页“准备运行环境”和“打开完整桌面”会确保 RDP ActiveX 已连接。
+- 首页“准备运行环境”和“观看分身”会确保 RDP ActiveX 已连接。
 - 隐藏子桌面或点击其 X 不会断开 RDP。
 - Worker 与任务配置就绪后，无论子桌面当前显示或隐藏，均可从主窗口开始任务。
 - “准备运行环境”会依次确保 Session、显示子桌面、使用固定 profile 启动游戏并启动 Worker；启动参数与工作目录均由程序确定。

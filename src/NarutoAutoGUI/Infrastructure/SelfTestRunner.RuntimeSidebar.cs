@@ -154,14 +154,6 @@ internal static partial class SelfTestRunner
                 .Invoke(window, new object[] { true });
             PumpOnboarding();
             AssertLayout();
-            // Open through the real handler; no game or preview capture is needed for overlay layout.
-            ClickOnboarding(window, "ExpandPreviewButton");
-            Require(Named<UIElement>(window, "PreviewOverlay").Visibility == Visibility.Visible
-                && !Named<UIElement>(window, "MainNavigation").IsEnabled, "放大预览仍应打开模态画面。");
-            ClickOnboarding(window, "ClosePreviewButton");
-            Require(Named<UIElement>(window, "PreviewOverlay").Visibility == Visibility.Collapsed,
-                "放大预览应可以正常关闭。");
-            AssertLayout();
             persisted = Saved()!.Value;
 
             void StartDrag() => splitter.RaiseEvent(new DragStartedEventArgs(0, 0) {

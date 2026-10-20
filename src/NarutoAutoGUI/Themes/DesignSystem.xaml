@@ -81,7 +81,6 @@
     <SolidColorBrush x:Key="Brush.Rail.Active" Color="#E6EDFA" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Progress.Track" Color="#E3E8EF" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Warning.Surface" Color="#FFF4E5" po:Freeze="True" />
-    <SolidColorBrush x:Key="Preview.Live" Color="#18202B" po:Freeze="True" />
 
     <!-- Typography and dimensions -->
     <FontFamily x:Key="FontFamily.Ui">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI</FontFamily>

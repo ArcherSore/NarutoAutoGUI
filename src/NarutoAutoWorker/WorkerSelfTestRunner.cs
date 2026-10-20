@@ -11,7 +11,6 @@ internal static class WorkerSelfTestRunner
         if (runOnly) {
             return RunCharacterization();
         }
-        PreviewSelfTests.Run();
         try {
             RunSelfTests.Run();
             VerifyFocusProjection();
@@ -24,7 +23,7 @@ internal static class WorkerSelfTestRunner
             FrameworkOptionsSelfTests.Run();
             Console.WriteLine(
                 "WORKER SELF-TEST PASS: Run characterization; MaaNOP string focus projection; Callback adapter; "
-                + "log response budget; preview shared buffer; "
+                + "log response budget; "
                 + "budget rejection; transport write guard; agent executable resolution; "
                 + "stop/cleanup serialization; "
                 + "Tasker.Task callback completion");

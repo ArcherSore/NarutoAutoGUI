@@ -84,8 +84,29 @@ internal static class RuntimeControls
             : LockReason.RuntimeBusy;
         var desktop = new DesktopToggle(
             session.State == ChildSessionState.ConnectedVisible ? DesktopAction.Hide : DesktopAction.Show,
-            sessionConnected && commandsAvailable);
+            sessionConnected && commandsAvailable,
+            DesktopStatusOf(session, action is RuntimeAction.InProgress { Kind: ProgressKind.PreparingEnvironment }));
         return new RuntimeControlState(action, editable, configurationLock, desktop, commandsAvailable);
+    }
+
+    // What the desktop toggle reports. It follows the Child Session, so a toggle that is briefly unavailable during
+    // another operation still shows a running desktop as running. Preparation opens the viewer once RDP connects,
+    // yet the desktop counts as connecting until the Runtime Environment is ready; unlocked input always shows.
+    private static DesktopStatus DesktopStatusOf(ChildSessionSnapshot session, bool preparing)
+    {
+        if (session.InputUnlocked) {
+            return DesktopStatus.Interactive;
+        }
+        return session.State switch {
+            ChildSessionState.Existing or ChildSessionState.Connecting => DesktopStatus.Connecting,
+            ChildSessionState.ConnectedHidden or ChildSessionState.ConnectedVisible when preparing
+                => DesktopStatus.Connecting,
+            ChildSessionState.ConnectedHidden => DesktopStatus.Background,
+            ChildSessionState.ConnectedVisible => DesktopStatus.Viewing,
+            ChildSessionState.Disconnecting => DesktopStatus.Ending,
+            ChildSessionState.Faulted => DesktopStatus.Disconnected,
+            _ => DesktopStatus.NotRunning
+        };
     }
 
     // The Stop operation rechecks this when it runs, because the Run may move on while the operation waits.
@@ -142,6 +163,11 @@ internal enum DesktopAction
     Show, Hide
 }
 
+internal enum DesktopStatus
+{
+    NotRunning, Connecting, Background, Viewing, Interactive, Ending, Disconnected
+}
+
 // The single primary action the runtime control card offers; the private constructor closes the set.
 internal abstract record RuntimeAction
 {
@@ -162,7 +188,8 @@ internal abstract record RuntimeAction
     internal sealed record Recover(bool Enabled, RecoveryReason Reason) : RuntimeAction;
 }
 
-internal sealed record DesktopToggle(DesktopAction Action, bool Enabled);
+// Action is what a click does and Status what the toggle reports; they differ while preparation shows the viewer.
+internal sealed record DesktopToggle(DesktopAction Action, bool Enabled, DesktopStatus Status);
 
 // ConfigurationLock is the lock badge reason; it is null while editing is allowed or no project is loaded.
 internal sealed record RuntimeControlState(

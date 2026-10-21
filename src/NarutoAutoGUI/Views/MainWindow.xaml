@@ -624,48 +624,66 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
-        <!-- Header icon toggle sized like Preview.IconButton. Tag="True" tints it while its window is shown;
-             disabled leaves only a muted glyph. -->
-        <Style x:Key="Console.ToggleIconButton" TargetType="Button">
-            <Setter Property="Width" Value="32" />
-            <Setter Property="Height" Value="32" />
+        <!-- Header desktop toggle: glyph, status dot and the word 分身. Only an open viewer fills it: Tag="On" while
+             watching, Tag="Warn" while input reaches the Child Session. Disabled mutes only an unfilled toggle: a
+             viewer opened during preparation stays visibly open while the toggle waits. -->
+        <Style x:Key="Console.SessionToggle" TargetType="Button">
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Margin" Value="0,0,4,0" />
+            <Setter Property="Padding" Value="8,0,10,0" />
             <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+            <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Body}" />
             <Setter Property="FocusVisualStyle" Value="{StaticResource Preview.IconFocus}" />
-            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="{StaticResource Radius.Control}"
-                                SnapsToDevicePixels="True">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" CornerRadius="{StaticResource Radius.Control}"
+                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter VerticalAlignment="Center" />
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{StaticResource Brush.Surface.Disabled}" />
+                    <Setter Property="Background" Value="{StaticResource Brush.Surface.Subdued}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Strong}" />
                 </Trigger>
-                <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="{StaticResource Brush.Border}" />
-                </Trigger>
-                <Trigger Property="Tag" Value="True">
+                <Trigger Property="Tag" Value="On">
                     <Setter Property="Background" Value="{StaticResource Brush.Primary.Surface}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource Brush.Primary.Border}" />
                     <Setter Property="Foreground" Value="{StaticResource Brush.Primary}" />
                 </Trigger>
                 <MultiTrigger>
                     <MultiTrigger.Conditions>
-                        <Condition Property="Tag" Value="True" />
+                        <Condition Property="Tag" Value="On" />
                         <Condition Property="IsMouseOver" Value="True" />
                     </MultiTrigger.Conditions>
                     <Setter Property="Background" Value="{StaticResource Brush.Primary.SurfaceHover}" />
                 </MultiTrigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Background" Value="Transparent" />
-                    <Setter Property="Foreground" Value="{StaticResource Brush.Text.Disabled}" />
+                <Trigger Property="Tag" Value="Warn">
+                    <Setter Property="Background" Value="{StaticResource Brush.Warning.Surface}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource Brush.Warning.SurfaceHover}" />
+                    <Setter Property="Foreground" Value="{StaticResource Brush.Warning.Foreground}" />
                 </Trigger>
+                <MultiTrigger>
+                    <MultiTrigger.Conditions>
+                        <Condition Property="Tag" Value="Warn" />
+                        <Condition Property="IsMouseOver" Value="True" />
+                    </MultiTrigger.Conditions>
+                    <Setter Property="Background" Value="{StaticResource Brush.Warning.SurfaceHover}" />
+                </MultiTrigger>
+                <MultiTrigger>
+                    <MultiTrigger.Conditions>
+                        <Condition Property="IsEnabled" Value="False" />
+                        <Condition Property="Tag" Value="{x:Null}" />
+                    </MultiTrigger.Conditions>
+                    <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Subtle}" />
+                    <Setter Property="Foreground" Value="{StaticResource Brush.Text.Disabled}" />
+                </MultiTrigger>
             </Style.Triggers>
         </Style>
         <DataTemplate x:Key="Update.ButtonLabel">
@@ -1063,10 +1081,25 @@
                                             </StackPanel>
                                         </Border>
                                         <Button x:Name="DesktopViewButton" Grid.Column="3" IsEnabled="False"
-                                                Style="{StaticResource Console.ToggleIconButton}"
-                                                AutomationProperties.Name="观看分身"
+                                                Style="{StaticResource Console.SessionToggle}"
+                                                AutomationProperties.Name="桌面分身：未启动"
                                                 Click="DesktopViewButton_Click">
-                                            <ui:SymbolIcon Symbol="Desktop20" FontSize="18" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <!-- The 10 DIP dot's ring takes the button background, so the
+                                                     visible 7 DIP dot sits clear of the glyph. -->
+                                                <Grid Width="16" Height="16">
+                                                    <ui:SymbolIcon x:Name="DesktopViewIcon" Symbol="Desktop20"
+                                                                   FontSize="16" />
+                                                    <Ellipse x:Name="DesktopViewDot" Width="10" Height="10"
+                                                             Margin="0,0,-3.5,-2.5" HorizontalAlignment="Right"
+                                                             VerticalAlignment="Bottom" StrokeThickness="1.5"
+                                                             Visibility="Collapsed"
+                                                             Stroke="{Binding Background, RelativeSource={
+                                                                 RelativeSource AncestorType=Button}}" />
+                                                </Grid>
+                                                <TextBlock Text="分身" Margin="6,0,0,0" FontSize="12"
+                                                           Style="{StaticResource Console.ButtonText}" />
+                                            </StackPanel>
                                         </Button>
                                         <Button x:Name="RuntimeMoreButton" Grid.Column="4"
                                                 Style="{StaticResource Preview.IconButton}"

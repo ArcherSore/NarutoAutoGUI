@@ -26,6 +26,8 @@ internal static partial class SelfTestRunner
             var resizeText = Element<WpfTextBlock>("SizeText");
             var input = Element<WpfButton>("InputButton");
             var inputText = Element<WpfTextBlock>("InputText");
+            var interactiveChanges = 0;
+            window.InteractiveChanged += (_, _) => interactiveChanges++;
             if (!status.Text.StartsWith("正在连接", StringComparison.Ordinal)) {
                 throw new InvalidOperationException("认证阶段必须提示完成登录，不能声称已锁定输入。");
             }
@@ -44,7 +46,7 @@ internal static partial class SelfTestRunner
             {
                 PumpOnboarding(50);
                 if (IsWindowEnabled(host) || window.Host.TabStop || window.Host.ContainsFocus
-                    || inputText.Text != "只读" || input.Tag is not null) {
+                    || inputText.Text != "只读" || input.Tag is not null || window.Interactive) {
                     throw new InvalidOperationException($"{stage} 必须在原生 RDP HWND 阻止输入，焦点不得留在 RDP 窗口。");
                 }
             }
@@ -52,7 +54,11 @@ internal static partial class SelfTestRunner
             // Unlocking also returns focus to the RDP child, so every later lock must really move it out.
             void Unlock(string stage)
             {
+                var changes = interactiveChanges;
                 Click(input);
+                if (!window.Interactive || interactiveChanges != changes + 1) {
+                    throw new InvalidOperationException($"{stage} 解锁必须通知主窗口一次，供分身按钮显示“可操作”。");
+                }
                 SetFocus(inputWindow.Handle);
                 if (!IsWindowEnabled(host) || !window.Host.TabStop || inputText.Text != "可操作"
                     || !window.Host.ContainsFocus) {

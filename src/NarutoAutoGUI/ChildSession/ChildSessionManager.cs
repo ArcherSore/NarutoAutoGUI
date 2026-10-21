@@ -86,6 +86,7 @@ internal sealed class ChildSessionManager : IDisposable
                 var service = new ChildSessionService(preview);
                 preview.Host.ConnectionFailed += OnConnectionFailed;
                 preview.Closing += OnPreviewClosing;
+                preview.InteractiveChanged += OnPreviewInteractiveChanged;
                 _previewWindow = preview;
                 _service = service;
 
@@ -255,6 +256,7 @@ internal sealed class ChildSessionManager : IDisposable
 
         preview.Host.ConnectionFailed -= OnConnectionFailed;
         preview.Closing -= OnPreviewClosing;
+        preview.InteractiveChanged -= OnPreviewInteractiveChanged;
         if (disconnect) {
             try {
                 service?.Disconnect();
@@ -340,9 +342,14 @@ internal sealed class ChildSessionManager : IDisposable
 
     private void UpdateState(ChildSessionState state, uint? sessionId, int connectedState, string detail)
     {
-        Snapshot = new ChildSessionSnapshot(state, sessionId, connectedState, detail);
+        var inputUnlocked = state == ChildSessionState.ConnectedVisible && _previewWindow?.Interactive == true;
+        Snapshot = new ChildSessionSnapshot(state, sessionId, connectedState, detail, inputUnlocked);
         StateChanged?.Invoke(this, Snapshot);
     }
+
+    // The window raises this only on a real change; republishing the state picks up the new input lock.
+    private void OnPreviewInteractiveChanged(object? sender, EventArgs e) =>
+        UpdateState(Snapshot.State, Snapshot.ChildSessionId, Snapshot.RdpConnectedState, Snapshot.Detail);
 
     private void ThrowIfDisposed()
     {

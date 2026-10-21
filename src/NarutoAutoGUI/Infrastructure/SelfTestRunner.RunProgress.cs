@@ -113,7 +113,7 @@ internal static partial class SelfTestRunner
             Require(logTop - controlBottom < 70 && console.ActualHeight - (logTop + log.ActualHeight) < 12,
                 "运行动态应填满运行控制以下的全部高度。");
 
-            var desktop = new DesktopToggle(DesktopAction.Show, true);
+            var desktop = new DesktopToggle(DesktopAction.Show, true, DesktopStatus.Background);
             // The header toggle owns show/hide; the menu only adds the large window it cannot open directly.
             Require(window.FindName("DesktopMenuItem") is null, "更多操作菜单不应重复显示/隐藏分身。");
             foreach (var (state, endReason) in new (RuntimeControlState, string)[] {
@@ -220,7 +220,7 @@ internal static partial class SelfTestRunner
             });
             Require(CardStatus() == "成功" && !timer.IsEnabled, "Run 结束后卡片应显示结果，计时停止。");
             window.ApplyRuntimeControls(new(new RuntimeAction.Prepare(true), true, null,
-                new DesktopToggle(DesktopAction.Show, false), true));
+                new DesktopToggle(DesktopAction.Show, false, DesktopStatus.NotRunning), true));
             Require(Named<UIElement>(window, "RunProgressPanel").IsVisible
                 && Named<TextBlock>(window, "RunProgressCaption").Text == "上次运行：1 成功",
                 "匹配当前配置的 Last Run 不能因运行环境需要重新准备而隐藏。");

@@ -22,6 +22,7 @@ using NarutoAutoGUI.Worker;
 using WpfBrush = System.Windows.Media.Brush;
 using WpfBrushes = System.Windows.Media.Brushes;
 using WpfButton = System.Windows.Controls.Button;
+using WpfSymbol = Wpf.Ui.Controls.SymbolRegular;
 using WpfComboBox = System.Windows.Controls.ComboBox;
 using WpfCursors = System.Windows.Input.Cursors;
 using WpfDataObject = System.Windows.DataObject;
@@ -2007,12 +2008,7 @@ public partial class MainWindow : FluentWindow
 
     internal void ApplyRuntimeControls(RuntimeControlState state)
     {
-        var desktopText = state.Desktop.Action == DesktopAction.Hide ? "隐藏分身" : "观看分身";
-        DesktopViewButton.Tag = state.Desktop.Action == DesktopAction.Hide ? "True" : "False";
-        DesktopViewButton.IsEnabled = state.Desktop.Enabled;
-        DesktopViewButton.ToolTip = DesktopToggleText(state.Desktop);
-        AutomationProperties.SetName(DesktopViewButton, desktopText);
-        LargeDesktopMenuItem.IsEnabled = state.Desktop.Enabled;
+        ApplyDesktopToggle(state.Desktop);
 
         var action = state.Action;
         PrepareEnvironmentButton.Visibility = Visible(action is RuntimeAction.Prepare);
@@ -2091,10 +2087,32 @@ public partial class MainWindow : FluentWindow
         _ => "上次结束桌面分身未确认"
     };
 
-    // The desktop chip's tooltip says what the click does, or why it is unavailable.
-    private static string DesktopToggleText(DesktopToggle desktop) => !desktop.Enabled ? "运行环境就绪后可显示桌面分身"
-        : desktop.Action == DesktopAction.Hide ? "隐藏桌面分身窗口，任务继续在后台运行"
-        : "在置顶只读小窗中观看桌面分身";
+    // The glyph and dot report the Child Session and the fill marks an open viewer; it deliberately has no tooltip.
+    // The dot takes the status pill's tone colours, so both agree on what amber, green, blue and red mean.
+    private void ApplyDesktopToggle(DesktopToggle desktop)
+    {
+        (WpfSymbol Symbol, bool Filled, StatusTone? Dot, string? Tag, string Text) look = desktop.Status switch {
+            DesktopStatus.Connecting => (WpfSymbol.Desktop20, false, StatusTone.Busy, null, "连接中"),
+            DesktopStatus.Ending => (WpfSymbol.Desktop20, false, StatusTone.Busy, null, "结束中"),
+            DesktopStatus.Background => (WpfSymbol.Desktop20, false, StatusTone.Ok, null, "后台运行"),
+            DesktopStatus.Viewing => (WpfSymbol.Desktop20, true, StatusTone.Run, "On", "观看中"),
+            // The dot would cover the cursor; the amber fill already marks unlocked input.
+            DesktopStatus.Interactive => (WpfSymbol.DesktopCursor20, true, null, "Warn", "可操作"),
+            // WPF-UI's font has no DesktopOff20 glyph, so the red dot alone marks the dropped connection.
+            DesktopStatus.Disconnected => (WpfSymbol.Desktop20, false, StatusTone.Bad, null, "已断开"),
+            _ => (WpfSymbol.Desktop20, false, null, null, "未启动")
+        };
+        DesktopViewIcon.Symbol = look.Symbol;
+        DesktopViewIcon.Filled = look.Filled;
+        DesktopViewDot.Visibility = look.Dot is null ? Visibility.Collapsed : Visibility.Visible;
+        if (look.Dot is { } tone) {
+            DesktopViewDot.Fill = (WpfBrush)FindResource(ToneBrushes(tone).Foreground);
+        }
+        DesktopViewButton.Tag = look.Tag;
+        DesktopViewButton.IsEnabled = desktop.Enabled;
+        AutomationProperties.SetName(DesktopViewButton, $"桌面分身：{look.Text}");
+        LargeDesktopMenuItem.IsEnabled = desktop.Enabled;
+    }
 
     private void ApplyMoreMenu(RuntimeControlState state)
     {
@@ -2107,6 +2125,14 @@ public partial class MainWindow : FluentWindow
         ? RunProgress.Derive(_workerSnapshot.WorkerSnapshot, project.SelectedTaskNames) : null;
 
     private enum StatusTone { Idle, Busy, Ok, Run, Bad }
+
+    private static (string Surface, string Foreground) ToneBrushes(StatusTone tone) => tone switch {
+        StatusTone.Busy => ("Brush.Warning.Surface", "Brush.Warning.Foreground"),
+        StatusTone.Ok => ("Brush.TasksAccent.Surface", "Brush.Success"),
+        StatusTone.Run => ("Brush.Primary.Surface", "Brush.Primary"),
+        StatusTone.Bad => ("Brush.Error.Surface", "Brush.Error"),
+        _ => ("Brush.Surface.Disabled", "Brush.Text.Secondary")
+    };
 
     // The pill, title and detail restate the action RuntimeControls chose; progress only adds the current item.
     private void ApplyRuntimeStatus(RuntimeControlState state, RunProgressView? progress)
@@ -2140,13 +2166,7 @@ public partial class MainWindow : FluentWindow
                 RecoveryText(reason), false),
             _ => (StatusTone.Idle, string.Empty, string.Empty, string.Empty, false)
         };
-        var (surface, foreground) = tone switch {
-            StatusTone.Busy => ("Brush.Warning.Surface", "Brush.Warning.Foreground"),
-            StatusTone.Ok => ("Brush.TasksAccent.Surface", "Brush.Success"),
-            StatusTone.Run => ("Brush.Primary.Surface", "Brush.Primary"),
-            StatusTone.Bad => ("Brush.Error.Surface", "Brush.Error"),
-            _ => ("Brush.Surface.Disabled", "Brush.Text.Secondary")
-        };
+        var (surface, foreground) = ToneBrushes(tone);
         RuntimeStatusPill.Background = (WpfBrush)FindResource(surface);
         RuntimeStatusText.Foreground = (WpfBrush)FindResource(foreground);
         RuntimeStatusText.Text = pill;

@@ -22,6 +22,11 @@ internal sealed partial class RdpPreviewWindow
 
     internal RdpActiveXHost Host { get; } = new();
 
+    // True while mouse and keyboard reach the Child Session; the main window shows it on its desktop toggle.
+    internal bool Interactive => _interactive;
+
+    internal event EventHandler? InteractiveChanged;
+
     internal RdpPreviewWindow()
     {
         InitializeComponent();
@@ -128,6 +133,7 @@ internal sealed partial class RdpPreviewWindow
 
     private void SetInteractive(bool interactive)
     {
+        var wasInteractive = _interactive;
         _interactive = interactive && _large && IsVisible;
         RefreshToolbar();
         if (!_interactive) {
@@ -135,6 +141,9 @@ internal sealed partial class RdpPreviewWindow
             ViewerRoot.Focus();
         }
         Host.SetInputBlocked(!_interactive);
+        if (_interactive != wasInteractive) {
+            InteractiveChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private void RefreshToolbar()

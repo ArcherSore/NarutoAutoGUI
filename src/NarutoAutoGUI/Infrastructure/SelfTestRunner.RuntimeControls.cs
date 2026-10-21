@@ -158,8 +158,6 @@ internal static partial class SelfTestRunner
                     && icon.Symbol == (status == DesktopStatus.Interactive
                         ? Wpf.Ui.Controls.SymbolRegular.DesktopCursor20 : Wpf.Ui.Controls.SymbolRegular.Desktop20),
                     $"{desktop} 的分身按钮显示不符。");
-                var large = Named<System.Windows.Controls.MenuItem>(window, "LargeDesktopMenuItem");
-                Require(large.IsEnabled == desktop.Enabled, $"{desktop} 的大窗入口不符。");
             }
         });
         Console.WriteLine("RUNTIME CONTROL MAPPING PASS: header actions, configuration lock and desktop toggle.");

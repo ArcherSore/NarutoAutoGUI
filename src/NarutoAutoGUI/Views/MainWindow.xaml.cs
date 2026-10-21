@@ -1857,17 +1857,6 @@ public partial class MainWindow : FluentWindow
 
     private void MainWindow_StateChanged(object? sender, EventArgs e) => ReevaluateOnboarding();
 
-    // Shares the desktop toggle's operation, so a dropped RDP connection is recovered the same way.
-    private async void LargeDesktopMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        if (_onboardingActive || !CurrentControls.Desktop.Enabled) {
-            return;
-        }
-        await RunOperationAsync(
-            PendingOperation.ShowingDesktop,
-            async () => await _sessionManager.EnsureConnectedAsync(showPreview: true, large: true));
-    }
-
     private bool IsGlobalModalOpen => UpdateOverlay.Visibility == Visibility.Visible;
 
     private void EnsureModalWindowHook()
@@ -2111,7 +2100,6 @@ public partial class MainWindow : FluentWindow
         DesktopViewButton.Tag = look.Tag;
         DesktopViewButton.IsEnabled = desktop.Enabled;
         AutomationProperties.SetName(DesktopViewButton, $"桌面分身：{look.Text}");
-        LargeDesktopMenuItem.IsEnabled = desktop.Enabled;
     }
 
     private void ApplyMoreMenu(RuntimeControlState state)

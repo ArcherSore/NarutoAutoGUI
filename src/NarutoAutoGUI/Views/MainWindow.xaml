@@ -1108,12 +1108,6 @@
                                             <ui:SymbolIcon Symbol="MoreHorizontal20" FontSize="18" />
                                             <Button.ContextMenu>
                                                 <ContextMenu x:Name="RuntimeMoreMenu">
-                                                    <MenuItem x:Name="LargeDesktopMenuItem" Header="大窗查看分身"
-                                                              Click="LargeDesktopMenuItem_Click">
-                                                        <MenuItem.Icon>
-                                                            <ui:SymbolIcon Symbol="ArrowMaximize16" />
-                                                        </MenuItem.Icon>
-                                                    </MenuItem>
                                                     <MenuItem x:Name="OpenLogsMenuItem" Header="打开日志目录"
                                                               Click="OpenLogsMenuItem_Click">
                                                         <MenuItem.Icon>

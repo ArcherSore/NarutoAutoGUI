@@ -129,9 +129,7 @@ internal static partial class SelfTestRunner
                 window.ApplyRuntimeControls(state);
                 var end = Named<System.Windows.Controls.MenuItem>(window, "EndEnvironmentMenuItem");
                 Require(end.IsEnabled == (endReason.Length == 0) && end.InputGestureText == endReason
-                    && Named<System.Windows.Controls.MenuItem>(window, "OpenLogsMenuItem").IsEnabled
-                    && Named<System.Windows.Controls.MenuItem>(window, "LargeDesktopMenuItem").IsEnabled
-                        == state.Desktop.Enabled,
+                    && Named<System.Windows.Controls.MenuItem>(window, "OpenLogsMenuItem").IsEnabled,
                     $"{state.Action} 时更多操作菜单的可用性或原因不符。");
             }
 

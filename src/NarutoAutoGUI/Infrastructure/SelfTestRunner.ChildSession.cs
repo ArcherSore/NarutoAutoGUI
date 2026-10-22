@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Reflection;
 using NarutoAutoGUI.ChildSession;
 
 namespace NarutoAutoGUI.Infrastructure;
@@ -100,6 +101,76 @@ internal static partial class SelfTestRunner
                 throw new InvalidOperationException(failure);
             }
         }
+    }
+
+    // Drives the RDP event handlers as the ActiveX would, without creating the control. With a saved credential,
+    // logon failures 0/1/2 leave Windows' logon screen to the user and the attempt ends through the usual events.
+    private static void VerifyRdpLogonEvents()
+    {
+        const int badPassword = 0, expiredPassword = 1, otherFailure = 2, logonFailure = unchecked((int)0xC000006D);
+        using (var probe = new RdpEventProbe(savedCredential: true)) {
+            probe.Raise("OnLogonError", badPassword);
+            Require(probe.Failures.Count == 0 && probe.Host.SavedCredentialRejected
+                && probe.Host.LastConnectionDiagnostic?.ErrorCode == badPassword,
+                "保存的凭据被拒绝后必须保留 Windows 登录界面，不能立即报告失败或断开。");
+            probe.Raise("OnLoginComplete");
+            Require(probe.Logins == 1 && probe.Failures.Count == 0 && probe.Host.SavedCredentialRejected,
+                "手动完成登录后应报告成功，并保留凭据曾被拒绝的记录。");
+        }
+        using (var probe = new RdpEventProbe(savedCredential: true)) {
+            probe.Raise("OnLogonError", expiredPassword);
+            probe.Raise("OnLogonError", otherFailure);
+            Require(probe.Failures.Count == 0, "密码过期与其他登录失败在 Windows 显示登录界面时不能结束连接。");
+            probe.Raise("OnDisconnected", 2308);
+            probe.Raise("OnFatalError", 7);
+            Require(probe.Failures.SequenceEqual([2308]) && probe.Logins == 0, "随后的断开必须且只能报告一次失败。");
+        }
+        foreach (var terminal in new[] { logonFailure, -1, -3 }) {
+            using var probe = new RdpEventProbe(savedCredential: true);
+            probe.Raise("OnLogonError", terminal);
+            probe.Raise("OnDisconnected", 2308);
+            Require(probe.Failures.SequenceEqual([terminal]), $"登录错误 {terminal} 仍必须立即报告失败。");
+        }
+        using (var probe = new RdpEventProbe(savedCredential: true)) {
+            probe.Raise("OnFatalError", 7);
+            Require(probe.Failures.SequenceEqual([7]), "致命错误仍必须立即报告失败。");
+        }
+        foreach (var code in new[] { badPassword, expiredPassword, otherFailure }) {
+            using var probe = new RdpEventProbe(savedCredential: false);
+            probe.Raise("OnLogonError", code);
+            Require(probe.Failures.SequenceEqual([code]) && !probe.Host.SavedCredentialRejected,
+                $"未保存凭据时登录错误 {code} 的处理必须保持不变。");
+        }
+        using (var probe = new RdpEventProbe(savedCredential: true)) {
+            probe.Raise("OnLogonError", badPassword);
+            probe.Raise("BeginConnectionAttempt", false);
+            Require(!probe.Host.SavedCredentialRejected && probe.Host.LastConnectionDiagnostic is null,
+                "新的连接尝试必须清除上一次的凭据拒绝记录。");
+            probe.Raise("OnLogonError", badPassword);
+            Require(probe.Failures.SequenceEqual([badPassword]), "未提交保存的凭据的新尝试必须按原规则处理。");
+        }
+        Console.WriteLine(
+            "RDP LOGON EVENT SELF-TEST PASS: saved-credential fallback, terminal errors, unchanged default.");
+    }
+
+    // A connection attempt on a host whose ActiveX is never created; handlers are invoked as the event sink does.
+    private sealed class RdpEventProbe : IDisposable
+    {
+        internal RdpEventProbe(bool savedCredential)
+        {
+            Host.ConnectionFailed += (_, e) => Failures.Add(e.ErrorCode);
+            Host.LoginCompleted += (_, _) => Logins++;
+            Raise("BeginConnectionAttempt", savedCredential);
+        }
+
+        internal RdpActiveXHost Host { get; } = new();
+        internal List<int> Failures { get; } = [];
+        internal int Logins { get; private set; }
+
+        internal void Raise(string handler, params object[] args) => typeof(RdpActiveXHost)
+            .GetMethod(handler, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Host, args);
+
+        public void Dispose() => Host.Dispose();
     }
 
     // ReportedId is what WTSGetChildSessionId returns and Sessions what WTSEnumerateSessions lists.

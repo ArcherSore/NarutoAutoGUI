@@ -43,6 +43,7 @@ this repository. Their licenses are available through the NuGet ecosystem:
 |---------|---------|---------|
 | `Maa.Framework` | 5.10.0 | NarutoAutoWorker |
 | `Maa.Framework.Runtimes` | 5.12.3 | NarutoAutoWorker |
+| `Meziantou.Framework.Win32.CredentialManager` | 3.0.4 | NarutoAutoGUI |
 | `System.Management` | 8.0.0 | NarutoAutoGUI |
 | `WPF-UI` | 4.3.0 | NarutoAutoGUI |
 | `nulastudio.NetBeauty` | 2.1.5 | NarutoAutoGUI |

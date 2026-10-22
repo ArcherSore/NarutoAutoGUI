@@ -20,7 +20,7 @@ internal static partial class SelfTestRunner
         ApplicationSettings Create()
         {
             return new ApplicationSettings(directory, logger, () => Task.CompletedTask,
-                () => Task.CompletedTask, () => { }, () => Task.CompletedTask);
+                () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask);
         }
         var settings = Create();
         if (!settings.CloseToTray.Value || File.Exists(path)) {
@@ -73,13 +73,13 @@ internal static partial class SelfTestRunner
         var calls = new List<string>();
         var settings = new ApplicationSettings(directory, logger,
             () => Called("update.check"), () => Called("diagnostics.export"), () => calls.Add("onboarding.replay"),
-            () => Called("support.openAfdian"));
+            () => Called("support.openAfdian"), () => Called("childSession.credentials"));
         var page = settings.Page;
         var items = page.Sections.SelectMany(section => section.Items).ToArray();
         if (!page.Sections.Select(section => section.Definition.Id)
-                .SequenceEqual(["updates", "support", "framework", "sponsorship"])
+                .SequenceEqual(["updates", "child-session", "support", "framework", "sponsorship"])
             || items.Count(item => item.Definition.Type == SettingsItemKind.Toggle) != 5
-            || items.Count(item => item.Definition.Type == SettingsItemKind.Action) != 4
+            || items.Count(item => item.Definition.Type == SettingsItemKind.Action) != 5
             || items.Count(item => item.Definition.Type == SettingsItemKind.Info) != 1
             || items.Single(item => item.Definition.SettingKey == "update.checkOnStartup").Toggle
                 != settings.CheckOnStartup
@@ -90,12 +90,13 @@ internal static partial class SelfTestRunner
         foreach (var item in items.Where(item => item.Action is not null)) {
             item.Action!.ExecuteAsync().GetAwaiter().GetResult();
         }
-        if (!calls.SequenceEqual(["update.check", "diagnostics.export", "onboarding.replay", "support.openAfdian"])) {
+        if (!calls.SequenceEqual(["update.check", "childSession.credentials", "diagnostics.export",
+                "onboarding.replay", "support.openAfdian"])) {
             throw new InvalidOperationException("Settings action 必须只调用对应的已注册业务入口。");
         }
         settings.CheckUpdate.IsEnabled = false;
         settings.CheckUpdate.ExecuteAsync().GetAwaiter().GetResult();
-        if (calls.Count != 4 || settings.CheckUpdate.CanExecute(null)) {
+        if (calls.Count != 5 || settings.CheckUpdate.CanExecute(null)) {
             throw new InvalidOperationException("禁用的 Settings action 不能执行。");
         }
 
@@ -106,7 +107,7 @@ internal static partial class SelfTestRunner
         }
         settings.CheckOnStartup.Value = false;
         var reopened = new ApplicationSettings(directory, logger, () => Task.CompletedTask,
-            () => Task.CompletedTask, () => { }, () => Task.CompletedTask);
+            () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask);
         reopened.LoadUpdatePreference();
         if (File.ReadAllText(preference) != "false" || reopened.CheckOnStartup.Value) {
             throw new InvalidOperationException("Toggle 必须以原有格式持久化，并在重新加载后保留选择。");

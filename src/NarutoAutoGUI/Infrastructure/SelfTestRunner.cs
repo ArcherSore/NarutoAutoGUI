@@ -36,6 +36,7 @@ internal static partial class SelfTestRunner
             VerifyDiagnosticPackage(logger, testDirectory);
             VerifyDebugImageCleanup(logger, testDirectory);
             VerifyDeclarativeSettings(logger, testDirectory);
+            VerifyChildSessionCredentials(logger, testDirectory);
             VerifyDiagnosticSettings(logger, testDirectory);
             VerifyNavigationRail(logger, testDirectory);
             VerifyHelpPage(logger, testDirectory);
@@ -70,6 +71,7 @@ internal static partial class SelfTestRunner
             VerifyLauncherHandoff();
             VerifyRdpClientClsid();
             VerifyChildSessionPresence(logger);
+            VerifyRdpLogonEvents();
             VerifyTaskDescriptionMarkup();
             VerifyParameterRowLayout();
             VerifyUnsupportedProjectConstraints(testDirectory, projectDirectory);

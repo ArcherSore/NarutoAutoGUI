@@ -11,7 +11,7 @@ internal static partial class SelfTestRunner
         ApplicationSettings Create()
         {
             return new ApplicationSettings(directory, logger, () => Task.CompletedTask,
-                () => Task.CompletedTask, () => { }, () => Task.CompletedTask);
+                () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask);
         }
         var settings = Create();
         if (settings.CreateFrameworkOptions() != new MaaFrameworkOptions() || Directory.Exists(directory)) {

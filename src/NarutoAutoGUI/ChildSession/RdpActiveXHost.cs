@@ -25,6 +25,7 @@ internal sealed class RdpActiveXHost : AxHost
     private bool _connectionFailureReported;
     private ChildSessionConnectionFailedEventArgs? _lastConnectionDiagnostic;
     private bool _disconnectRequested;
+    private bool _savedCredentialSubmitted;
     private bool _smartSizingEnabled = true;
     private bool _inputBlocked = true;
     private bool _loggedIn;
@@ -49,6 +50,10 @@ internal sealed class RdpActiveXHost : AxHost
 
     internal ChildSessionConnectionFailedEventArgs? LastConnectionDiagnostic => _lastConnectionDiagnostic;
 
+    // Windows reported a logon failure for the saved credential of the current attempt and left its logon screen
+    // to the user; a later OnLoginComplete then means the user signed in by hand.
+    internal bool SavedCredentialRejected { get; private set; }
+
     internal RdpActiveXHost()
         : base(RdpClientClsid)
     {
@@ -67,7 +72,7 @@ internal sealed class RdpActiveXHost : AxHost
         }
     }
 
-    internal void ConnectToChildSession(DrawingSize desktopSize, string? userName = null, string? password = null)
+    internal void ConnectToChildSession(DrawingSize desktopSize, ChildSessionCredential? credential)
     {
         if (ConnectedState != 0) {
             return;
@@ -96,18 +101,6 @@ internal sealed class RdpActiveXHost : AxHost
         RunComStep("启用远程 Windows 键", () => SetComProperty(advancedSettings, "EnableWindowsKey", 1));
         RunComStep("设置显示缩放 (SmartSizing)", () => SetComProperty(advancedSettings, "SmartSizing", _smartSizingEnabled));
 
-        // Optional programmatic credential: when the parent session is logged on with a PIN
-        // (Windows Hello), child-session auto-logon cannot reuse the password and prompts for it.
-        // Supplying the account password here lets the ActiveX log on without a prompt.
-        // The password is NOT stored in code; it is passed at runtime via --password.
-        if (!string.IsNullOrEmpty(password)) {
-            if (!string.IsNullOrEmpty(userName)) {
-                RunComStep("设置 UserName", () => SetComProperty(client, "UserName", userName));
-            }
-            RunComStep("设置 ClearTextPassword", () =>
-                ((IMsRdpClientNonScriptable)client).put_ClearTextPassword(password));
-        }
-
         object connectToChildSession = true;
         RunComStep("设置 ConnectToChildSession", () =>
         {
@@ -118,16 +111,35 @@ internal sealed class RdpActiveXHost : AxHost
             extendedSettings.set_Property("ConnectToChildSession", ref connectToChildSession);
         });
 
-        _connectionAttemptInProgress = true;
-        _connectionFailureReported = false;
-        _lastConnectionDiagnostic = null;
-        _disconnectRequested = false;
+        // Optional saved credential: when the parent session signed in with a PIN (Windows Hello), the Child
+        // Session cannot reuse that sign-in and Windows prompts for the account password. Like ParaDesk
+        // (sinpoce/ParaDesk a0ae7f6) it is applied after the Child Session and scale settings. Submitting it is
+        // not a logon; only OnLoginComplete confirms one.
+        if (credential is not null) {
+            var (domain, userName) = credential.RdpIdentity;
+            RunComStep("设置 Domain", () => SetComProperty(client, "Domain", domain));
+            RunComStep("设置 UserName", () => SetComProperty(client, "UserName", userName));
+            RunComStep("设置 ClearTextPassword", () =>
+                ((IMsRdpClientNonScriptable)client).put_ClearTextPassword(credential.Password));
+        }
+
+        BeginConnectionAttempt(savedCredentialSubmitted: credential is not null);
         try {
             RunComStep("调用 RDP Connect()", () => InvokeComMethod(client, "Connect"));
         } catch {
             _connectionAttemptInProgress = false;
             throw;
         }
+    }
+
+    private void BeginConnectionAttempt(bool savedCredentialSubmitted)
+    {
+        _connectionAttemptInProgress = true;
+        _connectionFailureReported = false;
+        _lastConnectionDiagnostic = null;
+        _disconnectRequested = false;
+        _savedCredentialSubmitted = savedCredentialSubmitted;
+        SavedCredentialRejected = false;
     }
 
     internal void DisconnectSession()
@@ -226,8 +238,9 @@ internal sealed class RdpActiveXHost : AxHost
 
         var message =
             $"RDP 登录阶段：{GetLogonErrorDescription(errorCode)}\n\n错误代码：{FormatErrorCode(errorCode)}";
-        if (IsNonTerminalLogonEvent(errorCode)) {
+        if (IsNonTerminalLogonEvent(errorCode, _savedCredentialSubmitted)) {
             _lastConnectionDiagnostic = new ChildSessionConnectionFailedEventArgs(message, errorCode);
+            SavedCredentialRejected |= _savedCredentialSubmitted && errorCode is 0 or 1 or 2;
             return;
         }
 
@@ -235,8 +248,12 @@ internal sealed class RdpActiveXHost : AxHost
         ReportConnectionFailure(message.Replace("RDP 登录阶段：", "RDP 登录失败：", StringComparison.Ordinal), errorCode);
     }
 
+    // Like ConnectedState, the two lookups below never create the control just to describe a disconnect.
     private int TryGetExtendedDisconnectReason()
     {
+        if (!IsHandleCreated) {
+            return 0;
+        }
         try {
             return Convert.ToInt32(
                 GetComProperty(GetRequiredOcx(), "ExtendedDisconnectReason"), CultureInfo.InvariantCulture);
@@ -247,6 +264,9 @@ internal sealed class RdpActiveXHost : AxHost
 
     private string? TryGetErrorDescription(int disconnectReason, int extendedDisconnectReason)
     {
+        if (!IsHandleCreated) {
+            return null;
+        }
         try {
             return Convert.ToString(
                 InvokeComMethod(
@@ -303,8 +323,13 @@ internal sealed class RdpActiveXHost : AxHost
         _ => "登录阶段发生未识别的错误或事件。"
     };
 
-    private static bool IsNonTerminalLogonEvent(int errorCode)
-        => errorCode is -5 or -4 or -2 or 3;
+    // -5/-4/-2/3: Winlogon is showing a dialog or continuing the logon. With a saved credential, 0/1/2 are interim
+    // too: Microsoft documents that a ClearTextPassword that fails to authenticate brings up the Windows Logon dialog
+    // at the server, that an expired password (1) must be updated to continue logging on, and that after 2 the
+    // client displays a logon screen. Such an attempt still ends through OnLoginComplete, OnDisconnected,
+    // OnFatalError or the connection timeout. Without a saved credential these codes stay terminal as before.
+    private static bool IsNonTerminalLogonEvent(int errorCode, bool savedCredentialSubmitted)
+        => errorCode is -5 or -4 or -2 or 3 || savedCredentialSubmitted && errorCode is 0 or 1 or 2;
 
     private object GetRequiredOcx()
     {
@@ -409,7 +434,7 @@ internal sealed class RdpActiveXHost : AxHost
     }
 
     // Trimmed to the single member we need (put_ClearTextPassword, vtable slot 3). Used only when
-    // a password is supplied via --password, to log on without a credential prompt.
+    // the user saved a Child Session credential, to log on without a credential prompt.
     [ComImport]
     [Guid("2F079C4C-87B2-4AFD-97AB-20CDB43038AE")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

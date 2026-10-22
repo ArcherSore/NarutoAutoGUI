@@ -56,7 +56,7 @@
           "id": "replay-onboarding",
           "type": "action",
           "title": "新手指引",
-          "description": "快速了解任务配置、运行控制和实时截图。",
+          "description": "快速了解任务配置、运行控制和桌面分身观看。",
           "buttonText": "查看指引",
           "actionId": "onboarding.replay"
         },

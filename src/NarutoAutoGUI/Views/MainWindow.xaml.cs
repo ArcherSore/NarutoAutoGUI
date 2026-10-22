@@ -9,7 +9,6 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
-using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Infrastructure;
@@ -310,7 +309,7 @@ public partial class MainWindow : FluentWindow
     private async void ShowSessionButton_Click(object sender, RoutedEventArgs e) =>
         await RunOperationAsync(
             PendingOperation.ShowingDesktop,
-            async () => await _sessionManager.EnsureConnectedAsync(showPreview: true, large: false));
+            async () => await _sessionManager.EnsureConnectedAsync(showPreview: true));
 
     private void HideSessionButton_Click(object sender, RoutedEventArgs e)
     {

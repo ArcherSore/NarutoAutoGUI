@@ -87,10 +87,10 @@ internal static partial class SelfTestRunner
             var largeSize = new WpfSize(window.Width, window.Height);
             AssertLocked("放大后");
             Unlock("大窗");
-            // Prepare completion shows the window without an explicit mode; a visible window keeps the user's choice.
-            window.ShowViewing(large: null);
+            // Prepare completion shows the window; a visible window keeps the user's choice.
+            window.ShowViewing();
             if (!IsWindowEnabled(host)) {
-                throw new InvalidOperationException("未指定模式的显示不得锁定用户已解锁的大窗。");
+                throw new InvalidOperationException("显示可见窗口不得锁定用户已解锁的大窗。");
             }
             AssertMode("保持大窗", largeSize, large: true);
             window.SetViewingMode(large: false);
@@ -99,24 +99,19 @@ internal static partial class SelfTestRunner
             Unlock("隐藏前");
             window.HideViewing();
             AssertLocked("隐藏后");
-            window.ShowViewing(large: null);
+            window.ShowViewing();
             AssertLocked("重新显示");
             AssertMode("隐藏后重新显示", smallSize, large: false);
 
-            // Show restores stale native bounds; the requested mode must still win.
+            // Show restores stale native bounds; reopening must still return to the small mode.
             window.WindowState = WindowState.Maximized;
             window.HideViewing();
-            window.ShowViewing(large: false);
+            window.ShowViewing();
             AssertLocked("最大化后隐藏并显示小窗");
             AssertMode("最大化后隐藏并显示小窗", smallSize, large: false);
-            window.WindowState = WindowState.Maximized;
-            window.HideViewing();
-            window.ShowViewing(large: true);
-            AssertLocked("最大化后隐藏并显示大窗");
-            AssertMode("最大化后隐藏并显示大窗", largeSize, large: true);
             window.WindowState = WindowState.Minimized;
             window.HideViewing();
-            window.ShowViewing(large: null);
+            window.ShowViewing();
             AssertLocked("最小化后隐藏并重新显示");
             AssertMode("最小化后隐藏并重新显示", smallSize, large: false);
 

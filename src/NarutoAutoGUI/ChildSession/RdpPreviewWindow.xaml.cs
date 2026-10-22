@@ -61,19 +61,16 @@ internal sealed partial class RdpPreviewWindow
         RefreshToolbar();
     }
 
-    // Shows the window and brings it forward. large selects a read-only mode explicitly; null keeps the mode of a
-    // visible window, while a hidden window reopens small.
-    internal void ShowViewing(bool? large)
+    // Shows the window and brings it forward. A visible window keeps its mode; a hidden window reopens small.
+    internal void ShowViewing()
     {
         if (!IsVisible) {
-            _large = large ?? false;
+            _large = false;
             ChangeVisibility(Show);
             if (_connected) {
-                // Show restores native maximized bounds; apply the requested size after that restoration.
-                SetViewingMode(_large);
+                // Show restores native maximized bounds; apply the small size after that restoration.
+                SetViewingMode(large: false);
             }
-        } else if (large is bool requested) {
-            SetViewingMode(requested);
         } else if (WindowState == WindowState.Minimized) {
             WindowState = WindowState.Normal;
         }

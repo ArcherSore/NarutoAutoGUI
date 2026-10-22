@@ -59,9 +59,7 @@ internal sealed class ChildSessionManager : IDisposable
         }
     }
 
-    // large selects the viewing size; null keeps the mode of a visible window, and a hidden window opens small.
-    internal async Task<uint> EnsureConnectedAsync(
-        bool showPreview, bool? large = null, CancellationToken cancellationToken = default)
+    internal async Task<uint> EnsureConnectedAsync(bool showPreview, CancellationToken cancellationToken = default)
     {
         await _operationLock.WaitAsync(cancellationToken);
         try {
@@ -75,7 +73,7 @@ internal sealed class ChildSessionManager : IDisposable
                     && Snapshot.State is (ChildSessionState.ConnectedVisible
                         or ChildSessionState.ConnectedHidden)
                     && connectedState == 1) {
-                    SetPreviewVisibility(showPreview, large);
+                    SetPreviewVisibility(showPreview);
                     _logger.Debug($"复用已连接的 Child Session {connectedId}，show={showPreview}。");
                     return connectedId;
                 }
@@ -120,7 +118,7 @@ internal sealed class ChildSessionManager : IDisposable
                     _logger.Warn("Windows 未接受保存的登录凭据，本次通过 Windows 登录界面手动完成登录。"
                         + "如果密码已更改，请在“设置 → 桌面分身”中更新。");
                 }
-                SetPreviewVisibility(showPreview, large);
+                SetPreviewVisibility(showPreview);
                 return sessionId;
             } catch (Exception exception) {
                 var actualException = exception.GetBaseException();
@@ -212,7 +210,7 @@ internal sealed class ChildSessionManager : IDisposable
         _operationLock.Dispose();
     }
 
-    private void SetPreviewVisibility(bool show, bool? large = null)
+    private void SetPreviewVisibility(bool show)
     {
         if (_previewWindow is null || _service is null) {
             return;
@@ -225,7 +223,7 @@ internal sealed class ChildSessionManager : IDisposable
         }
 
         if (show) {
-            _previewWindow.ShowViewing(large);
+            _previewWindow.ShowViewing();
         } else {
             _previewWindow.HideViewing();
         }

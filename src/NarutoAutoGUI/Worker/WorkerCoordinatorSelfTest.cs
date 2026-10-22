@@ -39,7 +39,6 @@ internal static partial class WorkerCoordinatorSelfTest
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         await coordinator.WaitForServerReadyAsync(timeout.Token);
         var project = ProjectPlanModule.Open(projectDirectory, configPath);
-        var activeRun = CreateActiveRun(project.CreateRunStartAttempt());
         await VerifyRecoveryAndRetryAsync(pipeName, record, received, timeout.Token);
         await VerifyDisconnectDuringRecoveryAsync(pipeName, record, received, timeout.Token);
         await VerifySameInstanceReconnectAndTeardownAsync(coordinator, pipeName, record, received, timeout.Token);

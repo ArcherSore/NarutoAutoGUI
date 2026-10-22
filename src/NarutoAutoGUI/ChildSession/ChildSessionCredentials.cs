@@ -70,12 +70,7 @@ internal sealed class ChildSessionCredentialStore
         if (userName.Length == 0 || password.Length == 0) {
             throw new ArgumentException("账户和密码都不能为空。");
         }
-        try {
-            _vault.Write(Target, userName, password);
-        } catch (Exception exception) {
-            _logger.Warn("保存 Windows 登录凭据失败。", exception);
-            throw;
-        }
+        _vault.Write(Target, userName, password);
         _logger.Info("已保存桌面分身的 Windows 登录凭据。");
     }
 

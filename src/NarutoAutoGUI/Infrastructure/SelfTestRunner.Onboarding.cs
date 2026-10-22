@@ -60,7 +60,7 @@ internal static partial class SelfTestRunner
             ClickOnboarding(window, "DesktopViewButton");
             ClickOnboarding(window, "UpdateNavigationItem");
             if (((UIElement)window.FindName("UpdateOverlay")).Visibility != Visibility.Collapsed) {
-                throw new InvalidOperationException("Tour 期间底层分身大窗/更新入口不能打开。");
+                throw new InvalidOperationException("Tour 期间更新入口不能打开。");
             }
             window.Width = 920;
             window.Height = 640;

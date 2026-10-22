@@ -114,7 +114,7 @@ internal static partial class SelfTestRunner
                 "运行动态应填满运行控制以下的全部高度。");
 
             var desktop = new DesktopToggle(DesktopAction.Show, true, DesktopStatus.Background);
-            // The header toggle owns show/hide; the menu only adds the large window it cannot open directly.
+            // The header toggle owns show/hide.
             Require(window.FindName("DesktopMenuItem") is null, "更多操作菜单不应重复显示/隐藏分身。");
             foreach (var (state, endReason) in new (RuntimeControlState, string)[] {
                 (new(new RuntimeAction.Start(true), true, null, desktop, true), ""),

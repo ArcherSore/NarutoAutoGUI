@@ -472,11 +472,9 @@ public sealed class ProjectPlanModule
     private IEnumerable<PretaskDefinition> SelectedPretaskDefinitions(TaskConfiguration config) => _project.Pretasks
         .Where(item => item.Applicable && config.SelectedPretasks.Contains(item.Name, StringComparer.Ordinal));
 
+    // The loader has rejected drive- and root-relative paths; a path with a separator is relative to the project root.
     private string ResolvePretaskExecutable(string executable)
     {
-        if (Path.IsPathRooted(executable) && !Path.IsPathFullyQualified(executable)) {
-            throw new InvalidDataException("pretask.exec 必须是完整路径、项目内相对路径或 PATH 中的程序名。");
-        }
         return executable.Contains('/') || executable.Contains('\\')
             ? Path.GetFullPath(executable, _project.ProjectRoot) : executable;
     }

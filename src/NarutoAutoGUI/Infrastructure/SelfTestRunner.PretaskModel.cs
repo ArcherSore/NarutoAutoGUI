@@ -18,6 +18,7 @@ internal static partial class SelfTestRunner
         VerifyPretaskSharedInputs(directory);
         VerifyPretaskConfigurationMigration(directory);
         VerifyInvalidPretaskDefinitions(directory);
+        VerifyPretaskExecutablePaths(directory);
     }
 
     private static void VerifyPretaskDefinitions(string testDirectory)
@@ -355,6 +356,29 @@ internal static partial class SelfTestRunner
             var expectedError = declaration == """{"exec":""}""" ? "exec" : "pretask";
             VerifyRejectedProjectInterface(testDirectory, source, $"pretask-invalid-{index}", expectedError,
                 root => root["pretask"] = JsonNode.Parse(declaration));
+        }
+    }
+
+    // Drive- and root-relative exec paths fail when the PI loads, not at Start; full paths, UNC included, are kept.
+    private static void VerifyPretaskExecutablePaths(string testDirectory)
+    {
+        var source = File.ReadAllText(Path.Combine(
+            CreatePretaskFixture(Path.Combine(testDirectory, "exec-source"), "[]"), "interface.json"));
+        foreach (var (name, executable) in new[] {
+            ("drive-relative", "C:fixture.exe"), ("root-relative", "\\tools\\fixture.exe")
+        }) {
+            VerifyRejectedProjectInterface(testDirectory, source, $"exec-{name}", "$.pretask[0].exec 必须是完整路径",
+                root => root["pretask"] = new JsonObject { ["exec"] = executable });
+        }
+        foreach (var (name, executable) in new[] {
+            ("drive", "C:\\fixture\\tool.exe"), ("unc", "\\\\server\\share\\tool.exe")
+        }) {
+            var directory = CreatePretaskFixture(Path.Combine(testDirectory, $"exec-{name}"),
+                new JsonObject { ["name"] = "Full", ["exec"] = executable }.ToJsonString());
+            var project = ProjectPlanModule.Open(directory, Path.Combine(directory, "config.json"));
+            project.AddPretask("Full");
+            Require(project.CreateRunStartAttempt().Plan.Items[0].Program!.Executable == executable,
+                "完整路径与 UNC 路径的前置程序应加载成功并原样进入计划。");
         }
     }
 

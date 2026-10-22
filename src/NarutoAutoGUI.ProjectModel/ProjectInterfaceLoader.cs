@@ -171,6 +171,10 @@ internal static class ProjectInterfaceLoader
             if (executable.Contains('\0')) {
                 throw new InvalidDataException($"{path}.exec 不能包含空字符。");
             }
+            // Drive- and root-relative paths are ambiguous; whether the program exists is only known when it starts.
+            if (Path.IsPathRooted(executable) && !Path.IsPathFullyQualified(executable)) {
+                throw new InvalidDataException($"{path}.exec 必须是完整路径、项目内相对路径或 PATH 中的程序名。");
+            }
             var controllers = ReadStringArray(obj, "controller", required: false, path);
             var resources = ReadStringArray(obj, "resource", required: false, path);
             var applicable = (!obj.TryGetProperty("controller", out _) || controllers.Contains(controller))

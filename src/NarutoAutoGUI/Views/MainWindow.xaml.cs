@@ -114,7 +114,6 @@ public partial class MainWindow : FluentWindow
         string? PatternMessage, bool Submitted = false)
     {
         internal (Guid, string, string) Key => (ConfigurationId, OptionName, InputName);
-        internal PlanItemKind Kind { get; init; }
     }
 
     // The badge and status text of a plan card, updated in place as the Run moves on.
@@ -1466,7 +1465,7 @@ public partial class MainWindow : FluentWindow
     private Wpf.Ui.Controls.TextBox CreateInputEditor(InspectorRow row, InspectorInput input)
     {
         var tag = new OptionInputTag(_projectPlan!.ActiveConfigurationId, row.Option.Name, input.Input.Name,
-            input.SavedValue, input.Input.PatternMessage) { Kind = _expandedTaskKind };
+            input.SavedValue, input.Input.PatternMessage);
         var editor = new Wpf.Ui.Controls.TextBox {
             Style = (Style)FindResource("Option.TextBox"),
             Text = input.DisplayValue,

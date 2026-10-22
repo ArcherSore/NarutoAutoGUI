@@ -384,7 +384,7 @@ public partial class MainWindow
         }
         _committingConfigurationInput = true;
         try {
-            if (_projectPlan!.CheckInputValue(tag.OptionName, tag.InputName, textBox.Text, tag.Kind) is { } problem) {
+            if (_projectPlan!.CheckInputValue(tag.OptionName, tag.InputName, textBox.Text) is { } problem) {
                 // A rejected value is a typo, not a failure: keep the text and explain it under the field.
                 // The saved value is unchanged; the draft survives re-rendering until it is fixed or Esc restores it.
                 var message = tag.PatternMessage ?? problem;

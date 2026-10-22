@@ -218,14 +218,13 @@ public sealed class ProjectPlanModule
     }
 
     // Checks only the edited value, so a typo can be shown at its field instead of as a whole-config failure.
-    public string? CheckInputValue(
-        string optionName, string inputName, string value, PlanItemKind kind = PlanItemKind.MaaTask)
+    public string? CheckInputValue(string optionName, string inputName, string value)
     {
         var input = FindOption(optionName).Inputs.SingleOrDefault(item => item.Name == inputName)
             ?? throw new ArgumentException($"option {optionName} 不包含 input {inputName}。", nameof(inputName));
+        var typed = IsTypedOption(LoadConfig(), optionName);
         try {
-            _ = ProjectInputValue.Parse(input, value, $"option {optionName} input {inputName} 的值",
-                typed: kind != PlanItemKind.Pretask);
+            _ = ProjectInputValue.Parse(input, value, $"option {optionName} input {inputName} 的值", typed);
             return null;
         } catch (InvalidDataException exception) {
             return exception.Message;
@@ -367,6 +366,32 @@ public sealed class ProjectPlanModule
         if (config.SelectedTasks.Count == 0 && config.SelectedPretasks.Count == 0) {
             ProjectOptionResolver.ValidateScope(_project, _project.GlobalOptions, config, "global_option");
         }
+    }
+
+    // Mirrors the validation above: a save converts inputs to their pipeline_type only in options a selected MaaTask
+    // resolves through active cases, global options included unless only pretasks are selected.
+    private bool IsTypedOption(TaskConfiguration config, string optionName)
+    {
+        IEnumerable<string> roots = config.SelectedTasks.Count == 0 && config.SelectedPretasks.Count != 0 ? []
+            : _project.GlobalOptions.Concat(_project.Tasks
+                .Where(task => config.SelectedTasks.Contains(task.Name, StringComparer.Ordinal))
+                .SelectMany(task => task.Options));
+        var pending = new Stack<string>(roots);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        while (pending.TryPop(out var name)) {
+            if (name == optionName) {
+                return true;
+            }
+            var option = _project.Options[name];
+            if (!visited.Add(name) || option.Kind == OptionDefinitionKind.Input) {
+                continue;
+            }
+            var selected = ExplicitOptionIntent.ReadSelectedCase(option, config) ?? option.DefaultCase;
+            foreach (var nested in option.Cases.SingleOrDefault(item => item.Name == selected)?.Options ?? []) {
+                pending.Push(nested);
+            }
+        }
+        return false;
     }
 
     private ProjectConfigurationView BuildConfiguration(TaskConfiguration config)

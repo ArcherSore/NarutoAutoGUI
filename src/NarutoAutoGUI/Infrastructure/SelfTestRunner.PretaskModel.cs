@@ -15,6 +15,7 @@ internal static partial class SelfTestRunner
         VerifyPretaskOrdering(directory);
         VerifyPretaskArguments(directory);
         VerifyPretaskInputDefaults(directory);
+        VerifyPretaskSharedInputs(directory);
         VerifyPretaskConfigurationMigration(directory);
         VerifyInvalidPretaskDefinitions(directory);
     }
@@ -161,8 +162,7 @@ internal static partial class SelfTestRunner
             "重新激活子选项后应恢复原输入。");
         project.RemoveTask("RealTask");
         project.SetInputValue("LaunchInput", "attempts", "非数字");
-        Require(project.CheckInputValue("LaunchInput", "attempts", "非数字", PlanItemKind.Pretask) is null
-            && project.CheckInputValue("LaunchInput", "attempts", "非数字") is not null
+        Require(project.CheckInputValue("LaunchInput", "attempts", "非数字") is null
             && project.CreateRunStartAttempt().Plan.Items.Single().ResolvedOptions.GetProperty("LaunchInput")
                 .GetProperty("attempts").GetString() == "非数字",
             "前置 input 不参与 pipeline_type 数值转换，不能套用普通任务的类型约束。");
@@ -224,6 +224,50 @@ internal static partial class SelfTestRunner
             VerifyRejectedProjectInterface(testDirectory, source, $"unused-default-{inputName}", "LaunchInput",
                 definition => definition["pretask"] = new JsonArray());
         }
+    }
+
+    // An input shared with a task is typed exactly where saving converts it: in options a selected task resolves
+    // through active cases. Otherwise the field check passes a value the save then rejects as a whole-config error.
+    private static void VerifyPretaskSharedInputs(string testDirectory)
+    {
+        var directory = CreatePretaskFixture(Path.Combine(testDirectory, "shared-inputs"), """
+            {"name":"Prepare","exec":"prepare-fixture","option":["ServerRange","SharedCount"]}
+            """);
+        var path = Path.Combine(directory, "interface.json");
+        var root = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        root["option"]!["SharedCount"] = JsonNode.Parse("""
+            {"type":"input","inputs":[{"name":"count","default":"2","pipeline_type":"int"}],
+             "pipeline_override":{"SharedEntry":{"count":"{count}"}}}
+            """);
+        root["option"]!["Mode"]!["cases"]![1]!["option"] = new JsonArray("SharedCount");
+        File.WriteAllText(path, root.ToJsonString());
+        var project = ProjectPlanModule.Open(directory, Path.Combine(directory, "config.json"));
+        project.AddPretask("Prepare");
+        void RequireConsistent(string optionName, string inputName, bool typed, string scenario)
+        {
+            var problem = project.CheckInputValue(optionName, inputName, "多次");
+            var saved = true;
+            try {
+                project.SetInputValue(optionName, inputName, "多次");
+            } catch (InvalidDataException) {
+                saved = false;
+            }
+            Require((problem is not null) == typed && saved != typed,
+                $"{scenario}：单字段检查必须与保存时的 pipeline_type 转换一致。");
+        }
+
+        RequireConsistent("ServerRange", "retry_count", typed: true, "已选普通任务解析的全局 option");
+        RequireConsistent("SharedCount", "count", typed: false, "只在普通任务休眠分支中的 option");
+        project.SetInputValue("SharedCount", "count", "5");
+        project.SetSelectedCase("Mode", "Minimal");
+        RequireConsistent("SharedCount", "count", typed: true, "普通任务激活分支中的 option");
+        project.RemoveTask("RealTask");
+        RequireConsistent("ServerRange", "retry_count", typed: false, "只剩前置任务时的全局 option");
+        RequireConsistent("SharedCount", "count", typed: false, "只剩前置任务时的共享 option");
+        var values = project.CreateRunStartAttempt().Plan.Items.Single().ResolvedOptions;
+        Require(values.GetProperty("ServerRange").GetProperty("retry_count").GetString() == "多次"
+            && values.GetProperty("SharedCount").GetProperty("count").GetString() == "多次",
+            "只供前置任务使用的共享 input 应按原文传给程序。");
     }
 
     private static void VerifyPretaskConfigurationMigration(string testDirectory)

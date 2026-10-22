@@ -4,11 +4,15 @@ namespace NarutoAutoWorker;
 
 internal static class Program
 {
-    private static readonly string BootstrapLogPath = Path.Combine(Path.GetTempPath(), "NarutoAutoWorker.bootstrap.log");
+    private static readonly string BootstrapLogPath =
+        Path.Combine(Path.GetTempPath(), "NarutoAutoWorker.bootstrap.log");
 
     private static async Task<int> Main(string[] args)
     {
         try {
+            if (args.Length >= 3 && args[0] == "--pretask-test-child") {
+                return PretaskSelfTests.RunChild(args);
+            }
             if (args.Length == 3 && args[0] == "--framework-diagnostics-self-test") {
                 return FrameworkDiagnosticsSelfTest.Run(args[1], args[2]);
             }
@@ -19,7 +23,8 @@ internal static class Program
             var arguments = WorkerArguments.Parse(args);
             var manifest = LaunchManifestLoader.Load(arguments);
             using var process = Process.GetCurrentProcess();
-            using var mutex = new Mutex(initiallyOwned: true, $@"Local\NarutoWorker-{process.SessionId}", out var createdNew);
+            using var mutex = new Mutex(
+                initiallyOwned: true, $@"Local\NarutoWorker-{process.SessionId}", out var createdNew);
             if (!createdNew) {
                 throw new InvalidOperationException(
                     $"Child Session {process.SessionId} 已有 NarutoAutoWorker。 ");

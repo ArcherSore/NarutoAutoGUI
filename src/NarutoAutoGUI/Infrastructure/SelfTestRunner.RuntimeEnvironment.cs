@@ -305,14 +305,14 @@ internal static partial class SelfTestRunner
 
     private static RuntimeEnvironment CreateEnvironment(AppLogger logger, ChildSessionManager session,
         WorkerCoordinator coordinator, Func<int, CancellationToken, Task>? waitForWorkerExit = null,
-        TimeSpan? waitLimit = null) => new(logger, session, coordinator, new ChildSessionProgramService(logger),
+        TimeSpan? waitLimit = null) => new(logger, session, coordinator,
         waitForWorkerExit ?? ((_, _) => Task.CompletedTask), waitLimit ?? EnvironmentWaitLimit);
 
     // The owner a window under test uses; operations run at once unless a test holds them, and the fake Worker,
     // which is this process, counts as exited once the Child Session is logged off.
     private static RuntimeEnvironment WindowEnvironment(AppLogger logger, ChildSessionManager session,
         WorkerCoordinator coordinator, Func<Func<Task>, Task>? runOperation = null) =>
-        new(logger, session, coordinator, new ChildSessionProgramService(logger), (_, _) => Task.CompletedTask,
+        new(logger, session, coordinator, (_, _) => Task.CompletedTask,
             EnvironmentWaitLimit, runOperation ?? (operation => operation()));
 
     // Ending before the fake Worker is admitted would discard the Admission it connects with.

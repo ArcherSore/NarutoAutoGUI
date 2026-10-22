@@ -28,7 +28,8 @@ internal static class RuntimeControls
         var preparing = pending == PendingOperation.PreparingEnvironment
             || session.State is ChildSessionState.Connecting or ChildSessionState.Existing
             || observed.Observation == WorkerObservation.WorkerStarting || worker?.WorkerState == WorkerState.Starting;
-        var starting = active?.State == RunState.Starting || pending == PendingOperation.StartingRun;
+        var starting = active is { State: RunState.Starting } startingRun && !IsStoppable(startingRun)
+            || pending == PendingOperation.StartingRun;
         var stopping = active?.State == RunState.Stopping || pending == PendingOperation.StoppingRun;
         var runtimeFaulted = preparationFailed || session.State == ChildSessionState.Faulted
             || observed.Observation is WorkerObservation.IpcDisconnected or WorkerObservation.WorkerExited
@@ -67,7 +68,8 @@ internal static class RuntimeControls
         RuntimeAction action = guiProgress ? progress
             : recovery is { } reason ? new RuntimeAction.Recover(commandsAvailable, reason)
             : starting || stopping ? progress
-            : active?.State == RunState.Running ? new RuntimeAction.Stop(stopAllowed)
+            : active?.State == RunState.Running || active is not null && IsStoppable(active)
+                ? new RuntimeAction.Stop(stopAllowed)
             : runtimeFaulted || runFaulted ? new RuntimeAction.Retry(retryTarget, retryEnabled,
                 retryTarget == RetryTarget.Start ? startBlocker : null)
             : environmentReady ? new RuntimeAction.Start(startAllowed, startBlocker)
@@ -110,8 +112,9 @@ internal static class RuntimeControls
     }
 
     // The Stop operation rechecks this when it runs, because the Run may move on while the operation waits.
-    internal static bool IsStoppable(RunSnapshot run) => run.State == RunState.Running
-        && run.Items.Any(item => item.State is PlanItemState.Starting or PlanItemState.Running);
+    internal static bool IsStoppable(RunSnapshot run) => run.Items.Any(item =>
+        item.State is PlanItemState.Starting or PlanItemState.Running
+        && (run.State == RunState.Running || run.State == RunState.Starting && item.Kind == PlanItemKind.Pretask));
 }
 
 // The GUI operation in progress; MainWindow runs at most one at a time.

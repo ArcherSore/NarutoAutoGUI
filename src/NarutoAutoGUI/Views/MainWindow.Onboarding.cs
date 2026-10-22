@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using NarutoAutoGUI.Infrastructure;
+using NarutoAutoGUI.Protocol;
 using WpfPoint = System.Windows.Point;
 using WpfSize = System.Windows.Size;
 
@@ -29,13 +30,14 @@ public partial class MainWindow
     private DispatcherOperation? _onboardingLayoutOperation;
     private IInputElement? _onboardingPreviousFocus;
     private string? _onboardingPreviousExpandedTask;
+    private PlanItemKind _onboardingPreviousExpandedKind;
     private bool _onboardingPreviousShelfExpanded;
     private double _onboardingPreviousScroll;
     private readonly RectangleGeometry _onboardingHole = new();
     private Rect _onboardingTargetBounds = Rect.Empty;
     private Rect _onboardingWindowBounds = Rect.Empty;
     private (Rect Popover, Rect Target) _onboardingArrowBounds = (Rect.Empty, Rect.Empty);
-    private readonly Dictionary<string, FrameworkElement> _taskDescriptionButtons = new(StringComparer.Ordinal);
+    private readonly Dictionary<(PlanItemKind Kind, string Name), FrameworkElement> _taskDescriptionButtons = [];
 
     private bool IsOnboardingVisible => _onboardingActive && !_onboardingPaused
         && OnboardingOverlay.Visibility == Visibility.Visible;
@@ -62,6 +64,7 @@ public partial class MainWindow
             _onboardingPreviousFocus = Keyboard.FocusedElement;
             _onboardingReplay = replay;
             _onboardingPreviousExpandedTask = _expandedTaskName;
+            _onboardingPreviousExpandedKind = _expandedTaskKind;
             _onboardingPreviousShelfExpanded = _taskShelfExpanded;
             _onboardingPreviousScroll = PlanScroll.VerticalOffset;
             _onboardingActive = true;
@@ -91,12 +94,14 @@ public partial class MainWindow
                     new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(60)));
                 await Task.Delay(60, cancellation.Token);
             }
-            if (_onboardingStep == 0 || _onboardingStep == 1 && _projectPlan!.SelectedTaskNames.Count == 0) {
+            if (_onboardingStep == 0 || _onboardingStep == 1 && _projectPlan!.SelectedItemCount == 0) {
                 SetTaskShelfExpanded(true);
                 AvailableTasksScroll.ScrollToTop();
             }
-            if (_onboardingReplay && _onboardingStep == 1 && _projectPlan!.SelectedTaskNames.Count > 0) {
-                _expandedTaskName = _projectPlan.SelectedTaskNames[0];
+            if (_onboardingReplay && _onboardingStep == 1 && _projectPlan!.SelectedItemCount > 0) {
+                var first = _projectPlan.SelectedItems[0];
+                _expandedTaskName = first.Name;
+                _expandedTaskKind = first.Kind;
                 RenderTaskPlan();
             }
             await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Loaded, cancellation.Token);
@@ -153,8 +158,8 @@ public partial class MainWindow
         if (step == 3) {
             return DesktopViewButton;
         }
-        var first = _projectPlan?.SelectedTaskNames.FirstOrDefault();
-        if (first is not null && _planItemContainers.TryGetValue(first, out var card)) {
+        var first = _projectPlan?.SelectedItems.FirstOrDefault();
+        if (first is not null && _planItemContainers.TryGetValue((first.Kind, first.Name), out var card)) {
             return card;
         }
         if (_onboardingReplay && first is null) {
@@ -165,7 +170,7 @@ public partial class MainWindow
 
     private void SetOnboardingText()
     {
-        var empty = _projectPlan!.SelectedTaskNames.Count == 0;
+        var empty = _projectPlan!.SelectedItemCount == 0;
         (OnboardingTitle.Text, OnboardingDescription.Text) = _onboardingStep switch {
             0 => ("配置自动化任务", "点击“添加任务”选择要执行的任务，并拖动调整执行顺序。\n顶部标签可以保存多套独立配置。"),
             1 when empty => ("查看说明并设置参数", "添加任务后，会在执行计划中出现任务卡片。\n"
@@ -364,8 +369,9 @@ public partial class MainWindow
 
     private bool PositionOnboardingPulse()
     {
-        var first = _projectPlan?.SelectedTaskNames.FirstOrDefault();
-        if (_onboardingStep != 1 || first is null || !_taskDescriptionButtons.TryGetValue(first, out var icon)) {
+        var first = _projectPlan?.SelectedItems.FirstOrDefault();
+        if (_onboardingStep != 1 || first is null
+            || !_taskDescriptionButtons.TryGetValue((first.Kind, first.Name), out var icon)) {
             return false;
         }
         Rect bounds;
@@ -460,9 +466,9 @@ public partial class MainWindow
         _onboardingTargetBounds = Rect.Empty;
         try {
             if (restoreReplay) {
-                _expandedTaskName = _projectPlan?.SelectedTaskNames
-                    .Contains(_onboardingPreviousExpandedTask ?? "") == true
-                    ? _onboardingPreviousExpandedTask : null;
+                _expandedTaskKind = _onboardingPreviousExpandedKind;
+                _expandedTaskName = _projectPlan?.SelectedItems.Any(item => item.Kind == _expandedTaskKind
+                    && item.Name == _onboardingPreviousExpandedTask) == true ? _onboardingPreviousExpandedTask : null;
                 SetTaskShelfExpanded(_onboardingPreviousShelfExpanded);
                 if (_projectPlan is not null) {
                     RenderTaskPlan();

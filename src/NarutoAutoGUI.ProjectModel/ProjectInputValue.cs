@@ -25,7 +25,7 @@ internal static class ProjectInputValue
         };
     }
 
-    private static void ValidatePattern(InputDefinition input, string value, string context)
+    internal static void ValidatePattern(InputDefinition input, string value, string context)
     {
         if (input.Verify is null) {
             return;

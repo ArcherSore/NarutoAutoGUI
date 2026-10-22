@@ -78,7 +78,7 @@ _Avoid_: Active Run、持久化运行历史
 _Avoid_: MaaNOP Config、Worker Launch Context
 
 **Plan Item**:
-Run Plan 中一次顶层任务执行。
+Run Plan 中一次前置程序或顶层 MaaNOP 任务执行。
 _Avoid_: 任务定义、整个 Run
 
 **Worker Launch Context**:

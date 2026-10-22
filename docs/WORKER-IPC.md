@@ -4,7 +4,7 @@
 
 ## 控制通道
 
-协议版本为 4。GUI 是本机 Named Pipe 服务端，Worker 是客户端。每条消息以 4 字节 little-endian 无符号长度开头，后接 UTF-8 JSON；payload 上限 4 MiB。Envelope 包含 protocolVersion、messageType、operation、data；请求与响应由 requestId 配对，响应包含 success 或结构化 error。版本或帧非法时拒绝连接，不做降级协商。
+协议版本为 5，Run Plan 与 Snapshot 版本均为 2；Worker Launch Context 保持版本 1。GUI 是本机 Named Pipe 服务端，Worker 是客户端。每条消息以 4 字节 little-endian 无符号长度开头，后接 UTF-8 JSON；payload 上限 4 MiB。Envelope 包含 protocolVersion、messageType、operation、data；请求与响应由 requestId 配对，响应包含 success 或结构化 error。版本或帧非法时拒绝连接，不做降级协商。
 
 | 操作 | 用途 |
 | --- | --- |
@@ -19,7 +19,11 @@ Worker 的 worker.stateChanged、run.stateChanged 和 log.entry 是可丢失的�
 
 GUI 使用 Pipe 对端真实 PID、Windows Session ID、Worker 映像和 Admission Record 核验连接，并核对 Worker Instance ID 与 Launch Token。Pipe 连接本身不是 Worker 身份。GUI 只持久化最小接纳信息；Run 和日志保留在 Worker 进程内，不在 GUI 重启时重放计划。
 
-Worker Launch Context 在单个 Worker 实例内固定；GUI 为其写入有界 Launch Manifest。Run Plan 描述一次任务执行，不重复环境配置。双方核对 Runtime Profile Digest；Worker 对 Run Plan 自行计算 Plan Digest。同一 Run ID 的传输重试必须使用原计划，避免重复执行。具体 canonical digest 规则由共享实现定义，改变规则需提升版本。
+Worker Launch Context 在单个 Worker 实例内固定；GUI 为其写入有界 Launch Manifest。Run Plan 描述一次任务执行，不重复环境配置。双方核对版本 1 的 Runtime Profile Digest；Worker 对 Run Plan 自行计算版本 2 的 Plan Digest，摘要覆盖 Plan Item 的类型与程序参数。同一 Run ID 的传输重试必须使用原计划，避免重复执行。具体 canonical digest 规则由共享实现定义，改变规则需提升版本。
+
+Plan Item 通过 Kind 区分 MaaTask 与 Pretask；Pretask 的 Program 保存已解析的可执行程序和参数，选项 JSON 已按需追加到参数末尾。Worker 使用 Launch Manifest 的 ProjectRoot 作为工作目录，不重新解释选项。前置项按项目顺序排在所有普通任务之前。Snapshot 保留完整 Run Plan 和 Plan Item 类型，重连后可恢复前置任务的程序、参数与执行状态；具体字段以共享模型为准。
+
+pretask 是 Active Run 中的普通受控阶段，先于正式 Controller 创建。非零退出、启动失败或 180 秒超时终止后续项；停止或超时后最多等待 30 秒确认清理。若程序退出未确认，Worker 进入 Faulted 并保留 Active Run，GUI 通过结束桌面分身恢复。只有 pretask 的计划无需创建 Controller；成功退出不清理已经启动的游戏。
 
 Launch Manifest 的 frameworkOptions 保存 SaveOnError、SaveDraw 与 DebugMode，缺省值分别为 true、false、false。
 这些诊断偏好不参与项目 Runtime Profile Digest；更改后在新 Worker 实例中生效。

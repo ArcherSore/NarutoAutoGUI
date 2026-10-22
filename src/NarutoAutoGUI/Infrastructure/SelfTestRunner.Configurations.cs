@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using NarutoAutoGUI.ProjectModel;
 
 namespace NarutoAutoGUI.Infrastructure;
@@ -604,8 +604,8 @@ internal static partial class SelfTestRunner
         var project = ProjectPlanModule.Open(projectDirectory, path);
         using var saved = JsonDocument.Parse(File.ReadAllBytes(path));
         var root = saved.RootElement;
-        if (root.GetProperty("SchemaVersion").GetInt32() != 2) {
-            throw new InvalidOperationException("V1 应在首次加载时包装为 V2。");
+        if (root.GetProperty("SchemaVersion").GetInt32() != MaaNopConfig.CurrentSchemaVersion) {
+            throw new InvalidOperationException("V1 应在首次加载时迁移到当前配置版本。");
         }
         var configuration = root.GetProperty("Configurations")[0];
         var id = configuration.GetProperty("Id").GetGuid();
@@ -620,7 +620,7 @@ internal static partial class SelfTestRunner
         _ = ProjectPlanModule.Open(projectDirectory, path);
         using var reopened = JsonDocument.Parse(File.ReadAllBytes(path));
         if (reopened.RootElement.GetProperty("ActiveConfigurationId").GetGuid() != id) {
-            throw new InvalidOperationException("重新打开 V2 不应重新生成配置 Id。");
+            throw new InvalidOperationException("重新打开配置不应重新生成配置 Id。");
         }
     }
 }

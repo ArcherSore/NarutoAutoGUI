@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Infrastructure;
-using NarutoAutoGUI.Models;
 using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
 using NarutoAutoGUI.Worker;
@@ -17,7 +16,6 @@ internal sealed class RuntimeEnvironment
     private readonly AppLogger _logger;
     private readonly ChildSessionManager _session;
     private readonly WorkerCoordinator _coordinator;
-    private readonly ChildSessionProgramService _programService;
     private readonly Func<int, CancellationToken, Task> _waitForWorkerExit;
     private readonly TimeSpan _waitLimit;
     private readonly Func<Func<Task>, Task>? _runExclusive;
@@ -26,13 +24,12 @@ internal sealed class RuntimeEnvironment
     // each for the Run to stop and for the Worker to exit, and serialises operations through its own gate.
     internal RuntimeEnvironment(
         AppLogger logger, ChildSessionManager session, WorkerCoordinator coordinator,
-        ChildSessionProgramService programService, Func<int, CancellationToken, Task>? waitForWorkerExit = null,
+        Func<int, CancellationToken, Task>? waitForWorkerExit = null,
         TimeSpan? waitLimit = null, Func<Func<Task>, Task>? runExclusive = null)
     {
         _logger = logger;
         _session = session;
         _coordinator = coordinator;
-        _programService = programService;
         _waitForWorkerExit = waitForWorkerExit ?? WaitForProcessExit;
         _waitLimit = waitLimit ?? TimeSpan.FromSeconds(30);
         _runExclusive = runExclusive;
@@ -58,12 +55,8 @@ internal sealed class RuntimeEnvironment
     {
         var sessionId = await _session.EnsureConnectedAsync(showPreview: true);
         await _coordinator.PrepareWorkerAsync(sessionId, project, frameworkOptions: frameworkOptions());
-        var game = NarutoGameLaunchProfile.ResolveExisting(_logger);
-        await _programService.LaunchIfNeededAsync(
-            sessionId, game.ExecutablePath, game.Arguments,
-            launchedProcessName: NarutoGameLaunchProfile.ClientProcessName);
         _session.ShowPreview();
-        _logger.Info("真实 E2E 环境已准备；完成游戏登录后即可开始任务。 ");
+        _logger.Info("运行环境已准备；可开始前置任务，或登录游戏后开始普通任务。");
     }
 
     // Every caller ends the same way. confirm is asked inside the gate, and only when a Runtime Environment may

@@ -89,13 +89,14 @@ public partial class MainWindow : FluentWindow
     private readonly Dictionary<string, bool> _taskGroupExpanded = new(StringComparer.Ordinal);
     private string _configurationLockText = string.Empty;
     private string? _expandedTaskName;
+    private PlanItemKind _expandedTaskKind;
     private string? _dragTaskName;
     private WpfPoint _dragStartPoint;
     private IInputElement? _descriptionDrawerPreviousFocus;
     private readonly List<Border> _dropIndicators = [];
-    private readonly Dictionary<string, Border> _planItemContainers = new(StringComparer.Ordinal);
-    private readonly List<(TextBlock Summary, string TaskName)> _planItemSummaries = [];
-    private readonly Dictionary<string, PlanItemStatusView> _planItemStatuses = new(StringComparer.Ordinal);
+    private readonly Dictionary<(PlanItemKind Kind, string Name), Border> _planItemContainers = [];
+    private readonly List<(TextBlock Summary, ProjectTaskChoice Task)> _planItemSummaries = [];
+    private readonly Dictionary<(PlanItemKind Kind, string Name), PlanItemStatusView> _planItemStatuses = [];
     // Only the timing text changes while a Run is active; cards are never rebuilt for it.
     private readonly DispatcherTimer _runTimer = new() { Interval = TimeSpan.FromSeconds(1) };
 
@@ -113,6 +114,7 @@ public partial class MainWindow : FluentWindow
         string? PatternMessage, bool Submitted = false)
     {
         internal (Guid, string, string) Key => (ConfigurationId, OptionName, InputName);
+        internal PlanItemKind Kind { get; init; }
     }
 
     // The badge and status text of a plan card, updated in place as the Run moves on.
@@ -613,7 +615,8 @@ public partial class MainWindow : FluentWindow
             return;
         }
         try {
-            if (!RequireProject().AddTask(task.Name)) {
+            var project = RequireProject();
+            if (!(task.Kind == PlanItemKind.Pretask ? project.AddPretask(task.Name) : project.AddTask(task.Name))) {
                 return;
             }
             _pendingStartAttempt = null;
@@ -621,7 +624,7 @@ public partial class MainWindow : FluentWindow
             UpdateAddedTasks();
             RenderTaskPlan();
             // The plan keeps its shape: the new card is shown and highlighted rather than expanded.
-            _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => LocatePlanItem(task.Name));
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => LocatePlanItem(task.Name, task.Kind));
             _logger.Info($"已添加执行计划任务：{task.Name}。 ");
         } catch (Exception exception) {
             HandleProjectEditError("添加执行计划任务失败", exception);
@@ -631,13 +634,13 @@ public partial class MainWindow : FluentWindow
     private void LocatePlanItemButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is WpfButton { Tag: ProjectTaskChoice task }) {
-            LocatePlanItem(task.Name);
+            LocatePlanItem(task.Name, task.Kind);
         }
     }
 
-    private void LocatePlanItem(string taskName)
+    private void LocatePlanItem(string taskName, PlanItemKind kind = PlanItemKind.MaaTask)
     {
-        if (_planItemContainers.TryGetValue(taskName, out var card)) {
+        if (_planItemContainers.TryGetValue((kind, taskName), out var card)) {
             BringIntoPlanView(card);
             FlashPlanItem(card);
         }
@@ -682,16 +685,17 @@ public partial class MainWindow : FluentWindow
             || !_invalidInputDrafts.Keys.Any(key => key.Item1 == project.ActiveConfigurationId)) {
             return false;
         }
-        var match = project.SelectedTaskNames.OrderBy(name => name == _expandedTaskName ? 0 : 1)
-            .SelectMany(taskName => DeriveInspectorRows(taskName, GetConfigurationOrEmpty(taskName), shared: false)
-                .SelectMany(row => row.Inputs.Select(input => (Task: taskName, Option: row.Option.Name,
-                    Key: (project.ActiveConfigurationId, row.Option.Name, input.Input.Name)))))
+        var match = project.SelectedItems.OrderBy(task => IsExpanded(task) ? 0 : 1)
+            .SelectMany(task => DeriveInspectorRows(task.Name, GetConfigurationOrEmpty(task.Name, task.Kind),
+                shared: false, task.Kind).SelectMany(row => row.Inputs.Select(input => (Task: task,
+                    Option: row.Option.Name, Key: (project.ActiveConfigurationId, row.Option.Name, input.Input.Name)))))
             .FirstOrDefault(item => _invalidInputDrafts.ContainsKey(item.Key));
         if (match.Task is null) {
             return false;
         }
-        if (_expandedTaskName != match.Task || !_optionInputEditors.ContainsKey(match.Key)) {
-            _expandedTaskName = match.Task;
+        if (!IsExpanded(match.Task) || !_optionInputEditors.ContainsKey(match.Key)) {
+            _expandedTaskName = match.Task.Name;
+            _expandedTaskKind = match.Task.Kind;
             RenderTaskPlan();
         }
         if (_optionInputEditors.TryGetValue(match.Key, out var editor)) {
@@ -708,10 +712,11 @@ public partial class MainWindow : FluentWindow
     private void PlanItemHeader_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not WpfButton { Tag: ProjectTaskChoice task }
-            || _expandedTaskName != task.Name && !HasParameters(GetConfigurationOrEmpty(task.Name))) {
+            || !IsExpanded(task) && !HasParameters(GetConfigurationOrEmpty(task.Name, task.Kind))) {
             return;
         }
-        _expandedTaskName = _expandedTaskName == task.Name ? null : task.Name;
+        _expandedTaskName = IsExpanded(task) ? null : task.Name;
+        _expandedTaskKind = task.Kind;
         RenderTaskPlan();
     }
 
@@ -721,10 +726,13 @@ public partial class MainWindow : FluentWindow
             return;
         }
         try {
-            if (!RequireProject().RemoveTask(task.Name)) {
+            var project = RequireProject();
+            var removed = task.Kind == PlanItemKind.Pretask
+                ? project.RemovePretask(task.Name) : project.RemoveTask(task.Name);
+            if (!removed) {
                 return;
             }
-            if (_expandedTaskName == task.Name) {
+            if (IsExpanded(task)) {
                 _expandedTaskName = null;
             }
             CloseTaskDescriptionDrawer();
@@ -913,18 +921,33 @@ public partial class MainWindow : FluentWindow
     }
 
     private string[] GetExpandedOptionNames() => _expandedTaskName is not { } taskName ? []
-        : DeriveInspectorRows(taskName, GetConfigurationOrEmpty(taskName), shared: false)
+        : DeriveInspectorRows(taskName, GetConfigurationOrEmpty(taskName, _expandedTaskKind),
+            shared: false, _expandedTaskKind)
             .Select(row => row.Option.Name).ToArray();
 
     private void RenderAvailableTaskShelf(ProjectPlanModule project)
     {
         var query = TaskSearchBox.Text.Trim();
-        var tasks = project.Tasks.Where(task => task.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
-            || task.Label.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        bool Matches(ProjectTaskChoice task) => task.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || task.Label.Contains(query, StringComparison.OrdinalIgnoreCase);
+        var tasks = project.Tasks.Where(Matches).ToArray();
+        var pretasks = project.Pretasks.Where(Matches).ToArray();
+        var total = project.Tasks.Count + project.Pretasks.Count;
         AvailableTaskCountText.Text = query.Length == 0
-            ? project.Tasks.Count.ToString() : $"{tasks.Length} / {project.Tasks.Count}";
+            ? total.ToString() : $"{tasks.Length + pretasks.Length} / {total}";
         AvailableTasksPanel.Children.Clear();
-        if (tasks.Length == 0) {
+        if (pretasks.Length != 0) {
+            AvailableTasksPanel.Children.Add(new TextBlock {
+                Text = "前置任务", Margin = new Thickness(2, 8, 0, 2), FontWeight = FontWeights.SemiBold
+            });
+            AvailableTasksPanel.Children.Add(CreateTaskChipPanel(project, pretasks));
+        }
+        if (pretasks.Length != 0 && tasks.Length != 0) {
+            AvailableTasksPanel.Children.Add(new TextBlock {
+                Text = "普通任务", Margin = new Thickness(2, 12, 0, 2), FontWeight = FontWeights.SemiBold
+            });
+        }
+        if (tasks.Length == 0 && pretasks.Length == 0) {
             AvailableTasksPanel.Children.Add(new TextBlock {
                 Text = "没有匹配的任务", Margin = new Thickness(2, 8, 0, 12),
                 Style = (Style)FindResource("SecondaryTextStyle")
@@ -981,7 +1004,8 @@ public partial class MainWindow : FluentWindow
             }
         };
         foreach (var task in tasks) {
-            var added = project.SelectedTaskNames.Contains(task.Name, StringComparer.Ordinal);
+            var selected = task.Kind == PlanItemKind.Pretask ? project.SelectedPretaskNames : project.SelectedTaskNames;
+            var added = selected.Contains(task.Name, StringComparer.Ordinal);
             var label = new TextBlock {
                 Text = task.Label, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap
             };
@@ -1054,19 +1078,16 @@ public partial class MainWindow : FluentWindow
         _optionInputEditors.Clear();
         _inspectorRows.Clear();
         _planItemStatuses.Clear();
-        EmptyPlanPanel.Visibility = project.SelectedTaskNames.Count == 0
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        PlanCountText.Text = $"{project.SelectedTaskNames.Count} 项";
-        EmptyPlanText.Text = $"从 {project.Tasks.Count} 个可用任务中选择要执行的任务";
+        EmptyPlanPanel.Visibility = project.SelectedItemCount == 0 ? Visibility.Visible : Visibility.Collapsed;
+        PlanCountText.Text = $"{project.SelectedItemCount} 项";
+        EmptyPlanText.Text = $"从 {project.Tasks.Count + project.Pretasks.Count} 个可用任务中选择要执行的任务";
 
-        foreach (var taskName in project.SelectedTaskNames) {
-            AddDropIndicator();
-            var task = project.Tasks.SingleOrDefault(candidate => candidate.Name == taskName)
-                ?? new ProjectTaskChoice(taskName, taskName, "此任务已不在当前项目中，可从配置中移除。");
-            var expanded = _expandedTaskName == task.Name;
-            var container = CreatePlanItem(task, expanded);
-            _planItemContainers.Add(task.Name, container);
+        foreach (var task in project.SelectedItems) {
+            if (task.Kind == PlanItemKind.MaaTask) {
+                AddDropIndicator();
+            }
+            var container = CreatePlanItem(task, IsExpanded(task));
+            _planItemContainers.Add((task.Kind, task.Name), container);
             PlanItemsPanel.Children.Add(container);
         }
         AddDropIndicator();
@@ -1110,10 +1131,14 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private ProjectConfigurationView GetConfigurationOrEmpty(string taskName)
+    private bool IsExpanded(ProjectTaskChoice task) =>
+        _expandedTaskName == task.Name && _expandedTaskKind == task.Kind;
+
+    private ProjectConfigurationView GetConfigurationOrEmpty(
+        string taskName, PlanItemKind kind = PlanItemKind.MaaTask)
     {
         try {
-            return RequireProject().GetConfiguration(taskName);
+            return RequireProject().GetConfiguration(taskName, kind);
         } catch (Exception exception) when (exception is InvalidDataException or ArgumentException) {
             return new ProjectConfigurationView([], []);
         }
@@ -1124,7 +1149,7 @@ public partial class MainWindow : FluentWindow
 
     private Border CreatePlanItem(ProjectTaskChoice task, bool expanded)
     {
-        var configuration = GetConfigurationOrEmpty(task.Name);
+        var configuration = GetConfigurationOrEmpty(task.Name, task.Kind);
         var hasParameters = HasParameters(configuration);
         expanded &= hasParameters;
         var container = new Border {
@@ -1153,7 +1178,7 @@ public partial class MainWindow : FluentWindow
         if (expanded) {
             var editor = new Border {
                 Style = (Style)FindResource("ParameterEditorStyle"),
-                Child = CreateParameterInspector(task.Name, configuration)
+                Child = CreateParameterInspector(task.Name, configuration, task.Kind)
             };
             // A wide card lines the inspector up with the task label; a narrow one gives it the full width.
             container.SizeChanged += (_, args) =>
@@ -1181,15 +1206,20 @@ public partial class MainWindow : FluentWindow
 
         var dragHandle = CreateIconButton(WpfSymbolRegular.ReOrderDotsVertical20, "拖动以调整顺序", "拖动以调整顺序");
         dragHandle.Tag = task;
-        dragHandle.Cursor = WpfCursors.SizeAll;
-        dragHandle.PreviewMouseLeftButtonDown += PlanDragHandle_PreviewMouseLeftButtonDown;
-        dragHandle.PreviewMouseMove += PlanDragHandle_PreviewMouseMove;
-        BindConfigurationEditable(dragHandle);
+        if (task.Kind == PlanItemKind.Pretask) {
+            dragHandle.Visibility = Visibility.Hidden;
+            dragHandle.IsHitTestVisible = false;
+        } else {
+            dragHandle.Cursor = WpfCursors.SizeAll;
+            dragHandle.PreviewMouseLeftButtonDown += PlanDragHandle_PreviewMouseLeftButtonDown;
+            dragHandle.PreviewMouseMove += PlanDragHandle_PreviewMouseMove;
+            BindConfigurationEditable(dragHandle);
+        }
         header.Children.Add(dragHandle);
         header.Children.Add(CreatePlanItemBadge(task));
 
         var label = new TextBlock {
-            Text = task.Label,
+            Text = task.Kind == PlanItemKind.Pretask ? $"前置 · {task.Label}" : task.Label,
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center
@@ -1219,8 +1249,8 @@ public partial class MainWindow : FluentWindow
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            _planItemSummaries.Add((summaryText, task.Name));
-            FillParameterSummary(summaryText, task.Name, configuration);
+            _planItemSummaries.Add((summaryText, task));
+            FillParameterSummary(summaryText, task.Name, configuration, task.Kind);
             Grid.SetColumn(summaryText, 2);
             title.Children.Add(summaryText);
         }
@@ -1242,14 +1272,14 @@ public partial class MainWindow : FluentWindow
         AutomationProperties.SetLiveSetting(status, AutomationLiveSetting.Polite);
         Grid.SetColumn(status, 3);
         header.Children.Add(status);
-        var badge = _planItemStatuses[task.Name];
-        _planItemStatuses[task.Name] = badge with { Status = status };
+        var badge = _planItemStatuses[(task.Kind, task.Name)];
+        _planItemStatuses[(task.Kind, task.Name)] = badge with { Status = status };
 
         if (!string.IsNullOrWhiteSpace(task.Description)) {
             var information = CreateIconButton(WpfSymbolRegular.Info16, $"查看 {task.Label} 的任务描述", "查看任务说明");
             information.Tag = task;
             information.Click += TaskDescriptionButton_Click;
-            _taskDescriptionButtons[task.Name] = information;
+            _taskDescriptionButtons[(task.Kind, task.Name)] = information;
             Grid.SetColumn(information, 4);
             header.Children.Add(information);
         }
@@ -1267,7 +1297,8 @@ public partial class MainWindow : FluentWindow
     // The plan position, replaced by the item's state while a Run describes this plan.
     private Border CreatePlanItemBadge(ProjectTaskChoice task)
     {
-        var position = RequireProject().SelectedTaskNames.ToList().IndexOf(task.Name);
+        var position = RequireProject().SelectedItems.ToList()
+            .FindIndex(item => item.Kind == task.Kind && item.Name == task.Name);
         var number = new TextBlock {
             Text = (position + 1).ToString(), FontSize = 12, FontWeight = FontWeights.SemiBold,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
@@ -1281,30 +1312,31 @@ public partial class MainWindow : FluentWindow
             VerticalAlignment = VerticalAlignment.Center, Child = new Grid { Children = { number, icon } }
         };
         Grid.SetColumn(badge, 1);
-        _planItemStatuses[task.Name] = new PlanItemStatusView(badge, number, icon, new TextBlock(), position);
+        _planItemStatuses[(task.Kind, task.Name)] = new PlanItemStatusView(
+            badge, number, icon, new TextBlock(), position);
         return badge;
     }
 
     // Drafts are those of the active configuration; sharing is only worked out for the expanded card.
     private IReadOnlyList<InspectorRow> DeriveInspectorRows(
-        string taskName, ProjectConfigurationView configuration, bool shared)
+        string taskName, ProjectConfigurationView configuration, bool shared,
+        PlanItemKind kind = PlanItemKind.MaaTask)
     {
         var project = RequireProject();
         var drafts = _invalidInputDrafts.Where(pair => pair.Key.Item1 == project.ActiveConfigurationId)
             .ToDictionary(pair => (pair.Key.Item2, pair.Key.Item3), pair => pair.Value);
-        (string, ProjectConfigurationView)[] others = !shared ? [] : project.SelectedTaskNames
-            .Where(name => name != taskName)
-            .Select(name => (project.Tasks.SingleOrDefault(task => task.Name == name)?.Label ?? name,
-                GetConfigurationOrEmpty(name)))
-            .ToArray();
+        (string, ProjectConfigurationView)[] others = !shared ? [] : project.SelectedItems
+            .Where(task => task.Name != taskName || task.Kind != kind)
+            .Select(task => (task.Label, GetConfigurationOrEmpty(task.Name, task.Kind))).ToArray();
         return ParameterInspector.Derive(configuration, drafts, others);
     }
 
     // An unfixed invalid draft replaces the saved value in red, so folded cards agree with the field and Start block.
-    private void FillParameterSummary(TextBlock summary, string taskName, ProjectConfigurationView configuration)
+    private void FillParameterSummary(TextBlock summary, string taskName, ProjectConfigurationView configuration,
+        PlanItemKind kind = PlanItemKind.MaaTask)
     {
         summary.Inlines.Clear();
-        foreach (var row in DeriveInspectorRows(taskName, configuration, shared: false)) {
+        foreach (var row in DeriveInspectorRows(taskName, configuration, shared: false, kind)) {
             var parts = row.Kind == ProjectOptionKind.Input
                 ? row.Inputs.Select(input => (input.Label, Value: input.DisplayValue, Invalid: input.Draft is not null))
                 : [(row.Label, Value: row.SelectedCase?.Label ?? string.Empty, Invalid: false)];
@@ -1325,23 +1357,25 @@ public partial class MainWindow : FluentWindow
     // focused editor and a switch's animation are not rebuilt.
     private void RefreshParameterDisplays()
     {
-        foreach (var (summary, taskName) in _planItemSummaries) {
-            FillParameterSummary(summary, taskName, GetConfigurationOrEmpty(taskName));
+        foreach (var (summary, task) in _planItemSummaries) {
+            FillParameterSummary(summary, task.Name, GetConfigurationOrEmpty(task.Name, task.Kind), task.Kind);
         }
         if (_expandedTaskName is not { } expanded || _inspectorRows.Count == 0) {
             return;
         }
-        foreach (var row in DeriveInspectorRows(expanded, GetConfigurationOrEmpty(expanded), shared: false)) {
+        foreach (var row in DeriveInspectorRows(expanded, GetConfigurationOrEmpty(expanded, _expandedTaskKind),
+            shared: false, _expandedTaskKind)) {
             if (_inspectorRows.TryGetValue(row.Option.Name, out var view)) {
                 ApplyInspectorRow(view, row);
             }
         }
     }
 
-    private Border CreateParameterInspector(string taskName, ProjectConfigurationView configuration)
+    private Border CreateParameterInspector(string taskName, ProjectConfigurationView configuration,
+        PlanItemKind kind = PlanItemKind.MaaTask)
     {
         var table = new StackPanel();
-        foreach (var row in DeriveInspectorRows(taskName, configuration, shared: true)) {
+        foreach (var row in DeriveInspectorRows(taskName, configuration, shared: true, kind)) {
             table.Children.Add(CreateInspectorRow(row, separated: table.Children.Count != 0));
         }
         return new Border { Style = (Style)FindResource("Inspector.Table"), Child = table };
@@ -1436,7 +1470,7 @@ public partial class MainWindow : FluentWindow
     private Wpf.Ui.Controls.TextBox CreateInputEditor(InspectorRow row, InspectorInput input)
     {
         var tag = new OptionInputTag(_projectPlan!.ActiveConfigurationId, row.Option.Name, input.Input.Name,
-            input.SavedValue, input.Input.PatternMessage);
+            input.SavedValue, input.Input.PatternMessage) { Kind = _expandedTaskKind };
         var editor = new Wpf.Ui.Controls.TextBox {
             Style = (Style)FindResource("Option.TextBox"),
             Text = input.DisplayValue,
@@ -1578,7 +1612,7 @@ public partial class MainWindow : FluentWindow
 
     private void PlanDragHandle_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is WpfButton { Tag: ProjectTaskChoice task }) {
+        if (sender is WpfButton { Tag: ProjectTaskChoice { Kind: PlanItemKind.MaaTask } task }) {
             _dragTaskName = task.Name;
             _dragStartPoint = e.GetPosition(PlanItemsPanel);
         }
@@ -1588,7 +1622,7 @@ public partial class MainWindow : FluentWindow
     {
         if (e.LeftButton != MouseButtonState.Pressed
             || sender is not WpfButton { Tag: ProjectTaskChoice task }
-            || _dragTaskName != task.Name) {
+            || task.Kind != PlanItemKind.MaaTask || _dragTaskName != task.Name) {
             return;
         }
         var current = e.GetPosition(PlanItemsPanel);
@@ -1599,7 +1633,7 @@ public partial class MainWindow : FluentWindow
 
         _expandedTaskName = null;
         RenderTaskPlan();
-        if (_planItemContainers.TryGetValue(task.Name, out var container)) {
+        if (_planItemContainers.TryGetValue((task.Kind, task.Name), out var container)) {
             container.Effect = (Effect)FindResource("Effect.Surface.Drag");
         }
         try {
@@ -1658,7 +1692,7 @@ public partial class MainWindow : FluentWindow
             return 0;
         }
         for (var index = 0; index < project.SelectedTaskNames.Count; index++) {
-            var container = _planItemContainers[project.SelectedTaskNames[index]];
+            var container = _planItemContainers[(PlanItemKind.MaaTask, project.SelectedTaskNames[index])];
             var top = container.TranslatePoint(new WpfPoint(0, 0), PlanItemsPanel).Y;
             if (pointerY < top + container.ActualHeight / 2) {
                 return index;
@@ -1750,6 +1784,7 @@ public partial class MainWindow : FluentWindow
         // Preparing the environment reloads the project; an unfixed invalid draft must survive it and keep blocking
         // Start. Drafts for inputs the reloaded PI no longer has are never rendered or matched.
         _pendingStartAttempt = null;
+        _expandedTaskKind = PlanItemKind.MaaTask;
         _expandedTaskName = project.InitializedTaskName
             ?? (_onboardingPreferences.ShouldOfferAutomatically && !_onboardingAutoEnded
                 ? project.SelectedTaskNames.FirstOrDefault() : null);
@@ -1985,7 +2020,7 @@ public partial class MainWindow : FluentWindow
     // Derived fresh on every read, so a click handler never acts on a decision the window no longer shows.
     private RuntimeControlState CurrentControls => RuntimeControls.Derive(new RuntimeControlInputs(
         _sessionSnapshot, _workerSnapshot, _projectPlan is { } project
-            ? new ProjectReadiness(true, project.SelectedTaskNames.Count, _projectConfigurationValid,
+            ? new ProjectReadiness(true, project.SelectedItemCount, _projectConfigurationValid,
                 project.RuntimeProfileDigest)
             : ProjectReadiness.NotLoaded,
         _pendingOperation, _environmentPreparationFailed, _exitInProgress, _environment.Ending,
@@ -2113,7 +2148,8 @@ public partial class MainWindow : FluentWindow
     }
 
     private RunProgressView? CurrentRunProgress => _projectPlan is { } project
-        ? RunProgress.Derive(_workerSnapshot.WorkerSnapshot, project.SelectedTaskNames) : null;
+        ? RunProgress.Derive(_workerSnapshot.WorkerSnapshot,
+            project.SelectedItems.Select(item => (item.Kind, item.Name)).ToArray()) : null;
 
     private enum StatusTone { Idle, Busy, Ok, Run, Bad }
 
@@ -2128,11 +2164,11 @@ public partial class MainWindow : FluentWindow
     // The pill, title and detail restate the action RuntimeControls chose; progress only adds the current item.
     private void ApplyRuntimeStatus(RuntimeControlState state, RunProgressView? progress)
     {
-        var planSummary = _projectPlan is { } project ? $"{project.SelectedTaskNames.Count} 项任务待执行" : "项目未加载";
+        var planSummary = _projectPlan is { } project ? $"{project.SelectedItemCount} 项任务待执行" : "项目未加载";
         var current = progress?.Current;
         var (tone, pill, title, detail, warn) = state.Action switch {
             RuntimeAction.Prepare => (StatusTone.Idle, "未准备", "开始任务前需要准备运行环境",
-                "将准备桌面分身、Worker 和游戏", false),
+                "将准备桌面分身和 Worker", false),
             RuntimeAction.InProgress { Kind: ProgressKind.PreparingEnvironment } => (StatusTone.Busy, "准备中",
                 "正在准备运行环境", PreparationStage(), false),
             RuntimeAction.InProgress { Kind: ProgressKind.StartingRun } => (StatusTone.Busy, "启动中", "正在开始任务",
@@ -2225,7 +2261,7 @@ public partial class MainWindow : FluentWindow
             RuntimeStatusDetail.Text = $"本项已运行 {ElapsedText(current.StartedAtUtc, null)}";
         }
         if (_projectPlan is not { } project
-            || !progress.Items.Select(item => item.TaskName).SequenceEqual(project.SelectedTaskNames)) {
+            || !ProgressMatches(project, progress)) {
             return;
         }
         foreach (var view in _planItemStatuses.Values) {
@@ -2273,11 +2309,15 @@ public partial class MainWindow : FluentWindow
         RunProgressBar.Clip = new RectangleGeometry(new Rect(0, 0, width, 6), 3, 3);
     }
 
-    // Cards show their item's state only while the Run describes this exact plan; otherwise they show their number.
+    private static bool ProgressMatches(ProjectPlanModule project, RunProgressView progress) =>
+        progress.Items.Select(item => (item.Kind, item.TaskName))
+            .SequenceEqual(project.SelectedItems.Select(item => (item.Kind, item.Name)));
+
+    // Cards show their state only while the Run describes this plan; otherwise they show their number.
     private void ApplyPlanItemStatuses(RunProgressView? progress)
     {
         var items = progress is not null && _projectPlan is { } project
-            && progress.Items.Select(item => item.TaskName).SequenceEqual(project.SelectedTaskNames)
+            && ProgressMatches(project, progress)
                 ? progress.Items : null;
         foreach (var view in _planItemStatuses.Values) {
             var item = items?[view.Position];

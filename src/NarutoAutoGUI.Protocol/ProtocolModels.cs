@@ -5,10 +5,10 @@ namespace NarutoAutoGUI.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int ProtocolVersion = 4;
-    public const int SnapshotVersion = 1;
+    public const int ProtocolVersion = 5;
+    public const int SnapshotVersion = 2;
     public const int LaunchContextVersion = 1;
-    public const int PlanVersion = 1;
+    public const int PlanVersion = 2;
     public const int MaximumFramePayloadBytes = 4 * 1024 * 1024;
     public const int MaximumLaunchManifestBytes = 256 * 1024;
     public const int MaximumRunPlanBytes = 1024 * 1024;
@@ -139,7 +139,15 @@ public sealed record RunPlan(
 
 public sealed record RunPlanItem(
     Guid PlanItemId, string TaskName, string TaskLabel, string Entry,
-    JsonElement ResolvedOptions, JsonElement PipelineOverride);
+    JsonElement ResolvedOptions, JsonElement PipelineOverride)
+{
+    public PlanItemKind Kind { get; init; }
+    public PretaskCommand? Program { get; init; }
+}
+
+public enum PlanItemKind { MaaTask, Pretask }
+
+public sealed record PretaskCommand(string Executable, IReadOnlyList<string> Arguments);
 
 public enum WorkerState { Starting, Ready, NotReady, Faulted }
 
@@ -174,7 +182,10 @@ public sealed record PlanItemSnapshot(
     Guid PlanItemId, string TaskName, string TaskLabel, string Entry,
     JsonElement ResolvedOptions, JsonElement PipelineOverride, PlanItemState State,
     DateTime? StartedAtUtc, DateTime? EndedAtUtc, string? Reason,
-    JsonElement? Result, StructuredReason? Error);
+    JsonElement? Result, StructuredReason? Error)
+{
+    public PlanItemKind Kind { get; init; }
+}
 
 public sealed record WorkerLogEntry(
     long Sequence, DateTime TimestampUtc, string Level, string Source, string Message,

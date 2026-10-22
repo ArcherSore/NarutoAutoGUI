@@ -135,7 +135,7 @@ internal static partial class SelfTestRunner
 
             foreach (var (action, pill, title, detail) in new (RuntimeAction, string, string, string)[] {
                 (new RuntimeAction.Prepare(true), "未准备", "开始任务前需要准备运行环境",
-                    "将准备桌面分身、Worker 和游戏"),
+                    "将准备桌面分身和 Worker"),
                 (new RuntimeAction.Start(false, StartBlocker.NoTasks), "就绪", "1 项任务待执行",
                     "请先在执行计划中添加任务"),
                 (new RuntimeAction.InProgress(ProgressKind.StartingRun), "启动中", "正在开始任务",

@@ -213,7 +213,8 @@ public sealed class ProjectPlanModule
         if (!selected.Contains(taskName, StringComparer.Ordinal)) {
             throw new InvalidOperationException($"{kind} {taskName} 不在当前执行计划中。");
         }
-        return BuildConfiguration(config, taskName, kind);
+        return kind == PlanItemKind.Pretask ? BuildPretaskConfiguration(config, FindPretask(taskName))
+            : BuildConfiguration(config, taskName);
     }
 
     // Checks only the edited value, so a typo can be shown at its field instead of as a whole-config failure.
@@ -223,11 +224,8 @@ public sealed class ProjectPlanModule
         var input = FindOption(optionName).Inputs.SingleOrDefault(item => item.Name == inputName)
             ?? throw new ArgumentException($"option {optionName} 不包含 input {inputName}。", nameof(inputName));
         try {
-            if (kind == PlanItemKind.Pretask) {
-                ProjectInputValue.ValidatePattern(input, value, $"option {optionName} input {inputName} 的值");
-            } else {
-                _ = ProjectInputValue.Parse(input, value, $"option {optionName} input {inputName} 的值");
-            }
+            _ = ProjectInputValue.Parse(input, value, $"option {optionName} input {inputName} 的值",
+                typed: kind != PlanItemKind.Pretask);
             return null;
         } catch (InvalidDataException exception) {
             return exception.Message;
@@ -302,19 +300,18 @@ public sealed class ProjectPlanModule
             return (Task: task, Resolved: ProjectOptionResolver.Resolve(_project, task, config));
         }).ToArray();
         var createdAtUtc = DateTime.UtcNow;
-        var pretaskItems = _project.Pretasks.Where(item => item.Applicable
-            && config.SelectedPretasks.Contains(item.Name, StringComparer.Ordinal)).Select(item => {
-                var values = ProjectOptionResolver.ResolvePretask(_project, item, config);
-                var arguments = item.Arguments.ToList();
-                if (item.Options.Count != 0) {
-                    arguments.Add(JsonSerializer.Serialize(values, ProtocolJson.Options));
-                }
-                return new RunPlanItem(Guid.NewGuid(), item.Name, item.Label, string.Empty,
-                    values, ProtocolJson.ToElement(Array.Empty<object>())) {
-                    Kind = PlanItemKind.Pretask,
-                    Program = new PretaskCommand(ResolvePretaskExecutable(item.Executable), arguments)
-                };
-            });
+        var pretaskItems = SelectedPretaskDefinitions(config).Select(item => {
+            var values = ProjectOptionResolver.ResolvePretask(_project, item, config);
+            var arguments = item.Arguments.ToList();
+            if (item.Options.Count != 0) {
+                arguments.Add(JsonSerializer.Serialize(values, ProtocolJson.Options));
+            }
+            return new RunPlanItem(Guid.NewGuid(), item.Name, item.Label, string.Empty,
+                values, ProtocolJson.ToElement(Array.Empty<object>())) {
+                Kind = PlanItemKind.Pretask,
+                Program = new PretaskCommand(ResolvePretaskExecutable(item.Executable), arguments)
+            };
+        });
         var items = pretaskItems.Concat(resolvedItems.Select(item => new RunPlanItem(
             Guid.NewGuid(), item.Task.Name, item.Task.Label, item.Task.Entry,
             item.Resolved.ResolvedTaskOptions, item.Resolved.PipelineOverride))).ToArray();
@@ -378,18 +375,15 @@ public sealed class ProjectPlanModule
         if (taskName is not null) {
             return BuildConfiguration(config, taskName);
         }
-        var pretask = _project.Pretasks.FirstOrDefault(item => item.Applicable
-            && config.SelectedPretasks.Contains(item.Name, StringComparer.Ordinal));
-        return pretask is null ? new ProjectConfigurationView([], [])
-            : BuildConfiguration(config, pretask.Name, PlanItemKind.Pretask);
+        var pretask = SelectedPretaskDefinitions(config).FirstOrDefault();
+        return pretask is null ? new ProjectConfigurationView([], []) : BuildPretaskConfiguration(config, pretask);
     }
 
-    private ProjectConfigurationView BuildConfiguration(
-        TaskConfiguration config, string? taskName, PlanItemKind kind = PlanItemKind.MaaTask)
+    private ProjectConfigurationView BuildPretaskConfiguration(TaskConfiguration config, PretaskDefinition pretask) =>
+        new([], BuildEditors(pretask.Options, config));
+
+    private ProjectConfigurationView BuildConfiguration(TaskConfiguration config, string? taskName)
     {
-        if (kind == PlanItemKind.Pretask) {
-            return new ProjectConfigurationView([], BuildEditors(FindPretask(taskName!).Options, config));
-        }
         var global = BuildEditors(_project.GlobalOptions, config);
         var task = taskName is null
             ? []
@@ -448,6 +442,10 @@ public sealed class ProjectPlanModule
     private PretaskDefinition FindPretask(string name) =>
         _project.Pretasks.SingleOrDefault(item => item.Name == name)
         ?? throw new ArgumentException($"PI 中不存在 pretask：{name}。", nameof(name));
+
+    // The pretasks a Run executes: selected, applicable, and in Project Interface order.
+    private IEnumerable<PretaskDefinition> SelectedPretaskDefinitions(TaskConfiguration config) => _project.Pretasks
+        .Where(item => item.Applicable && config.SelectedPretasks.Contains(item.Name, StringComparer.Ordinal));
 
     private string ResolvePretaskExecutable(string executable)
     {

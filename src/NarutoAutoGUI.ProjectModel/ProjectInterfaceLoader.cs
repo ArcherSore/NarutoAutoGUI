@@ -435,11 +435,8 @@ internal static class ProjectInterfaceLoader
                 }
                 for (var inputIndex = 0; inputIndex < option.Inputs.Count; inputIndex++) {
                     var input = option.Inputs[inputIndex];
-                    if (pretaskOnlyOptions.Contains(option.Name)) {
-                        ProjectInputValue.ValidatePattern(input, input.Default, $"{path}.inputs[{inputIndex}].default");
-                    } else {
-                        _ = ProjectInputValue.Parse(input, input.Default, $"{path}.inputs[{inputIndex}].default");
-                    }
+                    _ = ProjectInputValue.Parse(input, input.Default, $"{path}.inputs[{inputIndex}].default",
+                        typed: !pretaskOnlyOptions.Contains(option.Name));
                 }
                 continue;
             }

@@ -93,7 +93,18 @@ internal sealed class PretaskProcess : IDisposable
         _preserveOutput = true;
     }
 
-    internal async Task<bool> TerminateAndConfirmAsync(TimeSpan timeout)
+    // False keeps the job, process and output handles: an unconfirmed tree must stay owned for recovery.
+    internal async Task<bool> ReleaseAsync(TimeSpan timeout)
+    {
+        if (!await TerminateAndConfirmAsync(timeout)) {
+            return false;
+        }
+        await CloseOutputAsync();
+        Dispose();
+        return true;
+    }
+
+    private async Task<bool> TerminateAndConfirmAsync(TimeSpan timeout)
     {
         if (_process is null) {
             return true;
@@ -119,7 +130,7 @@ internal sealed class PretaskProcess : IDisposable
         return false;
     }
 
-    internal async Task CloseOutputAsync()
+    private async Task CloseOutputAsync()
     {
         // Used only after failure/cancellation has confirmed termination of the owned process tree.
         await Task.WhenAny(_output, Task.Delay(100));

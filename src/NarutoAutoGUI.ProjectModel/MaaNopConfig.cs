@@ -161,13 +161,10 @@ internal sealed class MaaNopConfigStore
             if (item is null || item.Id == Guid.Empty || !ids.Add(item.Id) || string.IsNullOrWhiteSpace(item.Name)) {
                 throw new InvalidDataException("配置 Id 必须非空且唯一，名称不能为空。");
             }
-            if (item.SelectedTasks is null || item.ExplicitOptions is null
-                || item.SelectedTasks.Any(string.IsNullOrWhiteSpace)
-                || item.SelectedTasks.Count != item.SelectedTasks.Distinct(StringComparer.Ordinal).Count()) {
+            if (!IsNameList(item.SelectedTasks) || item.ExplicitOptions is null) {
                 throw new InvalidDataException("SelectedTasks 必须为不重复的 task name 列表。");
             }
-            if (item.SelectedPretasks is null || item.SelectedPretasks.Any(string.IsNullOrWhiteSpace)
-                || item.SelectedPretasks.Count != item.SelectedPretasks.Distinct(StringComparer.Ordinal).Count()) {
+            if (!IsNameList(item.SelectedPretasks)) {
                 throw new InvalidDataException("SelectedPretasks 必须为不重复的 pretask name 列表。");
             }
             foreach (var (name, value) in item.ExplicitOptions) {
@@ -180,4 +177,7 @@ internal sealed class MaaNopConfigStore
             throw new InvalidDataException("ActiveConfigurationId 不存在。");
         }
     }
+
+    private static bool IsNameList(IReadOnlyList<string>? names) => names is not null
+        && !names.Any(string.IsNullOrWhiteSpace) && names.Count == names.Distinct(StringComparer.Ordinal).Count();
 }

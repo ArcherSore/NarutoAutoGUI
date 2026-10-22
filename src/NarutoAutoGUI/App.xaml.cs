@@ -55,8 +55,7 @@ public partial class App : System.Windows.Application
             _logger, Path.Combine(AppContext.BaseDirectory, "state"),
             Path.Combine(AppContext.BaseDirectory, "worker", "NarutoAutoWorker.exe"));
         _workerCoordinator.StateChanged += WorkerCoordinator_StateChanged;
-        _environment = new RuntimeEnvironment(
-            _logger, _sessionManager, _workerCoordinator);
+        _environment = new RuntimeEnvironment(_logger, _sessionManager, _workerCoordinator);
         _mainWindow = new MainWindow(
             _logger, _sessionManager, _workerCoordinator, _environment, RequestExitAsync, EndEnvironmentAsync,
             InstallUpdateAsync);

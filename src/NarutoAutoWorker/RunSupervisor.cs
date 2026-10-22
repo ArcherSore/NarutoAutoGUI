@@ -158,10 +158,7 @@ internal sealed class RunSupervisor
                 throw new WorkerRequestException("invalid_run_plan", "Plan Item 身份或名称为空。 ");
             }
             if (item.Kind == PlanItemKind.Pretask) {
-                if (sawTask || item.Program is not { } program
-                    || string.IsNullOrWhiteSpace(program.Executable) || program.Executable.Contains('\0')
-                    || program.Arguments is null || program.Arguments.Any(argument => argument is null
-                        || argument.Contains('\0')) || !string.IsNullOrEmpty(item.Entry)) {
+                if (sawTask || !string.IsNullOrEmpty(item.Entry) || !IsValidProgram(item.Program)) {
                     throw new WorkerRequestException("invalid_run_plan", "Pretask 程序或执行顺序非法。 ");
                 }
             } else if (item.Kind == PlanItemKind.MaaTask) {
@@ -204,6 +201,10 @@ internal sealed class RunSupervisor
                 $"Run 接受后无法满足 Snapshot terminal reserve：base={candidateBytes}。 ");
         }
     }
+
+    private static bool IsValidProgram(PretaskCommand? program) => program is { Arguments: not null }
+        && !string.IsNullOrWhiteSpace(program.Executable) && !program.Executable.Contains('\0')
+        && program.Arguments.All(argument => argument is not null && !argument.Contains('\0'));
 
     // Called under _stateGate so the active Run is never committed without its execution; factories only construct.
     private IPlanItemExecution CreateExecution(Guid runId, RunPlanItem item) =>
@@ -321,31 +322,30 @@ internal sealed class RunSupervisor
     {
         while (true) {
             var result = await execution.ExecuteAsync(cancellationToken);
+            var pretask = result.Outcome == RuntimeExecutionOutcome.Succeeded ? execution as PretaskExecution : null;
             IPlanItemExecution? nextExecution = null;
             WorkerSnapshot? snapshot = null;
             lock (_stateGate) {
                 if (_activeRun?.RunId != runId || !ReferenceEquals(_execution, execution)) {
                     return;
                 }
-                if (execution is not PretaskExecution || result.Outcome != RuntimeExecutionOutcome.Succeeded
-                    || _activeRun.State != RunState.Stopping) {
+                if (pretask is null || _activeRun.State != RunState.Stopping) {
                     IPlanItemExecution? preparedNext = null;
-                    if (execution is PretaskExecution completed
-                        && result.Outcome == RuntimeExecutionOutcome.Succeeded) {
+                    if (pretask is not null) {
                         var nextIndex = _activeRun.CurrentPlanItemIndex!.Value + 1;
                         if (nextIndex < _activeRun.Plan.Items.Count) {
                             // A failing factory must leave the completed root's children owned by this execution.
                             preparedNext = CreateExecution(runId, _activeRun.Plan.Items[nextIndex]);
                         }
                         // No callbacks, logging or waits: ownership handoff and the state commit share this lock.
-                        result = completed.CommitSuccess(result);
+                        result = pretask.CommitSuccess(result);
                     }
                     snapshot = AdvanceRunLocked(runId, result, out nextExecution, preparedNext);
                 }
             }
             if (snapshot is null) {
                 // Stop won before handoff. Its ACK must precede terminating this pretask's still-owned children.
-                result = await ((PretaskExecution)execution).CancelPendingSuccessAsync(cancellationToken);
+                result = await pretask!.CancelPendingSuccessAsync(cancellationToken);
                 lock (_stateGate) {
                     if (_activeRun?.RunId != runId || !ReferenceEquals(_execution, execution)) {
                         return;

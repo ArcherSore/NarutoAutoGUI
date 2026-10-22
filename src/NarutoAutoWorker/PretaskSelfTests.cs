@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using NarutoAutoGUI.Protocol;
@@ -54,16 +55,10 @@ internal static class PretaskSelfTests
     private static async Task VerifyOutputBudgetAsync(string directory)
     {
         var folder = NewFolder(directory, "output");
-        var count = 0;
-        var truncations = 0;
-        var execution = Execution(folder, "output", (level, _, message) => {
-            Interlocked.Add(ref count, message.Length);
-            if (level == "WARN" && message.Contains("截断", StringComparison.Ordinal)) {
-                Interlocked.Increment(ref truncations);
-            }
-        });
+        var output = OutputBudget();
+        var execution = Execution(folder, "output", output.Log);
         var result = await ExecuteAndCommitAsync(execution).WaitAsync(WaitLimit);
-        Require(result.Outcome == RuntimeExecutionOutcome.Succeeded && count < 40000 && truncations == 2,
+        Require(result.Outcome == RuntimeExecutionOutcome.Succeeded && output.Bounded(),
             "大量 stdout/stderr 不应堵塞程序，且每路输出只保留有界内容。 ");
     }
 
@@ -90,14 +85,8 @@ internal static class PretaskSelfTests
     private static async Task VerifyPreservedOutputAsync(string directory)
     {
         var folder = NewFolder(directory, "preserved-output");
-        var count = 0;
-        var truncations = 0;
-        var execution = Execution(folder, "spawn-output", (level, _, message) => {
-            Interlocked.Add(ref count, message.Length);
-            if (level == "WARN" && message.Contains("截断", StringComparison.Ordinal)) {
-                Interlocked.Increment(ref truncations);
-            }
-        });
+        var output = OutputBudget();
+        var execution = Execution(folder, "spawn-output", output.Log);
         var result = await ExecuteAndCommitAsync(execution).WaitAsync(WaitLimit);
         Require(result.Outcome == RuntimeExecutionOutcome.Succeeded,
             "根程序成功必须及时提交，不能等待仍持有输出管道的后代退出。 ");
@@ -107,8 +96,7 @@ internal static class PretaskSelfTests
         Require(File.ReadAllText(Path.Combine(folder, "output.result")) == "ok",
             "成功保留的子进程必须仍能向继承的 stdout/stderr 写入超过管道容量的数据。 ");
         Require(IsTestProcessAlive(Path.Combine(folder, "child.pid")), "输出后子进程应继续运行。 ");
-        Require(Volatile.Read(ref count) < 40000 && Volatile.Read(ref truncations) == 2,
-            "根退出后的输出仍必须有界记录，并持续排空超过预算的内容。 ");
+        Require(output.Bounded(), "根退出后的输出仍必须有界记录，并持续排空超过预算的内容。 ");
         StopTestProcess(Path.Combine(folder, "child.pid"));
     }
 
@@ -145,26 +133,14 @@ internal static class PretaskSelfTests
     private static async Task VerifyHandoffRaceAsync(string directory, bool stopBeforeCommit)
     {
         var folder = NewFolder(directory, stopBeforeCommit ? "stop-before-handoff" : "stop-after-handoff");
-        var empty = ProtocolJson.ToElement(new { });
-        var item = new RunPlanItem(Guid.NewGuid(), "launch", "启动测试程序", "", empty, empty) {
-            Kind = PlanItemKind.Pretask, Program = HelperCommand("spawn-handoff", folder)
-        };
-        var manifest = new LaunchManifest(ProtocolConstants.LaunchContextVersion, Guid.NewGuid(),
-            RunHarness.ProfileDigest, folder, RunHarness.Project, null!, [], null!);
-        var supervisor = new RunSupervisor(manifest, new WorkerLogBuffer(),
+        var manifest = Manifest(folder);
+        var (supervisor, request) = StartRun(manifest,
             (_, entry, onRunning) => new PretaskExecution(manifest, entry, (_, _, _) => { }, onRunning),
-            (_, _, _, _) => { }, (_, _) => { }, CancellationToken.None);
-        var ok = new DependencyCheck(true, "test", null);
-        supervisor.CompleteInitialization(new DependencyStatus(DateTime.UtcNow, "test", "test",
-            ok, ok, ok, ok, ok), null);
-        var plan = new RunPlan(ProtocolConstants.PlanVersion, DateTime.UtcNow, RunHarness.Project,
-            RunHarness.ProfileDigest, empty, [item]);
-        var request = new RunStartRequest(Guid.NewGuid(), CanonicalDigest.ComputePlanDigestV2(plan), plan);
-        supervisor.Accept(request);
+            PretaskItem(HelperCommand("spawn-handoff", folder)));
         await WaitForFileAsync(Path.Combine(folder, "child.pid"));
         if (stopBeforeCommit) {
-            var gate = typeof(RunSupervisor).GetField("_stateGate", System.Reflection.BindingFlags.Instance
-                | System.Reflection.BindingFlags.NonPublic)!.GetValue(supervisor)!;
+            var gate = typeof(RunSupervisor).GetField("_stateGate", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(supervisor)!;
             // Hold the same commit gate while the root exits, so stop deterministically wins before handoff.
             lock (gate) {
                 File.WriteAllText(Path.Combine(folder, "root.exit"), "exit");
@@ -179,11 +155,7 @@ internal static class PretaskSelfTests
         } else {
             File.WriteAllText(Path.Combine(folder, "root.exit"), "exit");
         }
-        var wait = Stopwatch.StartNew();
-        while (supervisor.GetSnapshot().LastRun is null) {
-            Require(wait.Elapsed < WaitLimit, "Pretask 交接竞争未终结。 ");
-            await Task.Delay(25);
-        }
+        await WaitUntilAsync(() => supervisor.GetSnapshot().LastRun is not null, "Pretask 交接竞争未终结。 ");
         var terminal = supervisor.GetSnapshot().LastRun!;
         Require(terminal.State == (stopBeforeCommit ? RunState.Cancelled : RunState.Succeeded)
             && IsTestProcessAlive(Path.Combine(folder, "child.pid")) != stopBeforeCommit,
@@ -198,41 +170,25 @@ internal static class PretaskSelfTests
     private static async Task VerifyFactoryFailureAsync(string directory)
     {
         var folder = NewFolder(directory, "factory-failure");
+        var manifest = Manifest(folder);
         var empty = ProtocolJson.ToElement(new { });
-        var first = new RunPlanItem(Guid.NewGuid(), "launch", "启动测试程序", "", empty, empty) {
-            Kind = PlanItemKind.Pretask, Program = HelperCommand("spawn-success", folder)
-        };
         var next = new RunPlanItem(Guid.NewGuid(), "task", "后续任务", "Entry", empty, empty);
-        var manifest = new LaunchManifest(ProtocolConstants.LaunchContextVersion, Guid.NewGuid(),
-            RunHarness.ProfileDigest, folder, RunHarness.Project, null!, [], null!);
         PretaskExecution? execution = null;
-        var supervisor = new RunSupervisor(manifest, new WorkerLogBuffer(), (_, entry, onRunning) => {
+        var (supervisor, _) = StartRun(manifest, (_, entry, onRunning) => {
             if (entry.Kind == PlanItemKind.MaaTask) {
                 throw new InvalidOperationException("scripted next factory failure");
             }
             execution = new PretaskExecution(manifest, entry, (_, _, _) => { }, onRunning);
             return execution;
-        }, (_, _, _, _) => { }, (_, _) => { }, CancellationToken.None);
-        var ok = new DependencyCheck(true, "test", null);
-        supervisor.CompleteInitialization(new DependencyStatus(DateTime.UtcNow, "test", "test",
-            ok, ok, ok, ok, ok), null);
-        var plan = new RunPlan(ProtocolConstants.PlanVersion, DateTime.UtcNow, RunHarness.Project,
-            RunHarness.ProfileDigest, empty, [first, next]);
-        supervisor.Accept(new RunStartRequest(Guid.NewGuid(), CanonicalDigest.ComputePlanDigestV2(plan), plan));
-        var timer = Stopwatch.StartNew();
-        while (supervisor.GetSnapshot().WorkerState != WorkerState.Faulted) {
-            Require(timer.Elapsed < WaitLimit, "后续执行器创建失败后 Worker 未进入 Faulted。 ");
-            await Task.Delay(25);
-        }
+        }, PretaskItem(HelperCommand("spawn-success", folder)), next);
+        await WaitUntilAsync(() => supervisor.GetSnapshot().WorkerState == WorkerState.Faulted,
+            "后续执行器创建失败后 Worker 未进入 Faulted。 ");
         var snapshot = supervisor.GetSnapshot();
-        var process = (PretaskProcess?)typeof(PretaskExecution).GetField("_process",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(execution);
+        var process = OwnedProcess(execution);
         Require(snapshot is { LastRun: null, ActiveRun: not null, WorkerReason.Code: "RunLoopFault" }
             && process is not null && IsTestProcessAlive(Path.Combine(folder, "child.pid")),
             "后续 factory 失败时不能提前交接子进程；ActiveRun 与原进程所有权必须保留。 ");
-        Require(await process!.TerminateAndConfirmAsync(WaitLimit), "测试恢复必须清空本次程序树。 ");
-        await process.CloseOutputAsync();
-        process.Dispose();
+        Require(await process!.ReleaseAsync(WaitLimit), "测试恢复必须清空本次程序树。 ");
     }
 
     private static async Task VerifyUnconfirmedAsync(string directory)
@@ -244,24 +200,52 @@ internal static class PretaskSelfTests
         Require(result.Outcome == RuntimeExecutionOutcome.StopTimedOut
             && result.Error?.Code == "PretaskTerminationUnconfirmed", "未确认清理不得报为普通 Failed 或 Cancelled。 ");
         // The deliberately expired confirmation budget leaves ownership retained, even if termination completed.
-        var process = (PretaskProcess)typeof(PretaskExecution).GetField("_process",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(execution)!;
-        Require(await process.TerminateAndConfirmAsync(WaitLimit), "测试恢复必须确认本次树退出。 ");
-        await process.CloseOutputAsync();
-        process.Dispose();
+        Require(await OwnedProcess(execution)!.ReleaseAsync(WaitLimit), "测试恢复必须确认本次树退出。 ");
     }
 
     private static PretaskExecution Execution(string directory, string mode, Action<string, string, string> log,
-        TimeSpan? timeout = null, TimeSpan? cleanup = null, IReadOnlyList<string>? values = null)
+        TimeSpan? timeout = null, TimeSpan? cleanup = null, IReadOnlyList<string>? values = null) =>
+        new(Manifest(directory), PretaskItem(HelperCommand(mode, directory, values)), log, () => { }, timeout, cleanup);
+
+    private static (RunSupervisor Supervisor, RunStartRequest Request) StartRun(LaunchManifest manifest,
+        Func<Guid, RunPlanItem, Action, IPlanItemExecution> createExecution, params RunPlanItem[] items)
     {
-        var command = HelperCommand(mode, directory, values);
+        var supervisor = new RunSupervisor(manifest, new WorkerLogBuffer(), createExecution,
+            (_, _, _, _) => { }, (_, _) => { }, CancellationToken.None);
+        supervisor.CompleteInitialization(RunHarness.Dependencies, null);
+        var request = RunSelfTests.Request(RunSelfTests.Plan(0) with { Items = items });
+        supervisor.Accept(request);
+        return (supervisor, request);
+    }
+
+    private static LaunchManifest Manifest(string directory) => new(ProtocolConstants.LaunchContextVersion,
+        Guid.NewGuid(), RunHarness.ProfileDigest, directory, RunHarness.Project, null!, [], null!);
+
+    private static RunPlanItem PretaskItem(PretaskCommand command)
+    {
         var empty = ProtocolJson.ToElement(new { });
-        var item = new RunPlanItem(Guid.NewGuid(), "launch", "启动测试程序", "", empty, empty) {
+        return new RunPlanItem(Guid.NewGuid(), "launch", "启动测试程序", "", empty, empty) {
             Kind = PlanItemKind.Pretask, Program = command
         };
-        var manifest = new LaunchManifest(ProtocolConstants.LaunchContextVersion, Guid.NewGuid(), "test", directory,
-            RunHarness.Project, null!, [], null!);
-        return new PretaskExecution(manifest, item, log, () => { }, timeout, cleanup);
+    }
+
+    private static PretaskProcess? OwnedProcess(PretaskExecution? execution) =>
+        (PretaskProcess?)typeof(PretaskExecution).GetField("_process", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(execution);
+
+    // The pumps log from their own threads; bounded output stays under budget and warns once per stream.
+    private static (Action<string, string, string> Log, Func<bool> Bounded) OutputBudget()
+    {
+        var count = 0;
+        var truncations = 0;
+        void Log(string level, string source, string message)
+        {
+            Interlocked.Add(ref count, message.Length);
+            if (level == "WARN" && message.Contains("截断", StringComparison.Ordinal)) {
+                Interlocked.Increment(ref truncations);
+            }
+        }
+        return (Log, () => Volatile.Read(ref count) < 40000 && Volatile.Read(ref truncations) == 2);
     }
 
     private static PretaskCommand HelperCommand(string mode, string directory, IReadOnlyList<string>? values = null)
@@ -343,11 +327,13 @@ internal static class PretaskSelfTests
         return folder;
     }
 
-    private static async Task WaitForFileAsync(string path)
+    private static Task WaitForFileAsync(string path) => WaitUntilAsync(() => File.Exists(path), "测试子进程就绪超时。 ");
+
+    private static async Task WaitUntilAsync(Func<bool> condition, string message)
     {
         var timer = Stopwatch.StartNew();
-        while (!File.Exists(path)) {
-            Require(timer.Elapsed < WaitLimit, "测试子进程就绪超时。 ");
+        while (!condition()) {
+            Require(timer.Elapsed < WaitLimit, message);
             await Task.Delay(25);
         }
     }

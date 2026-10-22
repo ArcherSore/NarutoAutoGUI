@@ -99,11 +99,12 @@ internal static partial class SelfTestRunner
             var started = DateTime.UtcNow.AddSeconds(-5);
             var plan = project.CreateRunStartAttempt().Plan;
             var states = new[] { PlanItemState.Succeeded, PlanItemState.Running, PlanItemState.Pending };
-            PlanItemSnapshot Snapshot(RunPlanItem item, int index) => new(item.PlanItemId, item.TaskName,
-                item.TaskLabel, item.Entry, item.ResolvedOptions, item.PipelineOverride, states[index],
-                index < 2 ? started : null, index == 0 ? started : null, null, null, null) { Kind = item.Kind };
+            PlanItemSnapshot Snapshot(RunPlanItem item, PlanItemState state, DateTime? startedAt, DateTime? endedAt) =>
+                new(item.PlanItemId, item.TaskName, item.TaskLabel, item.Entry, item.ResolvedOptions,
+                    item.PipelineOverride, state, startedAt, endedAt, null, null, null) { Kind = item.Kind };
             var run = new RunSnapshot(Guid.NewGuid(), "digest", RunState.Running, started, started, null, null,
-                plan.Items[1].PlanItemId, 1, plan, plan.Items.Select(Snapshot).ToArray(), null, null);
+                plan.Items[1].PlanItemId, 1, plan, plan.Items.Select((item, index) => Snapshot(item, states[index],
+                    index < 2 ? started : null, index == 0 ? started : null)).ToArray(), null, null);
             var record = new WorkerAdmissionRecord(Guid.NewGuid(), "token", 7, Environment.ProcessId,
                 project.RuntimeProfileDigest, DateTime.UtcNow);
             var idle = WorkerCoordinatorSelfTest.CreateSnapshot(record, 0);
@@ -133,18 +134,11 @@ internal static partial class SelfTestRunner
                 && Named<Button>(window, "StartTaskHeaderButton").IsEnabled,
                 "只选择前置任务时仍可开始，移除普通同名任务不得影响前置任务。");
             var onlyPre = project.CreateRunStartAttempt().Plan;
-            var preItem = onlyPre.Items[0];
-            var startingItem = new PlanItemSnapshot(preItem.PlanItemId, preItem.TaskName, preItem.TaskLabel,
-                preItem.Entry, preItem.ResolvedOptions, preItem.PipelineOverride, PlanItemState.Starting,
-                started, null, null, null, null) { Kind = PlanItemKind.Pretask };
             var starting = run with {
-                State = RunState.Starting, CurrentPlanItemId = preItem.PlanItemId, CurrentPlanItemIndex = 0,
-                Plan = onlyPre, Items = onlyPre.Items.Select((item, index) => index == 0 ? startingItem
-                    : new PlanItemSnapshot(item.PlanItemId, item.TaskName, item.TaskLabel, item.Entry,
-                        item.ResolvedOptions, item.PipelineOverride, PlanItemState.Pending,
-                        null, null, null, null, null) {
-                        Kind = item.Kind
-                    }).ToArray()
+                State = RunState.Starting, CurrentPlanItemId = onlyPre.Items[0].PlanItemId, CurrentPlanItemIndex = 0,
+                Plan = onlyPre, Items = onlyPre.Items.Select((item, index) => index == 0
+                    ? Snapshot(item, PlanItemState.Starting, started, null)
+                    : Snapshot(item, PlanItemState.Pending, null, null)).ToArray()
             };
             Observe(idle with { RunState = RunState.Starting, ActiveRun = starting });
             Require(Named<Button>(window, "StopTaskHeaderButton").IsEnabled,

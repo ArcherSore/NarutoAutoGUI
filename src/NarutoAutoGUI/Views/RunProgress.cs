@@ -35,9 +35,6 @@ internal sealed record RunProgressView(
 // Kept apart from RuntimeControls.Derive: progress is presentation, while that decides what may be done.
 internal static class RunProgress
 {
-    internal static RunProgressView? Derive(WorkerSnapshot? worker, IReadOnlyList<string> activeTaskNames)
-        => Derive(worker, activeTaskNames.Select(name => (PlanItemKind.MaaTask, name)).ToArray());
-
     internal static RunProgressView? Derive(
         WorkerSnapshot? worker, IReadOnlyList<(PlanItemKind Kind, string Name)> activeItems)
     {

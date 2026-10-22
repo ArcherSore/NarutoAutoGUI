@@ -624,7 +624,7 @@ public partial class MainWindow : FluentWindow
             UpdateAddedTasks();
             RenderTaskPlan();
             // The plan keeps its shape: the new card is shown and highlighted rather than expanded.
-            _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => LocatePlanItem(task.Name, task.Kind));
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => LocatePlanItem(task));
             _logger.Info($"已添加执行计划任务：{task.Name}。 ");
         } catch (Exception exception) {
             HandleProjectEditError("添加执行计划任务失败", exception);
@@ -634,13 +634,13 @@ public partial class MainWindow : FluentWindow
     private void LocatePlanItemButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is WpfButton { Tag: ProjectTaskChoice task }) {
-            LocatePlanItem(task.Name, task.Kind);
+            LocatePlanItem(task);
         }
     }
 
-    private void LocatePlanItem(string taskName, PlanItemKind kind = PlanItemKind.MaaTask)
+    private void LocatePlanItem(ProjectTaskChoice task)
     {
-        if (_planItemContainers.TryGetValue((kind, taskName), out var card)) {
+        if (_planItemContainers.TryGetValue((task.Kind, task.Name), out var card)) {
             BringIntoPlanView(card);
             FlashPlanItem(card);
         }
@@ -936,16 +936,15 @@ public partial class MainWindow : FluentWindow
         AvailableTaskCountText.Text = query.Length == 0
             ? total.ToString() : $"{tasks.Length + pretasks.Length} / {total}";
         AvailableTasksPanel.Children.Clear();
+        void AddHeading(string text, double top) => AvailableTasksPanel.Children.Add(new TextBlock {
+            Text = text, Margin = new Thickness(2, top, 0, 2), FontWeight = FontWeights.SemiBold
+        });
         if (pretasks.Length != 0) {
-            AvailableTasksPanel.Children.Add(new TextBlock {
-                Text = "前置任务", Margin = new Thickness(2, 8, 0, 2), FontWeight = FontWeights.SemiBold
-            });
+            AddHeading("前置任务", 8);
             AvailableTasksPanel.Children.Add(CreateTaskChipPanel(project, pretasks));
-        }
-        if (pretasks.Length != 0 && tasks.Length != 0) {
-            AvailableTasksPanel.Children.Add(new TextBlock {
-                Text = "普通任务", Margin = new Thickness(2, 12, 0, 2), FontWeight = FontWeights.SemiBold
-            });
+            if (tasks.Length != 0) {
+                AddHeading("普通任务", 12);
+            }
         }
         if (tasks.Length == 0 && pretasks.Length == 0) {
             AvailableTasksPanel.Children.Add(new TextBlock {
@@ -1078,15 +1077,17 @@ public partial class MainWindow : FluentWindow
         _optionInputEditors.Clear();
         _inspectorRows.Clear();
         _planItemStatuses.Clear();
-        EmptyPlanPanel.Visibility = project.SelectedItemCount == 0 ? Visibility.Visible : Visibility.Collapsed;
-        PlanCountText.Text = $"{project.SelectedItemCount} 项";
+        var items = project.SelectedItems;
+        EmptyPlanPanel.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        PlanCountText.Text = $"{items.Count} 项";
         EmptyPlanText.Text = $"从 {project.Tasks.Count + project.Pretasks.Count} 个可用任务中选择要执行的任务";
 
-        foreach (var task in project.SelectedItems) {
+        for (var position = 0; position < items.Count; position++) {
+            var task = items[position];
             if (task.Kind == PlanItemKind.MaaTask) {
                 AddDropIndicator();
             }
-            var container = CreatePlanItem(task, IsExpanded(task));
+            var container = CreatePlanItem(task, position, IsExpanded(task));
             _planItemContainers.Add((task.Kind, task.Name), container);
             PlanItemsPanel.Children.Add(container);
         }
@@ -1134,8 +1135,7 @@ public partial class MainWindow : FluentWindow
     private bool IsExpanded(ProjectTaskChoice task) =>
         _expandedTaskName == task.Name && _expandedTaskKind == task.Kind;
 
-    private ProjectConfigurationView GetConfigurationOrEmpty(
-        string taskName, PlanItemKind kind = PlanItemKind.MaaTask)
+    private ProjectConfigurationView GetConfigurationOrEmpty(string taskName, PlanItemKind kind)
     {
         try {
             return RequireProject().GetConfiguration(taskName, kind);
@@ -1147,7 +1147,7 @@ public partial class MainWindow : FluentWindow
     private static bool HasParameters(ProjectConfigurationView configuration) =>
         configuration.GlobalOptions.Count + configuration.TaskOptions.Count != 0;
 
-    private Border CreatePlanItem(ProjectTaskChoice task, bool expanded)
+    private Border CreatePlanItem(ProjectTaskChoice task, int position, bool expanded)
     {
         var configuration = GetConfigurationOrEmpty(task.Name, task.Kind);
         var hasParameters = HasParameters(configuration);
@@ -1173,7 +1173,7 @@ public partial class MainWindow : FluentWindow
             layout.Children.Add(accentLine);
         }
 
-        layout.Children.Add(CreatePlanItemHeader(task, expanded, hasParameters, configuration));
+        layout.Children.Add(CreatePlanItemHeader(task, position, expanded, hasParameters, configuration));
 
         if (expanded) {
             var editor = new Border {
@@ -1190,7 +1190,7 @@ public partial class MainWindow : FluentWindow
         return container;
     }
 
-    private Grid CreatePlanItemHeader(ProjectTaskChoice task, bool expanded, bool hasParameters,
+    private Grid CreatePlanItemHeader(ProjectTaskChoice task, int position, bool expanded, bool hasParameters,
         ProjectConfigurationView configuration)
     {
         var header = new Grid {
@@ -1216,7 +1216,7 @@ public partial class MainWindow : FluentWindow
             BindConfigurationEditable(dragHandle);
         }
         header.Children.Add(dragHandle);
-        header.Children.Add(CreatePlanItemBadge(task));
+        header.Children.Add(CreatePlanItemBadge(task, position));
 
         var label = new TextBlock {
             Text = task.Kind == PlanItemKind.Pretask ? $"前置 · {task.Label}" : task.Label,
@@ -1295,10 +1295,8 @@ public partial class MainWindow : FluentWindow
     }
 
     // The plan position, replaced by the item's state while a Run describes this plan.
-    private Border CreatePlanItemBadge(ProjectTaskChoice task)
+    private Border CreatePlanItemBadge(ProjectTaskChoice task, int position)
     {
-        var position = RequireProject().SelectedItems.ToList()
-            .FindIndex(item => item.Kind == task.Kind && item.Name == task.Name);
         var number = new TextBlock {
             Text = (position + 1).ToString(), FontSize = 12, FontWeight = FontWeights.SemiBold,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
@@ -1319,8 +1317,7 @@ public partial class MainWindow : FluentWindow
 
     // Drafts are those of the active configuration; sharing is only worked out for the expanded card.
     private IReadOnlyList<InspectorRow> DeriveInspectorRows(
-        string taskName, ProjectConfigurationView configuration, bool shared,
-        PlanItemKind kind = PlanItemKind.MaaTask)
+        string taskName, ProjectConfigurationView configuration, bool shared, PlanItemKind kind)
     {
         var project = RequireProject();
         var drafts = _invalidInputDrafts.Where(pair => pair.Key.Item1 == project.ActiveConfigurationId)
@@ -1333,7 +1330,7 @@ public partial class MainWindow : FluentWindow
 
     // An unfixed invalid draft replaces the saved value in red, so folded cards agree with the field and Start block.
     private void FillParameterSummary(TextBlock summary, string taskName, ProjectConfigurationView configuration,
-        PlanItemKind kind = PlanItemKind.MaaTask)
+        PlanItemKind kind)
     {
         summary.Inlines.Clear();
         foreach (var row in DeriveInspectorRows(taskName, configuration, shared: false, kind)) {
@@ -1371,8 +1368,7 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private Border CreateParameterInspector(string taskName, ProjectConfigurationView configuration,
-        PlanItemKind kind = PlanItemKind.MaaTask)
+    private Border CreateParameterInspector(string taskName, ProjectConfigurationView configuration, PlanItemKind kind)
     {
         var table = new StackPanel();
         foreach (var row in DeriveInspectorRows(taskName, configuration, shared: true, kind)) {
@@ -1612,7 +1608,7 @@ public partial class MainWindow : FluentWindow
 
     private void PlanDragHandle_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is WpfButton { Tag: ProjectTaskChoice { Kind: PlanItemKind.MaaTask } task }) {
+        if (sender is WpfButton { Tag: ProjectTaskChoice task }) {
             _dragTaskName = task.Name;
             _dragStartPoint = e.GetPosition(PlanItemsPanel);
         }
@@ -1622,7 +1618,7 @@ public partial class MainWindow : FluentWindow
     {
         if (e.LeftButton != MouseButtonState.Pressed
             || sender is not WpfButton { Tag: ProjectTaskChoice task }
-            || task.Kind != PlanItemKind.MaaTask || _dragTaskName != task.Name) {
+            || _dragTaskName != task.Name) {
             return;
         }
         var current = e.GetPosition(PlanItemsPanel);
@@ -2212,7 +2208,7 @@ public partial class MainWindow : FluentWindow
         };
     }
 
-    // Worker observations do not report game launch progress; only describe the stages they confirm.
+    // Preparation does not launch the game; describe only the stages Session and Worker observations confirm.
     private string PreparationStage() =>
         _sessionSnapshot.State is not (ChildSessionState.ConnectedVisible or ChildSessionState.ConnectedHidden)
             ? "正在连接桌面分身…"

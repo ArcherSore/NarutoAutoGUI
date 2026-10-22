@@ -18,6 +18,7 @@ internal static class ProjectOptionResolver
         return new ResolvedProjectOptions(ToElement(globalValues), ToElement(taskValues), ToElement(pipelineOverrides));
     }
 
+    // Pretask options only become program arguments: without pipeline overrides, every input stays a string.
     internal static JsonElement ResolvePretask(
         ProjectDefinition project, PretaskDefinition pretask, TaskConfiguration config)
     {
@@ -57,18 +58,11 @@ internal static class ProjectOptionResolver
                                 ? explicitValue
                                 : input.Default;
                             values[input.Name] = resolvedValue;
-                            if (pipelineOverrides is null) {
-                                ProjectInputValue.ValidatePattern(input, resolvedValue,
-                                    $"option {optionName} input {input.Name} 的值");
-                            } else {
-                                substitutions[input.Name] = ProjectInputValue.Parse(
-                                    input, resolvedValue, $"option {optionName} input {input.Name} 的值");
-                            }
+                            substitutions[input.Name] = ProjectInputValue.Parse(input, resolvedValue,
+                                $"option {optionName} input {input.Name} 的值", typed: pipelineOverrides is not null);
                         }
                         resolvedValues[optionName] = values;
-                        if (pipelineOverrides is not null) {
-                            pipelineOverrides.Add(CreateTemplatedOverride(option.PipelineOverride, substitutions));
-                        }
+                        pipelineOverrides?.Add(CreateTemplatedOverride(option.PipelineOverride, substitutions));
                         break;
                     }
                 case OptionDefinitionKind.Select:

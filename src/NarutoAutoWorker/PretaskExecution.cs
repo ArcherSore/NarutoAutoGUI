@@ -89,13 +89,9 @@ internal sealed class PretaskExecution : IPlanItemExecution
 
         try {
             if (_process is not null && result.Outcome != RuntimeExecutionOutcome.Succeeded) {
-                if (!await _process.TerminateAndConfirmAsync(_cleanupTimeout)) {
+                if (!await _process.ReleaseAsync(_cleanupTimeout)) {
                     return Unconfirmed(result, "本次前置程序及其子进程在清理时限内未确认退出。 ");
                 }
-            }
-            if (_process is not null && result.Outcome != RuntimeExecutionOutcome.Succeeded) {
-                await _process.CloseOutputAsync();
-                _process.Dispose();
                 _process = null;
             }
             _log(result.Outcome == RuntimeExecutionOutcome.Failed ? "ERROR" : "INFO", "pretask.lifecycle",
@@ -125,11 +121,9 @@ internal sealed class PretaskExecution : IPlanItemExecution
     {
         try {
             await _stopBegun.Task.WaitAsync(cancellationToken);
-            if (!await _process!.TerminateAndConfirmAsync(_cleanupTimeout)) {
+            if (!await _process!.ReleaseAsync(_cleanupTimeout)) {
                 return Unconfirmed(Cancelled(), "本次前置程序子进程在清理时限内未确认退出。 ");
             }
-            await _process.CloseOutputAsync();
-            _process.Dispose();
             _process = null;
             return Cancelled();
         } catch (Exception exception) {

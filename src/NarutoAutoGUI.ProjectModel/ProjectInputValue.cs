@@ -6,9 +6,13 @@ namespace NarutoAutoGUI.ProjectModel;
 
 internal static class ProjectInputValue
 {
-    internal static JsonNode Parse(InputDefinition input, string value, string context)
+    // An untyped value is only verified and stays a string; pretask programs receive inputs as raw text.
+    internal static JsonNode Parse(InputDefinition input, string value, string context, bool typed)
     {
         ValidatePattern(input, value, context);
+        if (!typed) {
+            return JsonValue.Create(value)!;
+        }
         return input.PipelineKind switch {
             PipelineValueKind.String => JsonValue.Create(value)!,
             PipelineValueKind.Int when int.TryParse(
@@ -25,7 +29,7 @@ internal static class ProjectInputValue
         };
     }
 
-    internal static void ValidatePattern(InputDefinition input, string value, string context)
+    private static void ValidatePattern(InputDefinition input, string value, string context)
     {
         if (input.Verify is null) {
             return;

@@ -19,6 +19,7 @@ internal static class PretaskSelfTests
         try {
             await VerifyArgumentsAsync(directory);
             await VerifyOutputBudgetAsync(directory);
+            await VerifyOutputEntryBudgetAsync();
             await VerifyPreservedOutputAsync(directory);
             await VerifyChildrenAsync(directory, "spawn-success", RuntimeExecutionOutcome.Succeeded);
             await VerifyChildrenAsync(directory, "spawn-fail", RuntimeExecutionOutcome.Failed);
@@ -60,6 +61,18 @@ internal static class PretaskSelfTests
         var result = await ExecuteAndCommitAsync(execution).WaitAsync(WaitLimit);
         Require(result.Outcome == RuntimeExecutionOutcome.Succeeded && output.Bounded(),
             "大量 stdout/stderr 不应堵塞程序，且每路输出只保留有界内容。 ");
+    }
+
+    // A child writing one character at a time yields one read per write; far below the character budget, the entry
+    // budget still bounds the log while the stream is drained to its end.
+    private static async Task VerifyOutputEntryBudgetAsync()
+    {
+        var levels = new List<string>();
+        using var process = new PretaskProcess((level, _, _) => levels.Add(level));
+        using var output = new TrickleStream(System.Text.Encoding.UTF8.GetBytes(new string('.', 2000)));
+        await process.PumpAsync(output, "stdout").WaitAsync(WaitLimit);
+        Require(levels.Count(level => level == "INFO") == 256 && levels.Count(level => level == "WARN") == 1
+            && output.Position == output.Length, "大量短输出只能记录有界条数，超出后仍须读完全部输出。 ");
     }
 
     private static async Task VerifyChildrenAsync(string directory, string mode, RuntimeExecutionOutcome expected,
@@ -378,4 +391,11 @@ internal static class PretaskSelfTests
 
     private sealed record ProcessIdentity(int Pid, long Started);
     private sealed record ArgumentCapture(string[] Arguments, string Directory, int Session);
+
+    // Returns one byte per read, like a pipe whose writer flushes every character.
+    private sealed class TrickleStream(byte[] data) : MemoryStream(data)
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            base.ReadAsync(buffer[..Math.Min(buffer.Length, 1)], cancellationToken);
+    }
 }

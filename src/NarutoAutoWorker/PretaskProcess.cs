@@ -11,6 +11,10 @@ namespace NarutoAutoWorker;
 internal sealed class PretaskProcess : IDisposable
 {
     private const uint KillOnClose = 0x2000;
+    // Per stream, the log keeps this much output in at most this many entries. The rest is still read, so writers
+    // never block on a full pipe, and discarded; tiny writes such as a progress spinner cannot flood the Worker log.
+    private const int OutputCharacterBudget = 16384;
+    private const int OutputEntryBudget = 256;
     private readonly Action<string, string, string> _log;
     private readonly CancellationTokenSource _outputStop = new();
     private SafeFileHandle? _job;
@@ -144,11 +148,12 @@ internal sealed class PretaskProcess : IDisposable
         }
     }
 
-    private async Task PumpAsync(Stream pipe, string name)
+    internal async Task PumpAsync(Stream pipe, string name)
     {
         using var reader = new StreamReader(pipe, new UTF8Encoding(false, false), true, 2048, leaveOpen: true);
         var buffer = new char[2048];
         var retained = 0;
+        var entries = 0;
         var truncated = false;
         try {
             while (true) {
@@ -156,10 +161,12 @@ internal sealed class PretaskProcess : IDisposable
                 if (read == 0) {
                     return;
                 }
-                var keep = Math.Min(read, Math.Max(0, 16384 - retained));
+                var budget = entries < OutputEntryBudget ? Math.Max(0, OutputCharacterBudget - retained) : 0;
+                var keep = Math.Min(read, budget);
                 if (keep > 0) {
                     _log("INFO", "pretask.output", $"{name}: {new string(buffer, 0, keep)}");
                     retained += keep;
+                    entries++;
                 }
                 if (keep < read && !truncated) {
                     truncated = true;

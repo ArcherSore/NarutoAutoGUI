@@ -6,7 +6,7 @@ namespace NarutoAutoGUI.ChildSession;
 internal sealed class ChildSessionManager : IDisposable
 {
     private const string SavedCredentialFailureHint = "\n\n本次连接提交了设置中保存的 Windows 登录凭据。"
-        + "如果账户或密码填写有误或已更改，请在“设置 → 桌面分身”中更新或删除后重试。";
+        + "如果账户或密码填写有误或已更改，请在“设置 → 桌面分身”中更新后重试。";
 
     private readonly AppLogger _logger;
     private readonly Func<uint?> _getChildSessionId;
@@ -32,7 +32,7 @@ internal sealed class ChildSessionManager : IDisposable
 
     internal event EventHandler<ChildSessionSnapshot>? StateChanged;
 
-    // The optional Windows logon saved in Settings, read only when an RDP connection is made.
+    // The optional Windows logon saved in Settings, used for RDP logon and the saved-account status.
     internal ChildSessionCredentialStore Credentials { get; }
 
     internal ChildSessionSnapshot Snapshot { get; private set; } = ChildSessionSnapshot.Empty;

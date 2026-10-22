@@ -56,7 +56,7 @@ internal sealed class RdpActiveXHost : AxHost
         }
     }
 
-    internal void ConnectToChildSession(DrawingSize desktopSize, ChildSessionCredential? credential = null)
+    internal void ConnectToChildSession(DrawingSize desktopSize, ChildSessionCredential? credential)
     {
         if (ConnectedState != 0) {
             return;

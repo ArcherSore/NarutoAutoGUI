@@ -1,6 +1,4 @@
 using System.ComponentModel;
-using System.Reflection;
-using System.Windows;
 using System.Windows.Controls;
 using Meziantou.Framework.Win32;
 using NarutoAutoGUI.ChildSession;
@@ -76,14 +74,8 @@ internal static partial class SelfTestRunner
                 && store.Load()?.UserName == FakeAccount, "写入失败必须报告，且保留原凭据。");
             vault.WriteFails = false;
 
-            store.Delete();
-            store.Delete();
-            Require(store.Load() is null && vault.Saved is null, "删除凭据应可重复执行，删除后按未配置处理。");
-            vault.DeleteFails = true;
-            Require(Throws<Win32Exception>(store.Delete), "删除失败必须报告。");
-            vault.DeleteFails = false;
-
-            VerifyCredentialDialog(store, vault);
+            vault.Saved = null;
+            VerifyCredentialPromptResults(credentialLogger, testDirectory, store, vault);
         }
         var logText = string.Join(Environment.NewLine,
             Directory.EnumerateFiles(logDirectory, "*.log").Select(File.ReadAllText));
@@ -93,44 +85,45 @@ internal static partial class SelfTestRunner
             && !logText.Contains("localuser", StringComparison.Ordinal), "日志不得包含账户名或密码。");
 
         VerifyCredentialSettingsStatus(logger, testDirectory);
-        Console.WriteLine("CHILD SESSION CREDENTIAL SELF-TEST PASS: RDP identity, store, failures, dialog, "
-            + "settings status and log redaction.");
+        Console.WriteLine("CHILD SESSION CREDENTIAL SELF-TEST PASS: RDP identity, store, failures, "
+            + "native prompt results, settings status and log redaction.");
     }
 
-    private static void VerifyCredentialDialog(ChildSessionCredentialStore store, MemoryCredentialVault vault)
+    private static void VerifyCredentialPromptResults(AppLogger logger, string testDirectory,
+        ChildSessionCredentialStore store, MemoryCredentialVault vault)
     {
-        var empty = new ChildSessionCredentialDialog(store, null, saved: false);
-        try {
-            Require(empty.DeleteButton.Visibility == Visibility.Collapsed && empty.UserNameBox.Text == "",
-                "未保存时不显示删除按钮。");
-            Require(!empty.TrySave() && empty.ErrorText.Visibility == Visibility.Visible && vault.Saved is null,
-                "未填写账户不能保存。");
-            empty.UserNameBox.Text = FakeAccount;
-            Require(!empty.TrySave() && empty.ErrorText.Text.Contains("PIN", StringComparison.Ordinal)
-                && vault.Saved is null, "未填写密码不能保存，并提示填写账户密码而不是 PIN。");
-            empty.PasswordInput.Password = FakePassword;
+        RunOnboardingScenario(logger, Path.Combine(testDirectory, "credential-prompt"), (window, _) => {
+            window.SaveChildSessionCredentials(null);
+            Require(vault.Saved is null, "取消原生凭据输入不能创建凭据。");
+            foreach (var (domain, userName, savedName, rdpDomain, rdpUserName) in new[] {
+                         ((string?)null, "localuser", "localuser", "", "localuser"),
+                         ("", "  localuser  ", "localuser", "", "localuser"),
+                         ("MY-PC", "localuser", "MY-PC\\localuser", "MY-PC", "localuser"),
+                         (".", "localuser", ".\\localuser", ".", "localuser"),
+                         ("MicrosoftAccount", "user@example.invalid", FakeAccount, "", FakeAccount),
+                         ("AzureAD", "user@example.invalid", "AzureAD\\user@example.invalid",
+                             "", "AzureAD\\user@example.invalid"),
+                         (null, FakeAccount, FakeAccount, "", FakeAccount) }) {
+                window.SaveChildSessionCredentials(
+                    new CredentialResult(userName, FakePassword, domain, CredentialSaveOption.Hidden));
+                var saved = store.Load();
+                Require(saved is not null && saved.UserName == savedName && saved.Password == FakePassword
+                    && saved.RdpIdentity == (rdpDomain, rdpUserName)
+                    && SettingsActionFor(window, "childSession.credentials").Status == $"已保存：{savedName}",
+                    "原生输入结果保存后必须保留账户身份，并能按本机/域或在线身份提供方规则提交给 RDP。");
+            }
+            var previous = vault.Saved;
+            window.SaveChildSessionCredentials(null);
+            Require(vault.Saved == previous, "取消原生凭据输入不能修改已保存的凭据。");
+            Require(Throws<ArgumentException>(() => window.SaveChildSessionCredentials(
+                    new CredentialResult("localuser", "", null, CredentialSaveOption.Hidden)))
+                && vault.Saved == previous, "原生输入返回空密码时不能覆盖已保存的凭据。");
             vault.WriteFails = true;
-            Require(!empty.TrySave() && !empty.ErrorText.Text.Contains(FakePassword, StringComparison.Ordinal)
-                && vault.Saved is null, "保存失败必须留在对话框中提示，且不显示密码。");
+            Require(Throws<Win32Exception>(() => window.SaveChildSessionCredentials(
+                    new CredentialResult("other", FakePassword, "MY-PC", CredentialSaveOption.Hidden)))
+                && vault.Saved == previous, "原生输入结果写入失败必须报告，且保留原凭据。");
             vault.WriteFails = false;
-            Require(empty.TrySave() && vault.Saved == (FakeAccount, FakePassword)
-                && empty.PasswordInput.SecurePassword.Length == 0, "保存成功后必须写入凭据并清空密码框。");
-        } finally {
-            empty.Close();
-        }
-
-        var saved = new ChildSessionCredentialDialog(store, store.ReadUserName(), saved: true);
-        try {
-            Require(saved.DeleteButton.Visibility == Visibility.Visible && saved.UserNameBox.Text == FakeAccount
-                && saved.PasswordInput.SecurePassword.Length == 0, "修改时只回填账户，不回填已保存的密码。");
-            vault.DeleteFails = true;
-            Require(!saved.TryDelete() && vault.Saved is not null && saved.ErrorText.Visibility == Visibility.Visible,
-                "删除失败必须留在对话框中提示。");
-            vault.DeleteFails = false;
-            Require(saved.TryDelete() && vault.Saved is null, "删除后不再保留凭据。");
-        } finally {
-            saved.Close();
-        }
+        }, credentials: store);
     }
 
     private static void VerifyCredentialSettingsStatus(AppLogger logger, string testDirectory)
@@ -141,7 +134,7 @@ internal static partial class SelfTestRunner
             var action = SettingsActionFor(window, "childSession.credentials");
             ClickOnboarding(window, "SettingsNavigationItem");
             Require(action.Status == "未保存" && SettingsButtonFor(window, "childSession.credentials").IsEnabled,
-                "Settings 默认显示未保存，管理入口可用。");
+                "Settings 默认显示未保存，保存入口可用。");
             store.Save(FakeAccount, FakePassword);
             ClickOnboarding(window, "HomeNavigationItem");
             ClickOnboarding(window, "SettingsNavigationItem");
@@ -157,25 +150,19 @@ internal static partial class SelfTestRunner
                 ClickOnboarding(window, "HomeNavigationItem");
                 ClickOnboarding(window, "SettingsNavigationItem");
                 Require(action.Status.StartsWith("已保存的凭据无法读取或不完整", StringComparison.Ordinal)
-                    && SettingsButtonFor(window, "childSession.credentials").IsEnabled
-                    && CredentialDialogState(window) == (null, true),
-                    "读取失败或凭据不完整时 Settings 必须提示，并保留重新保存与删除入口。");
+                    && SettingsButtonFor(window, "childSession.credentials").IsEnabled,
+                    "读取失败或凭据不完整时 Settings 必须提示，并保留重新保存入口。");
             }
             vault.ReadFails = false;
-            var recovery = new ChildSessionCredentialDialog(store, null, saved: true);
-            try {
-                recovery.UserNameBox.Text = FakeAccount;
-                recovery.PasswordInput.Password = FakePassword;
-                Require(recovery.DeleteButton.Visibility == Visibility.Visible && recovery.TrySave()
-                    && store.ReadUserName() == FakeAccount, "从不完整的凭据重新保存必须覆盖原条目。");
-            } finally {
-                recovery.Close();
-            }
+            window.SaveChildSessionCredentials(
+                new CredentialResult(FakeAccount, FakePassword, null, CredentialSaveOption.Hidden));
+            Require(store.ReadUserName() == FakeAccount && action.Status == $"已保存：{FakeAccount}",
+                "从不完整的凭据重新保存必须覆盖原条目并刷新状态。");
+            vault.Saved = null;
+            ClickOnboarding(window, "HomeNavigationItem");
+            ClickOnboarding(window, "SettingsNavigationItem");
+            Require(action.Status == "未保存", "凭据从应用外删除后，进入 Settings 必须刷新为未保存。");
         }, credentials: store);
-
-        static (string?, bool) CredentialDialogState(MainWindow window) =>
-            ((string?, bool))typeof(MainWindow).GetMethod("RefreshChildSessionCredentialStatus",
-                BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null)!;
     }
 
     private static bool Throws<TException>(Action action) where TException : Exception
@@ -189,15 +176,13 @@ internal static partial class SelfTestRunner
     }
 
     // Stands in for WindowsCredentialVault with its semantics: Read returns null only when nothing is saved
-    // (CredEnumerate ERROR_NOT_FOUND) and throws Win32Exception for other failures; Write throws like CredWrite;
-    // deleting a missing credential succeeds like TryDeleteCredential.
+    // (CredEnumerate ERROR_NOT_FOUND) and throws Win32Exception for other failures; Write throws like CredWrite.
     private sealed class MemoryCredentialVault : ICredentialVault
     {
         internal (string? UserName, string? Password)? Saved { get; set; }
         internal HashSet<string> Targets { get; } = [];
         internal bool ReadFails { get; set; }
         internal bool WriteFails { get; set; }
-        internal bool DeleteFails { get; set; }
 
         public (string? UserName, string? Password)? Read(string target)
         {
@@ -213,15 +198,6 @@ internal static partial class SelfTestRunner
                 throw new Win32Exception(5, "self-test vault write failure");
             }
             Saved = (userName, password);
-        }
-
-        public void Delete(string target)
-        {
-            Targets.Add(target);
-            if (DeleteFails) {
-                throw new Win32Exception(5, "self-test vault delete failure");
-            }
-            Saved = null;
         }
     }
 }

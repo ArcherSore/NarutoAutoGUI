@@ -48,7 +48,7 @@ internal sealed class ChildSessionCredentialStore
     }
 
     // Shows what is saved: null when nothing is, and throws when the store cannot be read or holds an incomplete
-    // credential, so Settings can still offer to replace or delete it. Windows returns the decrypted secret with
+    // credential, so Settings can still offer to replace it. Windows returns the decrypted secret with
     // every read of a generic credential, so the password is read here too; only the account name is kept.
     internal string? ReadUserName() => Read()?.UserName;
 
@@ -79,17 +79,6 @@ internal sealed class ChildSessionCredentialStore
         _logger.Info("已保存桌面分身的 Windows 登录凭据。");
     }
 
-    internal void Delete()
-    {
-        try {
-            _vault.Delete(Target);
-        } catch (Exception exception) {
-            _logger.Warn("删除 Windows 登录凭据失败。", exception);
-            throw;
-        }
-        _logger.Info("已删除桌面分身的 Windows 登录凭据。");
-    }
-
     private ChildSessionCredential? Read()
     {
         if (_vault.Read(Target) is not var (userName, password)) {
@@ -108,9 +97,6 @@ internal interface ICredentialVault
     (string? UserName, string? Password)? Read(string target);
 
     void Write(string target, string userName, string password);
-
-    // Deleting a missing credential succeeds.
-    void Delete(string target);
 }
 
 internal sealed class WindowsCredentialVault : ICredentialVault
@@ -132,6 +118,4 @@ internal sealed class WindowsCredentialVault : ICredentialVault
     // LocalMachine keeps the credential for this Windows user on this PC across sign-ins, without roaming.
     public void Write(string target, string userName, string password) => CredentialManager.WriteCredential(
         target, userName, password, "NarutoAutoGUI 桌面分身自动登录", CredentialPersistence.LocalMachine);
-
-    public void Delete(string target) => CredentialManager.TryDeleteCredential(target);
 }

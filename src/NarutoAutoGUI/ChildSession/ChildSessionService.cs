@@ -61,7 +61,7 @@ internal sealed class ChildSessionService
     public static uint? TerminateChildSession(bool wait) =>
         ChildSessionNativeMethods.TerminateChildSession(wait);
 
-    public async Task ConnectAsync(CancellationToken cancellationToken, ChildSessionCredential? credential = null)
+    public async Task ConnectAsync(CancellationToken cancellationToken, ChildSessionCredential? credential)
     {
         _lastFailure = null;
         _connectionTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);

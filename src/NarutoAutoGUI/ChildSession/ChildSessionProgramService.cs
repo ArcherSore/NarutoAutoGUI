@@ -33,14 +33,15 @@ internal sealed class ChildSessionProgramService
         try {
             launched = await ChildSessionProcessLauncher.LaunchVerifiedAsync(childSessionId, fullPath, arguments,
                 workDir, launchedProcessName, VerificationTimeout, cancellationToken);
-        } catch (InvalidOperationException exception) {
+        } catch (TimeoutException exception) {
             var message =
                 $"已提交 {processName} 启动请求，但 {VerificationTimeout.TotalSeconds:0} 秒内未在 Child Session "
                 + $"{childSessionId} 中枚举到 {processName}"
                 + (launchedProcessName is null ? "。" : $" 或 {launchedProcessName}。")
-                + "请打开完整桌面检查启动提示，确认微端可以正常启动后重试准备运行环境。";
+                + "请打开分身窗口检查启动提示，确认游戏可以正常启动后重试准备运行环境。";
             _logger.Warn(message, exception);
-            throw new InvalidOperationException(message, exception);
+            // Error dialogs show the innermost message; keep the original diagnostics in the log above.
+            throw new InvalidOperationException(message);
         }
 
         _logger.Info($"程序启动验证成功：{processName}，PID={launched.ProcessId}，SessionId={launched.SessionId}，"

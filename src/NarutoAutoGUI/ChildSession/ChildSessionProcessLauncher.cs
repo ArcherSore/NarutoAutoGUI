@@ -66,16 +66,15 @@ internal static class ChildSessionProcessLauncher
 
         return Task.Run(
             () => LaunchWithTemporaryTask(
-                    childSessionId, fullPath, arguments, workDir,
-                    runLevel, timeout, cancellationToken, handoffProcessName)
-                ?? throw new InvalidOperationException("进程启动验证没有返回进程结果。"),
+                childSessionId, fullPath, arguments, workDir,
+                runLevel, timeout, cancellationToken, handoffProcessName),
             cancellationToken);
     }
 
-    private static VerifiedChildSessionProcessLaunch? LaunchWithTemporaryTask(
+    private static VerifiedChildSessionProcessLaunch LaunchWithTemporaryTask(
         uint childSessionId, string executablePath, string arguments,
-        string workingDirectory, int runLevel, TimeSpan? verificationTimeout = null,
-        CancellationToken cancellationToken = default, string? handoffProcessName = null)
+        string workingDirectory, int runLevel, TimeSpan verificationTimeout,
+        CancellationToken cancellationToken, string? handoffProcessName)
     {
         // Guard: the target Child Session must still be the one the caller expects.
         var actual = ChildSessionNativeMethods.TryGetChildSessionId();
@@ -104,11 +103,8 @@ internal static class ChildSessionProcessLauncher
         bool IsTarget((uint ProcessId, uint SessionId, string Name) process) => process.SessionId == childSessionId
             && (string.Equals(process.Name, processName, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(process.Name, handoffProcessName, StringComparison.OrdinalIgnoreCase));
-        var existingProcessIds = verificationTimeout is null
-            ? null
-            : ChildSessionNativeMethods.EnumerateProcesses().Where(IsTarget)
-                .Select(process => process.ProcessId)
-                .ToHashSet();
+        var existingProcessIds = ChildSessionNativeMethods.EnumerateProcesses().Where(IsTarget)
+            .Select(process => process.ProcessId).ToHashSet();
 
         try {
             schedulerObj = Activator.CreateInstance(schedulerType)
@@ -154,34 +150,30 @@ internal static class ChildSessionProcessLauncher
                 throw new InvalidOperationException("任务计划程序没有返回运行实例。");
             }
 
-            if (verificationTimeout is not null) {
-                var deadline = DateTime.UtcNow + verificationTimeout.Value;
-                while (DateTime.UtcNow < deadline) {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var launched = ChildSessionNativeMethods.EnumerateProcesses()
-                        .FirstOrDefault(process => IsTarget(process)
-                            && existingProcessIds!.Contains(process.ProcessId) == false);
-                    if (launched.ProcessId != 0) {
-                        return new VerifiedChildSessionProcessLaunch(
-                            launched.ProcessId, launched.SessionId,
-                            TryGetIntProperty(runningTaskObj, "State"),
-                            TryGetIntProperty(registeredTaskObj, "LastTaskResult"));
-                    }
-
-                    Thread.Sleep(200);
+            var deadline = DateTime.UtcNow + verificationTimeout;
+            while (DateTime.UtcNow < deadline) {
+                cancellationToken.ThrowIfCancellationRequested();
+                var launched = ChildSessionNativeMethods.EnumerateProcesses()
+                    .FirstOrDefault(process => IsTarget(process)
+                        && existingProcessIds.Contains(process.ProcessId) == false);
+                if (launched.ProcessId != 0) {
+                    return new VerifiedChildSessionProcessLaunch(
+                        launched.ProcessId, launched.SessionId,
+                        TryGetIntProperty(runningTaskObj, "State"),
+                        TryGetIntProperty(registeredTaskObj, "LastTaskResult"));
                 }
 
-                var taskState = TryGetIntProperty(runningTaskObj, "State");
-                var lastTaskResult = TryGetIntProperty(registeredTaskObj, "LastTaskResult");
-                throw new InvalidOperationException(
-                    $"Task Scheduler 已接受 {processName} 的 RunEx，但在 "
-                    + $"{verificationTimeout.Value.TotalSeconds:0} 秒内未发现新的目标进程；"
-                    + $"Child Session={childSessionId}，TaskState={FormatDiagnostic(taskState)}，"
-                    + $"LastTaskResult={FormatDiagnostic(lastTaskResult)}。");
+                Thread.Sleep(200);
             }
 
-            return null;
-        } catch (Exception exception) when (verificationTimeout is not null && exception is not OperationCanceledException) {
+            var taskState = TryGetIntProperty(runningTaskObj, "State");
+            var lastTaskResult = TryGetIntProperty(registeredTaskObj, "LastTaskResult");
+            throw new TimeoutException(
+                $"Task Scheduler 已接受 {processName} 的 RunEx，但在 "
+                + $"{verificationTimeout.TotalSeconds:0} 秒内未发现新的目标进程；"
+                + $"Child Session={childSessionId}，TaskState={FormatDiagnostic(taskState)}，"
+                + $"LastTaskResult={FormatDiagnostic(lastTaskResult)}。");
+        } catch (Exception exception) when (exception is not (OperationCanceledException or TimeoutException)) {
             var taskState = TryGetIntProperty(runningTaskObj, "State");
             var lastTaskResult = TryGetIntProperty(registeredTaskObj, "LastTaskResult");
             throw new InvalidOperationException(

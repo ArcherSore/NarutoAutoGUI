@@ -161,36 +161,45 @@ internal static partial class WorkerCoordinatorSelfTest
     // Case 11: once written, a PID-less Admission survives a launch exception unless its Session is proven gone.
     private static async Task VerifyLaunchFailureAfterAdmissionAsync(AdmissionContext context)
     {
-        var launches = 0;
         var options = new MaaFrameworkOptions(SaveOnError: false, SaveDraw: true, DebugMode: true);
-        var kept = context.CreateCase("launch-failure-session-exists", null);
-        await using (var coordinator = kept.CreateCoordinator(kept.FakeWorkerPath,
-            () => [new WorkerProcessEntry(4, context.Session, "csrss")], () => [context.Session],
-            (_, instanceId, _, manifestPath, _) => {
-                var manifest = System.Text.Json.JsonSerializer.Deserialize<LaunchManifest>(
-                    File.ReadAllBytes(manifestPath), ProtocolJson.Options)!;
-                Require(manifest.WorkerInstanceId == instanceId && manifest.FrameworkOptions == options,
-                    "GUI 设置未写入实际启动 Worker 所用的 Launch Manifest。");
-                launches++;
-                throw new InvalidOperationException("scripted launch failure");
-            })) {
-            var failure = await ExpectAsync<InvalidOperationException>(() => coordinator.PrepareWorkerAsync(
-                context.Session, context.Project, context.Token, options), "注入的启动失败没有传播。");
-            Require(failure.Message == "scripted launch failure" && kept.ReadRecord().WorkerPid is null
-                && coordinator.Snapshot.Observation == WorkerObservation.WorkerRecoveryConflict,
-                "启动失败后 PID 为空的 Admission 未被保留。");
-            var refusal = await ExpectAsync<InvalidOperationException>(() => coordinator.PrepareWorkerAsync(
-                context.Session, context.Project, context.Token), "保留的 Admission 未阻止再次准备。");
-            Require(launches == 1 && refusal.Message.Contains(EndChildSessionText, StringComparison.Ordinal),
-                "保留的 Admission 被再次启动越过。");
-        }
+        Exception[] launchFailures = [
+            new InvalidOperationException("scripted launch failure"), new TimeoutException("scripted launch timeout")
+        ];
+        foreach (var launchFailure in launchFailures) {
+            var launches = 0;
+            var name = launchFailure.GetType().Name;
+            var kept = context.CreateCase($"launch-failure-session-exists-{name}", null);
+            await using (var coordinator = kept.CreateCoordinator(kept.FakeWorkerPath,
+                () => [new WorkerProcessEntry(4, context.Session, "csrss")], () => [context.Session],
+                (_, instanceId, _, manifestPath, _) => {
+                    var manifest = System.Text.Json.JsonSerializer.Deserialize<LaunchManifest>(
+                        File.ReadAllBytes(manifestPath), ProtocolJson.Options)!;
+                    Require(manifest.WorkerInstanceId == instanceId && manifest.FrameworkOptions == options,
+                        "GUI 设置未写入实际启动 Worker 所用的 Launch Manifest。");
+                    launches++;
+                    throw launchFailure;
+                })) {
+                var failure = await ExpectAsync<Exception>(() => coordinator.PrepareWorkerAsync(
+                    context.Session, context.Project, context.Token, options), "注入的启动失败没有传播。");
+                Require(ReferenceEquals(failure, launchFailure), "启动失败异常必须原样传播。");
+                Require(kept.ReadRecord().WorkerPid is null
+                    && coordinator.Snapshot.Observation == WorkerObservation.WorkerRecoveryConflict,
+                    "启动失败后 PID 为空的 Admission 未被保留。");
+                var refusal = await ExpectAsync<InvalidOperationException>(() => coordinator.PrepareWorkerAsync(
+                    context.Session, context.Project, context.Token), "保留的 Admission 未阻止再次准备。");
+                Require(launches == 1 && refusal.Message.Contains(EndChildSessionText, StringComparison.Ordinal),
+                    "保留的 Admission 被再次启动越过。");
+            }
 
-        var gone = context.CreateCase("launch-failure-session-gone", null);
-        await using (var coordinator = gone.CreateCoordinator(gone.FakeWorkerPath, () => [], () => [],
-            (_, _, _, _, _) => throw new InvalidOperationException("scripted launch failure"))) {
-            await ExpectAsync<InvalidOperationException>(() => coordinator.PrepareWorkerAsync(
-                context.AbsentSession, context.Project, context.Token), "注入的启动失败没有传播。");
-            Require(!gone.RecordExists && !gone.LaunchDirectoryHasFiles, "Session 已证明不存在时未回滚启动失败的 Admission。");
+            var gone = context.CreateCase($"launch-failure-session-gone-{name}", null);
+            await using (var coordinator = gone.CreateCoordinator(gone.FakeWorkerPath, () => [], () => [],
+                (_, _, _, _, _) => throw launchFailure)) {
+                var failure = await ExpectAsync<Exception>(() => coordinator.PrepareWorkerAsync(
+                    context.AbsentSession, context.Project, context.Token), "注入的启动失败没有传播。");
+                Require(ReferenceEquals(failure, launchFailure), "启动失败异常必须原样传播。");
+                Require(!gone.RecordExists && !gone.LaunchDirectoryHasFiles,
+                    "Session 已证明不存在时未回滚启动失败的 Admission。");
+            }
         }
     }
 

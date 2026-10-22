@@ -93,12 +93,10 @@ internal sealed class PretaskExecution : IPlanItemExecution
                     return Unconfirmed(result, "本次前置程序及其子进程在清理时限内未确认退出。 ");
                 }
             }
-            if (_process is not null) {
+            if (_process is not null && result.Outcome != RuntimeExecutionOutcome.Succeeded) {
                 await _process.CloseOutputAsync();
-                if (result.Outcome != RuntimeExecutionOutcome.Succeeded) {
-                    _process.Dispose();
-                    _process = null;
-                }
+                _process.Dispose();
+                _process = null;
             }
             _log(result.Outcome == RuntimeExecutionOutcome.Failed ? "ERROR" : "INFO", "pretask.lifecycle",
                 $"前置任务结束：{_item.TaskLabel}，{result.Outcome}。 ");
@@ -130,6 +128,7 @@ internal sealed class PretaskExecution : IPlanItemExecution
             if (!await _process!.TerminateAndConfirmAsync(_cleanupTimeout)) {
                 return Unconfirmed(Cancelled(), "本次前置程序子进程在清理时限内未确认退出。 ");
             }
+            await _process.CloseOutputAsync();
             _process.Dispose();
             _process = null;
             return Cancelled();

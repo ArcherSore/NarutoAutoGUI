@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using NarutoAutoGUI.Protocol;
 
@@ -17,6 +18,7 @@ internal static class PretaskSelfTests
         try {
             await VerifyArgumentsAsync(directory);
             await VerifyOutputBudgetAsync(directory);
+            await VerifyPreservedOutputAsync(directory);
             await VerifyChildrenAsync(directory, "spawn-success", RuntimeExecutionOutcome.Succeeded);
             await VerifyChildrenAsync(directory, "spawn-fail", RuntimeExecutionOutcome.Failed);
             await VerifyChildrenAsync(directory, "spawn-wait", RuntimeExecutionOutcome.Failed,
@@ -83,6 +85,31 @@ internal static class PretaskSelfTests
             Require(result.Error?.Code == "PretaskTimeout", "程序超时且清理确认应为普通失败。 ");
         }
         StopTestProcess(identity);
+    }
+
+    private static async Task VerifyPreservedOutputAsync(string directory)
+    {
+        var folder = NewFolder(directory, "preserved-output");
+        var count = 0;
+        var truncations = 0;
+        var execution = Execution(folder, "spawn-output", (level, _, message) => {
+            Interlocked.Add(ref count, message.Length);
+            if (level == "WARN" && message.Contains("截断", StringComparison.Ordinal)) {
+                Interlocked.Increment(ref truncations);
+            }
+        });
+        var result = await ExecuteAndCommitAsync(execution).WaitAsync(WaitLimit);
+        Require(result.Outcome == RuntimeExecutionOutcome.Succeeded,
+            "根程序成功必须及时提交，不能等待仍持有输出管道的后代退出。 ");
+        // Release output only after success and disposal, rather than depending on process scheduling delays.
+        File.WriteAllText(Path.Combine(folder, "write.output"), "go");
+        await WaitForFileAsync(Path.Combine(folder, "output.result"));
+        Require(File.ReadAllText(Path.Combine(folder, "output.result")) == "ok",
+            "成功保留的子进程必须仍能向继承的 stdout/stderr 写入超过管道容量的数据。 ");
+        Require(IsTestProcessAlive(Path.Combine(folder, "child.pid")), "输出后子进程应继续运行。 ");
+        Require(Volatile.Read(ref count) < 40000 && Volatile.Read(ref truncations) == 2,
+            "根退出后的输出仍必须有界记录，并持续排空超过预算的内容。 ");
+        StopTestProcess(Path.Combine(folder, "child.pid"));
     }
 
     private static async Task VerifyStopAsync(string directory)
@@ -256,7 +283,7 @@ internal static class PretaskSelfTests
         var directory = args[2];
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         using var process = Process.GetCurrentProcess();
-        var identity = Path.Combine(directory, mode == "linger" ? "child.pid" : "parent.pid");
+        var identity = Path.Combine(directory, mode is "linger" or "delayed-output" ? "child.pid" : "parent.pid");
         File.WriteAllText(identity + ".tmp",
             JsonSerializer.Serialize(new ProcessIdentity(process.Id, process.StartTime.ToUniversalTime().Ticks)));
         File.Move(identity + ".tmp", identity);
@@ -273,9 +300,25 @@ internal static class PretaskSelfTests
             }
             return 0;
         }
+        if (mode == "delayed-output") {
+            WaitForFileAsync(Path.Combine(directory, "write.output")).GetAwaiter().GetResult();
+            var block = new byte[4096];
+            Array.Fill(block, (byte)'x');
+            var success = true;
+            for (var index = 0; index < 512 && success; index++) {
+                foreach (var handle in new[] { GetStdHandle(-11), GetStdHandle(-12) }) {
+                    success &= WriteFile(handle, block, (uint)block.Length, out var written, IntPtr.Zero)
+                        && written == block.Length;
+                }
+            }
+            File.WriteAllText(Path.Combine(directory, "output.result.tmp"), success ? "ok" : "broken pipe");
+            File.Move(Path.Combine(directory, "output.result.tmp"), Path.Combine(directory, "output.result"));
+        }
         if (mode.StartsWith("spawn-", StringComparison.Ordinal)) {
-            var command = HelperCommand("linger", directory);
+            var command = HelperCommand(mode == "spawn-output" ? "delayed-output" : "linger", directory);
             var start = new ProcessStartInfo(command.Executable) { UseShellExecute = false, CreateNoWindow = true };
+            // Explicit standard handles make stdout/stderr inherit the parent's pipes, as Python Popen does.
+            start.RedirectStandardInput = mode == "spawn-output";
             foreach (var argument in command.Arguments) {
                 start.ArgumentList.Add(argument);
             }
@@ -286,7 +329,7 @@ internal static class PretaskSelfTests
                 return 0;
             }
             if (mode != "spawn-wait") {
-                return mode == "spawn-success" ? 0 : 9;
+                return mode is "spawn-success" or "spawn-output" ? 0 : 9;
             }
         }
         Thread.Sleep(TimeSpan.FromSeconds(30));
@@ -339,6 +382,13 @@ internal static class PretaskSelfTests
             throw new InvalidOperationException(message);
         }
     }
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetStdHandle(int kind);
+
+    // Console.Write can ignore broken-pipe errors; verify the inherited native handles directly.
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool WriteFile(IntPtr file, byte[] buffer, uint size, out uint written, IntPtr overlapped);
 
     private sealed record ProcessIdentity(int Pid, long Started);
     private sealed record ArgumentCapture(string[] Arguments, string Directory, int Session);

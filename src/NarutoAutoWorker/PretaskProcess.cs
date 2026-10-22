@@ -19,6 +19,8 @@ internal sealed class PretaskProcess : IDisposable
     private NamedPipeServerStream? _stderr;
     private Task _output = Task.CompletedTask;
     private bool _assigned;
+    private bool _preserveOutput;
+    private bool _disposed;
 
     internal PretaskProcess(Action<string, string, string> log)
     {
@@ -85,7 +87,11 @@ internal sealed class PretaskProcess : IDisposable
         throw new InvalidOperationException("Pretask 尚未创建进程。 ");
     }
 
-    internal void PreserveChildren() => SetKillOnClose(false);
+    internal void PreserveChildren()
+    {
+        SetKillOnClose(false);
+        _preserveOutput = true;
+    }
 
     internal async Task<bool> TerminateAndConfirmAsync(TimeSpan timeout)
     {
@@ -115,7 +121,7 @@ internal sealed class PretaskProcess : IDisposable
 
     internal async Task CloseOutputAsync()
     {
-        // A successful launcher may leave its stdout inherited by a long-lived game. EOF is not our completion.
+        // Used only after failure/cancellation has confirmed termination of the owned process tree.
         await Task.WhenAny(_output, Task.Delay(100));
         _outputStop.Cancel();
         _stdout?.Dispose();
@@ -151,7 +157,7 @@ internal sealed class PretaskProcess : IDisposable
             }
         } catch (Exception exception) when (exception is OperationCanceledException or IOException
             or ObjectDisposedException) {
-            // The reader is deliberately cancelled when the root program exits, independently of child lifetime.
+            // Failure/cancellation closes the reader after process-tree cleanup.
         }
     }
 
@@ -218,10 +224,36 @@ internal sealed class PretaskProcess : IDisposable
 
     public void Dispose()
     {
-        _stdout?.Dispose();
-        _stderr?.Dispose();
+        if (_disposed) {
+            return;
+        }
+        _disposed = true;
         _process?.Dispose();
         _job?.Dispose();
+        if (_preserveOutput) {
+            // Success releases process ownership, but descendants can still own the pipe writers. Keep draining
+            // with the existing per-stream log budget until EOF, without delaying the Run or its state lock.
+            _ = Task.Run(DrainPreservedOutputAsync);
+        } else {
+            DisposeOutput();
+        }
+    }
+
+    private async Task DrainPreservedOutputAsync()
+    {
+        try {
+            await _output;
+        } catch (Exception exception) {
+            _log("WARN", "pretask.output", $"保留子进程的输出读取失败：{exception.GetBaseException().Message}");
+        } finally {
+            DisposeOutput();
+        }
+    }
+
+    private void DisposeOutput()
+    {
+        _stdout?.Dispose();
+        _stderr?.Dispose();
         _outputStop.Dispose();
     }
 

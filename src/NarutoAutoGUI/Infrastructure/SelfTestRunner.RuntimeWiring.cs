@@ -17,6 +17,7 @@ internal static partial class SelfTestRunner
 {
     private static void VerifyRuntimeControlWiring(AppLogger logger, string testDirectory)
     {
+        VerifyChildSessionEndResponsiveness(logger);
         var directory = Path.Combine(testDirectory, "runtime-wiring");
         VerifyStartupAndExitWiring(logger, directory);
         VerifySessionRestoreAndEndWiring(logger, directory);
@@ -64,8 +65,10 @@ internal static partial class SelfTestRunner
 
             (bool Prepare, bool Editable, bool Replay, string? ReplayTip)? duringLogoff = null;
             var replay = SettingsActionFor(window, "onboarding.replay");
-            wts.DuringLogoff = _ => duringLogoff = (HeaderShows(window, "PrepareEnvironmentButton", enabled: false),
-                ConfigurationEditable(window), replay.IsEnabled, replay.ToolTip);
+            wts.DuringLogoff = _ => window.Dispatcher.Invoke(() => {
+                duringLogoff = (HeaderShows(window, "PrepareEnvironmentButton", enabled: false),
+                    ConfigurationEditable(window), replay.IsEnabled, replay.ToolTip);
+            });
             var ending = session.TerminateAsync();
             PumpUntil(() => ending.IsCompleted, "结束分身未完成。");
             ending.GetAwaiter().GetResult();
@@ -76,9 +79,9 @@ internal static partial class SelfTestRunner
         }, session: session, runOperation: operations.RunAsync);
     }
 
-    // Like the tray: the end runs outside the window, logoff blocks the UI thread and kills the Worker, then the
-    // Admission is discarded. The Worker's disconnect is raised on another thread, so it reaches the window after
-    // ChildSessionEnded. Throughout the end the window shows its progress and offers no command.
+    // Like the tray: the end runs outside the window; logoff kills the Worker, then Admission is discarded.
+    // The Worker's disconnect is raised on another thread and may reach the window before ChildSessionEnded.
+    // Throughout the end the window shows its progress and offers no command.
     private static void VerifySessionEndWithWorkerWiring(AppLogger logger, string directory)
     {
         var wts = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] };
@@ -100,8 +103,10 @@ internal static partial class SelfTestRunner
                 };
                 bool? progressDuringLogoff = null;
                 wts.DuringLogoff = _ => {
-                    progressDuringLogoff = ProgressShows(window, "正在结束桌面分身") && !ConfigurationEditable(window)
-                        && !Named<UIElement>(window, "DesktopViewButton").IsEnabled;
+                    window.Dispatcher.Invoke(() => {
+                        progressDuringLogoff = ProgressShows(window, "正在结束桌面分身") && !ConfigurationEditable(window)
+                            && !Named<UIElement>(window, "DesktopViewButton").IsEnabled;
+                    });
                     Task.Run(async () => await pipe.DisposeAsync()).GetAwaiter().GetResult();
                     Require(disconnected.Task.Wait(5000), "注销分身时未观察到 Worker 断线。");
                 };

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using NarutoAutoGUI.Infrastructure;
 
@@ -182,8 +183,14 @@ internal sealed class ChildSessionManager : IDisposable
                 ? "结束请求：当前没有 Child Session。"
                 : $"正在断开 RDP 并注销 Child Session {sessionId}。");
 
+            var timer = Stopwatch.StartNew();
             DisposePreview(disconnect: true);
-            var terminatedId = TerminateChildSession();
+            _logger.Debug($"结束桌面分身：RDP 宿主已释放（{timer.ElapsedMilliseconds}ms），开始等待 WTS 注销。");
+            timer.Restart();
+            // WTS waits for logoff to finish. Keep the operation lock held without blocking the UI;
+            // RDP disposal above and state notifications below stay on their owning thread.
+            var terminatedId = await Task.Run(TerminateChildSession);
+            _logger.Debug($"结束桌面分身：WTS 注销等待已完成（{timer.ElapsedMilliseconds}ms）。");
             _logger.Info(terminatedId is null
                 ? "当前无 Child Session 需要注销。"
                 : $"已注销 Child Session {terminatedId.Value}。");

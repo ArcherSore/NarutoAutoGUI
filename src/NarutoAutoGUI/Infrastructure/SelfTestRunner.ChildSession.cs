@@ -1,11 +1,46 @@
 using System.ComponentModel;
 using System.Reflection;
+using System.Windows.Threading;
 using NarutoAutoGUI.ChildSession;
 
 namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
+    private static void VerifyChildSessionEndResponsiveness(AppLogger logger)
+    {
+        var dispatcher = Dispatcher.CurrentDispatcher;
+        var wts = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] };
+        using var manager = wts.CreateManager(logger);
+        using var releaseLogoff = new ManualResetEventSlim();
+        Task? ending = null, queuedEnding = null;
+        var responsive = false;
+        var serialized = false;
+        var notificationsOnUi = true;
+        manager.StateChanged += (_, _) => notificationsOnUi &= dispatcher.CheckAccess();
+        wts.DuringLogoff = _ => {
+            dispatcher.BeginInvoke(new Action(() => {
+                responsive = ending is { IsCompleted: false }
+                    && manager.Snapshot.State == ChildSessionState.Disconnecting;
+                queuedEnding = manager.TerminateAsync();
+                serialized = !queuedEnding.IsCompleted && wts.LogoffAttempts.Count == 1;
+                releaseLogoff.Set();
+            }));
+            // The old synchronous implementation times out here, so a blocked Dispatcher fails without hanging.
+            releaseLogoff.Wait(TimeSpan.FromSeconds(2));
+        };
+
+        ending = manager.TerminateAsync();
+        PumpUntil(() => ending.IsCompleted && queuedEnding is { IsCompleted: true }, "结束分身的 UI 响应检查未完成。");
+        ending.GetAwaiter().GetResult();
+        queuedEnding!.GetAwaiter().GetResult();
+        Require(responsive, "等待 Windows 注销期间 UI 应继续处理消息，并保持结束中状态。");
+        Require(serialized, "Windows 注销完成前不能释放操作锁或开始第二次注销。");
+        Require(notificationsOnUi && manager.Snapshot.State == ChildSessionState.NotRunning,
+            "注销完成状态应在 UI 线程发布，且结束后回到未运行。");
+        Console.WriteLine("CHILD SESSION END RESPONSIVENESS PASS: Dispatcher, pending state, gate, UI notification.");
+    }
+
     private static void VerifyChildSessionPresence(AppLogger logger)
     {
         // WTS reporting no Child Session stays authoritative even when session enumeration is unavailable.

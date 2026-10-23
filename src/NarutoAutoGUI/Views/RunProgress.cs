@@ -69,15 +69,6 @@ internal static class RunProgress
     internal static string AccessibleCaption(RunProgressView run) =>
         $"已处理 {run.Processed} / {run.Total}，成功 {run.Succeeded}，失败 {run.Failed}";
 
-    internal static string StateText(PlanItemProgress state) => state switch {
-        PlanItemProgress.Pending => "等待中",
-        PlanItemProgress.Running => "运行中",
-        PlanItemProgress.Succeeded => "成功",
-        PlanItemProgress.Failed => "失败",
-        PlanItemProgress.Stopped => "已停止",
-        _ => "未执行"
-    };
-
     internal static string FormatDuration(TimeSpan duration)
     {
         var whole = TimeSpan.FromSeconds(Math.Max(0, Math.Floor(duration.TotalSeconds)));

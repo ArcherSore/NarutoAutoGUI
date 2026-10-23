@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using NarutoAutoGUI.ChildSession;
@@ -61,7 +61,7 @@ internal static partial class SelfTestRunner
                 (new RuntimeAction.Start(false, StartBlocker.ProjectNotLoaded), "StartTaskHeaderButton",
                     "MaaNOP 项目未加载，无法开始任务", "MaaNOP 项目未加载，无法开始任务"),
                 (new RuntimeAction.Start(false, StartBlocker.NoTasks), "StartTaskHeaderButton",
-                    "请先在执行计划中添加任务", "请先在执行计划中添加任务"),
+                    "请先添加或勾选要执行的任务", "请先添加或勾选要执行的任务"),
                 (new RuntimeAction.Start(false, StartBlocker.ConfigurationInvalid), "StartTaskHeaderButton",
                     "当前配置未通过校验，请先修正任务参数", "当前配置未通过校验，请先修正任务参数"),
                 (new RuntimeAction.Start(false, StartBlocker.RuntimeNotReady), "StartTaskHeaderButton",
@@ -69,7 +69,7 @@ internal static partial class SelfTestRunner
                 (new RuntimeAction.Retry(RetryTarget.Prepare, true), "RetryEnvironmentButton", null, ""),
                 (new RuntimeAction.Retry(RetryTarget.Start, true), "RetryEnvironmentButton", null, ""),
                 (new RuntimeAction.Retry(RetryTarget.Start, false, StartBlocker.NoTasks), "RetryEnvironmentButton",
-                    "请先在执行计划中添加任务", "请先在执行计划中添加任务")
+                    "请先添加或勾选要执行的任务", "请先添加或勾选要执行的任务")
             }) {
                 window.ApplyRuntimeControls(new RuntimeControlState(action, true, null, idleDesktop, true));
                 var button = Named<FrameworkElement>(window, control);
@@ -145,18 +145,14 @@ internal static partial class SelfTestRunner
                 window.ApplyRuntimeControls(state with { Desktop = desktop });
                 PumpOnboarding();
                 var button = Named<WpfButton>(window, "DesktopViewButton");
-                var icon = Named<Wpf.Ui.Controls.SymbolIcon>(window, "DesktopViewIcon");
-                var dotMark = Named<System.Windows.Shapes.Ellipse>(window, "DesktopViewDot");
+                var icon = Named<System.Windows.Shapes.Path>(window, "DesktopViewIcon");
                 var status = desktop.Status;
-                Require(button.IsEnabled == desktop.Enabled && button.ToolTip is null && button.IsVisible
-                    && button.Opacity == 1 && button.Foreground.ToString() == window.FindResource(text).ToString()
-                    && AutomationProperties.GetName(button) == $"桌面分身：{name}"
-                    && button.Background.ToString() == window.FindResource(fill).ToString()
-                    && dotMark.IsVisible == dot is not null
-                    && (dot is null || dotMark.Fill.ToString() == window.FindResource(dot).ToString())
-                    && icon.Filled == status is DesktopStatus.Viewing or DesktopStatus.Interactive
-                    && icon.Symbol == (status == DesktopStatus.Interactive
-                        ? Wpf.Ui.Controls.SymbolRegular.DesktopCursor20 : Wpf.Ui.Controls.SymbolRegular.Desktop20),
+                Require(button.IsEnabled == desktop.Enabled && button.ToolTip is not null && button.IsVisible
+                    && Named<TextBlock>(window, "DesktopViewText").Text
+                        == (desktop.Action == DesktopAction.Hide ? "隐藏窗口" : "显示窗口")
+                    && AutomationProperties.GetName(button)
+                        == (desktop.Action == DesktopAction.Hide ? "隐藏窗口" : "显示窗口")
+                    && icon.Data is not null,
                     $"{desktop} 的分身按钮显示不符。");
             }
         });
@@ -424,7 +420,8 @@ internal static partial class SelfTestRunner
     private static void WithRuntimeControlWindow(AppLogger logger, string directory, Action<MainWindow> verify,
         ChildSessionManager? session = null, WorkerCoordinator? coordinator = null,
         Func<Func<Task>, Task>? runOperation = null, bool loadProject = true, RuntimeEnvironment? environment = null,
-        Func<Task>? endEnvironment = null)
+        Func<Task>? endEnvironment = null,
+        Func<NarutoAutoGUI.ProjectModel.ProjectPlanModule, Func<MaaFrameworkOptions>, Task>? prepareEnvironment = null)
     {
         var projectDirectory = CreateProjectFixture(directory);
         if (!loadProject) {
@@ -444,7 +441,7 @@ internal static partial class SelfTestRunner
         var window = new MainWindow(logger, windowSession, windowCoordinator,
             environment ?? WindowEnvironment(logger, windowSession, windowCoordinator, runOperation),
             () => Task.CompletedTask, endEnvironment ?? (() => Task.CompletedTask), _ => Task.CompletedTask,
-            projectDirectory);
+            projectDirectory, prepareEnvironment: prepareEnvironment);
         var application = System.Windows.Application.Current;
         var shutdown = application.ShutdownMode;
         application.ShutdownMode = ShutdownMode.OnExplicitShutdown;

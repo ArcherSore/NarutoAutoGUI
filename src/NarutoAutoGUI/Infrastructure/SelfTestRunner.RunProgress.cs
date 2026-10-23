@@ -109,6 +109,14 @@ internal static partial class SelfTestRunner
                     && console.TransformToAncestor(home).Transform(new Point(console.ActualWidth, 0)).X
                         <= home.ActualWidth + 0.5, $"{width} 宽度下侧栏宽度或主页布局不符。");
             }
+            var screenshots = Environment.GetEnvironmentVariable("NARUTO_PANEL_SCREENSHOTS");
+            if (!string.IsNullOrEmpty(screenshots)) {
+                Directory.CreateDirectory(screenshots);
+                window.Width = 1180;
+                window.Height = 760;
+                PumpOnboarding();
+                SaveScreenshot(window, Path.Combine(screenshots, "panel-idle.png"));
+            }
             // Only the activity header separates the run control from the log, which reaches the card's bottom.
             var logTop = log.TransformToAncestor(console).Transform(new Point()).Y;
             var controlBottom = control.TransformToAncestor(console).Transform(new Point(0, control.ActualHeight)).Y;
@@ -116,11 +124,52 @@ internal static partial class SelfTestRunner
                 "运行动态应填满运行控制以下的全部高度。");
 
             var desktop = new DesktopToggle(DesktopAction.Show, true, DesktopStatus.Background);
+            foreach (var started in new[] { false, true }) {
+                RuntimeAction menuAction = started ? new RuntimeAction.Start(true) : new RuntimeAction.Prepare(true);
+                window.ApplyRuntimeControls(new(menuAction,
+                    true, null, started ? desktop : new(DesktopAction.Show, false, DesktopStatus.NotRunning), true));
+                var menu = Named<System.Windows.Controls.ContextMenu>(window, "RuntimeMoreMenu");
+                menu.PlacementTarget = Named<FrameworkElement>(window, "RuntimeMoreButton");
+                menu.IsOpen = true;
+                PumpOnboarding();
+                var auto = Named<System.Windows.Controls.MenuItem>(window, "AutoSessionMenuItem");
+                var checkBox = (FrameworkElement)auto.Template.FindName("CheckBox", auto);
+                var note = (TextBlock)auto.Template.FindName("Note", auto);
+                Require(menu.ActualWidth == 256 && auto.FontSize == 13 && auto.FontWeight == FontWeights.Normal
+                    && checkBox.ActualWidth == 16 && checkBox.ActualHeight == 16
+                    && note.Text == "不会自动开始任务" && note.FontSize == 11.5,
+                    "分身菜单必须保留原稿的 256 宽度、常规字重、说明行和 16 像素复选框。");
+                var actionItem = Named<System.Windows.Controls.MenuItem>(window,
+                    started ? "EndEnvironmentMenuItem" : "StartSessionMenuItem");
+                actionItem.Focus();
+                PumpOnboarding();
+                var row = (Border)actionItem.Template.FindName("Row", actionItem);
+                Require(actionItem.IsHighlighted
+                    && row.Background.ToString() == (started ? "#FFFDEBED" : "#FFEEF2F6"),
+                    "分身菜单的高亮必须使用原稿的淡红色/灰色背景。");
+                var icon = (Viewbox)actionItem.Icon;
+                var canvas = (Canvas)icon.Child;
+                var glyph = (System.Windows.Shapes.Path)canvas.Children[0];
+                Require(icon.Width == 16 && icon.Height == 16 && glyph.StrokeThickness == 1.5
+                    && glyph.StrokeStartLineCap == PenLineCap.Round && glyph.StrokeEndLineCap == PenLineCap.Round,
+                    "分身菜单图标必须使用原稿尺寸和圆头描边。");
+                if (!string.IsNullOrEmpty(screenshots)) {
+                    var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                        (int)Math.Ceiling(menu.ActualWidth), (int)Math.Ceiling(menu.ActualHeight),
+                        96, 96, PixelFormats.Pbgra32);
+                    bitmap.Render(menu);
+                    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                    using var file = File.Create(Path.Combine(screenshots, $"menu-highlight-{started}.png"));
+                    encoder.Save(file);
+                }
+                menu.IsOpen = false;
+            }
             // The header toggle owns show/hide.
             Require(window.FindName("DesktopMenuItem") is null, "更多操作菜单不应重复显示/隐藏分身。");
             foreach (var (state, endReason) in new (RuntimeControlState, string)[] {
                 (new(new RuntimeAction.Start(true), true, null, desktop, true), ""),
-                (new(new RuntimeAction.Stop(true), false, LockReason.RunActive, desktop, true), ""),
+                (new(new RuntimeAction.Stop(true), false, LockReason.RunActive, desktop, true), "请先停止任务"),
                 (new(new RuntimeAction.Prepare(true), true, null, desktop with { Enabled = false }, true),
                     "未创建"),
                 (new(new RuntimeAction.InProgress(ProgressKind.PreparingEnvironment), false, LockReason.RuntimeBusy,
@@ -139,7 +188,7 @@ internal static partial class SelfTestRunner
                 (new RuntimeAction.Prepare(true), "未准备", "开始任务前需要准备运行环境",
                     "将准备桌面分身和 Worker"),
                 (new RuntimeAction.Start(false, StartBlocker.NoTasks), "就绪", "1 项任务待执行",
-                    "请先在执行计划中添加任务"),
+                    "请先添加或勾选要执行的任务"),
                 (new RuntimeAction.InProgress(ProgressKind.StartingRun), "启动中", "正在开始任务",
                     "正在把执行计划交给 Worker…"),
                 (new RuntimeAction.InProgress(ProgressKind.StoppingRun), "停止中", "正在停止任务",
@@ -148,7 +197,7 @@ internal static partial class SelfTestRunner
                     "Worker 失联且未确认已退出；也可以等待它重新连接")
             }) {
                 window.ApplyRuntimeControls(new(action, false, LockReason.RuntimeBusy, desktop, true));
-                Require(Named<TextBlock>(window, "RuntimeStatusText").Text == pill
+                Require(Named<TextBlock>(window, "RuntimeStatusText").Text == "已启动"
                     && Named<TextBlock>(window, "RuntimeStatusTitle").Text == title
                     && Named<TextBlock>(window, "RuntimeStatusDetail").Text == detail,
                     $"{action} 时状态胶囊、标题或说明不符。");
@@ -171,7 +220,7 @@ internal static partial class SelfTestRunner
         });
     }
 
-    // Card states, the progress caption and timing follow the Worker snapshot; the timer only rewrites text.
+    // Run information belongs to the control panel; task cards stay unchanged as snapshots and timers advance.
     private static void VerifyRunProgressWiring(AppLogger logger, string testDirectory)
     {
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "run-progress-wiring"), (window, _) => {
@@ -199,31 +248,51 @@ internal static partial class SelfTestRunner
             var timer = (System.Windows.Threading.DispatcherTimer)typeof(MainWindow).GetField("_runTimer", flags)!
                 .GetValue(window)!;
             var items = Named<System.Windows.Controls.Panel>(window, "PlanItemsPanel");
-            string CardStatus() => ConfigurationDescendants(items).OfType<TextBlock>()
-                .Single(text => text.Margin == new Thickness(4, 0, 6, 0)).Text;
+            string CardText() => string.Join("\n", ConfigurationDescendants(items).OfType<TextBlock>()
+                .Select(text => text.Text));
+            var idleCardText = CardText();
 
             Observe(idle with { RunState = RunState.Running, ActiveRun = run });
             var card = items.Children.OfType<System.Windows.Controls.Border>().Single(border => border.Tag is not null);
-            Require(CardStatus().StartsWith("运行中 · 01:0", StringComparison.Ordinal) && timer.IsEnabled
-                && Named<TextBlock>(window, "RunProgressCaption").Text == "已处理 0 / 1 · 0 成功"
+            Require(CardText() == idleCardText && timer.IsEnabled
+                && Named<TextBlock>(window, "RunProgressCaption").Text == "运行中 · 第 1 / 1 项"
                 && Named<TextBlock>(window, "RunProgressElapsed").Text.StartsWith("总用时 01:0", StringComparison.Ordinal)
                 && Named<UIElement>(window, "RunProgressPanel").IsVisible,
-                "运行中卡片应显示状态与用时，控制台应显示进度说明。");
-            Require(Named<TextBlock>(window, "RuntimeStatusTitle").Text == "第 1 / 1 项：Real task",
+                "任务卡片不显示运行信息，控制台保留进度与总用时。");
+            Require(Named<TextBlock>(window, "RuntimeStatusTitle").Text == "Real task",
                 "运行状态应显示 Worker 当前项的序号与标签。");
+            var screenshots = Environment.GetEnvironmentVariable("NARUTO_PANEL_SCREENSHOTS");
+            if (!string.IsNullOrEmpty(screenshots)) {
+                Directory.CreateDirectory(screenshots);
+                window.Width = 1180;
+                window.Height = 760;
+                PumpOnboarding();
+                SaveScreenshot(window, Path.Combine(screenshots, "panel-running.png"));
+            }
             InvokeOnboarding(window, "RefreshRunTiming");
-            Require(ReferenceEquals(card, items.Children.OfType<System.Windows.Controls.Border>()
-                .Single(border => border.Tag is not null)), "计时刷新不得重建执行计划卡片。");
+            Require(CardText() == idleCardText && ReferenceEquals(card,
+                items.Children.OfType<System.Windows.Controls.Border>().Single(border => border.Tag is not null)),
+                "计时刷新不得重建执行计划卡片或添加运行信息。");
 
             Observe(idle with {
                 LastRun = run with { State = RunState.Succeeded, Items = [Item(PlanItemState.Succeeded, started)] }
             });
-            Require(CardStatus() == "成功" && !timer.IsEnabled, "Run 结束后卡片应显示结果，计时停止。");
+            Require(CardText() == idleCardText && !timer.IsEnabled, "Run 结束后卡片不展示结果，控制台计时停止。");
             window.ApplyRuntimeControls(new(new RuntimeAction.Prepare(true), true, null,
                 new DesktopToggle(DesktopAction.Show, false, DesktopStatus.NotRunning), true));
             Require(Named<UIElement>(window, "RunProgressPanel").IsVisible
-                && Named<TextBlock>(window, "RunProgressCaption").Text == "上次运行：1 成功",
+                && Named<TextBlock>(window, "RunProgressCaption").Text.EndsWith(" 完成", StringComparison.Ordinal),
                 "匹配当前配置的 Last Run 不能因运行环境需要重新准备而隐藏。");
+            foreach (var (runState, itemState, expected) in new[] {
+                (RunState.Cancelled, PlanItemState.Cancelled, "0 成功 · 已停止"),
+                (RunState.Failed, PlanItemState.Failed, "0 成功 · 1 失败")
+            }) {
+                Observe(idle with {
+                    LastRun = run with { State = runState, Items = [Item(itemState, started)] }
+                });
+                Require(Named<TextBlock>(window, "RunProgressCaption").Text == expected,
+                    "运行摘要不能在统计文案前重复添加停止或失败状态。");
+            }
         });
     }
 }

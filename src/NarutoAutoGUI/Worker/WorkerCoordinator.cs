@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Pipes;
@@ -323,6 +323,47 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         }
         if (changed) {
             RaiseStateChanged();
+        }
+    }
+
+    // Admission supplies a fresh snapshot, which may still report Starting during dependency checks.
+    // A Run must wait for Ready from that same Worker, never for a fixed delay or a GUI notification.
+    internal async Task WaitForReadyAsync(CancellationToken cancellationToken = default)
+    {
+        Guid? instanceId;
+        lock (_gate) {
+            instanceId = Snapshot.WorkerSnapshot?.WorkerInstanceId;
+        }
+        if (instanceId is null) {
+            throw new InvalidOperationException("Worker 尚未完成接纳，无法等待就绪。");
+        }
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Check(object? sender, WorkerCoordinatorSnapshot ignored)
+        {
+            WorkerCoordinatorSnapshot observed;
+            lock (_gate) {
+                observed = Snapshot;
+            }
+            var worker = observed.WorkerSnapshot;
+            if (observed.Observation != WorkerObservation.Connected || !observed.SnapshotFresh
+                || worker?.WorkerInstanceId != instanceId) {
+                ready.TrySetException(new InvalidOperationException("等待就绪期间 Worker 连接或身份已改变。"));
+            } else if (worker.WorkerState == WorkerState.Ready) {
+                ready.TrySetResult();
+            } else if (worker.WorkerState != WorkerState.Starting) {
+                ready.TrySetException(new InvalidOperationException($"Worker 未能就绪：{worker.WorkerState}。"));
+            }
+        }
+        StateChanged += Check;
+        try {
+            // Subscribe before reading again so Ready cannot be lost between the read and subscription.
+            Check(this, Snapshot);
+            using var cancelled = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
+            await ready.Task.WaitAsync(AdmissionTimeout, cancelled.Token);
+        } catch (TimeoutException exception) {
+            throw new TimeoutException("Worker 依赖检查未在 60 秒内完成，任务尚未启动。", exception);
+        } finally {
+            StateChanged -= Check;
         }
     }
 

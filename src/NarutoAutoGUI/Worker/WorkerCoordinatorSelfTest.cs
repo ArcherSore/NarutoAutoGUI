@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO.Pipes;
@@ -174,7 +174,8 @@ internal static partial class WorkerCoordinatorSelfTest
 
     internal static async Task<ProtocolConnection> OpenConnectionAsync(
         string pipeName, WorkerAdmissionRecord record, long lastLogSequence,
-        CancellationToken cancellationToken, RunSnapshot? activeRun = null)
+        CancellationToken cancellationToken, RunSnapshot? activeRun = null,
+        WorkerState initialState = WorkerState.Ready)
     {
         var pipe = new NamedPipeClientStream(
             ".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
@@ -199,7 +200,9 @@ internal static partial class WorkerCoordinatorSelfTest
             await connection.WriteAsync(
                 WireEnvelope.Response(
                     ProtocolOperations.WorkerGetSnapshot, snapshotRequest.RequestId!.Value,
-                    new GetSnapshotResponse(CreateSnapshot(record, lastLogSequence, activeRun))),
+                    new GetSnapshotResponse(CreateSnapshot(record, lastLogSequence, activeRun) with {
+                        WorkerState = initialState
+                    })),
                 cancellationToken);
             return connection;
         } catch {

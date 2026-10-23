@@ -58,7 +58,8 @@ MaaNOP 项目根目录固定为应用程序目录，`interface.json` 直接从 `
 
 ## 前置任务
 
-任务配置可添加或移除项目声明的 pretask，并像普通任务一样保存各自选项。开始时，前置任务按 Project Interface 声明顺序在所有普通任务之前执行；配置中只有前置任务时也可开始，Worker 不创建 MaaFramework Controller。
+任务配置的“启动阶段”固定展示项目声明的适用 pretask，通过开关保存各配置的选择，并可展开编辑参数。
+启动阶段提供图标按钮“仅执行启动”，只运行勾选的前置项，不改变下方普通任务的选择。开始时，前置任务按 Project Interface 声明顺序在所有普通任务之前执行；配置中只有前置任务时也可开始，Worker 不创建 MaaFramework Controller。
 
 前置程序在 Child Session 中运行，工作目录为 `interface.json` 所在目录。固定参数之后按需追加一个紧凑 JSON 参数，内容为该 pretask 引用的选项值；这些选项不合并到普通任务的 Pipeline Override。
 

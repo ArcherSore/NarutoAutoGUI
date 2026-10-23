@@ -110,6 +110,11 @@ internal sealed class ChildSessionManager : IDisposable
                     _logger.Info("将向 RDP 提交设置中保存的 Windows 登录凭据，登录结果以 RDP 登录完成为准。");
                 }
                 await service.ConnectAsync(cancellationToken, credential);
+                if (preview.Host.FrameBufferRedirectionWarning is { } warning) {
+                    _logger.Warn(warning);
+                } else if (preview.Host.FrameBufferRedirectionEnabled) {
+                    _logger.Info("RDP 本机共享帧缓冲已请求并通过属性读回核验。");
+                }
 
                 var sessionId = service.ChildSessionId
                     ?? throw new InvalidOperationException("RDP 登录完成后未取得 childSessionId。");

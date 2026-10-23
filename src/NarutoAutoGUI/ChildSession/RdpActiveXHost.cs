@@ -54,6 +54,11 @@ internal sealed class RdpActiveXHost : AxHost
     // to the user; a later OnLoginComplete then means the user signed in by hand.
     internal bool SavedCredentialRejected { get; private set; }
 
+    // Records acceptance of the request; the negotiated graphics path can still differ.
+    internal bool FrameBufferRedirectionEnabled { get; private set; }
+
+    internal string? FrameBufferRedirectionWarning { get; private set; }
+
     internal RdpActiveXHost()
         : base(RdpClientClsid)
     {
@@ -109,6 +114,7 @@ internal sealed class RdpActiveXHost : AxHost
             SetAndVerifyExtendedUIntProperty(extendedSettings, "DeviceScaleFactor", 100);
             TrySetExtendedProperty(extendedSettings, "EnableZoom", true);
             extendedSettings.set_Property("ConnectToChildSession", ref connectToChildSession);
+            TryEnableFrameBufferRedirection(extendedSettings);
         });
 
         // Optional saved credential: when the parent session signed in with a PIN (Windows Hello), the Child
@@ -362,6 +368,25 @@ internal sealed class RdpActiveXHost : AxHost
             extendedSettings.set_Property(propertyName, ref value);
         } catch (COMException) {
             // Older MsTscAx may not support the extended property; keep default behavior.
+        }
+    }
+
+    private void TryEnableFrameBufferRedirection(IMsRdpExtendedSettings extendedSettings)
+    {
+        FrameBufferRedirectionEnabled = false;
+        FrameBufferRedirectionWarning = null;
+        try {
+            // Request shared frame-buffer memory for this local loopback to avoid extra encode/presentation resources.
+            // The documented setting does not guarantee a particular graphics path after negotiation.
+            object enabled = true;
+            extendedSettings.set_Property("EnableFrameBufferRedirection", ref enabled);
+            FrameBufferRedirectionEnabled = extendedSettings.get_Property("EnableFrameBufferRedirection") is true;
+            if (!FrameBufferRedirectionEnabled) {
+                FrameBufferRedirectionWarning = "RDP 未确认本机共享帧缓冲设置，将继续建立连接。";
+            }
+        } catch (COMException exception) {
+            FrameBufferRedirectionWarning = $"RDP 本机共享帧缓冲设置失败（0x{unchecked((uint)exception.ErrorCode):X8}），"
+                + "将继续建立连接。";
         }
     }
 

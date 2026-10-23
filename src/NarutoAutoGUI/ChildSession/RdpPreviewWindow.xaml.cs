@@ -104,6 +104,7 @@ internal sealed partial class RdpPreviewWindow
     {
         RdpFormsHost.Child = null;
         Host.Dispose();
+        RdpFormsHost.Dispose();
         base.OnClosed(e);
     }
 

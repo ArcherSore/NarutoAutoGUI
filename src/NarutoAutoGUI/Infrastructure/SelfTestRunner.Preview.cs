@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using NarutoAutoGUI.ChildSession;
 using Forms = System.Windows.Forms;
+using FormsHost = System.Windows.Forms.Integration.WindowsFormsHost;
 using WpfButton = System.Windows.Controls.Button;
 using WpfSize = System.Windows.Size;
 using WpfTextBlock = System.Windows.Controls.TextBlock;
@@ -14,10 +15,15 @@ internal static partial class SelfTestRunner
     private static void VerifyRdpViewingModes()
     {
         var window = new RdpPreviewWindow();
+        nint formsHostHandle = 0;
         try {
             window.Show();
             PumpOnboarding(50);
             T Element<T>(string name) => (T)window.FindName(name);
+            formsHostHandle = Element<FormsHost>("RdpFormsHost").Handle;
+            if (formsHostHandle == 0) {
+                throw new InvalidOperationException("测试前提：显示预览窗口后，外层 WindowsFormsHost 必须有原生 HWND。");
+            }
             void InvokeHost(string name, params object?[] arguments) => typeof(RdpActiveXHost)
                 .GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window.Host, arguments);
             void Click(WpfButton button) => button.RaiseEvent(new RoutedEventArgs(WpfButton.ClickEvent));
@@ -152,7 +158,14 @@ internal static partial class SelfTestRunner
         } finally {
             window.Close();
         }
+        if (IsWindow(formsHostHandle)) {
+            throw new InvalidOperationException("真正关闭预览后必须销毁外层 WindowsFormsHost 的适配器 HWND。");
+        }
     }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindow(nint window);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

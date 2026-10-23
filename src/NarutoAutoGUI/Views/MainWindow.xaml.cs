@@ -519,7 +519,7 @@ public partial class MainWindow : FluentWindow
         await PrepareFromPanelAsync();
     }
 
-    private async Task PrepareFromPanelAsync(bool startRun = false)
+    private async Task PrepareFromPanelAsync(bool startRun = false, bool startupOnly = false)
     {
         if (OperationOrExitInProgress) {
             return;
@@ -551,7 +551,7 @@ public partial class MainWindow : FluentWindow
                         return;
                     }
                     SetPendingOperation(PendingOperation.StartingRun);
-                    await StartCurrentPlanAsync();
+                    await StartCurrentPlanAsync(startupOnly);
                 }
             });
     }
@@ -583,11 +583,11 @@ public partial class MainWindow : FluentWindow
             or RuntimeAction.Retry { Target: RetryTarget.Start, Enabled: true })) {
             return;
         }
-        await RunOperationAsync(PendingOperation.StartingRun, StartCurrentPlanAsync);
+        await RunOperationAsync(PendingOperation.StartingRun, () => StartCurrentPlanAsync());
     }
 
     // Called only while the application operation gate is held, after preparation or a direct Start.
-    private async Task StartCurrentPlanAsync()
+    private async Task StartCurrentPlanAsync(bool startupOnly = false)
     {
         // The operation may wait behind another one, so the session is checked again when it runs.
         if (_sessionManager.Snapshot.State is not (ChildSessionState.ConnectedVisible
@@ -599,7 +599,11 @@ public partial class MainWindow : FluentWindow
             throw new InvalidOperationException(
                 "当前 MaaNOP Config 尚未通过正式 PI Resolver 校验。 ");
         }
-        _pendingStartAttempt ??= project.CreateRunStartAttempt();
+        if (_pendingStartAttempt is not null && _pendingStartupOnly != startupOnly) {
+            _pendingStartAttempt = null;
+        }
+        _pendingStartupOnly = startupOnly;
+        _pendingStartAttempt ??= project.CreateRunStartAttempt(startupOnly);
         var response = await _workerCoordinator.StartRunAsync(_pendingStartAttempt);
         if (response.Disposition is not ("accepted" or "already_accepted")) {
             throw new InvalidDataException($"未知 run.start disposition：{response.Disposition}。 ");
@@ -989,22 +993,10 @@ public partial class MainWindow : FluentWindow
         bool Matches(ProjectTaskChoice task) => task.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
             || task.Label.Contains(query, StringComparison.OrdinalIgnoreCase);
         var tasks = project.Tasks.Where(Matches).ToArray();
-        var pretasks = project.Pretasks.Where(Matches).ToArray();
-        var total = project.Tasks.Count + project.Pretasks.Count;
-        AvailableTaskCountText.Text = query.Length == 0
-            ? total.ToString() : $"{tasks.Length + pretasks.Length} / {total}";
+        var total = project.Tasks.Count;
+        AvailableTaskCountText.Text = query.Length == 0 ? total.ToString() : $"{tasks.Length} / {total}";
         AvailableTasksPanel.Children.Clear();
-        void AddHeading(string text, double top) => AvailableTasksPanel.Children.Add(new TextBlock {
-            Text = text, Margin = new Thickness(2, top, 0, 2), FontWeight = FontWeights.SemiBold
-        });
-        if (pretasks.Length != 0) {
-            AddHeading("前置任务", 8);
-            AvailableTasksPanel.Children.Add(CreateTaskChipPanel(project, pretasks));
-            if (tasks.Length != 0) {
-                AddHeading("普通任务", 12);
-            }
-        }
-        if (tasks.Length == 0 && pretasks.Length == 0) {
+        if (tasks.Length == 0) {
             AvailableTasksPanel.Children.Add(new TextBlock {
                 Text = "没有匹配的任务", Margin = new Thickness(2, 8, 0, 12),
                 Style = (Style)FindResource("SecondaryTextStyle")
@@ -1135,14 +1127,13 @@ public partial class MainWindow : FluentWindow
         _optionInputEditors.Clear();
         _inspectorRows.Clear();
         var items = project.SelectedItems;
-        EmptyPlanPanel.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        EmptyPlanPanel.Visibility = project.SelectedTaskNames.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         PlanCountText.Text = $"{items.Count} 项";
-        EmptyPlanText.Text = $"从 {project.Tasks.Count + project.Pretasks.Count} 个可用任务中选择要执行的任务";
+        EmptyPlanText.Text = $"从 {project.Tasks.Count} 个可用任务中选择要执行的任务";
 
-        foreach (var task in items) {
-            if (task.Kind == PlanItemKind.MaaTask) {
-                AddDropIndicator();
-            }
+        RenderStartupStage(project);
+        foreach (var task in items.Where(item => item.Kind == PlanItemKind.MaaTask)) {
+            AddDropIndicator();
             var container = CreatePlanItem(task, IsExpanded(task));
             _planItemContainers.Add((task.Kind, task.Name), container);
             PlanItemsPanel.Children.Add(container);
@@ -1271,10 +1262,16 @@ public partial class MainWindow : FluentWindow
             BindConfigurationEditable(dragHandle);
         }
         header.Children.Add(dragHandle);
-        header.Children.Add(CreatePlanItemSelection(task));
+        if (task.Kind == PlanItemKind.Pretask) {
+            dragHandle.Visibility = Visibility.Collapsed;
+            header.Margin = new Thickness(10, 0, 4, 0);
+            header.Children.Add(CreateStartupSelection(task));
+        } else {
+            header.Children.Add(CreatePlanItemSelection(task));
+        }
 
         var label = new TextBlock {
-            Text = task.Kind == PlanItemKind.Pretask ? $"前置 · {task.Label}" : task.Label,
+            Text = task.Label,
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center
@@ -1283,7 +1280,7 @@ public partial class MainWindow : FluentWindow
         title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         title.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var showSummary = !expanded && hasParameters;
+        var showSummary = (!expanded || task.Kind == PlanItemKind.Pretask) && hasParameters;
         if (showSummary) {
             label.TextWrapping = TextWrapping.NoWrap;
             title.Children.Add(label);
@@ -1329,6 +1326,10 @@ public partial class MainWindow : FluentWindow
             ShowPlanActionOnInteraction(information, container);
             Grid.SetColumn(information, 3);
             header.Children.Add(information);
+        }
+
+        if (task.Kind == PlanItemKind.Pretask && RequireProject().Pretasks.Any(item => item.Name == task.Name)) {
+            return header;
         }
 
         var remove = CreateIconButton(WpfSymbolRegular.Dismiss16, $"从执行计划移除 {task.Label}", "从执行计划移除");
@@ -2136,6 +2137,7 @@ public partial class MainWindow : FluentWindow
         var progress = CurrentRunProgress;
         ApplyRuntimeStatus(state, progress);
         ApplyRunProgress(progress);
+        RefreshStartupOnlyButton(state);
         ApplyPanelSummary(state, progress);
 
         SetValue(ConfigurationEditableProperty, state.ConfigurationEditable);
@@ -2262,7 +2264,8 @@ public partial class MainWindow : FluentWindow
 
     private RunProgressView? CurrentRunProgress => _projectPlan is { } project
         ? RunProgress.Derive(_workerSnapshot.WorkerSnapshot,
-            project.EnabledItems.Select(item => (item.Kind, item.Name)).ToArray()) : null;
+            project.EnabledItems.Where(item => !_pendingStartupOnly || item.Kind == PlanItemKind.Pretask)
+                .Select(item => (item.Kind, item.Name)).ToArray()) : null;
 
     private enum StatusTone { Idle, Busy, Ok, Run, Bad }
 

@@ -31,7 +31,7 @@ GUI 以真实 Windows 进程和 Session 身份核验 Worker，再通过受限的
 
 MaaNOP Config 保存多份独立任务配置及激活项；它是用户意图，不是执行结果。ProjectModel 按当前 Project Interface 校验激活配置，开始时生成不可变、有序的 Run Plan。Worker Launch Context 独立确定项目与框架环境；Run Plan 只描述本次任务与参数。
 
-每份 Task Configuration 可添加或移除 Project Interface 声明的 pretask 并设置选项。ProjectModel 按项目声明顺序把选中的 pretask 放在普通任务之前；pretask 的选项只生成程序参数，不合并到 Pipeline Override。Worker 在 Child Session 中执行程序，工作目录为项目根目录；成功后才为普通任务创建 MaaFramework Controller。仅含 pretask 的 Run 不创建 Controller，成功启动的游戏进程保留。
+每份 Task Configuration 在独立启动阶段选择 Project Interface 声明的 pretask 并设置选项。ProjectModel 按项目声明顺序把选中的 pretask 放在普通任务之前；pretask 的选项只生成程序参数，不合并到 Pipeline Override。Worker 在 Child Session 中执行程序，工作目录为项目根目录；成功后才为普通任务创建 MaaFramework Controller。启动阶段可单独提交仅含 pretask 的 Run，不改变保存的普通任务列表。仅含 pretask 的 Run 不创建 Controller，成功启动的游戏进程保留。
 
 Worker 同时只执行一个 Run，逐项处理 Plan Item。pretask 非零退出、启动失败或超时均终止后续项；每项外层超时为 180 秒。停止或超时后，Worker 最多等待 30 秒确认程序及其受控后代已结束；无法确认时进入 Faulted 并保留 Active Run，不报告执行终态。停止请求先进入 Stopping，最终结果由 Worker、程序退出状态和 MaaFramework 的执行结果决定。Worker 是 Worker State、Run State 和 Plan Item 状态的权威来源。GUI 把连接、进程与 Session 状况作为独立的 GUI Observation；断线不伪造 Run 失败。
 

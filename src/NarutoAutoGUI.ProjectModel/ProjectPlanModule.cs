@@ -249,7 +249,7 @@ public sealed class ProjectPlanModule
     {
         var config = LoadConfig();
         var selected = kind == PlanItemKind.Pretask ? config.SelectedPretasks : config.SelectedTasks;
-        if (!selected.Contains(taskName, StringComparer.Ordinal)) {
+        if (kind != PlanItemKind.Pretask && !selected.Contains(taskName, StringComparer.Ordinal)) {
             throw new InvalidOperationException($"{kind} {taskName} 不在当前执行计划中。");
         }
         return kind == PlanItemKind.Pretask ? BuildPretaskConfiguration(config, FindPretask(taskName))
@@ -325,11 +325,14 @@ public sealed class ProjectPlanModule
         _project.RuntimeProfileDigest, _project.ProjectRoot, _project.Provenance,
         _project.Controller, _project.Resources, _project.Agent);
 
-    public RunStartAttempt CreateRunStartAttempt()
+    public RunStartAttempt CreateRunStartAttempt(bool startupOnly = false)
     {
         var config = ExecutionConfiguration();
+        if (startupOnly) {
+            config = config with { SelectedTasks = [] };
+        }
         ValidateActiveConfiguration(config);
-        if (EnabledItems.Count == 0) {
+        if (config.SelectedTasks.Count + config.SelectedPretasks.Count == 0) {
             throw new InvalidOperationException("请先勾选要执行的任务或前置任务。");
         }
 

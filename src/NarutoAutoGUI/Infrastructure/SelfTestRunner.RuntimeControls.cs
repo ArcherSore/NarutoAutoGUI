@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using NarutoAutoGUI.ChildSession;
@@ -145,18 +145,14 @@ internal static partial class SelfTestRunner
                 window.ApplyRuntimeControls(state with { Desktop = desktop });
                 PumpOnboarding();
                 var button = Named<WpfButton>(window, "DesktopViewButton");
-                var icon = Named<Wpf.Ui.Controls.SymbolIcon>(window, "DesktopViewIcon");
-                var dotMark = Named<System.Windows.Shapes.Ellipse>(window, "DesktopViewDot");
+                var icon = Named<System.Windows.Shapes.Path>(window, "DesktopViewIcon");
                 var status = desktop.Status;
-                Require(button.IsEnabled == desktop.Enabled && button.ToolTip is null && button.IsVisible
-                    && button.Opacity == 1 && button.Foreground.ToString() == window.FindResource(text).ToString()
-                    && AutomationProperties.GetName(button) == $"桌面分身：{name}"
-                    && button.Background.ToString() == window.FindResource(fill).ToString()
-                    && dotMark.IsVisible == dot is not null
-                    && (dot is null || dotMark.Fill.ToString() == window.FindResource(dot).ToString())
-                    && icon.Filled == status is DesktopStatus.Viewing or DesktopStatus.Interactive
-                    && icon.Symbol == (status == DesktopStatus.Interactive
-                        ? Wpf.Ui.Controls.SymbolRegular.DesktopCursor20 : Wpf.Ui.Controls.SymbolRegular.Desktop20),
+                Require(button.IsEnabled == desktop.Enabled && button.ToolTip is not null && button.IsVisible
+                    && Named<TextBlock>(window, "DesktopViewText").Text
+                        == (desktop.Action == DesktopAction.Hide ? "隐藏窗口" : "显示窗口")
+                    && AutomationProperties.GetName(button)
+                        == (desktop.Action == DesktopAction.Hide ? "隐藏窗口" : "显示窗口")
+                    && icon.Data is not null,
                     $"{desktop} 的分身按钮显示不符。");
             }
         });

@@ -1,4 +1,4 @@
-<ui:FluentWindow x:Class="NarutoAutoGUI.Views.MainWindow"
+﻿<ui:FluentWindow x:Class="NarutoAutoGUI.Views.MainWindow"
                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -549,7 +549,8 @@
                         </Ellipse>
                         <Viewbox Width="12" Height="12">
                             <Path Width="16" Height="16" Stroke="{StaticResource Brush.Primary}" StrokeThickness="1.4"
-                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                  StrokeStartLineCap="Round"
+                                                                        StrokeEndLineCap="Round" StrokeLineJoin="Round"
                                   Data="M2.5,8 H13.5 M5,5.5 L2.5,8 L5,10.5 M11,5.5 L13.5,8 L11,10.5" />
                         </Viewbox>
                     </Grid>
@@ -1061,8 +1062,102 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
-                                <StackPanel x:Name="RuntimeControlCard" Margin="16,12,16,16">
-                                    <Grid Height="28" Margin="0,0,-8,0">
+                                <StackPanel x:Name="RuntimeControlCard" Margin="16,10,12,14">
+                                    <StackPanel.Resources>
+                                        <Style x:Key="Panel.Button" TargetType="Button">
+                                            <Setter Property="Height" Value="36" />
+                                            <Setter Property="Padding" Value="12,0" />
+                                            <Setter Property="FontSize" Value="13" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                            <Setter Property="BorderThickness" Value="1" />
+                                            <Setter Property="Background" Value="#FFFFFF" />
+                                            <Setter Property="Foreground" Value="#182230" />
+                                            <Setter Property="BorderBrush" Value="#D6DEE8" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border CornerRadius="6" Padding="{TemplateBinding Padding}"
+                                                            Background="{TemplateBinding Background}"
+                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                            BorderThickness="{TemplateBinding BorderThickness}">
+                                                            <ContentPresenter HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center" />
+                                                        </Border>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                        <Style x:Key="Panel.Window" TargetType="Button"
+                                            BasedOn="{StaticResource Panel.Button}">
+                                            <Setter Property="Background" Value="#FFFFFF" />
+                                            <Setter Property="BorderBrush" Value="#D6DEE8" />
+                                            <Setter Property="Foreground" Value="#182230" />
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="#F6F8FB" />
+                                                    <Setter Property="BorderBrush" Value="#7B899B" />
+                                                    <Setter Property="Foreground" Value="#182230" />
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter Property="Background" Value="#EEF2F6" />
+                                                    <Setter Property="BorderBrush" Value="#7B899B" />
+                                                    <Setter Property="Foreground" Value="#182230" />
+                                                </Trigger>
+                                                <Trigger Property="IsEnabled" Value="False">
+                                                    <Setter Property="Background" Value="#FFFFFF" />
+                                                    <Setter Property="BorderBrush" Value="#E4EAF0" />
+                                                    <Setter Property="Foreground" Value="#718096" />
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                        <Style x:Key="Panel.Primary" TargetType="Button"
+                                            BasedOn="{StaticResource Panel.Button}">
+                                            <Setter Property="Background" Value="#3156A3" />
+                                            <Setter Property="BorderBrush" Value="#3156A3" />
+                                            <Setter Property="Foreground" Value="#FFFFFF" />
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="#284A91" />
+                                                    <Setter Property="BorderBrush" Value="#284A91" />
+                                                    <Setter Property="Foreground" Value="#FFFFFF" />
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter Property="Background" Value="#203F7E" />
+                                                    <Setter Property="BorderBrush" Value="#203F7E" />
+                                                    <Setter Property="Foreground" Value="#FFFFFF" />
+                                                </Trigger>
+                                                <Trigger Property="IsEnabled" Value="False">
+                                                    <Setter Property="Background" Value="#EDF3FF" />
+                                                    <Setter Property="BorderBrush" Value="#B8CCF4" />
+                                                    <Setter Property="Foreground" Value="#3156A3" />
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                        <Style x:Key="Panel.Stop" TargetType="Button"
+                                            BasedOn="{StaticResource Panel.Button}">
+                                            <Setter Property="Background" Value="#FFFFFF" />
+                                            <Setter Property="BorderBrush" Value="#E7AAB0" />
+                                            <Setter Property="Foreground" Value="#9E1C2A" />
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="#FDEBED" />
+                                                    <Setter Property="BorderBrush" Value="#B4232F" />
+                                                    <Setter Property="Foreground" Value="#9E1C2A" />
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter Property="Background" Value="#FDEBED" />
+                                                    <Setter Property="BorderBrush" Value="#B4232F" />
+                                                    <Setter Property="Foreground" Value="#9E1C2A" />
+                                                </Trigger>
+                                                <Trigger Property="IsEnabled" Value="False">
+                                                    <Setter Property="Background" Value="#FFFFFF" />
+                                                    <Setter Property="BorderBrush" Value="#E7AAB0" />
+                                                    <Setter Property="Foreground" Value="#9E1C2A" />
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Resources>
+                                    <Grid Height="32" Margin="0">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
@@ -1070,145 +1165,339 @@
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Text="运行控制" Style="{StaticResource Console.SectionTitle}" />
-                                        <Border x:Name="RuntimeStatusPill" Grid.Column="1" Margin="8,0,0,0"
-                                                Style="{StaticResource Console.Pill}">
+                                        <TextBlock Text="桌面分身" FontSize="13" FontWeight="SemiBold"
+                                            Foreground="#182230" VerticalAlignment="Center" />
+                                        <Border x:Name="RuntimeStatusPill" Grid.Column="1" Margin="10,0,0,0"
+                                            Background="Transparent" Padding="0" VerticalAlignment="Center">
                                             <StackPanel Orientation="Horizontal">
-                                                <Ellipse Width="7" Height="7" VerticalAlignment="Center"
-                                                         Fill="{Binding Foreground, ElementName=RuntimeStatusText}" />
+                                                <Ellipse x:Name="SessionStatusDot" Width="7" Height="7"
+                                                    VerticalAlignment="Center"
+                                                    Fill="#26734D" />
                                                 <TextBlock x:Name="RuntimeStatusText" Margin="6,0,0,0" FontSize="12"
-                                                           FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                    FontWeight="Normal" VerticalAlignment="Center" />
                                             </StackPanel>
                                         </Border>
-                                        <Button x:Name="DesktopViewButton" Grid.Column="3" IsEnabled="False"
-                                                Style="{StaticResource Console.SessionToggle}"
-                                                AutomationProperties.Name="桌面分身：未启动"
-                                                Click="DesktopViewButton_Click">
-                                            <StackPanel Orientation="Horizontal">
-                                                <!-- The 10 DIP dot's ring takes the button background, so the
-                                                     visible 7 DIP dot sits clear of the glyph. -->
-                                                <Grid Width="16" Height="16">
-                                                    <ui:SymbolIcon x:Name="DesktopViewIcon" Symbol="Desktop20"
-                                                                   FontSize="16" />
-                                                    <Ellipse x:Name="DesktopViewDot" Width="10" Height="10"
-                                                             Margin="0,0,-3.5,-2.5" HorizontalAlignment="Right"
-                                                             VerticalAlignment="Bottom" StrokeThickness="1.5"
-                                                             Visibility="Collapsed"
-                                                             Stroke="{Binding Background, RelativeSource={
-                                                                 RelativeSource AncestorType=Button}}" />
-                                                </Grid>
-                                                <TextBlock Text="分身" Margin="6,0,0,0" FontSize="12"
-                                                           Style="{StaticResource Console.ButtonText}" />
-                                            </StackPanel>
-                                        </Button>
                                         <Button x:Name="RuntimeMoreButton" Grid.Column="4"
-                                                Style="{StaticResource Preview.IconButton}"
-                                                ToolTip="更多操作" AutomationProperties.Name="更多操作"
-                                                Click="RuntimeMoreButton_Click">
+                                            Width="32" Height="32" Style="{StaticResource Preview.IconButton}"
+                                            ToolTip="分身管理" AutomationProperties.Name="分身管理"
+                                            Click="RuntimeMoreButton_Click">
                                             <ui:SymbolIcon Symbol="MoreHorizontal20" FontSize="18" />
                                             <Button.ContextMenu>
-                                                <ContextMenu x:Name="RuntimeMoreMenu">
-                                                    <MenuItem x:Name="OpenLogsMenuItem" Header="打开日志目录"
-                                                              Click="OpenLogsMenuItem_Click">
+                                                <ContextMenu x:Name="RuntimeMoreMenu" Width="256" Padding="4"
+                                                    Background="#FFFFFF" BorderBrush="#D6DEE8" BorderThickness="1"
+                                                    FontFamily="{StaticResource FontFamily.Ui}" FontSize="13"
+                                                    FontWeight="Normal" Foreground="#26313F">
+                                                    <ContextMenu.Template>
+                                                        <ControlTemplate TargetType="ContextMenu">
+                                                            <Border Background="{TemplateBinding Background}"
+                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="1" CornerRadius="6" Padding="4">
+                                                                <ItemsPresenter
+                                                                KeyboardNavigation.DirectionalNavigation="Cycle" />
+                                                            </Border>
+                                                        </ControlTemplate>
+                                                    </ContextMenu.Template>
+                                        <ContextMenu.Resources>
+                                            <Style TargetType="Separator">
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="Separator">
+                                                            <Border Height="1" Margin="6,4"
+                                                                Background="#E4EAF0" />
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                            <Style TargetType="MenuItem">
+                                                <Setter Property="FontSize" Value="13" />
+                                                <Setter Property="FontWeight" Value="Normal" />
+                                                <Setter Property="Foreground" Value="#26313F" />
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="MenuItem">
+                                                            <Border x:Name="Row" CornerRadius="6"
+                                                                Padding="10,6" Background="Transparent"
+                                                                MinHeight="32">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="16" />
+                                                                        <ColumnDefinition Width="10" />
+                                                                        <ColumnDefinition Width="*" />
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <ContentPresenter x:Name="IconHost"
+                                                                        ContentSource="Icon"
+                                                                        VerticalAlignment="Center" />
+                                                                    <Border x:Name="CheckBox"
+                                                                        Visibility="Collapsed"
+                                                                        Width="16" Height="16"
+                                                                        BorderBrush="#7B899B"
+                                                                        BorderThickness="1"
+                                                                        CornerRadius="4">
+                                                                        <Path x:Name="Check"
+                                                                            Visibility="Collapsed"
+                                                                            Data="M3 7L6 10L12 4"
+                                                                            Stroke="White"
+                                                                            StrokeThickness="1.5" />
+                                                                    </Border>
+                                                                    <StackPanel Grid.Column="2">
+                                                                        <TextBlock
+                                                                            Text="{TemplateBinding Header}"
+                                                                            FontSize="13"
+                                                                            FontWeight="Normal"
+                                                                            Foreground="{TemplateBinding Foreground}" />
+                                                                        <TextBlock x:Name="Note" Margin="0,1,0,0"
+                                                                            Text="{TemplateBinding Tag}"
+                                                                            FontSize="11.5"
+                                                                            FontWeight="Normal"
+                                                                            Foreground="#5F6E80" />
+                                                                    </StackPanel>
+                                                                </Grid>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsHighlighted"
+                                                                Value="True">
+                                                                    <Setter TargetName="Row"
+                                                                        Property="Background"
+                                                                        Value="#EEF2F6" />
+                                                                </Trigger>
+                                                                <MultiTrigger>
+                                                                    <MultiTrigger.Conditions>
+                                                                        <Condition Property="IsHighlighted"
+                                                                            Value="True" />
+                                                                        <Condition Property="Name"
+                                                                            Value="EndEnvironmentMenuItem" />
+                                                                    </MultiTrigger.Conditions>
+                                                                    <Setter TargetName="Row"
+                                                                        Property="Background"
+                                                                        Value="#FDEBED" />
+                                                                </MultiTrigger>
+                                                                <Trigger Property="IsCheckable"
+                                                                Value="True">
+                                                                    <Setter TargetName="IconHost"
+                                                                        Property="Visibility"
+                                                                        Value="Collapsed" />
+                                                                    <Setter TargetName="CheckBox"
+                                                                        Property="Visibility"
+                                                                        Value="Visible" />
+                                                                </Trigger>
+                                                                <Trigger Property="IsChecked" Value="True">
+                                                                    <Setter TargetName="CheckBox"
+                                                                        Property="Background"
+                                                                        Value="#3156A3" />
+                                                                    <Setter TargetName="CheckBox"
+                                                                        Property="BorderBrush"
+                                                                        Value="#3156A3" />
+                                                                    <Setter TargetName="Check"
+                                                                        Property="Visibility"
+                                                                        Value="Visible" />
+                                                                </Trigger>
+                                                                <Trigger Property="IsEnabled" Value="False">
+                                                                    <Setter Property="Foreground"
+                                                                    Value="#718096" />
+                                                                    <Setter TargetName="Row"
+                                                                        Property="Background"
+                                                                        Value="Transparent" />
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                                    </ContextMenu.Resources>
+                                                    <MenuItem x:Name="StartSessionMenuItem" Header="仅启动分身"
+                                                        Tag="不运行任务" Click="PrepareEnvironmentButton_Click">
                                                         <MenuItem.Icon>
-                                                            <ui:SymbolIcon Symbol="Folder16" />
+                                                            <Viewbox Width="16" Height="16">
+                                                                <Canvas Width="20" Height="20">
+                                                                    <Path StrokeThickness="1.5"
+                                                                        StrokeStartLineCap="Round"
+                                                                        StrokeEndLineCap="Round"
+                                                                        StrokeLineJoin="Round"
+                                                                        Stroke="#26313F"
+                                                                        Data="M10 3.5v6M6.4 5.9a5.7 5.7 0 1 0 7.2 0" />
+                                                                </Canvas>
+                                                            </Viewbox>
                                                         </MenuItem.Icon>
                                                     </MenuItem>
-                                                    <Separator />
+                                                    <MenuItem Visibility="Collapsed" x:Name="OpenLogsMenuItem"
+                                                        Header="打开日志目录" Click="OpenLogsMenuItem_Click" />
                                                     <MenuItem x:Name="EndEnvironmentMenuItem" Header="结束桌面分身"
-                                                              Foreground="{StaticResource Brush.Error.Foreground}"
-                                                              Click="EndEnvironmentMenuItem_Click">
+                                                        Tag="注销分身，游戏随之关闭" Foreground="#9E1C2A"
+                                                        Click="EndEnvironmentMenuItem_Click">
                                                         <MenuItem.Icon>
-                                                            <ui:SymbolIcon Symbol="SignOut20" />
+                                                            <Viewbox Width="16" Height="16">
+                                                                <Canvas Width="20" Height="20">
+                                                                    <Path StrokeThickness="1.5"
+                                                                        StrokeStartLineCap="Round"
+                                                                        StrokeEndLineCap="Round"
+                                                                        StrokeLineJoin="Round"
+                                                                        Stroke="#9E1C2A"
+                                                                        Data="M8 4.5H5.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1H8
+                                                                            M11.5 6.5 15 10l-3.5 3.5M15 10H8" />
+                                                                </Canvas>
+                                                            </Viewbox>
                                                         </MenuItem.Icon>
                                                     </MenuItem>
+                                                    <Separator x:Name="SessionMenuSeparator" />
+                                                    <MenuItem x:Name="AutoSessionMenuItem" IsCheckable="True"
+                                                        StaysOpenOnClick="True" Click="AutoSessionMenuItem_Click"
+                                                        Header="打开程序时自动启动分身" Tag="不会自动开始任务" />
                                                 </ContextMenu>
                                             </Button.ContextMenu>
                                         </Button>
                                     </Grid>
-                                    <TextBlock x:Name="RuntimeStatusTitle" Margin="0,12,0,0" FontSize="15"
-                                               FontWeight="SemiBold" TextWrapping="Wrap"
-                                               Foreground="{StaticResource Brush.Text.Primary}" />
-                                    <TextBlock x:Name="RuntimeStatusDetail" Margin="0,2,0,0" FontSize="12.5"
-                                               TextWrapping="Wrap" LineHeight="19"
-                                               Foreground="{StaticResource Brush.Text.Secondary}" />
-                                    <StackPanel x:Name="RunProgressPanel" Margin="0,12,0,0" Visibility="Collapsed">
-                                        <Canvas x:Name="RunProgressBar" Height="6" ClipToBounds="True"
-                                                SizeChanged="RunProgressBar_SizeChanged" />
-                                        <Grid Margin="0,6,0,0">
-                                            <TextBlock x:Name="RunProgressCaption" FontSize="12"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       Foreground="{StaticResource Brush.Text.Muted}" />
-                                            <TextBlock x:Name="RunProgressElapsed" FontSize="12"
-                                                       HorizontalAlignment="Right"
-                                                       Foreground="{StaticResource Brush.Text.Muted}" />
-                                        </Grid>
-                                    </StackPanel>
                                     <!-- Exactly one primary action shows; RuntimeControls decides which. -->
-                                    <Grid Margin="0,14,0,0">
-                                        <Button x:Name="PrepareEnvironmentButton"
-                                                Style="{StaticResource Console.PrimaryButton}"
-                                                AutomationProperties.Name="准备运行环境"
-                                                Click="PrepareEnvironmentButton_Click">
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button x:Name="DesktopViewButton" Grid.Column="0" Margin="0,0,4,0"
+                                            IsEnabled="False"
+                                            Style="{StaticResource Panel.Window}"
+                                            AutomationProperties.Name="桌面分身：未启动"
+                                            Click="DesktopViewButton_Click">
                                             <StackPanel Orientation="Horizontal">
-                                                <ui:SymbolIcon Symbol="Power20" FontSize="16" Margin="0,0,8,0" />
-                                                <TextBlock Text="准备运行环境" Style="{StaticResource Console.ButtonText}" />
+                                                <Grid Width="16" Height="16">
+                                                    <Viewbox Width="16" Height="16">
+                                                        <Canvas Width="20" Height="20">
+                                                            <Path x:Name="DesktopViewIcon" StrokeThickness="1.5"
+                                                                StrokeStartLineCap="Round"
+                                                                        StrokeEndLineCap="Round"
+                                                                StrokeLineJoin="Round"
+                                                                Stroke="{Binding Foreground, RelativeSource={
+                                                                    RelativeSource AncestorType=Button}}" />
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                </Grid>
+                                                <TextBlock x:Name="DesktopViewText" Text="显示窗口" Margin="8,0,0,0"
+                                                    FontSize="13"
+                                                    Style="{StaticResource Console.ButtonText}" />
                                             </StackPanel>
                                         </Button>
-                                        <Button x:Name="RetryEnvironmentButton" Visibility="Collapsed"
-                                                Style="{StaticResource Console.PrimaryButton}"
+                                        <Grid Grid.Column="1" Margin="4,0,0,0">
+                                            <Button x:Name="PrepareEnvironmentButton"
+                                                Style="{StaticResource Panel.Primary}"
+                                                AutomationProperties.Name="启动并运行"
+                                                Click="PrepareAndRunButton_Click">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Viewbox Width="16" Height="16" Margin="0,0,8,0">
+                                                        <Canvas Width="20" Height="20">
+                                                            <Path StrokeThickness="1.5" StrokeLineJoin="Round"
+                                                                Stroke="{Binding Foreground, RelativeSource={
+                                                                    RelativeSource AncestorType=Button}}"
+                                                                Data="M6.6 4.9v10.2a.6.6 0 0 0 .9.5l8.1-5.1
+                                                                    a.6.6 0 0 0 0-1L7.5 4.4a.6.6 0 0 0-.9.5Z" />
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                    <TextBlock Text="启动并运行"
+                                                        Style="{StaticResource Console.ButtonText}" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button x:Name="RetryEnvironmentButton" Visibility="Collapsed"
+                                                Style="{StaticResource Panel.Primary}"
                                                 ToolTipService.ShowOnDisabled="True"
                                                 Click="RetryRuntimeHeaderButton_Click">
-                                            <StackPanel Orientation="Horizontal">
-                                                <ui:SymbolIcon Symbol="ArrowClockwise20" FontSize="16"
-                                                               Margin="0,0,8,0" />
-                                                <TextBlock x:Name="RetryEnvironmentText" Text="重试"
-                                                           Style="{StaticResource Console.ButtonText}" />
-                                            </StackPanel>
-                                        </Button>
-                                        <Button x:Name="StartTaskHeaderButton" Visibility="Collapsed"
-                                                Style="{StaticResource Console.PrimaryButton}"
+                                                <StackPanel Orientation="Horizontal">
+                                                    <ui:SymbolIcon Symbol="ArrowClockwise20" FontSize="16"
+                                                        Margin="0,0,8,0" />
+                                                    <TextBlock x:Name="RetryEnvironmentText" Text="重试"
+                                                        Style="{StaticResource Console.ButtonText}" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button x:Name="StartTaskHeaderButton" Visibility="Collapsed"
+                                                Style="{StaticResource Panel.Primary}"
                                                 ToolTipService.ShowOnDisabled="True"
                                                 AutomationProperties.Name="开始任务"
                                                 Click="StartRunButton_Click">
-                                            <StackPanel Orientation="Horizontal">
-                                                <ui:SymbolIcon Symbol="Play20" FontSize="16" Margin="0,0,8,0" />
-                                                <TextBlock Text="开始任务" Style="{StaticResource Console.ButtonText}" />
-                                            </StackPanel>
-                                        </Button>
-                                        <Button x:Name="StopTaskHeaderButton" Visibility="Collapsed"
-                                                Style="{StaticResource Console.NeutralButton}"
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Viewbox Width="16" Height="16" Margin="0,0,8,0">
+                                                        <Canvas Width="20" Height="20">
+                                                            <Path StrokeThickness="1.5" StrokeLineJoin="Round"
+                                                                Stroke="{Binding Foreground, RelativeSource={
+                                                                    RelativeSource AncestorType=Button}}"
+                                                                Data="M6.6 4.9v10.2a.6.6 0 0 0 .9.5l8.1-5.1
+                                                                    a.6.6 0 0 0 0-1L7.5 4.4a.6.6 0 0 0-.9.5Z" />
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                    <TextBlock Text="开始任务"
+                                                        Style="{StaticResource Console.ButtonText}" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button x:Name="StopTaskHeaderButton" Visibility="Collapsed"
+                                                Style="{StaticResource Panel.Stop}"
                                                 AutomationProperties.Name="停止任务"
                                                 Click="StopRunButton_Click">
-                                            <StackPanel Orientation="Horizontal">
-                                                <ui:SymbolIcon Symbol="Stop20" FontSize="16" Margin="0,0,8,0" />
-                                                <TextBlock Text="停止任务" Style="{StaticResource Console.ButtonText}" />
-                                            </StackPanel>
-                                        </Button>
-                                        <Button x:Name="RecoverEnvironmentButton" Visibility="Collapsed"
-                                                Style="{StaticResource Console.DangerButton}"
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Viewbox Width="16" Height="16" Margin="0,0,8,0">
+                                                        <Canvas Width="20" Height="20">
+                                                            <Path StrokeThickness="1.5" StrokeLineJoin="Round"
+                                                                Stroke="{Binding Foreground, RelativeSource={
+                                                                    RelativeSource AncestorType=Button}}"
+                                                                Data="M7.2 6H12.8Q14 6 14 7.2V12.8Q14 14 12.8 14
+                                                                    H7.2Q6 14 6 12.8V7.2Q6 6 7.2 6Z" />
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                    <TextBlock Text="停止任务"
+                                                        Style="{StaticResource Console.ButtonText}" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button x:Name="RecoverEnvironmentButton" Visibility="Collapsed"
+                                                Style="{StaticResource Panel.Stop}"
                                                 ToolTipService.ShowOnDisabled="True"
                                                 AutomationProperties.Name="结束桌面分身"
                                                 Click="RecoverEnvironmentButton_Click">
-                                            <StackPanel Orientation="Horizontal">
-                                                <ui:SymbolIcon Symbol="SignOut20" FontSize="16" Margin="0,0,8,0" />
-                                                <TextBlock Text="结束桌面分身"
-                                                           Style="{StaticResource Console.ButtonText}" />
-                                            </StackPanel>
-                                        </Button>
-                                        <Border x:Name="RuntimeHeaderProgressRing" Height="36" CornerRadius="6"
+                                                <StackPanel Orientation="Horizontal">
+                                                    <ui:SymbolIcon Symbol="SignOut20" FontSize="16" Margin="0,0,8,0" />
+                                                    <TextBlock Text="结束桌面分身"
+                                                        Style="{StaticResource Console.ButtonText}" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Border x:Name="RuntimeHeaderProgressRing" Height="36" CornerRadius="6"
                                                 Visibility="Collapsed"
-                                                Background="{StaticResource Brush.Surface.Disabled}"
-                                                AutomationProperties.Name="正在准备运行环境">
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                <ui:ProgressRing Width="16" Height="16" IsIndeterminate="True"
-                                                                 VerticalAlignment="Center" Margin="0,0,8,0" />
-                                                <TextBlock x:Name="RuntimeProgressText" FontWeight="SemiBold"
-                                                           VerticalAlignment="Center"
-                                                           Foreground="{StaticResource Brush.Text.Secondary}" />
-                                            </StackPanel>
-                                        </Border>
+                                                Background="#EDF3FF" BorderBrush="#B8CCF4" BorderThickness="1"
+                                                AutomationProperties.Name="正在启动并运行">
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                    <ui:ProgressRing Width="16" Height="16" IsIndeterminate="True"
+                                                        VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                    <TextBlock x:Name="RuntimeProgressText" FontWeight="SemiBold"
+                                                        VerticalAlignment="Center"
+                                                        Foreground="#3156A3" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
                                     </Grid>
+                                    <Border x:Name="RunSummaryCard" Margin="0,12,0,0" Padding="12,10"
+                                        CornerRadius="8" BorderThickness="1"
+                                        Background="{StaticResource Brush.Surface.Subdued}"
+                                        BorderBrush="#E4EAF0">
+                                        <StackPanel>
+                                            <TextBlock x:Name="RuntimeStatusTitle" Margin="0,0,0,0" FontSize="14"
+                                                FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                                Foreground="{StaticResource Brush.Text.Primary}" />
+                                            <TextBlock x:Name="RuntimeStatusDetail" Margin="0,2,0,0" FontSize="12.5"
+                                                TextWrapping="Wrap" LineHeight="19"
+                                                Foreground="{StaticResource Brush.Text.Secondary}" />
+                                            <StackPanel x:Name="RunProgressPanel" Margin="0,8,0,0"
+                                                Visibility="Collapsed">
+                                                <Canvas x:Name="RunProgressBar" Height="6" ClipToBounds="True"
+                                                    SizeChanged="RunProgressBar_SizeChanged" />
+                                                <Grid Margin="0,7,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock x:Name="RunProgressCaption" FontSize="12"
+                                                        TextTrimming="CharacterEllipsis"
+                                                        Foreground="{StaticResource Brush.Text.Muted}" />
+                                                    <TextBlock Grid.Column="1" Margin="10,0,0,0"
+                                                        x:Name="RunProgressElapsed" FontSize="12"
+                                                        HorizontalAlignment="Right"
+                                                        Foreground="{StaticResource Brush.Text.Muted}" />
+                                                </Grid>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
                                 </StackPanel>
 
                                 <Grid Grid.Row="1">
@@ -1335,7 +1624,8 @@
                                                         <Border Width="34" Height="34" CornerRadius="4"
                                                                 Background="#C4D6EE" VerticalAlignment="Center">
                                                             <Path Margin="7" Stroke="White" StrokeThickness="3"
-                                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                                  StrokeStartLineCap="Round"
+                                                                        StrokeEndLineCap="Round"
                                                                   Data="M0,3 L20,3 M0,10 L20,10 M0,17 L12,17" />
                                                         </Border>
                                                         <Ellipse Width="4" Height="4" Fill="#CBDDF5"

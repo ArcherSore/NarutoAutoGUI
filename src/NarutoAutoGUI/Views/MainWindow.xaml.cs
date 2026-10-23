@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
@@ -202,6 +202,15 @@ public partial class MainWindow : FluentWindow
     {
         Loaded -= MainWindow_Loaded;
         await InitializeStartupAsync(RestoreExistingSessionAsync);
+        try {
+            AutoSessionMenuItem.IsChecked = File.Exists(AutoSessionPath)
+                && File.ReadAllText(AutoSessionPath).Trim() == "true";
+            if (AutoSessionMenuItem.IsChecked && CurrentControls.Action is RuntimeAction.Prepare { Enabled: true }) {
+                await PrepareFromPanelAsync();
+            }
+        } catch (Exception exception) {
+            _logger.Warn("读取自动启动分身设置失败。", exception);
+        }
     }
 
     private async Task InitializeStartupAsync(Func<Task> restoreExistingSession)
@@ -484,7 +493,36 @@ public partial class MainWindow : FluentWindow
         : !state.CommandsAvailable ? "处理中"
         : !state.Desktop.Enabled ? "未创建" : null;
 
+    private string AutoSessionPath => Path.Combine(_applicationDirectory, "config", "auto-session.txt");
+
+    private void AutoSessionMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        try {
+            Directory.CreateDirectory(Path.GetDirectoryName(AutoSessionPath)!);
+            File.WriteAllText(AutoSessionPath, AutoSessionMenuItem.IsChecked ? "true" : "false");
+        } catch (Exception exception) {
+            AutoSessionMenuItem.IsChecked = !AutoSessionMenuItem.IsChecked;
+            ShowActionableError("保存自动启动分身设置失败", exception, "请检查配置目录写入权限。", offerLogDirectory: false);
+        }
+    }
+
+    private async void PrepareAndRunButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!CommitFocusedConfigurationInput() || RevealInvalidInputDraft() || OperationOrExitInProgress) {
+            return;
+        }
+        await PrepareFromPanelAsync();
+        if (!_environmentPreparationFailed && CurrentControls.Action is RuntimeAction.Start { Enabled: true }) {
+            StartRunButton_Click(sender, e);
+        }
+    }
+
     private async void PrepareEnvironmentButton_Click(object sender, RoutedEventArgs e)
+    {
+        await PrepareFromPanelAsync();
+    }
+
+    private async Task PrepareFromPanelAsync()
     {
         if (OperationOrExitInProgress) {
             return;
@@ -510,7 +548,7 @@ public partial class MainWindow : FluentWindow
         if (CurrentControls.Action is RuntimeAction.Retry { Target: RetryTarget.Start }) {
             StartRunButton_Click(sender, e);
         } else {
-            PrepareEnvironmentButton_Click(sender, e);
+            PrepareAndRunButton_Click(sender, e);
         }
     }
 
@@ -2071,6 +2109,7 @@ public partial class MainWindow : FluentWindow
         var progress = CurrentRunProgress;
         ApplyRuntimeStatus(state, progress);
         ApplyRunProgress(progress);
+        ApplyPanelSummary(state, progress);
 
         SetValue(ConfigurationEditableProperty, state.ConfigurationEditable);
         if (!state.ConfigurationEditable && _taskShelfExpanded) {
@@ -2094,6 +2133,63 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private void ApplyPanelSummary(RuntimeControlState state, RunProgressView? progress)
+    {
+        var running = state.Desktop.Status is DesktopStatus.Background or DesktopStatus.Viewing
+            or DesktopStatus.Interactive;
+        RuntimeStatusText.Text = running ? "已启动" : state.Desktop.Status switch {
+            DesktopStatus.Connecting => "启动中",
+            DesktopStatus.Ending => "正在结束",
+            DesktopStatus.Disconnected => "已断开",
+            _ => "未启动"
+        };
+        RuntimeStatusPill.Background = System.Windows.Media.Brushes.Transparent;
+        RuntimeStatusText.Foreground = (WpfBrush)FindResource("Brush.Text.Secondary");
+        SessionStatusDot.Fill = running ? (WpfBrush)FindResource("Brush.Success")
+            : System.Windows.Media.Brushes.Transparent;
+        SessionStatusDot.Stroke = running ? null : (WpfBrush)FindResource("Brush.Border.Strong");
+        SessionStatusDot.StrokeThickness = running ? 0 : 1.5;
+        AutomationProperties.SetName(RuntimeStatusPill, $"桌面分身：{RuntimeStatusText.Text}");
+        DesktopViewText.Text = state.Desktop.Action == DesktopAction.Hide ? "隐藏窗口" : "显示窗口";
+        DesktopViewButton.ToolTip = state.Desktop.Action == DesktopAction.Hide
+            ? "隐藏窗口，分身和任务继续运行" : "显示分身窗口，默认只读";
+        StartSessionMenuItem.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
+        StartSessionMenuItem.IsEnabled = state.Action is RuntimeAction.Prepare { Enabled: true };
+        RuntimeStatusPill.ToolTip = state.Desktop.Status == DesktopStatus.Connecting ? PreparationStage() : null;
+        EndEnvironmentMenuItem.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        SessionMenuSeparator.Visibility = StartSessionMenuItem.Visibility == Visibility.Visible || running
+            ? Visibility.Visible : Visibility.Collapsed;
+        if (state.Action is RuntimeAction.InProgress { Kind: var busyKind }) {
+            RuntimeProgressText.Text = busyKind == ProgressKind.StoppingRun ? "正在停止…"
+                : busyKind == ProgressKind.EndingEnvironment ? "正在结束…" : "启动中…";
+        }
+        RunSummaryCard.Visibility = progress is not null || state.Action is RuntimeAction.Recover
+            ? Visibility.Visible : Visibility.Collapsed;
+        if (progress is null || state.Action is RuntimeAction.Recover) {
+            return;
+        }
+        RunSummaryCard.Background = new System.Windows.Media.SolidColorBrush(
+            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(
+                progress.Failed > 0 ? "#FEF4F5" : "#F6F8FB"));
+        RunSummaryCard.BorderBrush = new System.Windows.Media.SolidColorBrush(
+            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(
+                progress.Failed > 0 ? "#F2D0D4" : "#E4EAF0"));
+        RuntimeStatusDetail.Visibility = Visibility.Collapsed;
+        RuntimeStatusTitle.Text = progress.Current?.TaskLabel
+            ?? progress.Items.FirstOrDefault(item => item.State == PlanItemProgress.Failed)?.TaskLabel
+            ?? (progress.Stopped > 0 ? "任务已停止" : $"{progress.Succeeded} 项全部成功");
+        RunProgressCaption.Text = progress.Active
+            ? $"{(state.Action is RuntimeAction.InProgress { Kind: ProgressKind.StoppingRun } ? "停止中" : "运行中")}"
+                + $" · 第 {(progress.CurrentIndex ?? 0) + 1} / {progress.Total} 项"
+            : progress.Failed == 0 && progress.Stopped == 0 && progress.NotRun == 0
+                ? $"{progress.EndedAtUtc?.ToLocalTime():HH:mm} 完成"
+                : $"{(progress.Failed > 0 ? "失败" : "已停止")} · "
+                    + RunProgress.Caption(progress).Replace("上次运行：", "");
+        RunProgressCaption.Foreground = (WpfBrush)FindResource(progress.Active ? "Brush.Primary"
+            : progress.Failed > 0 ? "Brush.Error.Foreground" : "Brush.Success");
+        RunProgressCaption.FontWeight = FontWeights.SemiBold;
+    }
+
     private static string StartBlockerText(StartBlocker blocker) => blocker switch {
         StartBlocker.CommandsUnavailable => "当前操作完成后可开始任务",
         StartBlocker.ProjectNotLoaded => "MaaNOP 项目未加载，无法开始任务",
@@ -2113,33 +2209,28 @@ public partial class MainWindow : FluentWindow
     // The dot takes the status pill's tone colours, so both agree on what amber, green, blue and red mean.
     private void ApplyDesktopToggle(DesktopToggle desktop)
     {
-        (WpfSymbol Symbol, bool Filled, StatusTone? Dot, string? Tag, string Text) look = desktop.Status switch {
-            DesktopStatus.Connecting => (WpfSymbol.Desktop20, false, StatusTone.Busy, null, "连接中"),
-            DesktopStatus.Ending => (WpfSymbol.Desktop20, false, StatusTone.Busy, null, "结束中"),
-            DesktopStatus.Background => (WpfSymbol.Desktop20, false, StatusTone.Ok, null, "后台运行"),
-            DesktopStatus.Viewing => (WpfSymbol.Desktop20, true, StatusTone.Run, "On", "观看中"),
-            // The dot would cover the cursor; the amber fill already marks unlocked input.
-            DesktopStatus.Interactive => (WpfSymbol.DesktopCursor20, true, null, "Warn", "可操作"),
-            // WPF-UI's font has no DesktopOff20 glyph, so the red dot alone marks the dropped connection.
-            DesktopStatus.Disconnected => (WpfSymbol.Desktop20, false, StatusTone.Bad, null, "已断开"),
-            _ => (WpfSymbol.Desktop20, false, null, null, "未启动")
-        };
-        DesktopViewIcon.Symbol = look.Symbol;
-        DesktopViewIcon.Filled = look.Filled;
-        DesktopViewDot.Visibility = look.Dot is null ? Visibility.Collapsed : Visibility.Visible;
-        if (look.Dot is { } tone) {
-            DesktopViewDot.Fill = (WpfBrush)FindResource(ToneBrushes(tone).Foreground);
-        }
-        DesktopViewButton.Tag = look.Tag;
+        DesktopViewIcon.Data = Geometry.Parse(desktop.Action == DesktopAction.Hide
+            ? "M2.6 10s2.7-5 7.4-5c1.5 0 2.8.5 3.9 1.2M17.4 10s-2.7 5-7.4 5c-1.5 0-2.8-.5-3.9-1.2M3.5 16.5l13-13"
+            : "M2.6 10s2.7-5 7.4-5 7.4 5 7.4 5-2.7 5-7.4 5-7.4-5-7.4-5Z"
+                + "M12.3 10A2.3 2.3 0 1 1 7.7 10A2.3 2.3 0 1 1 12.3 10");
         DesktopViewButton.IsEnabled = desktop.Enabled;
-        AutomationProperties.SetName(DesktopViewButton, $"桌面分身：{look.Text}");
+        if (desktop.Status == DesktopStatus.Interactive) {
+            DesktopViewButton.Background = (WpfBrush)FindResource("Brush.Warning.Surface");
+            DesktopViewButton.Foreground = (WpfBrush)FindResource("Brush.Warning.Foreground");
+        } else {
+            DesktopViewButton.ClearValue(System.Windows.Controls.Control.BackgroundProperty);
+            DesktopViewButton.ClearValue(System.Windows.Controls.Control.ForegroundProperty);
+        }
+        AutomationProperties.SetName(DesktopViewButton,
+            desktop.Action == DesktopAction.Hide ? "隐藏窗口" : "显示窗口");
     }
 
     private void ApplyMoreMenu(RuntimeControlState state)
     {
-        var endBlocker = EndEnvironmentBlocker(state);
+        var endBlocker = state.Action is RuntimeAction.Stop ? "请先停止任务" : EndEnvironmentBlocker(state);
         EndEnvironmentMenuItem.IsEnabled = endBlocker is null;
         EndEnvironmentMenuItem.InputGestureText = endBlocker ?? string.Empty;
+        EndEnvironmentMenuItem.Tag = endBlocker ?? "注销分身，游戏随之关闭";
     }
 
     private RunProgressView? CurrentRunProgress => _projectPlan is { } project
@@ -2281,25 +2372,26 @@ public partial class MainWindow : FluentWindow
             return;
         }
         var width = RunProgressBar.ActualWidth;
-        var segment = width / progress.Total;
+        var gap = progress.Total > 20 ? 0 : 2;
+        var segment = (width - gap * (progress.Total - 1)) / progress.Total;
         void Add(double left, double size, string brush)
         {
             var bar = new System.Windows.Shapes.Rectangle {
-                Width = Math.Max(0, size), Height = 6, Fill = (WpfBrush)FindResource(brush)
+                Width = Math.Max(0, size), Height = 6, Fill = (WpfBrush)FindResource(brush),
+                RadiusX = gap == 0 ? 0 : 3, RadiusY = gap == 0 ? 0 : 3
             };
             Canvas.SetLeft(bar, left);
             RunProgressBar.Children.Add(bar);
         }
-        Add(0, width, "Brush.Progress.Track");
-        Add(0, segment * progress.Processed, "Brush.Primary");
-        if (progress.CurrentIndex is { } index) {
-            Add(segment * index, segment, "Brush.Primary.Border");
-        }
         for (var item = 0; item < progress.Total; item++) {
-            if (progress.Items[item].State is PlanItemProgress.Failed or PlanItemProgress.Stopped) {
-                Add(segment * (item + 1) - 2, 2, progress.Items[item].State == PlanItemProgress.Failed
-                    ? "Brush.Error" : "Brush.Border.Strong");
-            }
+            var brush = progress.Items[item].State switch {
+                PlanItemProgress.Succeeded => "Brush.Success",
+                PlanItemProgress.Failed => "Brush.Error",
+                PlanItemProgress.Running => "Brush.Primary",
+                PlanItemProgress.Stopped => "Brush.Border.Strong",
+                _ => "Brush.Progress.Track"
+            };
+            Add((segment + gap) * item, segment, brush);
         }
         RunProgressBar.Clip = new RectangleGeometry(new Rect(0, 0, width, 6), 3, 3);
     }

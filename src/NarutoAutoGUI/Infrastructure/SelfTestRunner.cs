@@ -45,6 +45,8 @@ internal static partial class SelfTestRunner
                 return 0;
             }
             var projectDirectory = CreateProjectFixture(testDirectory);
+            VerifyPretaskModel(testDirectory);
+            VerifyPretaskGuiWiring(logger, testDirectory);
             VerifyFirstConfiguration(testDirectory, projectDirectory);
             VerifyConfigurationMigration(testDirectory, projectDirectory);
             VerifyIndependentConfigurations(testDirectory, projectDirectory);
@@ -67,8 +69,6 @@ internal static partial class SelfTestRunner
                 Console.WriteLine("PROJECT SELF-TEST PASS");
                 return 0;
             }
-            VerifyGameLaunchProfile(logger, testDirectory);
-            VerifyLauncherHandoff();
             VerifyRdpClientClsid();
             VerifyChildSessionPresence(logger);
             VerifyRdpLogonEvents();
@@ -105,14 +105,14 @@ internal static partial class SelfTestRunner
             }
 
             Console.WriteLine(
-                "SELF-TEST PASS: fixed Naruto game launch profile (AppData-derived launcher, fixed AppId); "
+                "SELF-TEST PASS: PI pretask execution plans; "
                 + "RDP MsRdpClient10 CLSID; "
                 + "PI default/explicit resolver; "
                 + "ordered pipeline override; nested dormant intent; "
                 + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
                 + "PI structure/default/graph validation; typed input validation; "
                 + "task catalog/description; ordered task plan persistence; parameter inspector layout; "
-                + "MaaNOP Config v2/migration/independent tabs; onboarding tour; RunPlan digest; "
+                + "MaaNOP Config v3/migration/independent tabs; onboarding tour; RunPlan digest; "
                 + "IPC framing; RDP viewing modes/input lock; "
                 + "log sequence tracking/recovery; Worker Instance replacement; stale Admission recovery; "
                 + "run-log routing; DEBUG+ file logging");
@@ -128,56 +128,6 @@ internal static partial class SelfTestRunner
             } catch {
                 // The isolated temporary directory can be cleaned by the OS later.
             }
-        }
-    }
-
-    private static void VerifyGameLaunchProfile(AppLogger logger, string testDirectory)
-    {
-        var customRoot = Path.Combine(testDirectory, "AppDataRoaming");
-        Directory.CreateDirectory(customRoot);
-        var profile = NarutoGameLaunchProfile.Resolve(customRoot);
-        var expectedPath = Path.Combine(customRoot, "Tencent", "QQMicroGameBox", "Launch.exe");
-        if (profile.AppId != "1103286479"
-            || profile.Arguments != "-/appid:1103286479"
-            || profile.ExecutablePath != expectedPath) {
-            throw new InvalidOperationException("NarutoGameLaunchProfile path/AppId/arguments 解析验证失败。");
-        }
-
-        try {
-            NarutoGameLaunchProfile.ResolveExisting(logger, applicationDataRoot: customRoot);
-            throw new InvalidOperationException("NarutoGameLaunchProfile.ResolveExisting(logger) 未在启动器缺失时报错。");
-        } catch (FileNotFoundException exception) when (
-            exception.Message.Contains("未检测到火影忍者 Online 微端启动器", StringComparison.Ordinal)) {
-            // Expected: actionable error referencing QQ 游戏平台 installation, not user configuration.
-        }
-
-        var productionProfile = NarutoGameLaunchProfile.Resolve();
-        var productionRoot = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var expected = Path.Combine(productionRoot, "Tencent", "QQMicroGameBox", "Launch.exe");
-        if (!string.Equals(productionProfile.ExecutablePath, expected, StringComparison.OrdinalIgnoreCase)) {
-            throw new InvalidOperationException("Production launch profile 路径推导与当前用户 ApplicationData 不一致。");
-        }
-    }
-
-    private static void VerifyLauncherHandoff()
-    {
-        (uint ProcessId, uint SessionId, string Name)[] processes = [
-            (101, 1, "Launch.exe"), (102, 1, "QQMicroGameBox.exe"), (103, 25, "unrelated.exe")
-        ];
-        var clientName = NarutoGameLaunchProfile.ClientProcessName;
-        if (ChildSessionProgramService.FindLaunchProcess(processes, 25, "Launch.exe", clientName).ProcessId != 0) {
-            throw new InvalidOperationException("启动验证不得接受其他 Session 或无关进程。");
-        }
-
-        var handedOff = processes.Append((104u, 25u, "qqmicrogamebox.EXE"));
-        if (ChildSessionProgramService.FindLaunchProcess(handedOff, 25, "Launch.exe", clientName).ProcessId != 104
-            || ChildSessionProgramService.FindLaunchProcess(handedOff, 25, "Launch.exe", null).ProcessId != 0) {
-            throw new InvalidOperationException("启动器退出后应接受当前 Session 的微端，普通程序不得接受微端替代。");
-        }
-
-        var launcher = processes.Append((105u, 25u, "launch.EXE"));
-        if (ChildSessionProgramService.FindLaunchProcess(launcher, 25, "Launch.exe", clientName).ProcessId != 105) {
-            throw new InvalidOperationException("启动器仍存活时应保留原有启动验证行为。");
         }
     }
 
@@ -252,7 +202,7 @@ internal static partial class SelfTestRunner
                 != "978-1012:3:true"
             || defaultPipeline[0].GetProperty("SelfTestEntry").TryGetProperty("mode", out _)
             || defaultPipeline[2].GetProperty("SelfTestEntry").TryGetProperty("enabled", out _)
-            || defaultAttempt.PlanDigest != CanonicalDigest.ComputePlanDigestV1(defaultAttempt.Plan)) {
+            || defaultAttempt.PlanDigest != CanonicalDigest.ComputePlanDigestV2(defaultAttempt.Plan)) {
             throw new InvalidOperationException("正式 PI Resolver / RunPlan / planDigest 验证失败。");
         }
 

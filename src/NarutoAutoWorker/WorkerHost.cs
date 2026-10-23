@@ -208,9 +208,19 @@ internal sealed class WorkerHost
         }
     }
 
-    private WorkerRuntimeExecution CreateRuntimeExecution(Guid runId, RunPlanItem item, Action onRunning) => new(
-        _manifest, runId, item, checked((uint)Process.GetCurrentProcess().SessionId),
-        (level, source, message) => Log(level, source, message, runId, item.PlanItemId, item.TaskName), onRunning);
+    private IPlanItemExecution CreateRuntimeExecution(Guid runId, RunPlanItem item, Action onRunning)
+    {
+        // Only the log identity is captured; preserved pretask output can outlive the Plan Item.
+        var (planItemId, taskName) = (item.PlanItemId, item.TaskName);
+        void WriteLog(string level, string source, string message) =>
+            Log(level, source, message, runId, planItemId, taskName);
+        return item.Kind switch {
+            PlanItemKind.Pretask => new PretaskExecution(_manifest, item, WriteLog, onRunning),
+            PlanItemKind.MaaTask => new WorkerRuntimeExecution(
+                _manifest, runId, item, checked((uint)Process.GetCurrentProcess().SessionId), WriteLog, onRunning),
+            _ => throw new InvalidDataException("不支持的 Plan Item kind。 ")
+        };
+    }
 
     private LogGetSinceResponse GetLogs(LogGetSinceRequest request)
     {

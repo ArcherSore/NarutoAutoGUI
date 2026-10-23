@@ -9,7 +9,7 @@ namespace NarutoAutoGUI.Protocol;
 public static class CanonicalDigest
 {
     private const string RuntimeProfileDomain = "NarutoAutoGUI.RuntimeProfileDigest.v1\n";
-    private const string RunPlanDomain = "NarutoAutoGUI.RunPlanDigest.v1\n";
+    private const string RunPlanDomain = "NarutoAutoGUI.RunPlanDigest.v2\n";
 
     public static string ComputeSourceInterfaceDigest(ReadOnlySpan<byte> bytes) =>
         FormatDigest(SHA256.HashData(bytes));
@@ -21,7 +21,9 @@ public static class CanonicalDigest
         var normalizedProjectRoot = PathCanonicalizerV1.Canonicalize(projectRoot);
         var normalizedResources = resources.Select(resource => new ResourceDefinition(
             resource.Name, resource.Paths.Select(PathCanonicalizerV1.Canonicalize).ToArray())).ToArray();
-        var normalizedAgent = agent with { WorkingDirectory = PathCanonicalizerV1.Canonicalize(agent.WorkingDirectory) };
+        var normalizedAgent = agent with {
+            WorkingDirectory = PathCanonicalizerV1.Canonicalize(agent.WorkingDirectory)
+        };
 
         var element = ProtocolJson.ToElement(new
         {
@@ -51,7 +53,7 @@ public static class CanonicalDigest
         return ComputeWithDomain(RuntimeProfileDomain, element);
     }
 
-    public static string ComputePlanDigestV1(RunPlan plan)
+    public static string ComputePlanDigestV2(RunPlan plan)
     {
         var createdAtUtc = plan.CreatedAtUtc.ToUniversalTime().ToString(
             "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
@@ -69,6 +71,8 @@ public static class CanonicalDigest
                 item.TaskName,
                 item.TaskLabel,
                 item.Entry,
+                kind = item.Kind,
+                program = item.Program,
                 resolvedOptions = item.ResolvedOptions,
                 pipelineOverride = item.PipelineOverride
             })

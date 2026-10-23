@@ -6,8 +6,8 @@ using NarutoAutoGUI.Protocol;
 namespace NarutoAutoWorker;
 
 // The Worker's authority over Worker State and its MaaNOP Runs (ADR-0001). One lock guards every state change, and
-// each commit advances stateRevision by one. Plan Items run through IPlanItemExecution, which is never called while
-// the lock is held because onRunning arrives on the MaaFramework callback thread and takes the lock.
+// each commit advances stateRevision by one. Execution and stopping stay outside it because onRunning takes the lock.
+// Only the pretask ownership handoff shares its state commit; that fast native step has no callbacks or logging.
 internal sealed class RunSupervisor
 {
     private readonly object _stateGate = new();
@@ -118,7 +118,7 @@ internal sealed class RunSupervisor
                 candidate.PlanItemId, candidate.TaskName, candidate.TaskLabel, candidate.Entry,
                 candidate.ResolvedOptions, candidate.PipelineOverride,
                 index == 0 ? PlanItemState.Starting : PlanItemState.Pending,
-                index == 0 ? startedAtUtc : null, null, null, null, null)).ToArray();
+                index == 0 ? startedAtUtc : null, null, null, null, null) { Kind = candidate.Kind }).ToArray();
             run = new RunSnapshot(
                 request.RunId, request.PlanDigest, RunState.Starting, request.Plan.CreatedAtUtc,
                 startedAtUtc, null, null, item.PlanItemId, 0,
@@ -151,10 +151,29 @@ internal sealed class RunSupervisor
         if (request.Plan.Items.Select(item => item.PlanItemId).Distinct().Count() != request.Plan.Items.Count) {
             throw new WorkerRequestException("invalid_run_plan", "Plan Item ID 不唯一。 ");
         }
+        var sawTask = false;
+        foreach (var item in request.Plan.Items) {
+            if (item.PlanItemId == Guid.Empty || string.IsNullOrWhiteSpace(item.TaskName)
+                || string.IsNullOrWhiteSpace(item.TaskLabel)) {
+                throw new WorkerRequestException("invalid_run_plan", "Plan Item 身份或名称为空。 ");
+            }
+            if (item.Kind == PlanItemKind.Pretask) {
+                if (sawTask || !string.IsNullOrEmpty(item.Entry) || !IsValidProgram(item.Program)) {
+                    throw new WorkerRequestException("invalid_run_plan", "Pretask 程序或执行顺序非法。 ");
+                }
+            } else if (item.Kind == PlanItemKind.MaaTask) {
+                sawTask = true;
+                if (item.Program is not null || string.IsNullOrWhiteSpace(item.Entry)) {
+                    throw new WorkerRequestException("invalid_run_plan", "MaaTask 入口或程序载荷非法。 ");
+                }
+            } else {
+                throw new WorkerRequestException("invalid_run_plan", "不支持的 Plan Item kind。 ");
+            }
+        }
         if (request.Plan.RuntimeProfileDigest != _manifest.RuntimeProfileDigest) {
             throw new WorkerRequestException("worker_not_ready", "Run Plan Runtime Profile Digest 与 Worker 不一致。 ");
         }
-        var actualDigest = CanonicalDigest.ComputePlanDigestV1(request.Plan);
+        var actualDigest = CanonicalDigest.ComputePlanDigestV2(request.Plan);
         if (actualDigest != request.PlanDigest) {
             throw new WorkerRequestException("invalid_run_plan", "planDigest 重算不一致。 ");
         }
@@ -182,6 +201,10 @@ internal sealed class RunSupervisor
                 $"Run 接受后无法满足 Snapshot terminal reserve：base={candidateBytes}。 ");
         }
     }
+
+    private static bool IsValidProgram(PretaskCommand? program) => program is { Arguments: not null }
+        && !string.IsNullOrWhiteSpace(program.Executable) && !program.Executable.Contains('\0')
+        && program.Arguments.All(argument => argument is not null && !argument.Contains('\0'));
 
     // Called under _stateGate so the active Run is never committed without its execution; factories only construct.
     private IPlanItemExecution CreateExecution(Guid runId, RunPlanItem item) =>
@@ -278,7 +301,7 @@ internal sealed class RunSupervisor
             } catch (Exception exception) {
                 Log(
                     "ERROR", "run.stop",
-                    $"MaaFramework Stop 确认失败：{exception.GetBaseException().Message}",
+                    $"执行停止确认失败：{exception.GetBaseException().Message}",
                     runId);
             }
         });
@@ -299,49 +322,35 @@ internal sealed class RunSupervisor
     {
         while (true) {
             var result = await execution.ExecuteAsync(cancellationToken);
+            var pretask = result.Outcome == RuntimeExecutionOutcome.Succeeded ? execution as PretaskExecution : null;
             IPlanItemExecution? nextExecution = null;
-            WorkerSnapshot snapshot;
+            WorkerSnapshot? snapshot = null;
             lock (_stateGate) {
                 if (_activeRun?.RunId != runId || !ReferenceEquals(_execution, execution)) {
                     return;
                 }
-
-                var now = DateTime.UtcNow;
-                if (result.Outcome == RuntimeExecutionOutcome.StopTimedOut) {
-                    _workerState = WorkerState.Faulted;
-                    _workerReason = result.Error;
-                    snapshot = CommitLocked();
-                } else {
-                    var currentIndex = _activeRun.CurrentPlanItemIndex
-                                       ?? throw new InvalidOperationException("active Run 缺少 current item index。 ");
-                    var wasStopping = _activeRun.State == RunState.Stopping;
-                    if (result.Outcome == RuntimeExecutionOutcome.Succeeded
-                        && !wasStopping && currentIndex + 1 < _activeRun.Items.Count) {
-                        var items = _activeRun.Items.ToArray();
-                        items[currentIndex] = items[currentIndex] with {
-                            State = PlanItemState.Succeeded,
-                            EndedAtUtc = now,
-                            Result = result.Result
-                        };
-                        var nextIndex = currentIndex + 1;
-                        items[nextIndex] = items[nextIndex] with {
-                            State = PlanItemState.Starting,
-                            StartedAtUtc = now
-                        };
-                        var nextItem = _activeRun.Plan.Items[nextIndex];
-                        // Created before any state changes, so a factory failure leaves the Active Run as it was.
-                        nextExecution = CreateExecution(runId, nextItem);
-                        _activeRun = _activeRun with {
-                            State = RunState.Running,
-                            CurrentPlanItemId = nextItem.PlanItemId,
-                            CurrentPlanItemIndex = nextIndex,
-                            Items = items
-                        };
-                        _execution = nextExecution;
-                        snapshot = CommitLocked();
-                    } else {
-                        snapshot = CompleteRunLocked(runId, currentIndex, result, wasStopping, now);
+                if (pretask is null || _activeRun.State != RunState.Stopping) {
+                    IPlanItemExecution? preparedNext = null;
+                    if (pretask is not null) {
+                        var nextIndex = _activeRun.CurrentPlanItemIndex!.Value + 1;
+                        if (nextIndex < _activeRun.Plan.Items.Count) {
+                            // A failing factory must leave the completed root's children owned by this execution.
+                            preparedNext = CreateExecution(runId, _activeRun.Plan.Items[nextIndex]);
+                        }
+                        // No callbacks, logging or waits: ownership handoff and the state commit share this lock.
+                        result = pretask.CommitSuccess(result);
                     }
+                    snapshot = AdvanceRunLocked(runId, result, out nextExecution, preparedNext);
+                }
+            }
+            if (snapshot is null) {
+                // Stop won before handoff. Its ACK must precede terminating this pretask's still-owned children.
+                result = await pretask!.CancelPendingSuccessAsync(cancellationToken);
+                lock (_stateGate) {
+                    if (_activeRun?.RunId != runId || !ReferenceEquals(_execution, execution)) {
+                        return;
+                    }
+                    snapshot = AdvanceRunLocked(runId, result, out nextExecution);
                 }
             }
 
@@ -358,6 +367,42 @@ internal sealed class RunSupervisor
             Log("INFO", "run.lifecycle", $"开始执行下一 Plan Item：{runId}。 ", runId);
             execution = nextExecution;
         }
+    }
+
+    private WorkerSnapshot AdvanceRunLocked(Guid runId, RuntimeExecutionResult result,
+        out IPlanItemExecution? nextExecution, IPlanItemExecution? preparedNext = null)
+    {
+        nextExecution = null;
+        if (result.Outcome == RuntimeExecutionOutcome.StopTimedOut) {
+            _workerState = WorkerState.Faulted;
+            _workerReason = result.Error;
+            return CommitLocked();
+        }
+        var now = DateTime.UtcNow;
+        var currentIndex = _activeRun!.CurrentPlanItemIndex
+                           ?? throw new InvalidOperationException("active Run 缺少 current item index。 ");
+        var wasStopping = _activeRun.State == RunState.Stopping;
+        if (result.Outcome != RuntimeExecutionOutcome.Succeeded || wasStopping
+            || currentIndex + 1 >= _activeRun.Items.Count) {
+            return CompleteRunLocked(runId, currentIndex, result, wasStopping, now);
+        }
+        var items = _activeRun.Items.ToArray();
+        items[currentIndex] = items[currentIndex] with {
+            State = PlanItemState.Succeeded, EndedAtUtc = now, Result = result.Result
+        };
+        var nextIndex = currentIndex + 1;
+        items[nextIndex] = items[nextIndex] with { State = PlanItemState.Starting, StartedAtUtc = now };
+        var nextItem = _activeRun.Plan.Items[nextIndex];
+        // Construct before the state update; a factory failure leaves the Active Run available for recovery.
+        nextExecution = preparedNext ?? CreateExecution(runId, nextItem);
+        _activeRun = _activeRun with {
+            State = RunState.Running,
+            CurrentPlanItemId = nextItem.PlanItemId,
+            CurrentPlanItemIndex = nextIndex,
+            Items = items
+        };
+        _execution = nextExecution;
+        return CommitLocked();
     }
 
     // The loop can no longer advance or end the Run. While the Run is still active, the Worker faults and keeps

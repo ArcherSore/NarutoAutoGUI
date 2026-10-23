@@ -254,7 +254,7 @@ internal static partial class SelfTestRunner
                 || ((FrameworkElement)window.FindName("HomeView")).DataContext != homeContext
                 || !config.SequenceEqual(File.ReadAllBytes(configPath))
                 || !projectInterface.SequenceEqual(File.ReadAllBytes(interfacePath))
-                || CanonicalDigest.ComputePlanDigestV1(afterPlan) != CanonicalDigest.ComputePlanDigestV1(plan)) {
+                || CanonicalDigest.ComputePlanDigestV2(afterPlan) != CanonicalDigest.ComputePlanDigestV2(plan)) {
                 throw new InvalidOperationException("Settings 操作不能影响 Home、MaaNOP 配置、PI 或 RunPlan。");
             }
         }, checkForUpdate: _ => { checks++; return check.Task; });

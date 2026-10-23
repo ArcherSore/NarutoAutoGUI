@@ -42,27 +42,27 @@ Windows x64 / .NET 10 WPF 程序。需要管理员权限和交互式桌面。
 .\src\NarutoAutoGUI\scripts\test-framework-diagnostics.ps1 -PackageDirectory artifacts\NarutoAutoGUI\win-x64
 ```
 
-MaaNOP 项目根目录固定为应用程序目录，`interface.json` 直接从 `NarutoAutoGUI.exe` 同级目录读取。游戏启动器固定从当前用户的 `%APPDATA%\Tencent\QQMicroGameBox\Launch.exe` 推导，AppId 和启动参数不由用户配置。日志按天和 10 MB 滚动，保留 14 天，可从主窗口直接打开当前日志目录。若程序目录不可写，日志会回退到 LocalAppData 或临时目录并记录 WARN。
+MaaNOP 项目根目录固定为应用程序目录，`interface.json` 直接从 `NarutoAutoGUI.exe` 同级目录读取。日志按天和 10 MB 滚动，保留 14 天，可从主窗口直接打开当前日志目录。若程序目录不可写，日志会回退到 LocalAppData 或临时目录并记录 WARN。
 
-火影忍者 Online 固定启动配置：
-
-```text
-程序：%APPDATA%\Tencent\QQMicroGameBox\Launch.exe
-参数：-/appid:1103286479
-```
-
-正式 GUI 不使用 `QQGameLauncher.exe` 作为该游戏的直接入口。
-工作目录不提供配置字段，启动时自动使用固定启动器的所在目录。启动器缺失时，GUI 会提示先通过 QQ 游戏平台安装或启动一次火影忍者 Online。
+游戏可在分身中手动启动，也可由当前任务配置选中的 Project Interface pretask 启动。GUI 不固定游戏启动器路径或参数；启动、登录等游戏行为由 MaaNOP 项目声明的程序和资源实现。
 
 ## 操作语义
 
 - 首页“准备运行环境”、运行控制栏的“观看分身”会确保 RDP ActiveX 已连接。
 - 隐藏子桌面或点击其 X 不会断开 RDP。
 - Worker 与任务配置就绪后，无论子桌面当前显示或隐藏，均可从主窗口开始任务。
-- “准备运行环境”会依次确保 Session、显示子桌面、使用固定 profile 启动游戏并启动 Worker；启动参数与工作目录均由程序确定。
-- 启动前按 exe 文件名与 `childSessionId` 检查，已运行则跳过。
+- “准备运行环境”只创建或恢复 Session、连接 RDP 并启动或恢复 Worker；准备完成后仍由用户点击“开始任务”。
+- 启动 Worker 前确认目标 Child Session 中没有同名 Worker，连接后再核验进程和 Session 身份。
 - 主窗口 X 默认隐藏到托盘；关闭该设置后进入安全退出流程。
 - “结束桌面分身”和退出程序会注销 Child Session；退出前会确认。
+
+## 前置任务
+
+任务配置可添加或移除项目声明的 pretask，并像普通任务一样保存各自选项。开始时，前置任务按 Project Interface 声明顺序在所有普通任务之前执行；配置中只有前置任务时也可开始，Worker 不创建 MaaFramework Controller。
+
+前置程序在 Child Session 中运行，工作目录为 `interface.json` 所在目录。固定参数之后按需追加一个紧凑 JSON 参数，内容为该 pretask 引用的选项值；这些选项不合并到普通任务的 Pipeline Override。
+
+启动失败、非零退出或每项 180 秒超时会停止后续任务。停止或超时后最多等待 30 秒确认清理；退出未确认时保留 Active Run，界面只允许通过结束桌面分身恢复。成功完成的前置任务保留其启动的游戏。
 
 ## Known Issue
 

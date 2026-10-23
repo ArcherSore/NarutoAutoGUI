@@ -17,9 +17,6 @@ internal sealed record VerifiedChildSessionProcessLaunch(
 // inside the Child Session, then delete the temporary task once the new process is observed.
 //
 // Deviations (justified):
-//  - RunLevel = LeastPrivilege (0) instead of Highest (1). BetterGI uses Highest because it needs
-//    elevated input injection for game automation. The two PoC targets need no elevation, so
-//    LeastPrivilege avoids unnecessary UAC at the spawned process.
 //  - COM calls use Type.InvokeMember reflection instead of `dynamic`, to stay free of any DLR /
 //    Microsoft.CSharp dependency. Equivalent IDispatch dispatch.
 internal static class ChildSessionProcessLauncher
@@ -27,12 +24,11 @@ internal static class ChildSessionProcessLauncher
     private const int TaskActionExecute = 0;
     private const int TaskCreate = 2;
     private const int TaskLogonInteractiveToken = 3;
-    private const int TaskRunLevelLeastPrivilege = 0;
     private const int TaskRunLevelHighest = 1;
     private const int TaskRunUseSessionId = 0x4;
 
-    // Both paths keep the temporary task registered until a new target process is observed in the requested
-    // Session. Deleting the task right after RunEx can drop a start that a freshly created Session has not run yet.
+    // The temporary task stays registered until a new target process is observed in the requested Session.
+    // Deleting the task right after RunEx can drop a start that a freshly created Session has not run yet.
     internal static Task<VerifiedChildSessionProcessLaunch> LaunchElevatedVerifiedAsync(
         uint childSessionId, string executablePath, string arguments = "",
         string? workingDirectory = null, TimeSpan? verificationTimeout = null,
@@ -40,15 +36,6 @@ internal static class ChildSessionProcessLauncher
     {
         return LaunchVerifiedAtRunLevelAsync(childSessionId, executablePath, arguments, workingDirectory,
             TaskRunLevelHighest, null, verificationTimeout, cancellationToken);
-    }
-
-    // A bootstrap launcher may exit after handing off, so the process it starts also counts as launched.
-    internal static Task<VerifiedChildSessionProcessLaunch> LaunchVerifiedAsync(
-        uint childSessionId, string executablePath, string arguments, string? workingDirectory,
-        string? handoffProcessName, TimeSpan verificationTimeout, CancellationToken cancellationToken = default)
-    {
-        return LaunchVerifiedAtRunLevelAsync(childSessionId, executablePath, arguments, workingDirectory,
-            TaskRunLevelLeastPrivilege, handoffProcessName, verificationTimeout, cancellationToken);
     }
 
     private static Task<VerifiedChildSessionProcessLaunch> LaunchVerifiedAtRunLevelAsync(

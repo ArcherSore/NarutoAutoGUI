@@ -6,6 +6,7 @@ namespace NarutoAutoGUI.ProjectModel;
 public sealed record ProjectTaskChoice(string Name, string Label, string Description)
 {
     public IReadOnlyList<string> Groups { get; init; } = [];
+    public PlanItemKind Kind { get; init; }
 }
 
 public sealed record ProjectTaskGroup(string Name, string Label, string Description, string? Icon, bool DefaultExpand);
@@ -27,6 +28,10 @@ public sealed class ProjectPlanModule
             .Select(task => new ProjectTaskChoice(task.Name, task.Label, task.Description) { Groups = task.Groups })
             .ToArray();
 
+        Pretasks = project.Pretasks.Where(item => item.Applicable)
+            .Select(item => new ProjectTaskChoice(item.Name, item.Label, item.Description) {
+                Kind = PlanItemKind.Pretask
+            }).ToArray();
         _config = configStore.Load();
         if (configStore.WasMissing) {
             try {
@@ -43,7 +48,25 @@ public sealed class ProjectPlanModule
     public string RuntimeProfileDigest => _project.RuntimeProfileDigest;
     public string SourceInterfaceDigest => _project.Provenance.SourceInterfaceDigest;
     public IReadOnlyList<ProjectTaskChoice> Tasks { get; }
+    public IReadOnlyList<ProjectTaskChoice> Pretasks { get; }
     public IReadOnlyList<ProjectTaskGroup> Groups => _project.Groups;
+    public IReadOnlyList<string> SelectedPretaskNames => LoadConfig().SelectedPretasks;
+    public IReadOnlyList<ProjectTaskChoice> SelectedItems
+    {
+        get
+        {
+            var config = LoadConfig();
+            var pretasks = Pretasks.Where(item => config.SelectedPretasks.Contains(item.Name, StringComparer.Ordinal));
+            var missing = config.SelectedPretasks.Where(name => !_project.Pretasks.Any(item => item.Name == name))
+                .Select(name => new ProjectTaskChoice(name, name, "前置任务已不在项目中，请移除。") {
+                    Kind = PlanItemKind.Pretask
+                });
+            var tasks = config.SelectedTasks.Select(name => Tasks.SingleOrDefault(item => item.Name == name)
+                ?? new ProjectTaskChoice(name, name, "任务已不在项目中，请移除。"));
+            return pretasks.Concat(missing).Concat(tasks).ToArray();
+        }
+    }
+    public int SelectedItemCount => SelectedItems.Count;
     public IReadOnlyList<string> SelectedTaskNames => LoadConfig().SelectedTasks;
     public Guid ActiveConfigurationId => _config.ActiveConfigurationId;
     public string? LoadWarning => _initializationWarning ?? _configStore.LoadWarning;
@@ -132,6 +155,34 @@ public sealed class ProjectPlanModule
         return true;
     }
 
+    public bool AddPretask(string name)
+    {
+        var pretask = FindPretask(name);
+        if (!pretask.Applicable) {
+            throw new InvalidOperationException($"前置任务 {name} 不适用于当前控制器或资源。");
+        }
+        var config = LoadConfig();
+        if (config.SelectedPretasks.Contains(name, StringComparer.Ordinal)) {
+            return false;
+        }
+        var updated = config with { SelectedPretasks = config.SelectedPretasks.Append(name).ToArray() };
+        ValidateActiveConfiguration(updated);
+        SaveConfiguration(updated);
+        return true;
+    }
+
+    public bool RemovePretask(string name)
+    {
+        var config = LoadConfig();
+        if (!config.SelectedPretasks.Contains(name, StringComparer.Ordinal)) {
+            return false;
+        }
+        SaveConfiguration(config with {
+            SelectedPretasks = config.SelectedPretasks.Where(item => item != name).ToArray()
+        });
+        return true;
+    }
+
     public bool MoveTask(string taskName, int targetIndex)
     {
         var config = LoadConfig();
@@ -155,14 +206,15 @@ public sealed class ProjectPlanModule
         return true;
     }
 
-    public ProjectConfigurationView GetConfiguration(string taskName)
+    public ProjectConfigurationView GetConfiguration(string taskName, PlanItemKind kind = PlanItemKind.MaaTask)
     {
-        _ = FindTask(taskName);
         var config = LoadConfig();
-        if (!config.SelectedTasks.Contains(taskName, StringComparer.Ordinal)) {
-            throw new InvalidOperationException($"task {taskName} 不在当前执行计划中。 ");
+        var selected = kind == PlanItemKind.Pretask ? config.SelectedPretasks : config.SelectedTasks;
+        if (!selected.Contains(taskName, StringComparer.Ordinal)) {
+            throw new InvalidOperationException($"{kind} {taskName} 不在当前执行计划中。");
         }
-        return BuildConfiguration(config, taskName);
+        return kind == PlanItemKind.Pretask ? BuildPretaskConfiguration(config, FindPretask(taskName))
+            : BuildConfiguration(config, taskName);
     }
 
     // Checks only the edited value, so a typo can be shown at its field instead of as a whole-config failure.
@@ -170,8 +222,9 @@ public sealed class ProjectPlanModule
     {
         var input = FindOption(optionName).Inputs.SingleOrDefault(item => item.Name == inputName)
             ?? throw new ArgumentException($"option {optionName} 不包含 input {inputName}。", nameof(inputName));
+        var typed = IsTypedOption(LoadConfig(), optionName);
         try {
-            _ = ProjectInputValue.Parse(input, value, $"option {optionName} input {inputName} 的值");
+            _ = ProjectInputValue.Parse(input, value, $"option {optionName} input {inputName} 的值", typed);
             return null;
         } catch (InvalidDataException exception) {
             return exception.Message;
@@ -236,8 +289,9 @@ public sealed class ProjectPlanModule
     public RunStartAttempt CreateRunStartAttempt()
     {
         var config = LoadConfig();
-        if (config.SelectedTasks.Count == 0) {
-            throw new InvalidOperationException("请先向执行计划添加 MaaNOP task。 ");
+        ValidateActiveConfiguration(config);
+        if (SelectedItemCount == 0) {
+            throw new InvalidOperationException("请先向执行计划添加任务或前置任务。");
         }
 
         var resolvedItems = config.SelectedTasks.Select(taskName => {
@@ -245,20 +299,33 @@ public sealed class ProjectPlanModule
             return (Task: task, Resolved: ProjectOptionResolver.Resolve(_project, task, config));
         }).ToArray();
         var createdAtUtc = DateTime.UtcNow;
-        var items = resolvedItems.Select(item => new RunPlanItem(
+        var pretaskItems = SelectedPretaskDefinitions(config).Select(item => {
+            var values = ProjectOptionResolver.ResolvePretask(_project, item, config);
+            var arguments = item.Arguments.ToList();
+            if (item.Options.Count != 0) {
+                arguments.Add(JsonSerializer.Serialize(values, ProtocolJson.Options));
+            }
+            return new RunPlanItem(Guid.NewGuid(), item.Name, item.Label, string.Empty,
+                values, ProtocolJson.ToElement(Array.Empty<object>())) {
+                Kind = PlanItemKind.Pretask,
+                Program = new PretaskCommand(ResolvePretaskExecutable(item.Executable), arguments)
+            };
+        });
+        var items = pretaskItems.Concat(resolvedItems.Select(item => new RunPlanItem(
             Guid.NewGuid(), item.Task.Name, item.Task.Label, item.Task.Entry,
-            item.Resolved.ResolvedTaskOptions, item.Resolved.PipelineOverride)).ToArray();
+            item.Resolved.ResolvedTaskOptions, item.Resolved.PipelineOverride))).ToArray();
         var plan = new RunPlan(
             ProtocolConstants.PlanVersion, createdAtUtc,
             _project.Provenance, _project.RuntimeProfileDigest,
-            resolvedItems[0].Resolved.ResolvedGlobalOptions, items);
+            resolvedItems.Length == 0 ? ProtocolJson.ToElement(new { })
+                : resolvedItems[0].Resolved.ResolvedGlobalOptions, items);
         var serializedBytes = JsonSerializer.SerializeToUtf8Bytes(plan, ProtocolJson.Options);
         if (serializedBytes.Length > ProtocolConstants.MaximumRunPlanBytes) {
             throw new InvalidDataException(
                 $"Run Plan 超过 {ProtocolConstants.MaximumRunPlanBytes} bytes：{serializedBytes.Length}。 ");
         }
 
-        return new RunStartAttempt(Guid.NewGuid(), plan, CanonicalDigest.ComputePlanDigestV1(plan));
+        return new RunStartAttempt(Guid.NewGuid(), plan, CanonicalDigest.ComputePlanDigestV2(plan));
     }
 
     private TaskConfiguration LoadConfig() => FindConfiguration(ActiveConfigurationId);
@@ -289,16 +356,56 @@ public sealed class ProjectPlanModule
         foreach (var taskName in config.SelectedTasks) {
             _ = ProjectOptionResolver.Resolve(_project, FindTask(taskName), config);
         }
-        if (config.SelectedTasks.Count == 0) {
+        foreach (var name in config.SelectedPretasks) {
+            var pretask = _project.Pretasks.SingleOrDefault(item => item.Name == name)
+                ?? throw new InvalidDataException($"MaaNOP Config 选择的 pretask 不再存在：{name}。");
+            if (pretask.Applicable) {
+                _ = ProjectOptionResolver.ResolvePretask(_project, pretask, config);
+            }
+        }
+        if (config.SelectedTasks.Count == 0 && config.SelectedPretasks.Count == 0) {
             ProjectOptionResolver.ValidateScope(_project, _project.GlobalOptions, config, "global_option");
         }
+    }
+
+    // Mirrors the validation above: a save converts inputs to their pipeline_type only in options a selected MaaTask
+    // resolves through active cases, global options included unless only pretasks are selected.
+    private bool IsTypedOption(TaskConfiguration config, string optionName)
+    {
+        IEnumerable<string> roots = config.SelectedTasks.Count == 0 && config.SelectedPretasks.Count != 0 ? []
+            : _project.GlobalOptions.Concat(_project.Tasks
+                .Where(task => config.SelectedTasks.Contains(task.Name, StringComparer.Ordinal))
+                .SelectMany(task => task.Options));
+        var pending = new Stack<string>(roots);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        while (pending.TryPop(out var name)) {
+            if (name == optionName) {
+                return true;
+            }
+            var option = _project.Options[name];
+            if (!visited.Add(name) || option.Kind == OptionDefinitionKind.Input) {
+                continue;
+            }
+            var selected = ExplicitOptionIntent.ReadSelectedCase(option, config) ?? option.DefaultCase;
+            foreach (var nested in option.Cases.SingleOrDefault(item => item.Name == selected)?.Options ?? []) {
+                pending.Push(nested);
+            }
+        }
+        return false;
     }
 
     private ProjectConfigurationView BuildConfiguration(TaskConfiguration config)
     {
         var taskName = config.SelectedTasks.FirstOrDefault();
-        return BuildConfiguration(config, taskName);
+        if (taskName is not null) {
+            return BuildConfiguration(config, taskName);
+        }
+        var pretask = SelectedPretaskDefinitions(config).FirstOrDefault();
+        return pretask is null ? new ProjectConfigurationView([], []) : BuildPretaskConfiguration(config, pretask);
     }
+
+    private ProjectConfigurationView BuildPretaskConfiguration(TaskConfiguration config, PretaskDefinition pretask) =>
+        new([], BuildEditors(pretask.Options, config));
 
     private ProjectConfigurationView BuildConfiguration(TaskConfiguration config, string? taskName)
     {
@@ -356,6 +463,21 @@ public sealed class ProjectPlanModule
     private TaskDefinition FindTask(string taskName) =>
         _project.Tasks.SingleOrDefault(task => task.Name == taskName)
         ?? throw new ArgumentException($"PI 中不存在 task：{taskName}。", nameof(taskName));
+
+    private PretaskDefinition FindPretask(string name) =>
+        _project.Pretasks.SingleOrDefault(item => item.Name == name)
+        ?? throw new ArgumentException($"PI 中不存在 pretask：{name}。", nameof(name));
+
+    // The pretasks a Run executes: selected, applicable, and in Project Interface order.
+    private IEnumerable<PretaskDefinition> SelectedPretaskDefinitions(TaskConfiguration config) => _project.Pretasks
+        .Where(item => item.Applicable && config.SelectedPretasks.Contains(item.Name, StringComparer.Ordinal));
+
+    // The loader has rejected drive- and root-relative paths; a path with a separator is relative to the project root.
+    private string ResolvePretaskExecutable(string executable)
+    {
+        return executable.Contains('/') || executable.Contains('\\')
+            ? Path.GetFullPath(executable, _project.ProjectRoot) : executable;
+    }
 
     private OptionDefinition FindOption(string optionName) =>
         _project.Options.GetValueOrDefault(optionName)

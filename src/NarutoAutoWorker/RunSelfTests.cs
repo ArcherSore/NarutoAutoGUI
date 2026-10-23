@@ -4,7 +4,7 @@ using NarutoAutoGUI.Protocol;
 namespace NarutoAutoWorker;
 
 // Characterizes the Worker's Run rules through its IPC surface with scripted Plan Item executions (#16).
-internal static class RunSelfTests
+internal static partial class RunSelfTests
 {
     private const int RaceIterations = 16;
     private static readonly TimeSpan StoppingWriteHold = TimeSpan.FromMilliseconds(300);
@@ -20,6 +20,10 @@ internal static class RunSelfTests
         await ScenarioAsync("A7", VerifyStartingWorkerRejectsAsync, initialize: false);
         await ScenarioAsync("A7", VerifyNotReadyWorkerRejectsAsync, initialize: false);
         await ScenarioAsync("A9", VerifyPlanValidationAsync);
+        await ScenarioAsync("P1", VerifyPretaskProgressionAsync);
+        await ScenarioAsync("P2", VerifyPretaskOnlyAsync);
+        await ScenarioAsync("P3", VerifyPretaskFailureAsync);
+        await ScenarioAsync("P4", VerifyPretaskValidationAsync);
         await ScenarioAsync("A9", VerifySnapshotReserveAsync);
         await ScenarioAsync("R1-R4/C2", VerifyProgressionAsync);
         await ScenarioAsync("F1", VerifyFailureBeforeRunningAsync);
@@ -657,7 +661,7 @@ internal static class RunSelfTests
     }
 
     internal static RunStartRequest Request(RunPlan plan, Guid? runId = null) =>
-        new(runId ?? Guid.NewGuid(), CanonicalDigest.ComputePlanDigestV1(plan), plan);
+        new(runId ?? Guid.NewGuid(), CanonicalDigest.ComputePlanDigestV2(plan), plan);
 
     internal static void Expect(bool condition, string message)
     {

@@ -21,12 +21,13 @@ internal static class WorkerSelfTestRunner
             VerifyStopCleanupRaceAsync().GetAwaiter().GetResult();
             VerifyTaskerTaskCallbackCompletion();
             FrameworkOptionsSelfTests.Run();
+            PretaskSelfTests.Run();
             Console.WriteLine(
                 "WORKER SELF-TEST PASS: Run characterization; MaaNOP string focus projection; Callback adapter; "
                 + "log response budget; "
                 + "budget rejection; transport write guard; agent executable resolution; "
                 + "stop/cleanup serialization; "
-                + "Tasker.Task callback completion");
+                + "Tasker.Task callback completion; pretask processes/jobs/output");
             return 0;
         } catch (Exception exception) {
             Console.Error.WriteLine($"WORKER SELF-TEST FAIL: {exception}");

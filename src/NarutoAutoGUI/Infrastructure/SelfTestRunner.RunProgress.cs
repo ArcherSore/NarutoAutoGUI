@@ -42,10 +42,12 @@ internal static partial class SelfTestRunner
         const PlanItemState pending = PlanItemState.Pending, running = PlanItemState.Running;
         const PlanItemState succeeded = PlanItemState.Succeeded, failed = PlanItemState.Failed;
         const PlanItemState cancelled = PlanItemState.Cancelled;
-        string[] plan = ["Task0", "Task1", "Task2"];
+        (PlanItemKind, string)[] MaaTasks(params string[] names) =>
+            names.Select(name => (PlanItemKind.MaaTask, name)).ToArray();
+        var plan = MaaTasks("Task0", "Task1", "Task2");
 
-        foreach (var (name, worker, tasks, states, current, caption) in new (string, WorkerSnapshot, string[],
-            string, int?, string)[] {
+        foreach (var (name, worker, tasks, states, current, caption) in new (string, WorkerSnapshot,
+            (PlanItemKind, string)[], string, int?, string)[] {
             ("运行中首项", Active(Run(RunState.Running, (PlanItemState.Starting, true), (pending, false),
                 (pending, false))), plan, "Running,Pending,Pending", 0, "已处理 0 / 3 · 0 成功"),
             ("运行中中间项", Active(Run(RunState.Running, (succeeded, true), (running, true), (pending, false))),
@@ -74,7 +76,7 @@ internal static partial class SelfTestRunner
             && RunProgress.AccessibleCaption(stopped) == "已处理 1 / 3，成功 1，失败 0",
             "已停止和未执行不计入已处理。");
         Require(RunProgress.Derive(Last(Run(RunState.Succeeded, (succeeded, true), (succeeded, true),
-                (succeeded, true))), ["Task0", "Task2"]) is null && RunProgress.Derive(idle, plan) is null,
+                (succeeded, true))), MaaTasks("Task0", "Task2")) is null && RunProgress.Derive(idle, plan) is null,
             "Last Run 计划与当前配置的任务序列不一致或没有 Run 时不显示进度。");
         Require(RunProgress.FormatDuration(TimeSpan.FromSeconds(65.9)) == "01:05"
             && RunProgress.FormatDuration(TimeSpan.FromMinutes(61)) == "1:01:00", "用时格式不符。");
@@ -135,7 +137,7 @@ internal static partial class SelfTestRunner
 
             foreach (var (action, pill, title, detail) in new (RuntimeAction, string, string, string)[] {
                 (new RuntimeAction.Prepare(true), "未准备", "开始任务前需要准备运行环境",
-                    "将准备桌面分身、Worker 和游戏"),
+                    "将准备桌面分身和 Worker"),
                 (new RuntimeAction.Start(false, StartBlocker.NoTasks), "就绪", "1 项任务待执行",
                     "请先在执行计划中添加任务"),
                 (new RuntimeAction.InProgress(ProgressKind.StartingRun), "启动中", "正在开始任务",

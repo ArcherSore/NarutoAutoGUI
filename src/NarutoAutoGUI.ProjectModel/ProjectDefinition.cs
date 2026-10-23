@@ -21,7 +21,12 @@ internal sealed record ProjectDefinition(
     string ProjectRoot, ProjectProvenance Provenance, Win32ControllerDefinition Controller,
     IReadOnlyList<ResourceDefinition> Resources, AgentDefinition Agent, string RuntimeProfileDigest,
     IReadOnlyList<string> GlobalOptions, IReadOnlyList<TaskDefinition> Tasks,
-    IReadOnlyDictionary<string, OptionDefinition> Options, IReadOnlyList<ProjectTaskGroup> Groups);
+    IReadOnlyDictionary<string, OptionDefinition> Options, IReadOnlyList<ProjectTaskGroup> Groups,
+    IReadOnlyList<PretaskDefinition> Pretasks);
+
+internal sealed record PretaskDefinition(
+    string Name, string Label, string Description, string Executable, IReadOnlyList<string> Arguments,
+    IReadOnlyList<string> Options, bool Applicable);
 
 internal sealed record TaskDefinition(
     string Name, string Label, string Description, string Entry,

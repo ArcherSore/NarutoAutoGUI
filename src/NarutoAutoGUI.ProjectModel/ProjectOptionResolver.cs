@@ -18,6 +18,15 @@ internal static class ProjectOptionResolver
         return new ResolvedProjectOptions(ToElement(globalValues), ToElement(taskValues), ToElement(pipelineOverrides));
     }
 
+    // Pretask options only become program arguments: without pipeline overrides, every input stays a string.
+    internal static JsonElement ResolvePretask(
+        ProjectDefinition project, PretaskDefinition pretask, TaskConfiguration config)
+    {
+        var values = new JsonObject();
+        ResolveScope(project, pretask.Options, config, values, null, $"pretask.{pretask.Name}.option");
+        return ToElement(values);
+    }
+
     internal static void ValidateScope(
         ProjectDefinition project, IReadOnlyList<string> optionNames, TaskConfiguration config, string scope)
     {
@@ -26,7 +35,7 @@ internal static class ProjectOptionResolver
 
     private static void ResolveScope(
         ProjectDefinition project, IReadOnlyList<string> optionNames, TaskConfiguration config,
-        JsonObject resolvedValues, JsonArray pipelineOverrides, string scope)
+        JsonObject resolvedValues, JsonArray? pipelineOverrides, string scope)
     {
         foreach (var optionName in optionNames) {
             ResolveOption(project, optionName, config, resolvedValues, pipelineOverrides, scope);
@@ -35,7 +44,7 @@ internal static class ProjectOptionResolver
 
     private static void ResolveOption(
         ProjectDefinition project, string optionName, TaskConfiguration config,
-        JsonObject resolvedValues, JsonArray pipelineOverrides, string scope)
+        JsonObject resolvedValues, JsonArray? pipelineOverrides, string scope)
     {
         var option = project.Options[optionName];
         try {
@@ -49,11 +58,11 @@ internal static class ProjectOptionResolver
                                 ? explicitValue
                                 : input.Default;
                             values[input.Name] = resolvedValue;
-                            substitutions[input.Name] = ProjectInputValue.Parse(
-                                input, resolvedValue, $"option {optionName} input {input.Name} 的值");
+                            substitutions[input.Name] = ProjectInputValue.Parse(input, resolvedValue,
+                                $"option {optionName} input {input.Name} 的值", typed: pipelineOverrides is not null);
                         }
                         resolvedValues[optionName] = values;
-                        pipelineOverrides.Add(CreateTemplatedOverride(option.PipelineOverride, substitutions));
+                        pipelineOverrides?.Add(CreateTemplatedOverride(option.PipelineOverride, substitutions));
                         break;
                     }
                 case OptionDefinitionKind.Select:
@@ -64,7 +73,7 @@ internal static class ProjectOptionResolver
                                        ?? throw new InvalidDataException(
                                            $"option {optionName} 的 case {selectedName} 不存在。 ");
                         resolvedValues[optionName] = selected.Name;
-                        pipelineOverrides.Add(ParseObject(selected.PipelineOverride));
+                        pipelineOverrides?.Add(ParseObject(selected.PipelineOverride));
                         foreach (var nested in selected.Options) {
                             ResolveOption(project, nested, config, resolvedValues, pipelineOverrides, scope);
                         }

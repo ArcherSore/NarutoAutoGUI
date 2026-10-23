@@ -6,7 +6,7 @@ namespace NarutoAutoGUI.ProjectModel;
 
 public sealed record MaaNopConfig
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public Guid ActiveConfigurationId { get; init; }
@@ -18,6 +18,7 @@ public sealed record TaskConfiguration
     public required Guid Id { get; init; }
     public required string Name { get; init; }
     public IReadOnlyList<string> SelectedTasks { get; init; } = [];
+    public IReadOnlyList<string> SelectedPretasks { get; init; } = [];
     public IReadOnlyDictionary<string, JsonElement> ExplicitOptions { get; init; } =
         new Dictionary<string, JsonElement>(StringComparer.Ordinal);
 }
@@ -64,11 +65,12 @@ internal sealed class MaaNopConfigStore
                 };
                 config = new MaaNopConfig { ActiveConfigurationId = migrated.Id, Configurations = [migrated] };
                 needsSave = true;
-            } else if (schema == MaaNopConfig.CurrentSchemaVersion) {
+            } else if (schema is 2 || schema == MaaNopConfig.CurrentSchemaVersion) {
                 var active = root.TryGetProperty("ActiveConfigurationId", out var pointer)
                     && pointer.ValueKind == JsonValueKind.String && pointer.TryGetGuid(out var id) ? id : Guid.Empty;
                 var node = JsonNode.Parse(root.GetRawText())!;
                 node["ActiveConfigurationId"] = active;
+                node["SchemaVersion"] = MaaNopConfig.CurrentSchemaVersion;
                 config = node.Deserialize<MaaNopConfig>(JsonOptions)
                     ?? throw new InvalidDataException("MaaNOP Config 为空。");
                 Validate(config, requireActive: false);
@@ -76,8 +78,9 @@ internal sealed class MaaNopConfigStore
                     config = CreateEmpty();
                     needsSave = true;
                 } else {
-                    needsSave = !config.Configurations.Any(item => item.Id == active);
-                    if (needsSave) {
+                    var missingActive = !config.Configurations.Any(item => item.Id == active);
+                    needsSave = schema != MaaNopConfig.CurrentSchemaVersion || missingActive;
+                    if (missingActive) {
                         config = config with { ActiveConfigurationId = config.Configurations[0].Id };
                     }
                 }
@@ -151,17 +154,18 @@ internal sealed class MaaNopConfigStore
     private static void Validate(MaaNopConfig config, bool requireActive = true)
     {
         if (config.SchemaVersion != MaaNopConfig.CurrentSchemaVersion || config.Configurations is null) {
-            throw new InvalidDataException("MaaNOP Config 必须包含有效的 V2 配置列表。");
+            throw new InvalidDataException("MaaNOP Config 必须包含有效的 V3 配置列表。");
         }
         var ids = new HashSet<Guid>();
         foreach (var item in config.Configurations) {
             if (item is null || item.Id == Guid.Empty || !ids.Add(item.Id) || string.IsNullOrWhiteSpace(item.Name)) {
                 throw new InvalidDataException("配置 Id 必须非空且唯一，名称不能为空。");
             }
-            if (item.SelectedTasks is null || item.ExplicitOptions is null
-                || item.SelectedTasks.Any(string.IsNullOrWhiteSpace)
-                || item.SelectedTasks.Count != item.SelectedTasks.Distinct(StringComparer.Ordinal).Count()) {
+            if (!IsNameList(item.SelectedTasks) || item.ExplicitOptions is null) {
                 throw new InvalidDataException("SelectedTasks 必须为不重复的 task name 列表。");
+            }
+            if (!IsNameList(item.SelectedPretasks)) {
+                throw new InvalidDataException("SelectedPretasks 必须为不重复的 pretask name 列表。");
             }
             foreach (var (name, value) in item.ExplicitOptions) {
                 if (string.IsNullOrWhiteSpace(name) || value.ValueKind != JsonValueKind.Object) {
@@ -173,4 +177,7 @@ internal sealed class MaaNopConfigStore
             throw new InvalidDataException("ActiveConfigurationId 不存在。");
         }
     }
+
+    private static bool IsNameList(IReadOnlyList<string>? names) => names is not null
+        && !names.Any(string.IsNullOrWhiteSpace) && names.Count == names.Distinct(StringComparer.Ordinal).Count();
 }

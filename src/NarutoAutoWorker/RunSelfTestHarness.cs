@@ -46,7 +46,7 @@ internal sealed class RunHarness : IAsyncDisposable
 
     internal StructuredReason? ReadinessFailure { get; set; }
 
-    private static DependencyStatus Dependencies
+    internal static DependencyStatus Dependencies
     {
         get
         {

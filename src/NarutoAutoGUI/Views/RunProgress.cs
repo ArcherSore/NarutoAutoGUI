@@ -10,7 +10,10 @@ internal enum PlanItemProgress
 
 internal sealed record PlanItemProgressView(
     Guid PlanItemId, string TaskName, string TaskLabel, PlanItemProgress State, DateTime? StartedAtUtc,
-    DateTime? EndedAtUtc);
+    DateTime? EndedAtUtc)
+{
+    internal PlanItemKind Kind { get; init; }
+}
 
 // The progress of the active Run, or of the last Run while it still describes the plan on screen.
 internal sealed record RunProgressView(
@@ -32,13 +35,14 @@ internal sealed record RunProgressView(
 // Kept apart from RuntimeControls.Derive: progress is presentation, while that decides what may be done.
 internal static class RunProgress
 {
-    internal static RunProgressView? Derive(WorkerSnapshot? worker, IReadOnlyList<string> activeTaskNames)
+    internal static RunProgressView? Derive(
+        WorkerSnapshot? worker, IReadOnlyList<(PlanItemKind Kind, string Name)> activeItems)
     {
         if (worker?.ActiveRun is { } active) {
             return Create(active, true);
         }
         return worker?.LastRun is { } last
-            && last.Plan.Items.Select(item => item.TaskName).SequenceEqual(activeTaskNames, StringComparer.Ordinal)
+            && last.Plan.Items.Select(item => (item.Kind, item.TaskName)).SequenceEqual(activeItems)
             ? Create(last, false) : null;
     }
 
@@ -87,7 +91,9 @@ internal static class RunProgress
     private static RunProgressView Create(RunSnapshot run, bool active)
     {
         var items = run.Items.Select(item => new PlanItemProgressView(
-            item.PlanItemId, item.TaskName, item.TaskLabel, Map(item), item.StartedAtUtc, item.EndedAtUtc)).ToArray();
+            item.PlanItemId, item.TaskName, item.TaskLabel, Map(item), item.StartedAtUtc, item.EndedAtUtc) {
+            Kind = item.Kind
+        }).ToArray();
         var current = active && run.CurrentPlanItemIndex is { } index && index >= 0 && index < items.Length
             ? (int?)index : null;
         return new RunProgressView(active, items, current, run.StartedAtUtc, run.EndedAtUtc);

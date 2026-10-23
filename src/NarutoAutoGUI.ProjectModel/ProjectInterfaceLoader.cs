@@ -9,7 +9,7 @@ internal static class ProjectInterfaceLoader
     private static readonly HashSet<string> AllowedTopLevelProperties = new(StringComparer.Ordinal)
     {
         "interface_version", "name", "label", "version", "description", "icon", "github",
-        "controller", "resource", "agent", "global_option", "task", "option", "group"
+        "controller", "resource", "agent", "global_option", "task", "option", "group", "pretask"
     };
 
     private static readonly HashSet<string> AllowedControllerProperties = new(StringComparer.Ordinal)
@@ -43,6 +43,11 @@ internal static class ProjectInterfaceLoader
     private static readonly HashSet<string> AllowedAgentProperties = new(StringComparer.Ordinal)
     {
         "child_exec", "child_args", "label", "description", "icon"
+    };
+
+    private static readonly HashSet<string> AllowedPretaskProperties = new(StringComparer.Ordinal)
+    {
+        "name", "label", "description", "icon", "exec", "args", "option", "controller", "resource"
     };
 
     private static readonly HashSet<string> AllowedTaskProperties = new(StringComparer.Ordinal)
@@ -110,7 +115,14 @@ internal static class ProjectInterfaceLoader
         var options = ParseOptions(RequireProperty(root, "option", "$"));
         var globalOptions = ReadStringArray(root, "global_option", required: false, "$");
         ValidateReferences(globalOptions, tasks, options);
-        ValidateOptionDefinitions(options);
+        var pretasks = ParsePretasks(root, controller.Name, resources[0].Name);
+        foreach (var pretask in pretasks) {
+            ValidateReferences(pretask.Options, $"$.pretask.{pretask.Name}.option", options);
+        }
+        var pretaskOptions = CollectOptionNames(pretasks.SelectMany(item => item.Options), options);
+        pretaskOptions.ExceptWith(CollectOptionNames(globalOptions.Concat(tasks.SelectMany(item => item.Options)),
+            options));
+        ValidateOptionDefinitions(options, pretaskOptions);
         ValidateOptionGraph(options);
 
         var provenance = new ProjectProvenance(
@@ -121,7 +133,59 @@ internal static class ProjectInterfaceLoader
             projectRoot, controller, resources, agent);
         return new ProjectDefinition(
             projectRoot, provenance, controller, resources, agent, runtimeProfileDigest,
-            globalOptions, tasks, options, groups);
+            globalOptions, tasks, options, groups, pretasks);
+    }
+
+    private static IReadOnlyList<PretaskDefinition> ParsePretasks(
+        JsonElement root, string controller, string resource)
+    {
+        if (!root.TryGetProperty("pretask", out var value)) {
+            return [];
+        }
+        var elements = value.ValueKind switch {
+            JsonValueKind.Object => new[] { value },
+            JsonValueKind.Array => value.EnumerateArray().ToArray(),
+            _ => throw new InvalidDataException("$.pretask 必须是 object 或 array。")
+        };
+        var result = new List<PretaskDefinition>();
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < elements.Length; index++) {
+            var path = $"$.pretask[{index}]";
+            var obj = RequireObject(elements[index], path);
+            RejectUnknownProperties(obj, AllowedPretaskProperties, path);
+            var executable = RequireString(obj, "exec", path);
+            var name = OptionalString(obj, "name") ?? executable;
+            if (!names.Add(name)) {
+                throw new InvalidDataException($"重复 pretask 标识 {name}，请指定唯一 name。");
+            }
+            var arguments = new List<string>();
+            if (obj.TryGetProperty("args", out var args)) {
+                RequireArrayValue(args, $"{path}.args");
+                foreach (var argument in args.EnumerateArray()) {
+                    if (argument.ValueKind != JsonValueKind.String || argument.GetString()!.Contains('\0')) {
+                        throw new InvalidDataException($"{path}.args 只能包含不含空字符的 string。");
+                    }
+                    arguments.Add(argument.GetString()!);
+                }
+            }
+            if (executable.Contains('\0')) {
+                throw new InvalidDataException($"{path}.exec 不能包含空字符。");
+            }
+            // Drive- and root-relative paths are ambiguous; whether the program exists is only known when it starts.
+            if (Path.IsPathRooted(executable) && !Path.IsPathFullyQualified(executable)) {
+                throw new InvalidDataException($"{path}.exec 必须是完整路径、项目内相对路径或 PATH 中的程序名。");
+            }
+            var controllers = ReadStringArray(obj, "controller", required: false, path);
+            var resources = ReadStringArray(obj, "resource", required: false, path);
+            var applicable = (!obj.TryGetProperty("controller", out _) || controllers.Contains(controller))
+                && (!obj.TryGetProperty("resource", out _) || resources.Contains(resource));
+            _ = ReadDisplayString(obj, "icon");
+            var label = ReadDisplayString(obj, "label");
+            result.Add(new PretaskDefinition(name, string.IsNullOrWhiteSpace(label) ? name : label,
+                ReadOptionalDescription(obj, "description") ?? string.Empty, executable, arguments,
+                ReadStringArray(obj, "option", required: false, path), applicable));
+        }
+        return result;
     }
 
     private static Win32ControllerDefinition ParseController(JsonElement element)
@@ -146,7 +210,8 @@ internal static class ProjectInterfaceLoader
             RequireSupportedString(win32, "keyboard", "$.controller[0].win32", AllowedWin32InputMethods));
     }
 
-    private static IReadOnlyList<ResourceDefinition> ParseResources(IReadOnlyList<JsonElement> elements, string projectRoot)
+    private static IReadOnlyList<ResourceDefinition> ParseResources(
+        IReadOnlyList<JsonElement> elements, string projectRoot)
     {
         var resources = new List<ResourceDefinition>();
         for (var index = 0; index < elements.Count; index++) {
@@ -341,7 +406,24 @@ internal static class ProjectInterfaceLoader
         }
     }
 
-    private static void ValidateOptionDefinitions(IReadOnlyDictionary<string, OptionDefinition> options)
+    private static HashSet<string> CollectOptionNames(
+        IEnumerable<string> roots, IReadOnlyDictionary<string, OptionDefinition> options)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Stack<string>(roots);
+        while (pending.TryPop(out var name)) {
+            if (!result.Add(name)) {
+                continue;
+            }
+            foreach (var nested in options[name].Cases.SelectMany(item => item.Options)) {
+                pending.Push(nested);
+            }
+        }
+        return result;
+    }
+
+    private static void ValidateOptionDefinitions(
+        IReadOnlyDictionary<string, OptionDefinition> options, IReadOnlySet<string> pretaskOnlyOptions)
     {
         foreach (var option in options.Values) {
             var path = $"$.option.{option.Name}";
@@ -357,8 +439,8 @@ internal static class ProjectInterfaceLoader
                 }
                 for (var inputIndex = 0; inputIndex < option.Inputs.Count; inputIndex++) {
                     var input = option.Inputs[inputIndex];
-                    _ = ProjectInputValue.Parse(
-                        input, input.Default, $"{path}.inputs[{inputIndex}].default");
+                    _ = ProjectInputValue.Parse(input, input.Default, $"{path}.inputs[{inputIndex}].default",
+                        typed: !pretaskOnlyOptions.Contains(option.Name));
                 }
                 continue;
             }
@@ -479,7 +561,8 @@ internal static class ProjectInterfaceLoader
         }
     }
 
-    private static string RequireSupportedString(JsonElement obj, string name, string path, IReadOnlySet<string> supported)
+    private static string RequireSupportedString(
+        JsonElement obj, string name, string path, IReadOnlySet<string> supported)
     {
         var value = RequireString(obj, name, path);
         if (!supported.Contains(value)) {

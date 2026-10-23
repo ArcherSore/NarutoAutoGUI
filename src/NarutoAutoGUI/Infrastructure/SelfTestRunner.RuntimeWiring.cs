@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
@@ -23,6 +23,7 @@ internal static partial class SelfTestRunner
         VerifySessionRestoreAndEndWiring(logger, directory);
         VerifySessionEndWithWorkerWiring(logger, directory);
         VerifyFaultedSessionRetryWiring(logger, directory);
+        VerifyPrepareAndRunWiring(logger, directory);
         VerifyWorkerStopWiring(logger, directory);
         VerifyKilledWorkerWiring(logger, directory);
         VerifyStopUnconfirmedRecoveryWiring(logger, directory);
@@ -138,6 +139,133 @@ internal static partial class SelfTestRunner
             operations.Release();
             PumpUntil(() => HeaderShows(window, "RetryEnvironmentButton", enabled: true), "准备结束后分身仍故障时应再次显示重试。");
         }, session: session, runOperation: operations.RunAsync);
+    }
+
+    private static void VerifyPrepareAndRunWiring(AppLogger logger, string directory)
+    {
+        foreach (var scenario in new[] { "run", "delayed-ready", "exit-waiting", "prepare-only", "cancel" }) {
+            var windowDirectory = Path.Combine(directory, $"prepare-run-{scenario}");
+            var projectDirectory = CreateProjectFixture(windowDirectory);
+            var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "plan.json"));
+            var expected = project.CreateRunStartAttempt();
+            WithFakeWorker(logger, Path.Combine(windowDirectory, "worker"), (coordinator, record, pipeName) => {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                var begin = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var prepared = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var starting = scenario is "delayed-ready" or "exit-waiting";
+                var runs = scenario is "run" or "delayed-ready";
+                var received = new TaskCompletionSource<RunStartRequest>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                var requests = 0;
+                var worker = Task.Run(async () => {
+                    try {
+                        await begin.Task.WaitAsync(timeout.Token);
+                        await using var pipe = await WorkerCoordinatorSelfTest.OpenConnectionAsync(
+                            pipeName, record, 0, timeout.Token,
+                            initialState: starting ? WorkerState.Starting : WorkerState.Ready);
+                        if (starting) {
+                            await ready.Task.WaitAsync(timeout.Token);
+                            await pipe.WriteAsync(StateEvent(WorkerCoordinatorSelfTest.CreateSnapshot(record, 0)
+                                with { StateRevision = 2 }), timeout.Token);
+                        }
+                        while (true) {
+                            var request = await WorkerCoordinatorSelfTest.ReadRequestAsync(
+                                pipe, ProtocolOperations.RunStart, timeout.Token);
+                            Interlocked.Increment(ref requests);
+                            var payload = System.Text.Json.JsonSerializer.Deserialize<RunStartRequest>(
+                                request.Data, ProtocolJson.Options)!;
+                            await pipe.WriteAsync(WireEnvelope.Response(ProtocolOperations.RunStart,
+                                request.RequestId!.Value, new RunStartResponse("accepted")), timeout.Token);
+                            received.TrySetResult(payload);
+                        }
+                    } catch (OperationCanceledException) when (timeout.IsCancellationRequested) {
+                    }
+                });
+                using var session = new SimulatedWts().CreateManager(logger);
+                var environment = new RuntimeEnvironment(logger, session, coordinator);
+                var prepareCount = 0;
+                try {
+                    WithRuntimeControlWindow(logger, windowDirectory, window => {
+                        var button = scenario == "prepare-only" ? "StartSessionMenuItem" : "PrepareEnvironmentButton";
+                        if (scenario == "prepare-only") {
+                            Named<System.Windows.Controls.MenuItem>(window, button).RaiseEvent(
+                                new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
+                        } else {
+                            Click(window, button);
+                        }
+                        PumpUntil(() => prepareCount == 1 && coordinator.Snapshot.SnapshotFresh,
+                            "启动并运行必须先完成环境准备和 Worker 同步。");
+                        Require(requests == 0 && !ConfigurationEditable(window), "环境准备期间不得开始任务或解锁配置。");
+                        // Simulate a UI notification still in the Dispatcher queue when Prepare completes.
+                        SetOnboardingField(window, "_workerSnapshot", new WorkerCoordinatorSnapshot(
+                            WorkerObservation.WorkerStarting, false, null, "queued ready notification"));
+                        prepared.TrySetResult();
+                        if (starting) {
+                            PumpOnboarding();
+                            Require(requests == 0 && !ConfigurationEditable(window)
+                                && coordinator.Snapshot.WorkerSnapshot?.WorkerState == WorkerState.Starting,
+                                "Worker 已连接但仍在检查依赖时必须继续等待，不得提交任务。");
+                            if (scenario == "exit-waiting") {
+                                // Exit queues cleanup behind the same gate; cancellation must release it without Ready.
+                                environment.Closing = true;
+                                window.SetExitInProgress(true);
+                                var cleanupEntered = false;
+                                var ending = environment.EndAsync(() => {
+                                    cleanupEntered = true;
+                                    return false;
+                                });
+                                PumpUntil(() => ending.IsCompleted, "退出必须取消就绪等待并释放操作锁。");
+                                Require(cleanupEntered && ending.GetAwaiter().GetResult().Outcome
+                                    == EnvironmentEndOutcome.Declined && requests == 0,
+                                    "Worker 仍在 Starting 时应进入原有清理入口，且不得启动任务。");
+                                environment.Closing = false;
+                                window.SetExitInProgress(false);
+                            } else {
+                                ready.TrySetResult();
+                            }
+                        }
+                        if (runs) {
+                            PumpUntil(() => received.Task.IsCompleted, "启动完成后没有自动提交当前任务计划。");
+                            var request = received.Task.Result;
+                            Require(request.Plan.RuntimeProfileDigest == expected.Plan.RuntimeProfileDigest
+                                && request.Plan.Items.Select(item => item.TaskName)
+                                    .SequenceEqual(expected.Plan.Items.Select(item => item.TaskName))
+                                && request.Plan.Items.Zip(expected.Plan.Items).All(pair =>
+                                    pair.First.Kind == pair.Second.Kind && pair.First.Entry == pair.Second.Entry
+                                    && System.Text.Json.JsonElement.DeepEquals(
+                                        pair.First.ResolvedOptions, pair.Second.ResolvedOptions)
+                                    && System.Text.Json.JsonElement.DeepEquals(
+                                        pair.First.PipelineOverride, pair.Second.PipelineOverride)),
+                                "自动运行必须提交当前任务计划及其参数。");
+                        }
+                        PumpUntil(() => typeof(MainWindow).GetField("_pendingOperation",
+                            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                            .GetValue(window) is PendingOperation.None, "准备/启动操作完成后未释放操作锁。");
+                        Require(requests == (runs ? 1 : 0),
+                            "仅启动或取消准备不得提交任务，一键启动只能提交一次。");
+                    }, session: session, coordinator: coordinator, environment: environment,
+                        prepareEnvironment: async (_, _) => {
+                            prepareCount++;
+                            begin.TrySetResult();
+                            await prepared.Task;
+                            if (scenario == "cancel") {
+                                throw new OperationCanceledException("scripted preparation cancellation");
+                            }
+                            typeof(ChildSessionManager).GetProperty("Snapshot",
+                                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                                .SetValue(session, new ChildSessionSnapshot(
+                                    ChildSessionState.ConnectedHidden, record.ChildSessionId, 1,
+                                    "prepared"));
+                        });
+                } finally {
+                    timeout.Cancel();
+                    worker.GetAwaiter().GetResult();
+                }
+            }, runtimeProfileDigest: project.RuntimeProfileDigest);
+        }
+        Console.WriteLine(
+            "PREPARE AND RUN PASS: current plan, delayed Ready, prepare-only, cancellation, exit while waiting.");
     }
 
     private static void VerifyWorkerStopWiring(AppLogger logger, string directory)
@@ -286,13 +414,14 @@ internal static partial class SelfTestRunner
     // A coordinator whose admission belongs to this process, so a pipe client from the test is admitted.
     // workerListed, when given, decides whether process inspection still finds that Worker.
     private static void WithFakeWorker(AppLogger logger, string directory,
-        Action<WorkerCoordinator, WorkerAdmissionRecord, string> verify, Func<bool>? workerListed = null)
+        Action<WorkerCoordinator, WorkerAdmissionRecord, string> verify, Func<bool>? workerListed = null,
+        string runtimeProfileDigest = "self-test-runtime")
     {
         Directory.CreateDirectory(directory);
         using var process = Process.GetCurrentProcess();
         var record = new WorkerAdmissionRecord(Guid.NewGuid(),
             Convert.ToHexString(Guid.NewGuid().ToByteArray()).ToLowerInvariant(), checked((uint)process.SessionId),
-            Environment.ProcessId, "self-test-runtime", DateTime.UtcNow);
+            Environment.ProcessId, runtimeProfileDigest, DateTime.UtcNow);
         File.WriteAllBytes(Path.Combine(directory, "worker.json"),
             System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(record, ProtocolJson.Options));
         var pipeName = $"NarutoAutoGUI.RuntimeWiring.SelfTest.{Guid.NewGuid():N}";

@@ -57,6 +57,8 @@ public partial class MainWindow : FluentWindow
     private readonly HelpPageModel _help;
     private MainSection _section;
     private readonly string _applicationDirectory;
+    private readonly Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task> _prepareEnvironment;
+    private CancellationTokenSource? _workerReadyWait;
     private readonly ChildSessionManager _sessionManager;
     private readonly WorkerCoordinator _workerCoordinator;
     private readonly RuntimeEnvironment _environment;
@@ -128,7 +130,8 @@ public partial class MainWindow : FluentWindow
         AppLogger logger,
         ChildSessionManager sessionManager, WorkerCoordinator workerCoordinator, RuntimeEnvironment environment,
         Func<Task> requestExitAsync, Func<Task> endEnvironmentAsync, Func<string, Task> installUpdateAsync,
-        string? applicationDirectory = null, Func<CancellationToken, Task<EngineCheckResult>>? checkForUpdate = null)
+        string? applicationDirectory = null, Func<CancellationToken, Task<EngineCheckResult>>? checkForUpdate = null,
+        Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task>? prepareEnvironment = null)
     {
         InitializeComponent();
         _runLog = new RunLogFeed(LogLines, MaximumGuiLogEntries);
@@ -149,6 +152,7 @@ public partial class MainWindow : FluentWindow
         _sessionManager = sessionManager;
         _workerCoordinator = workerCoordinator;
         _environment = environment;
+        _prepareEnvironment = prepareEnvironment ?? environment.PrepareAsync;
         _requestExitAsync = requestExitAsync;
         _endEnvironmentAsync = endEnvironmentAsync;
         _installUpdateAsync = installUpdateAsync;
@@ -192,6 +196,7 @@ public partial class MainWindow : FluentWindow
     {
         _exitInProgress = exitInProgress;
         if (exitInProgress) {
+            _workerReadyWait?.Cancel();
             EndOnboarding(handled: false);
         }
         UpdateUpdaterControls();
@@ -511,10 +516,7 @@ public partial class MainWindow : FluentWindow
         if (!CommitFocusedConfigurationInput() || RevealInvalidInputDraft() || OperationOrExitInProgress) {
             return;
         }
-        await PrepareFromPanelAsync();
-        if (!_environmentPreparationFailed && CurrentControls.Action is RuntimeAction.Start { Enabled: true }) {
-            StartRunButton_Click(sender, e);
-        }
+        await PrepareFromPanelAsync(startRun: true);
     }
 
     private async void PrepareEnvironmentButton_Click(object sender, RoutedEventArgs e)
@@ -522,7 +524,7 @@ public partial class MainWindow : FluentWindow
         await PrepareFromPanelAsync();
     }
 
-    private async Task PrepareFromPanelAsync()
+    private async Task PrepareFromPanelAsync(bool startRun = false)
     {
         if (OperationOrExitInProgress) {
             return;
@@ -534,10 +536,27 @@ public partial class MainWindow : FluentWindow
             {
                 try {
                     LoadProject();
-                    await _environment.PrepareAsync(RequireProject(), _settings.CreateFrameworkOptions);
+                    await _prepareEnvironment(RequireProject(), _settings.CreateFrameworkOptions);
                 } catch {
                     _environmentPreparationFailed = true;
                     throw;
+                }
+                if (startRun && !_exitInProgress && !_environment.Closing) {
+                    // Keep the operation gate and configuration lock through admission of the Run.
+                    // UI snapshot notifications may still be queued when preparation completes.
+                    _logger.Info("等待 Worker 依赖检查完成后自动开始当前任务计划。");
+                    using var readyWait = new CancellationTokenSource();
+                    _workerReadyWait = readyWait;
+                    try {
+                        await _workerCoordinator.WaitForReadyAsync(readyWait.Token);
+                    } finally {
+                        _workerReadyWait = null;
+                    }
+                    if (_exitInProgress || _environment.Closing) {
+                        return;
+                    }
+                    SetPendingOperation(PendingOperation.StartingRun);
+                    await StartCurrentPlanAsync();
                 }
             });
     }
@@ -569,30 +588,31 @@ public partial class MainWindow : FluentWindow
             or RuntimeAction.Retry { Target: RetryTarget.Start, Enabled: true })) {
             return;
         }
-        await RunOperationAsync(
-            PendingOperation.StartingRun,
-            async () =>
-            {
-                // The operation may wait behind another one, so the session is checked again when it runs.
-                if (_sessionSnapshot.State is not (ChildSessionState.ConnectedVisible
-                    or ChildSessionState.ConnectedHidden)) {
-                    throw new InvalidOperationException("Child Session 尚未连接，当前不能开始任务。 ");
-                }
-                var project = RequireProject();
-                if (!_projectConfigurationValid) {
-                    throw new InvalidOperationException(
-                        "当前 MaaNOP Config 尚未通过正式 PI Resolver 校验。 ");
-                }
-                _pendingStartAttempt ??= project.CreateRunStartAttempt();
-                var response = await _workerCoordinator.StartRunAsync(_pendingStartAttempt);
-                if (response.Disposition is not ("accepted" or "already_accepted")) {
-                    throw new InvalidDataException($"未知 run.start disposition：{response.Disposition}。 ");
-                }
-                _logger.Info(
-                    $"run.start {response.Disposition}：runId={_pendingStartAttempt.RunId:D}；"
-                    + $"planDigest={_pendingStartAttempt.PlanDigest}。 ");
-                _pendingStartAttempt = null;
-            });
+        await RunOperationAsync(PendingOperation.StartingRun, StartCurrentPlanAsync);
+    }
+
+    // Called only while the application operation gate is held, after preparation or a direct Start.
+    private async Task StartCurrentPlanAsync()
+    {
+        // The operation may wait behind another one, so the session is checked again when it runs.
+        if (_sessionManager.Snapshot.State is not (ChildSessionState.ConnectedVisible
+            or ChildSessionState.ConnectedHidden)) {
+            throw new InvalidOperationException("Child Session 尚未连接，当前不能开始任务。 ");
+        }
+        var project = RequireProject();
+        if (!_projectConfigurationValid) {
+            throw new InvalidOperationException(
+                "当前 MaaNOP Config 尚未通过正式 PI Resolver 校验。 ");
+        }
+        _pendingStartAttempt ??= project.CreateRunStartAttempt();
+        var response = await _workerCoordinator.StartRunAsync(_pendingStartAttempt);
+        if (response.Disposition is not ("accepted" or "already_accepted")) {
+            throw new InvalidDataException($"未知 run.start disposition：{response.Disposition}。 ");
+        }
+        _logger.Info(
+            $"run.start {response.Disposition}：runId={_pendingStartAttempt.RunId:D}；"
+            + $"planDigest={_pendingStartAttempt.PlanDigest}。 ");
+        _pendingStartAttempt = null;
     }
 
     private async void StopRunButton_Click(object sender, RoutedEventArgs e)

@@ -420,7 +420,8 @@ internal static partial class SelfTestRunner
     private static void WithRuntimeControlWindow(AppLogger logger, string directory, Action<MainWindow> verify,
         ChildSessionManager? session = null, WorkerCoordinator? coordinator = null,
         Func<Func<Task>, Task>? runOperation = null, bool loadProject = true, RuntimeEnvironment? environment = null,
-        Func<Task>? endEnvironment = null)
+        Func<Task>? endEnvironment = null,
+        Func<NarutoAutoGUI.ProjectModel.ProjectPlanModule, Func<MaaFrameworkOptions>, Task>? prepareEnvironment = null)
     {
         var projectDirectory = CreateProjectFixture(directory);
         if (!loadProject) {
@@ -440,7 +441,7 @@ internal static partial class SelfTestRunner
         var window = new MainWindow(logger, windowSession, windowCoordinator,
             environment ?? WindowEnvironment(logger, windowSession, windowCoordinator, runOperation),
             () => Task.CompletedTask, endEnvironment ?? (() => Task.CompletedTask), _ => Task.CompletedTask,
-            projectDirectory);
+            projectDirectory, prepareEnvironment: prepareEnvironment);
         var application = System.Windows.Application.Current;
         var shutdown = application.ShutdownMode;
         application.ShutdownMode = ShutdownMode.OnExplicitShutdown;

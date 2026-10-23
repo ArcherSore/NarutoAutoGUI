@@ -283,6 +283,16 @@ internal static partial class SelfTestRunner
             Require(Named<UIElement>(window, "RunProgressPanel").IsVisible
                 && Named<TextBlock>(window, "RunProgressCaption").Text.EndsWith(" 完成", StringComparison.Ordinal),
                 "匹配当前配置的 Last Run 不能因运行环境需要重新准备而隐藏。");
+            foreach (var (runState, itemState, expected) in new[] {
+                (RunState.Cancelled, PlanItemState.Cancelled, "0 成功 · 已停止"),
+                (RunState.Failed, PlanItemState.Failed, "0 成功 · 1 失败")
+            }) {
+                Observe(idle with {
+                    LastRun = run with { State = runState, Items = [Item(itemState, started)] }
+                });
+                Require(Named<TextBlock>(window, "RunProgressCaption").Text == expected,
+                    "运行摘要不能在统计文案前重复添加停止或失败状态。");
+            }
         });
     }
 }

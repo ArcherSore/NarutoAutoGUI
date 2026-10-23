@@ -2212,8 +2212,7 @@ public partial class MainWindow : FluentWindow
                 + $" · 第 {(progress.CurrentIndex ?? 0) + 1} / {progress.Total} 项"
             : progress.Failed == 0 && progress.Stopped == 0 && progress.NotRun == 0
                 ? $"{progress.EndedAtUtc?.ToLocalTime():HH:mm} 完成"
-                : $"{(progress.Failed > 0 ? "失败" : "已停止")} · "
-                    + RunProgress.Caption(progress).Replace("上次运行：", "");
+                : RunProgress.Caption(progress).Replace("上次运行：", "");
         RunProgressCaption.Foreground = (WpfBrush)FindResource(progress.Active ? "Brush.Primary"
             : progress.Failed > 0 ? "Brush.Error.Foreground" : "Brush.Success");
         RunProgressCaption.FontWeight = FontWeights.SemiBold;

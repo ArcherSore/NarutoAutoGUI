@@ -98,7 +98,6 @@ public partial class MainWindow : FluentWindow
     private readonly List<Border> _dropIndicators = [];
     private readonly Dictionary<(PlanItemKind Kind, string Name), Border> _planItemContainers = [];
     private readonly List<(TextBlock Summary, ProjectTaskChoice Task)> _planItemSummaries = [];
-    private readonly Dictionary<(PlanItemKind Kind, string Name), PlanItemStatusView> _planItemStatuses = [];
     // Only the timing text changes while a Run is active; cards are never rebuilt for it.
     private readonly DispatcherTimer _runTimer = new() { Interval = TimeSpan.FromSeconds(1) };
 
@@ -117,10 +116,6 @@ public partial class MainWindow : FluentWindow
     {
         internal (Guid, string, string) Key => (ConfigurationId, OptionName, InputName);
     }
-
-    // The badge and status text of a plan card, updated in place as the Run moves on.
-    private sealed record PlanItemStatusView(
-        Border Badge, TextBlock Number, WpfSymbolIcon Icon, TextBlock Status, int Position);
 
     // The parts of a shown inspector row that change in place when a value is saved or a draft appears.
     private sealed record InspectorRowView(
@@ -854,8 +849,14 @@ public partial class MainWindow : FluentWindow
             return;
         }
         TaskDescriptionOverlay.Visibility = Visibility.Collapsed;
-        if (_descriptionDrawerPreviousFocus is UIElement element && element.IsVisible) {
-            element.Focus();
+        if (_descriptionDrawerPreviousFocus is FrameworkElement element) {
+            if (!element.IsVisible && element.Tag is ProjectTaskChoice task
+                && _planItemContainers.TryGetValue((task.Kind, task.Name), out var card)) {
+                card.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
+            }
+            if (element.IsVisible) {
+                element.Focus();
+            }
         }
         _descriptionDrawerPreviousFocus = null;
         ReevaluateOnboarding();
@@ -1133,23 +1134,20 @@ public partial class MainWindow : FluentWindow
         _taskDescriptionButtons.Clear();
         _optionInputEditors.Clear();
         _inspectorRows.Clear();
-        _planItemStatuses.Clear();
         var items = project.SelectedItems;
         EmptyPlanPanel.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         PlanCountText.Text = $"{items.Count} 项";
         EmptyPlanText.Text = $"从 {project.Tasks.Count + project.Pretasks.Count} 个可用任务中选择要执行的任务";
 
-        for (var position = 0; position < items.Count; position++) {
-            var task = items[position];
+        foreach (var task in items) {
             if (task.Kind == PlanItemKind.MaaTask) {
                 AddDropIndicator();
             }
-            var container = CreatePlanItem(task, position, IsExpanded(task));
+            var container = CreatePlanItem(task, IsExpanded(task));
             _planItemContainers.Add((task.Kind, task.Name), container);
             PlanItemsPanel.Children.Add(container);
         }
         AddDropIndicator();
-        ApplyPlanItemStatuses(CurrentRunProgress);
     }
 
     private Task OpenAfdianAsync() =>
@@ -1204,7 +1202,7 @@ public partial class MainWindow : FluentWindow
     private static bool HasParameters(ProjectConfigurationView configuration) =>
         configuration.GlobalOptions.Count + configuration.TaskOptions.Count != 0;
 
-    private Border CreatePlanItem(ProjectTaskChoice task, int position, bool expanded)
+    private Border CreatePlanItem(ProjectTaskChoice task, bool expanded)
     {
         var configuration = GetConfigurationOrEmpty(task.Name, task.Kind);
         var hasParameters = HasParameters(configuration);
@@ -1230,7 +1228,7 @@ public partial class MainWindow : FluentWindow
             layout.Children.Add(accentLine);
         }
 
-        layout.Children.Add(CreatePlanItemHeader(task, position, expanded, hasParameters, configuration));
+        layout.Children.Add(CreatePlanItemHeader(task, expanded, hasParameters, configuration, container));
 
         if (expanded) {
             var editor = new Border {
@@ -1247,8 +1245,8 @@ public partial class MainWindow : FluentWindow
         return container;
     }
 
-    private Grid CreatePlanItemHeader(ProjectTaskChoice task, int position, bool expanded, bool hasParameters,
-        ProjectConfigurationView configuration)
+    private Grid CreatePlanItemHeader(ProjectTaskChoice task, bool expanded, bool hasParameters,
+        ProjectConfigurationView configuration, Border container)
     {
         var header = new Grid {
             MinHeight = 44,
@@ -1259,10 +1257,10 @@ public partial class MainWindow : FluentWindow
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var dragHandle = CreateIconButton(WpfSymbolRegular.ReOrderDotsVertical20, "拖动以调整顺序", "拖动以调整顺序");
         dragHandle.Tag = task;
+        dragHandle.Width = dragHandle.MinWidth = 24;
         if (task.Kind == PlanItemKind.Pretask) {
             dragHandle.Visibility = Visibility.Hidden;
             dragHandle.IsHitTestVisible = false;
@@ -1273,7 +1271,7 @@ public partial class MainWindow : FluentWindow
             BindConfigurationEditable(dragHandle);
         }
         header.Children.Add(dragHandle);
-        header.Children.Add(CreatePlanItemBadge(task, position));
+        header.Children.Add(CreatePlanItemSelection(task));
 
         var label = new TextBlock {
             Text = task.Kind == PlanItemKind.Pretask ? $"前置 · {task.Label}" : task.Label,
@@ -1314,6 +1312,7 @@ public partial class MainWindow : FluentWindow
         var main = new WpfButton {
             Tag = task,
             Content = showSummary ? title : label,
+            Padding = new Thickness(4, 6, 8, 6),
             Style = (Style)FindResource("PlanHeaderButtonStyle")
         };
         AutomationProperties.SetName(main,
@@ -1322,22 +1321,13 @@ public partial class MainWindow : FluentWindow
         main.Click += PlanItemHeader_Click;
         Grid.SetColumn(main, 2);
         header.Children.Add(main);
-        var status = new TextBlock {
-            FontSize = 12, Margin = new Thickness(4, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center,
-            Visibility = Visibility.Collapsed
-        };
-        AutomationProperties.SetLiveSetting(status, AutomationLiveSetting.Polite);
-        Grid.SetColumn(status, 3);
-        header.Children.Add(status);
-        var badge = _planItemStatuses[(task.Kind, task.Name)];
-        _planItemStatuses[(task.Kind, task.Name)] = badge with { Status = status };
-
         if (!string.IsNullOrWhiteSpace(task.Description)) {
             var information = CreateIconButton(WpfSymbolRegular.Info16, $"查看 {task.Label} 的任务描述", "查看任务说明");
             information.Tag = task;
             information.Click += TaskDescriptionButton_Click;
             _taskDescriptionButtons[(task.Kind, task.Name)] = information;
-            Grid.SetColumn(information, 4);
+            ShowPlanActionOnInteraction(information, container);
+            Grid.SetColumn(information, 3);
             header.Children.Add(information);
         }
 
@@ -1346,30 +1336,47 @@ public partial class MainWindow : FluentWindow
         remove.Tag = task;
         remove.Click += RemovePlanItemButton_Click;
         BindConfigurationEditable(remove);
-        Grid.SetColumn(remove, 5);
+        ShowPlanActionOnInteraction(remove, container);
+        Grid.SetColumn(remove, 4);
         header.Children.Add(remove);
         return header;
     }
 
-    // The plan position, replaced by the item's state while a Run describes this plan.
-    private Border CreatePlanItemBadge(ProjectTaskChoice task, int position)
+    private static void ShowPlanActionOnInteraction(WpfButton action, Border container)
     {
-        var number = new TextBlock {
-            Text = (position + 1).ToString(), FontSize = 12, FontWeight = FontWeights.SemiBold,
-            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
+        var style = new Style(typeof(WpfButton), action.Style);
+        style.Setters.Add(new Setter(VisibilityProperty, Visibility.Hidden));
+        foreach (var property in new[] { "IsMouseOver", "IsKeyboardFocusWithin" }) {
+            var trigger = new DataTrigger {
+                Binding = new System.Windows.Data.Binding(property) { Source = container }, Value = true
+            };
+            trigger.Setters.Add(new Setter(VisibilityProperty, Visibility.Visible));
+            style.Triggers.Add(trigger);
+        }
+        action.Style = style;
+    }
+
+    private System.Windows.Controls.CheckBox CreatePlanItemSelection(ProjectTaskChoice task)
+    {
+        var selection = new System.Windows.Controls.CheckBox {
+            IsChecked = RequireProject().IsItemEnabled(task.Kind, task.Name),
+            Width = 24, MinWidth = 0, Padding = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0),
+            ToolTip = "本次是否执行；重新打开程序后恢复勾选"
         };
-        var icon = CreateSymbolIcon(WpfSymbolRegular.Subtract16);
-        icon.Width = icon.Height = icon.FontSize = 14;
-        icon.Visibility = Visibility.Collapsed;
-        var badge = new Border {
-            Width = 24, Height = 24, CornerRadius = new CornerRadius(12), Margin = new Thickness(2, 0, 2, 0),
-            VerticalAlignment = VerticalAlignment.Center, Child = new Grid { Children = { number, icon } }
+        AutomationProperties.SetName(selection, $"执行 {task.Label}");
+        BindConfigurationEditable(selection);
+        selection.Click += (_, _) => {
+            if (!CurrentControls.ConfigurationEditable) {
+                selection.IsChecked = RequireProject().IsItemEnabled(task.Kind, task.Name);
+                return;
+            }
+            RequireProject().SetItemEnabled(task.Kind, task.Name, selection.IsChecked == true);
+            _pendingStartAttempt = null;
+            RefreshConfigurationValidity(RequireProject());
         };
-        Grid.SetColumn(badge, 1);
-        _planItemStatuses[(task.Kind, task.Name)] = new PlanItemStatusView(
-            badge, number, icon, new TextBlock(), position);
-        return badge;
+        Grid.SetColumn(selection, 1);
+        return selection;
     }
 
     // Drafts are those of the active configuration; sharing is only worked out for the expanded card.
@@ -1832,7 +1839,7 @@ public partial class MainWindow : FluentWindow
             _onboardingPreferences = new OnboardingPreferences(Path.GetDirectoryName(configPath)!, _logger);
             _onboardingPreferences.CaptureBeforeProjectLoad(configPath);
         }
-        var project = ProjectPlanModule.Open(_applicationDirectory, configPath);
+        var project = ProjectPlanModule.Open(_applicationDirectory, configPath, _projectPlan);
         _projectPlan = project;
         // Preparing the environment reloads the project; an unfixed invalid draft must survive it and keep blocking
         // Start. Drafts for inputs the reloaded PI no longer has are never rendered or matched.
@@ -2073,7 +2080,7 @@ public partial class MainWindow : FluentWindow
     // Derived fresh on every read, so a click handler never acts on a decision the window no longer shows.
     private RuntimeControlState CurrentControls => RuntimeControls.Derive(new RuntimeControlInputs(
         _sessionSnapshot, _workerSnapshot, _projectPlan is { } project
-            ? new ProjectReadiness(true, project.SelectedItemCount, _projectConfigurationValid,
+            ? new ProjectReadiness(true, project.EnabledItems.Count, _projectConfigurationValid,
                 project.RuntimeProfileDigest)
             : ProjectReadiness.NotLoaded,
         _pendingOperation, _environmentPreparationFailed, _exitInProgress, _environment.Ending,
@@ -2213,7 +2220,7 @@ public partial class MainWindow : FluentWindow
     private static string StartBlockerText(StartBlocker blocker) => blocker switch {
         StartBlocker.CommandsUnavailable => "当前操作完成后可开始任务",
         StartBlocker.ProjectNotLoaded => "MaaNOP 项目未加载，无法开始任务",
-        StartBlocker.NoTasks => "请先在执行计划中添加任务",
+        StartBlocker.NoTasks => "请先添加或勾选要执行的任务",
         StartBlocker.ConfigurationInvalid => "当前配置未通过校验，请先修正任务参数",
         _ => "运行环境尚未就绪，请稍候"
     };
@@ -2255,7 +2262,7 @@ public partial class MainWindow : FluentWindow
 
     private RunProgressView? CurrentRunProgress => _projectPlan is { } project
         ? RunProgress.Derive(_workerSnapshot.WorkerSnapshot,
-            project.SelectedItems.Select(item => (item.Kind, item.Name)).ToArray()) : null;
+            project.EnabledItems.Select(item => (item.Kind, item.Name)).ToArray()) : null;
 
     private enum StatusTone { Idle, Busy, Ok, Run, Bad }
 
@@ -2270,7 +2277,7 @@ public partial class MainWindow : FluentWindow
     // The pill, title and detail restate the action RuntimeControls chose; progress only adds the current item.
     private void ApplyRuntimeStatus(RuntimeControlState state, RunProgressView? progress)
     {
-        var planSummary = _projectPlan is { } project ? $"{project.SelectedItemCount} 项任务待执行" : "项目未加载";
+        var planSummary = _projectPlan is { } project ? $"{project.EnabledItems.Count} 项任务待执行" : "项目未加载";
         var current = progress?.Current;
         var (tone, pill, title, detail, warn) = state.Action switch {
             RuntimeAction.Prepare => (StatusTone.Idle, "未准备", "开始任务前需要准备运行环境",
@@ -2346,7 +2353,6 @@ public partial class MainWindow : FluentWindow
         }
         _displayedProgress = shown ? progress : null;
         DrawRunProgressBar();
-        ApplyPlanItemStatuses(progress);
         if (progress is { Active: true }) {
             _runTimer.Start();
         } else {
@@ -2365,16 +2371,6 @@ public partial class MainWindow : FluentWindow
         ApplyRunElapsed(progress);
         if (CurrentControls.Action is RuntimeAction.Stop && progress.Current is { } current) {
             RuntimeStatusDetail.Text = $"本项已运行 {ElapsedText(current.StartedAtUtc, null)}";
-        }
-        if (_projectPlan is not { } project
-            || !ProgressMatches(project, progress)) {
-            return;
-        }
-        foreach (var view in _planItemStatuses.Values) {
-            var item = progress.Items[view.Position];
-            if (item.State == PlanItemProgress.Running) {
-                view.Status.Text = $"运行中 · {ElapsedText(item.StartedAtUtc, null)}";
-            }
         }
     }
 
@@ -2414,47 +2410,6 @@ public partial class MainWindow : FluentWindow
             Add((segment + gap) * item, segment, brush);
         }
         RunProgressBar.Clip = new RectangleGeometry(new Rect(0, 0, width, 6), 3, 3);
-    }
-
-    private static bool ProgressMatches(ProjectPlanModule project, RunProgressView progress) =>
-        progress.Items.Select(item => (item.Kind, item.TaskName))
-            .SequenceEqual(project.SelectedItems.Select(item => (item.Kind, item.Name)));
-
-    // Cards show their state only while the Run describes this plan; otherwise they show their number.
-    private void ApplyPlanItemStatuses(RunProgressView? progress)
-    {
-        var items = progress is not null && _projectPlan is { } project
-            && ProgressMatches(project, progress)
-                ? progress.Items : null;
-        foreach (var view in _planItemStatuses.Values) {
-            var item = items?[view.Position];
-            var (surface, foreground, symbol) = item?.State switch {
-                PlanItemProgress.Running => ("Brush.Primary.Surface", "Brush.Primary", (WpfSymbolRegular?)null),
-                PlanItemProgress.Succeeded => ("Brush.Success", "Brush.Text.Inverse", WpfSymbolRegular.Checkmark16),
-                PlanItemProgress.Failed => ("Brush.Error", "Brush.Text.Inverse", WpfSymbolRegular.Dismiss16),
-                PlanItemProgress.Stopped or PlanItemProgress.NotRun => ("Brush.Surface.Disabled", "Brush.Text.Muted",
-                    WpfSymbolRegular.Subtract16),
-                _ => ("Brush.Surface.Disabled", "Brush.Text.Secondary", null)
-            };
-            view.Badge.Background = (WpfBrush)FindResource(surface);
-            view.Number.Foreground = view.Icon.Foreground = (WpfBrush)FindResource(foreground);
-            view.Number.Visibility = symbol is null ? Visibility.Visible : Visibility.Collapsed;
-            view.Icon.Visibility = symbol is null ? Visibility.Collapsed : Visibility.Visible;
-            view.Icon.Symbol = symbol ?? WpfSymbolRegular.Subtract16;
-            view.Status.Text = item is null ? string.Empty : item.State == PlanItemProgress.Running
-                ? $"运行中 · {ElapsedText(item.StartedAtUtc, null)}" : RunProgress.StateText(item.State);
-            view.Status.Foreground = (WpfBrush)FindResource(item?.State switch {
-                PlanItemProgress.Running => "Brush.Primary",
-                PlanItemProgress.Succeeded => "Brush.Success",
-                PlanItemProgress.Failed => "Brush.Error.Foreground",
-                _ => "Brush.Text.Muted"
-            });
-            view.Status.FontWeight = item?.State is PlanItemProgress.Running or PlanItemProgress.Failed
-                ? FontWeights.SemiBold : FontWeights.Normal;
-            view.Status.Visibility = item is null ? Visibility.Collapsed : Visibility.Visible;
-            AutomationProperties.SetItemStatus(view.Badge,
-                item is null ? string.Empty : RunProgress.StateText(item.State));
-        }
     }
 
     // Below the reference width the badge shrinks to its icon and a short word; the full reason stays in the tooltip.

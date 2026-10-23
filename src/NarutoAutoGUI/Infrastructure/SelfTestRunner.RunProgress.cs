@@ -188,7 +188,7 @@ internal static partial class SelfTestRunner
                 (new RuntimeAction.Prepare(true), "未准备", "开始任务前需要准备运行环境",
                     "将准备桌面分身和 Worker"),
                 (new RuntimeAction.Start(false, StartBlocker.NoTasks), "就绪", "1 项任务待执行",
-                    "请先在执行计划中添加任务"),
+                    "请先添加或勾选要执行的任务"),
                 (new RuntimeAction.InProgress(ProgressKind.StartingRun), "启动中", "正在开始任务",
                     "正在把执行计划交给 Worker…"),
                 (new RuntimeAction.InProgress(ProgressKind.StoppingRun), "停止中", "正在停止任务",
@@ -220,7 +220,7 @@ internal static partial class SelfTestRunner
         });
     }
 
-    // Card states, the progress caption and timing follow the Worker snapshot; the timer only rewrites text.
+    // Run information belongs to the control panel; task cards stay unchanged as snapshots and timers advance.
     private static void VerifyRunProgressWiring(AppLogger logger, string testDirectory)
     {
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "run-progress-wiring"), (window, _) => {
@@ -248,16 +248,17 @@ internal static partial class SelfTestRunner
             var timer = (System.Windows.Threading.DispatcherTimer)typeof(MainWindow).GetField("_runTimer", flags)!
                 .GetValue(window)!;
             var items = Named<System.Windows.Controls.Panel>(window, "PlanItemsPanel");
-            string CardStatus() => ConfigurationDescendants(items).OfType<TextBlock>()
-                .Single(text => text.Margin == new Thickness(4, 0, 6, 0)).Text;
+            string CardText() => string.Join("\n", ConfigurationDescendants(items).OfType<TextBlock>()
+                .Select(text => text.Text));
+            var idleCardText = CardText();
 
             Observe(idle with { RunState = RunState.Running, ActiveRun = run });
             var card = items.Children.OfType<System.Windows.Controls.Border>().Single(border => border.Tag is not null);
-            Require(CardStatus().StartsWith("运行中 · 01:0", StringComparison.Ordinal) && timer.IsEnabled
+            Require(CardText() == idleCardText && timer.IsEnabled
                 && Named<TextBlock>(window, "RunProgressCaption").Text == "运行中 · 第 1 / 1 项"
                 && Named<TextBlock>(window, "RunProgressElapsed").Text.StartsWith("总用时 01:0", StringComparison.Ordinal)
                 && Named<UIElement>(window, "RunProgressPanel").IsVisible,
-                "运行中卡片应显示状态与用时，控制台应显示进度说明。");
+                "任务卡片不显示运行信息，控制台保留进度与总用时。");
             Require(Named<TextBlock>(window, "RuntimeStatusTitle").Text == "Real task",
                 "运行状态应显示 Worker 当前项的序号与标签。");
             var screenshots = Environment.GetEnvironmentVariable("NARUTO_PANEL_SCREENSHOTS");
@@ -269,13 +270,14 @@ internal static partial class SelfTestRunner
                 SaveScreenshot(window, Path.Combine(screenshots, "panel-running.png"));
             }
             InvokeOnboarding(window, "RefreshRunTiming");
-            Require(ReferenceEquals(card, items.Children.OfType<System.Windows.Controls.Border>()
-                .Single(border => border.Tag is not null)), "计时刷新不得重建执行计划卡片。");
+            Require(CardText() == idleCardText && ReferenceEquals(card,
+                items.Children.OfType<System.Windows.Controls.Border>().Single(border => border.Tag is not null)),
+                "计时刷新不得重建执行计划卡片或添加运行信息。");
 
             Observe(idle with {
                 LastRun = run with { State = RunState.Succeeded, Items = [Item(PlanItemState.Succeeded, started)] }
             });
-            Require(CardStatus() == "成功" && !timer.IsEnabled, "Run 结束后卡片应显示结果，计时停止。");
+            Require(CardText() == idleCardText && !timer.IsEnabled, "Run 结束后卡片不展示结果，控制台计时停止。");
             window.ApplyRuntimeControls(new(new RuntimeAction.Prepare(true), true, null,
                 new DesktopToggle(DesktopAction.Show, false, DesktopStatus.NotRunning), true));
             Require(Named<UIElement>(window, "RunProgressPanel").IsVisible

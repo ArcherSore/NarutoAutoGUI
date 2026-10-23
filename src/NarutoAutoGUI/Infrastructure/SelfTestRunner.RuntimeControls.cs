@@ -61,7 +61,7 @@ internal static partial class SelfTestRunner
                 (new RuntimeAction.Start(false, StartBlocker.ProjectNotLoaded), "StartTaskHeaderButton",
                     "MaaNOP 项目未加载，无法开始任务", "MaaNOP 项目未加载，无法开始任务"),
                 (new RuntimeAction.Start(false, StartBlocker.NoTasks), "StartTaskHeaderButton",
-                    "请先在执行计划中添加任务", "请先在执行计划中添加任务"),
+                    "请先添加或勾选要执行的任务", "请先添加或勾选要执行的任务"),
                 (new RuntimeAction.Start(false, StartBlocker.ConfigurationInvalid), "StartTaskHeaderButton",
                     "当前配置未通过校验，请先修正任务参数", "当前配置未通过校验，请先修正任务参数"),
                 (new RuntimeAction.Start(false, StartBlocker.RuntimeNotReady), "StartTaskHeaderButton",
@@ -69,7 +69,7 @@ internal static partial class SelfTestRunner
                 (new RuntimeAction.Retry(RetryTarget.Prepare, true), "RetryEnvironmentButton", null, ""),
                 (new RuntimeAction.Retry(RetryTarget.Start, true), "RetryEnvironmentButton", null, ""),
                 (new RuntimeAction.Retry(RetryTarget.Start, false, StartBlocker.NoTasks), "RetryEnvironmentButton",
-                    "请先在执行计划中添加任务", "请先在执行计划中添加任务")
+                    "请先添加或勾选要执行的任务", "请先添加或勾选要执行的任务")
             }) {
                 window.ApplyRuntimeControls(new RuntimeControlState(action, true, null, idleDesktop, true));
                 var button = Named<FrameworkElement>(window, control);

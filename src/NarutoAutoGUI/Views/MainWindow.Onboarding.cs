@@ -25,6 +25,7 @@ public partial class MainWindow
     private bool _onboardingChangingStep;
     private bool _onboardingClosed;
     private int _onboardingStep;
+    private FrameworkElement? _onboardingDescriptionButton;
     private CancellationTokenSource? _onboardingStartCancellation;
     private CancellationTokenSource? _onboardingStepCancellation;
     private DispatcherOperation? _onboardingLayoutOperation;
@@ -103,6 +104,11 @@ public partial class MainWindow
                 _expandedTaskName = first.Name;
                 _expandedTaskKind = first.Kind;
                 RenderTaskPlan();
+            }
+            if (_onboardingStep == 1 && _projectPlan?.SelectedItems.FirstOrDefault() is { } firstItem
+                && _taskDescriptionButtons.TryGetValue((firstItem.Kind, firstItem.Name), out var description)) {
+                _onboardingDescriptionButton = description;
+                description.Visibility = Visibility.Visible;
             }
             await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Loaded, cancellation.Token);
             if (_onboardingStep == 1) {
@@ -498,6 +504,8 @@ public partial class MainWindow
 
     private void CancelOnboardingStep()
     {
+        _onboardingDescriptionButton?.ClearValue(VisibilityProperty);
+        _onboardingDescriptionButton = null;
         _onboardingStepCancellation?.Cancel();
         _onboardingStepCancellation = null;
         StopOnboardingPulse();

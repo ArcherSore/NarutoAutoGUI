@@ -187,6 +187,34 @@ internal static partial class SelfTestRunner
                 var prepareCount = 0;
                 try {
                     WithRuntimeControlWindow(logger, windowDirectory, window => {
+                        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance
+                            | System.Reflection.BindingFlags.NonPublic;
+                        var interfacePath = Path.Combine(projectDirectory, "interface.json");
+                        var definition = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(interfacePath))!;
+                        var skipped = definition["task"]![0]!.DeepClone();
+                        skipped["name"] = "SkippedTask";
+                        skipped["label"] = "Skipped task";
+                        definition["task"]!.AsArray().Add(skipped);
+                        File.WriteAllText(interfacePath, definition.ToJsonString());
+                        InvokeOnboarding(window, "LoadProject");
+                        ProjectPlanModule CurrentProject() => (ProjectPlanModule)typeof(MainWindow)
+                            .GetField("_projectPlan", flags)!.GetValue(window)!;
+                        CurrentProject().AddTask("SkippedTask");
+                        // The fake admission already exists; model the editable UI before a real Prepare creates it.
+                        SetOnboardingField(window, "_workerSnapshot", new WorkerCoordinatorSnapshot(
+                            WorkerObservation.WorkerNotStarted, false, null, "before preparation"));
+                        InvokeOnboarding(window, "RenderTaskPlan");
+                        System.Windows.Controls.CheckBox SkippedSelection() => ConfigurationDescendants(
+                            Named<System.Windows.Controls.Panel>(window, "PlanItemsPanel"))
+                            .OfType<System.Windows.Controls.CheckBox>().Single(selection =>
+                                System.Windows.Automation.AutomationProperties.GetName(selection) == "执行 Skipped task");
+                        SetOnboardingField(window, "_pendingStartAttempt", CurrentProject().CreateRunStartAttempt());
+                        var selection = SkippedSelection();
+                        selection.IsChecked = false;
+                        selection.RaiseEvent(new RoutedEventArgs(
+                            System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                        Require(typeof(MainWindow).GetField("_pendingStartAttempt", flags)!.GetValue(window) is null,
+                            "修改勾选必须清除旧的启动重试请求。");
                         var button = scenario == "prepare-only" ? "StartSessionMenuItem" : "PrepareEnvironmentButton";
                         if (scenario == "prepare-only") {
                             Named<System.Windows.Controls.MenuItem>(window, button).RaiseEvent(
@@ -197,6 +225,10 @@ internal static partial class SelfTestRunner
                         PumpUntil(() => prepareCount == 1 && coordinator.Snapshot.SnapshotFresh,
                             "启动并运行必须先完成环境准备和 Worker 同步。");
                         Require(requests == 0 && !ConfigurationEditable(window), "环境准备期间不得开始任务或解锁配置。");
+                        Require(SkippedSelection().IsChecked == false && CurrentProject().SelectedItemCount == 2
+                            && CurrentProject().CreateRunStartAttempt().Plan.Items
+                                .All(item => item.TaskName != "SkippedTask"),
+                            "准备时重载项目必须保留临时勾选，未勾选任务不得进入运行计划。");
                         // Simulate a UI notification still in the Dispatcher queue when Prepare completes.
                         SetOnboardingField(window, "_workerSnapshot", new WorkerCoordinatorSnapshot(
                             WorkerObservation.WorkerStarting, false, null, "queued ready notification"));

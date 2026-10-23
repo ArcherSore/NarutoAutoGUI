@@ -35,8 +35,6 @@ internal static partial class SelfTestRunner
                 .OfType<Button>().Single(button => AutomationProperties.GetName(button) == name);
             Border[] Cards() => planPanel.Children.OfType<Border>()
                 .Where(card => card.Tag is ProjectTaskChoice).ToArray();
-            string Status(Border card) => ConfigurationDescendants(card).OfType<TextBlock>()
-                .Single(text => text.Margin == new Thickness(4, 0, 6, 0)).Text;
             Button Header(Border card) => ConfigurationDescendants(card).OfType<Button>()
                 .Single(button => button.Tag is ProjectTaskChoice && button.Style
                     == window.FindResource("PlanHeaderButtonStyle"));
@@ -96,6 +94,64 @@ internal static partial class SelfTestRunner
                 && !ConfigurationDescendants(Cards()[0]).OfType<TextBox>().Any(),
                 "回放结束应按种类恢复原先展开的普通同名任务。");
 
+            System.Windows.Controls.CheckBox Selection(int index) => ConfigurationDescendants(Cards()[index])
+                .OfType<System.Windows.Controls.CheckBox>().Single();
+            void Select(int index, bool enabled)
+            {
+                var selection = Selection(index);
+                selection.IsChecked = enabled;
+                selection.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                PumpOnboarding();
+            }
+            var configPath = Path.Combine(directory, "config", "maanop-config.json");
+            var saved = File.ReadAllText(configPath);
+            Require(Enumerable.Range(0, 3).All(index => Selection(index).IsChecked == true),
+                "所有计划项默认勾选。");
+            Select(0, false);
+            Require(project.CreateRunStartAttempt().Plan.Items.Select(item => (item.Kind, item.TaskName))
+                .SequenceEqual(new[] { (PlanItemKind.Pretask, "SecondBoot"), (PlanItemKind.MaaTask, "RealTask") })
+                && File.ReadAllText(configPath) == saved && project.SelectedItemCount == 3,
+                "临时取消前置任务不得删除配置或跳过同名普通任务，Run Plan 应只包含勾选项。");
+            InvokeOnboarding(window, "RenderTaskPlan");
+            Require(Selection(0).IsChecked == false, "重绘任务栏不能重置临时选择。");
+            InvokeOnboarding(window, "LoadProject");
+            project = (ProjectPlanModule)typeof(MainWindow).GetField("_projectPlan", flags)!.GetValue(window)!;
+            Require(Selection(0).IsChecked == false && project.EnabledItems.Count == 2,
+                "LoadProject 重载应保留勾选状态和过滤后的计划。");
+            var originalConfiguration = project.ActiveConfigurationId;
+            project.CreateConfiguration();
+            project.AddPretask("RealTask");
+            Require(project.IsItemEnabled(PlanItemKind.Pretask, "RealTask"), "新配置不继承其他配置的临时选择。");
+            project.ActivateConfiguration(originalConfiguration);
+            Require(!project.IsItemEnabled(PlanItemKind.Pretask, "RealTask"), "切换配置应保留各自的临时选择。");
+            Require(ProjectPlanModule.Open(directory, configPath).EnabledItems.Count == 3,
+                "重新打开项目应恢复全部勾选。");
+            foreach (var kind in new[] { PlanItemKind.Pretask, PlanItemKind.MaaTask }) {
+                project.SetItemEnabled(kind, "RealTask", false);
+                if (kind == PlanItemKind.Pretask) {
+                    project.RemovePretask("RealTask");
+                    project.AddPretask("RealTask");
+                } else {
+                    project.RemoveTask("RealTask");
+                    project.AddTask("RealTask");
+                }
+                Require(project.IsItemEnabled(kind, "RealTask"), "删除后重新添加任务必须恢复勾选。");
+            }
+            project.SetItemEnabled(PlanItemKind.Pretask, "RealTask", false);
+            InvokeOnboarding(window, "RenderTaskPlan");
+            Select(1, false);
+            Select(2, false);
+            Require(project.EnabledItems.Count == 0 && !Named<Button>(window, "StartTaskHeaderButton").IsEnabled,
+                "全部取消后不得启动空计划。");
+            try {
+                project.CreateRunStartAttempt();
+                throw new InvalidDataException("全部取消后仍生成了运行计划。");
+            } catch (InvalidOperationException) {
+            }
+            for (var index = 0; index < 3; index++) {
+                Select(index, true);
+            }
+
             var started = DateTime.UtcNow.AddSeconds(-5);
             var plan = project.CreateRunStartAttempt().Plan;
             var states = new[] { PlanItemState.Succeeded, PlanItemState.Running, PlanItemState.Pending };
@@ -118,10 +174,10 @@ internal static partial class SelfTestRunner
                 PumpOnboarding();
             }
             Observe(idle with { RunState = RunState.Running, ActiveRun = run });
-            Require(Status(Cards()[0]) == "成功" && Status(Cards()[2]) == "等待中"
-                && Status(Cards()[1]).StartsWith("运行中", StringComparison.Ordinal)
+            Require(!Selection(0).IsEnabled && !Selection(2).IsEnabled
+                && Named<TextBlock>(window, "RuntimeStatusTitle").Text == "第二个前置"
                 && Named<Button>(window, "StopTaskHeaderButton").IsEnabled,
-                "同名的前置与普通任务必须分别显示 Worker 状态，运行中的前置可停止。");
+                "运行期间勾选被锁定，控制面板显示当前前置任务并可停止。");
             var lastWorker = idle with { LastRun = run with { State = RunState.Succeeded } };
             var kinds = project.SelectedItems.Select(item => (item.Kind, item.Name)).ToArray();
             Require(RunProgress.Derive(lastWorker, kinds) is not null
@@ -129,6 +185,20 @@ internal static partial class SelfTestRunner
                     .ToArray()) is null, "Last Run 匹配必须包含种类，不能只看任务名称。");
 
             Observe(idle);
+            Select(0, false);
+            var filtered = project.CreateRunStartAttempt().Plan;
+            var filteredRun = run with {
+                Plan = filtered, CurrentPlanItemId = filtered.Items[0].PlanItemId, CurrentPlanItemIndex = 0,
+                Items = filtered.Items.Select((item, index) => Snapshot(item,
+                    index == 0 ? PlanItemState.Running : PlanItemState.Pending,
+                    index == 0 ? started : null, null)).ToArray()
+            };
+            Observe(idle with { RunState = RunState.Running, ActiveRun = filteredRun });
+            Require(Named<TextBlock>(window, "RuntimeStatusTitle").Text == "第二个前置"
+                && Named<TextBlock>(window, "RunProgressCaption").Text == "运行中 · 第 1 / 2 项",
+                "跳过前置项后，控制面板应显示实际运行项和过滤后的进度。");
+            Observe(idle);
+            Select(0, true);
             Click(ButtonNamed(Cards()[2], "从执行计划移除 Real task"));
             Require(project.SelectedTaskNames.Count == 0 && project.SelectedItemCount == 2
                 && Named<Button>(window, "StartTaskHeaderButton").IsEnabled,

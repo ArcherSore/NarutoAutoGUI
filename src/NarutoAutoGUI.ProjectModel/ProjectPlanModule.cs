@@ -19,6 +19,7 @@ public sealed class ProjectPlanModule
     private readonly MaaNopConfigStore _configStore;
     private MaaNopConfig _config;
     private string? _initializationWarning;
+    private readonly HashSet<(Guid Configuration, PlanItemKind Kind, string Name)> _disabledItems = [];
 
     private ProjectPlanModule(ProjectDefinition project, MaaNopConfigStore configStore)
     {
@@ -67,6 +68,35 @@ public sealed class ProjectPlanModule
         }
     }
     public int SelectedItemCount => SelectedItems.Count;
+    public IReadOnlyList<ProjectTaskChoice> EnabledItems =>
+        SelectedItems.Where(item => IsItemEnabled(item.Kind, item.Name)).ToArray();
+
+    public bool IsItemEnabled(PlanItemKind kind, string name) =>
+        !_disabledItems.Contains((ActiveConfigurationId, kind, name));
+
+    // Temporary execution choices belong to this open workspace, never to the saved configuration.
+    public void SetItemEnabled(PlanItemKind kind, string name, bool enabled)
+    {
+        if (!SelectedItems.Any(item => item.Kind == kind && item.Name == name)) {
+            throw new ArgumentException("任务不在当前执行计划中。", nameof(name));
+        }
+        var key = (ActiveConfigurationId, kind, name);
+        if (enabled) {
+            _disabledItems.Remove(key);
+        } else {
+            _disabledItems.Add(key);
+        }
+    }
+
+    private TaskConfiguration ExecutionConfiguration()
+    {
+        var config = LoadConfig();
+        return config with {
+            SelectedTasks = config.SelectedTasks.Where(name => IsItemEnabled(PlanItemKind.MaaTask, name)).ToArray(),
+            SelectedPretasks = config.SelectedPretasks
+                .Where(name => IsItemEnabled(PlanItemKind.Pretask, name)).ToArray()
+        };
+    }
     public IReadOnlyList<string> SelectedTaskNames => LoadConfig().SelectedTasks;
     public Guid ActiveConfigurationId => _config.ActiveConfigurationId;
     public string? LoadWarning => _initializationWarning ?? _configStore.LoadWarning;
@@ -116,15 +146,22 @@ public sealed class ProjectPlanModule
             ActiveConfigurationId = active,
             Configurations = _config.Configurations.Where(item => item.Id != id).ToArray()
         });
+        _disabledItems.RemoveWhere(item => item.Configuration == id);
         return true;
     }
 
-    public void ValidateConfiguration() => ValidateActiveConfiguration(LoadConfig());
+    public void ValidateConfiguration() => ValidateActiveConfiguration(ExecutionConfiguration());
 
-    public static ProjectPlanModule Open(string projectDirectory, string configPath)
+    public static ProjectPlanModule Open(string projectDirectory, string configPath, ProjectPlanModule? previous = null)
     {
         var project = ProjectInterfaceLoader.Load(projectDirectory);
-        return new ProjectPlanModule(project, new MaaNopConfigStore(configPath));
+        var module = new ProjectPlanModule(project, new MaaNopConfigStore(configPath));
+        if (previous is not null) {
+            module._disabledItems.UnionWith(previous._disabledItems.Where(item => module.Configurations.Any(config =>
+                config.Id == item.Configuration && (item.Kind == PlanItemKind.Pretask
+                    ? config.SelectedPretasks : config.SelectedTasks).Contains(item.Name, StringComparer.Ordinal))));
+        }
+        return module;
     }
 
     public bool AddTask(string taskName)
@@ -152,6 +189,7 @@ public sealed class ProjectPlanModule
             SelectedTasks = config.SelectedTasks.Where(name => name != taskName).ToArray()
         };
         SaveConfiguration(updated);
+        _disabledItems.Remove((ActiveConfigurationId, PlanItemKind.MaaTask, taskName));
         return true;
     }
 
@@ -180,6 +218,7 @@ public sealed class ProjectPlanModule
         SaveConfiguration(config with {
             SelectedPretasks = config.SelectedPretasks.Where(item => item != name).ToArray()
         });
+        _disabledItems.Remove((ActiveConfigurationId, PlanItemKind.Pretask, name));
         return true;
     }
 
@@ -288,10 +327,10 @@ public sealed class ProjectPlanModule
 
     public RunStartAttempt CreateRunStartAttempt()
     {
-        var config = LoadConfig();
+        var config = ExecutionConfiguration();
         ValidateActiveConfiguration(config);
-        if (SelectedItemCount == 0) {
-            throw new InvalidOperationException("请先向执行计划添加任务或前置任务。");
+        if (EnabledItems.Count == 0) {
+            throw new InvalidOperationException("请先勾选要执行的任务或前置任务。");
         }
 
         var resolvedItems = config.SelectedTasks.Select(taskName => {

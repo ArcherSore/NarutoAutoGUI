@@ -56,6 +56,8 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
     private MaaTasker? _tasker;
     private MaaAgentClient? _agentClient;
     private Process? _agentProcess;
+    private Task<MaaJobStatus>? _nativeTaskCompletion;
+    private StructuredReason? _contextPreservationReason;
     private bool _stopRequested;
     private bool _runningReported;
     private bool _preserveContext;
@@ -81,7 +83,7 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
         return _preserveContext
             ? new RuntimeExecutionResult(
                 RuntimeExecutionOutcome.StopTimedOut, null,
-                new StructuredReason("StopTimeout",
+                _contextPreservationReason ?? new StructuredReason("StopTimeout",
                     _stopConfirmed.Task.Exception?.GetBaseException().Message ?? result.Error?.Message
                     ?? "MaaFramework Stop 未确认。"))
             : result;
@@ -117,6 +119,7 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
             _log("INFO", "runtime.agent", $"Python Agent 已连接，identifier={_agentClient.Id}。 ");
 
             var job = _tasker.AppendTask(_item.Entry, _item.PipelineOverride.GetRawText());
+            _nativeTaskCompletion = Task.Run(job.Wait);
             _log("INFO", "runtime.task", $"已提交 MaaFramework task：{_item.Entry}，jobId={job.Id}。 ");
             var status = await _taskCompleted.Task.WaitAsync(cancellationToken);
 
@@ -205,6 +208,19 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
             if (!status.IsSucceeded() || tasker.IsRunning || tasker.IsStopping) {
                 throw new StopConfirmationException(
                     $"MaaFramework Stop 未确认：job={status}，running={tasker.IsRunning}，stopping={tasker.IsStopping}。 ");
+            }
+            // Stop can clear the Controller wait while its inactive action is still dispatching events.
+            // A fresh accepted action runs after those events; rejected posts have ID 0 in binding 5.10.
+            using var drainTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            drainTimeout.CancelAfter(StopTimeout);
+            MaaJob controllerBarrier;
+            while ((controllerBarrier = tasker.Controller.Inactive()).Id == 0) {
+                await Task.Delay(100, drainTimeout.Token);
+            }
+            var controllerStatus = await Task.Run(controllerBarrier.Wait, drainTimeout.Token)
+                .WaitAsync(drainTimeout.Token);
+            if (!controllerStatus.IsSucceeded() && !controllerStatus.IsFailed()) {
+                throw new StopConfirmationException($"Controller 收尾未确认：job={controllerStatus}。");
             }
             _stopConfirmed.TrySetResult(true);
             _log("INFO", "runtime.stop", "MaaFramework Stop 已确认。 ");
@@ -327,6 +343,23 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
     {
         if (_preserveContext) {
             return (false, "Stop 未确认，保留 execution context 供诊断。 ");
+        }
+
+        // The main job wait covers Controller inactive after the task callback, so LinkStop cannot race its events.
+        // Stop instead confirms a fresh Controller action; join the cleared main waiter before disposing Tasker.
+        if (_nativeTaskCompletion is { } nativeCompletion) {
+            try {
+                var status = await nativeCompletion.WaitAsync(StopTimeout, cancellationToken);
+                if (!_stopConfirmed.Task.IsCompletedSuccessfully && !status.IsSucceeded() && !status.IsFailed()) {
+                    throw new InvalidOperationException($"MaaFramework task wait 返回非终态：{status}。");
+                }
+            } catch (Exception exception) {
+                _preserveContext = true;
+                _contextPreservationReason = new StructuredReason("NativeTaskCompletionUnconfirmed",
+                    $"MaaFramework 原生任务收尾未确认，保留资源：{exception.GetBaseException().Message}");
+                _log("ERROR", "runtime.cleanup", _contextPreservationReason.Message);
+                return (false, _contextPreservationReason.Message);
+            }
         }
 
         var errors = new List<string>();

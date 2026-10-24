@@ -35,7 +35,7 @@ internal static class FrameworkDiagnosticsSelfTest
             Directory.CreateDirectory(Path.Combine(resourcePath, "pipeline"));
             Directory.CreateDirectory(Path.Combine(resourcePath, "image"));
             var imagePath = Path.Combine(resourcePath, "image", "fixture.png");
-            CreateFixtureImage(imagePath);
+            File.WriteAllBytes(imagePath, CreateFixturePng());
             File.WriteAllText(Path.Combine(resourcePath, "pipeline", "test.json"), """
                 {
                   "Recognize": {
@@ -118,7 +118,7 @@ internal static class FrameworkDiagnosticsSelfTest
         return files.Length;
     }
 
-    private static void CreateFixtureImage(string path)
+    internal static byte[] CreateFixturePng()
     {
         var pixels = new byte[64 * 64 * 3];
         new Random(42).NextBytes(pixels);
@@ -130,13 +130,13 @@ internal static class FrameworkDiagnosticsSelfTest
                 || !image.TryGetEncodedData(out byte[]? png) || png is null) {
                 throw new InvalidOperationException("无法生成识别用 PNG 测试图。");
             }
-            File.WriteAllBytes(path, png);
+            return png;
         } finally {
             pinned.Free();
         }
     }
 
-    private sealed class FixtureController(byte[] png) : IMaaCustomController
+    internal sealed class FixtureController(byte[] png, Func<bool>? inactive = null) : IMaaCustomController
     {
         public string Name { get; set; } = "diagnostics-self-test";
         public void Dispose()
@@ -162,6 +162,6 @@ internal static class FrameworkDiagnosticsSelfTest
         public bool Scroll(int dx, int dy) => false;
         public bool RelativeMove(int dx, int dy) => false;
         public bool Shell(string command, long timeout, IMaaStringBuffer buffer) => false;
-        public bool Inactive() => true;
+        public bool Inactive() => inactive?.Invoke() ?? true;
     }
 }

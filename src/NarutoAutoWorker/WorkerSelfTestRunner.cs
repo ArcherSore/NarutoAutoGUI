@@ -20,6 +20,7 @@ internal static class WorkerSelfTestRunner
             VerifyAgentExecutableResolution();
             VerifyStopCleanupRaceAsync().GetAwaiter().GetResult();
             VerifyTaskerTaskCallbackCompletion();
+            NativeTaskCleanupSelfTests.RunAsync().GetAwaiter().GetResult();
             FrameworkOptionsSelfTests.Run();
             PretaskSelfTests.Run();
             Console.WriteLine(
@@ -27,7 +28,7 @@ internal static class WorkerSelfTestRunner
                 + "log response budget; "
                 + "budget rejection; transport write guard; agent executable resolution; "
                 + "stop/cleanup serialization; "
-                + "Tasker.Task callback completion; pretask processes/jobs/output");
+                + "Tasker.Task callback completion; native cleanup barrier; pretask processes/jobs/output");
             return 0;
         } catch (Exception exception) {
             Console.Error.WriteLine($"WORKER SELF-TEST FAIL: {exception}");

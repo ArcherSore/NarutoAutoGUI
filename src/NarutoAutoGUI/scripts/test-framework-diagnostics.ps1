@@ -16,21 +16,26 @@ $output = [IO.Path]::GetFullPath($OutputDirectory)
 # Use an unrelated working directory with Unicode/spaces to catch relative LogDir regressions.
 New-Item -ItemType Directory -Path (Join-Path $output '独立 工作目录') -Force | Out-Null
 Push-Location (Join-Path $output '独立 工作目录')
+function Invoke-WorkerSelfTest([string]$Name, [string[]]$Arguments, [string]$PassPattern) {
+    $stdout = Join-Path $output "$Name.stdout.log"
+    $stderr = Join-Path $output "$Name.stderr.log"
+    $process = Start-Process -FilePath $worker -WindowStyle Hidden -Wait -PassThru -ArgumentList $Arguments `
+        -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    if ($process.ExitCode -ne 0) {
+        Get-Content -LiteralPath $stdout, $stderr | Write-Host
+        throw "打包后的框架诊断测试失败：$Name，退出码 $($process.ExitCode)"
+    }
+    Select-String -LiteralPath $stdout -Pattern $PassPattern | ForEach-Object { Write-Host $_.Line }
+}
+
 try {
     foreach ($scenario in @('defaults', 'disabled', 'draw-only', 'debug-only', 'all')) {
         $scenarioRoot = Join-Path $output "框架 图片 $scenario"
-        $stdout = Join-Path $output "$scenario.stdout.log"
-        $stderr = Join-Path $output "$scenario.stderr.log"
-        $process = Start-Process -FilePath $worker -WindowStyle Hidden -Wait -PassThru `
-            -ArgumentList @('--framework-diagnostics-self-test', "`"$scenarioRoot`"", $scenario) `
-            -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-        if ($process.ExitCode -ne 0) {
-            Get-Content -LiteralPath $stdout | Write-Host
-            Get-Content -LiteralPath $stderr | Write-Host
-            throw "打包后的框架诊断测试失败：$scenario，退出码 $($process.ExitCode)"
-        }
-        Select-String -LiteralPath $stdout -Pattern '^NATIVE FRAMEWORK TEST PASS:' |
-            ForEach-Object { Write-Host $_.Line }
+        Invoke-WorkerSelfTest $scenario @('--framework-diagnostics-self-test', "`"$scenarioRoot`"", $scenario) `
+            '^NATIVE FRAMEWORK TEST PASS:'
     }
+    $lifecycleRoot = Join-Path $output '框架 生命周期'
+    Invoke-WorkerSelfTest 'lifecycle' @('--framework-lifecycle-self-test', "`"$lifecycleRoot`"") `
+        '^NATIVE LIFECYCLE.*PASS:'
 } finally { Pop-Location }
 Write-Host "打包后的框架诊断测试通过，日志与图片保留于: $output"

@@ -16,6 +16,9 @@ internal static class Program
             if (args.Length == 3 && args[0] == "--framework-diagnostics-self-test") {
                 return FrameworkDiagnosticsSelfTest.Run(args[1], args[2]);
             }
+            if (args.Length == 2 && args[0] == "--framework-lifecycle-self-test") {
+                return await FrameworkLifecycleSelfTest.RunAsync(args[1]);
+            }
             if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase)) {
                 return WorkerSelfTestRunner.Run(args.Contains("--run-only", StringComparer.OrdinalIgnoreCase));
             }

@@ -4,6 +4,15 @@ name: release-win-x64
 # push tag v*: additionally create a GitHub Release (never auto-creates a tag).
 on:
   workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: 'Recover release from an existing successful build run (requires release_tag)'
+        type: string
+        default: ''
+      release_tag:
+        description: 'Existing version tag for release recovery (requires artifact_run_id)'
+        type: string
+        default: ''
   push:
     tags:
       - 'v*'
@@ -13,6 +22,7 @@ permissions:
 
 jobs:
   build-package:
+    if: ${{ !inputs.artifact_run_id && !inputs.release_tag }}
     runs-on: windows-latest
     permissions:
       contents: read
@@ -127,26 +137,39 @@ jobs:
 
   release:
     needs: build-package
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      always() && ((needs.build-package.result == 'success' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.artifact_run_id && inputs.release_tag))
     runs-on: windows-latest
     permissions:
       contents: write
+      actions: read
     defaults:
       run:
         shell: pwsh
     steps:
+      - name: Resolve release tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v(\d+\.\d+\.\d+)(-(alpha|beta|rc)(\.\d+)?)?$') {
+            throw 'Invalid release tag.'
+          }
+          "RELEASE_TAG=$env:RELEASE_TAG" | Add-Content $env:GITHUB_ENV
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.build-package.outputs.zipBase }}
+          name: NarutoAutoGUI-win-x64-${{ env.RELEASE_TAG }}
           path: dist
+          run-id: ${{ inputs.artifact_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = $env:GITHUB_REF_NAME
-          $prerelease = '${{ needs.build-package.outputs.isPrerelease }}'
+          $tag = $env:RELEASE_TAG
+          $prerelease = $tag -match '-(alpha|beta|rc)(\.\d+)?$'
           $zip = (Get-ChildItem dist -Filter *.zip)[0].FullName
           $tagRef = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$tag" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Failed to read release tag.' }
@@ -158,6 +181,6 @@ jobs:
             'release', 'create', $tag, $zip, '--verify-tag', '--repo', $env:GITHUB_REPOSITORY,
             '--title', "NarutoAutoGUI $tag", '--notes-file', 'release-notes.md'
           )
-          if ($prerelease -eq 'True') { $releaseArgs += '--prerelease' }
+          if ($prerelease) { $releaseArgs += '--prerelease' }
           Write-Host "Creating release for tag $tag (prerelease=$prerelease)"
           gh @releaseArgs

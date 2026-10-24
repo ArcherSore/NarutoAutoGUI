@@ -6,6 +6,8 @@
 
 > 使用游戏自动化，请前往 [MaaNOP](https://github.com/ArcherSore/MaaNOP) 获取完整包和使用说明。本仓库发布前端及配套运行组件，不包含游戏任务资源。
 
+首次使用请阅读[用户使用手册](docs/USER-GUIDE.md)，了解 Windows 密码填写、QQ 大厅自动登录与日常操作。
+
 ## 界面预览
 
 ![NarutoAutoGUI 首页](docs/images/homePage.png)

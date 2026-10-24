@@ -150,8 +150,7 @@ jobs:
           $zip = (Get-ChildItem dist -Filter *.zip)[0].FullName
           $releaseArgs = @(
             'release', 'create', $tag, $zip, '--verify-tag', '--repo', $env:GITHUB_REPOSITORY,
-            '--title', "NarutoAutoGUI $tag", '--generate-notes',
-            '--notes', 'Updater V2 首个完整包需手动安装，后续支持 V2 自动更新；不支持 V1 自动迁移。'
+            '--title', "NarutoAutoGUI $tag", '--notes-from-tag'
           )
           if ($prerelease -eq 'True') { $releaseArgs += '--prerelease' }
           Write-Host "Creating release for tag $tag (prerelease=$prerelease)"

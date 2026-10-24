@@ -148,9 +148,15 @@ jobs:
           $tag = $env:GITHUB_REF_NAME
           $prerelease = '${{ needs.build-package.outputs.isPrerelease }}'
           $zip = (Get-ChildItem dist -Filter *.zip)[0].FullName
+          $tagRef = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$tag" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to read release tag.' }
+          if ($tagRef.object.type -ne 'tag') { throw 'Release requires an annotated tag with release notes.' }
+          $notes = gh api "repos/$env:GITHUB_REPOSITORY/git/tags/$($tagRef.object.sha)" --jq .message
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to read release notes.' }
+          $notes | Set-Content -LiteralPath release-notes.md -Encoding utf8
           $releaseArgs = @(
             'release', 'create', $tag, $zip, '--verify-tag', '--repo', $env:GITHUB_REPOSITORY,
-            '--title', "NarutoAutoGUI $tag", '--notes-from-tag'
+            '--title', "NarutoAutoGUI $tag", '--notes-file', 'release-notes.md'
           )
           if ($prerelease -eq 'True') { $releaseArgs += '--prerelease' }
           Write-Host "Creating release for tag $tag (prerelease=$prerelease)"

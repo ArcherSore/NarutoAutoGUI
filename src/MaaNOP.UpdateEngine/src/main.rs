@@ -1,4 +1,6 @@
-use maanop_update_engine::{MAX_MESSAGE_BYTES, MAX_RELEASE_BYTES, error, execute, prepare, handoff};
+use maanop_update_engine::{
+    MAX_MESSAGE_BYTES, MAX_RELEASE_BYTES, USER_AGENT, error, execute, prepare, handoff, download,
+};
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, Read, Write};
 use std::time::Duration;
@@ -60,59 +62,12 @@ fn emit(value: Value) -> Result<(), String>
     writeln!(output, "{value}").and_then(|_| output.flush()).map_err(|e| e.to_string())
 }
 
-fn download(url: &str) -> Result<Box<dyn Read>, String>
-{
-    let url = url.to_owned();
-    let (sender, receiver) = std::sync::mpsc::sync_channel(2);
-    std::thread::spawn(move || {
-        let result = (|| -> Result<(), String> {
-            let config = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(3600)))
-                .https_only(true).build();
-            let agent: ureq::Agent = config.into();
-            let response = agent.get(&url).header("User-Agent", "MaaNOP-UpdateEngine/2")
-                .call().map_err(|e| e.to_string())?;
-            let mut stream = response.into_body().into_reader();
-            loop {
-                let mut bytes = vec![0; 81920];
-                let count = stream.read(&mut bytes).map_err(|e| e.to_string())?;
-                bytes.truncate(count);
-                sender.send(Ok(bytes)).map_err(|e| e.to_string())?;
-                if count == 0 { return Ok(()); }
-            }
-        })();
-        if let Err(message) = result { let _ = sender.send(Err(message)); }
-    });
-    Ok(Box::new(DownloadReader { receiver, pending: io::Cursor::new(Vec::new()), ended: false }))
-}
-
-struct DownloadReader
-{
-    receiver: std::sync::mpsc::Receiver<Result<Vec<u8>, String>>,
-    pending: io::Cursor<Vec<u8>>,
-    ended: bool,
-}
-
-impl Read for DownloadReader
-{
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize>
-    {
-        if buffer.is_empty() || self.ended { return Ok(0); }
-        if self.pending.position() == self.pending.get_ref().len() as u64 {
-            let bytes = self.receiver.recv_timeout(Duration::from_secs(15))
-                .map_err(io::Error::other)?.map_err(io::Error::other)?;
-            self.ended = bytes.is_empty();
-            self.pending = io::Cursor::new(bytes);
-        }
-        self.pending.read(buffer)
-    }
-}
-
 fn fetch_release(url: &str) -> Result<String, String>
 {
     let config = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(30)))
         .https_only(true).build();
     let agent: ureq::Agent = config.into();
-    let mut response = agent.get(url).header("User-Agent", "MaaNOP-UpdateEngine/2")
+    let mut response = agent.get(url).header("User-Agent", USER_AGENT)
         .header("Accept", "application/vnd.github+json").header("X-GitHub-Api-Version", "2022-11-28")
         .call().map_err(|e| {
             eprintln!("Release request failed: {e}");

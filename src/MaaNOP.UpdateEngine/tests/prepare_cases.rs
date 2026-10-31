@@ -1,8 +1,8 @@
-use maanop_update_engine::prepare;
+use maanop_update_engine::Download;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::io::{Cursor, Write};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[test]
 fn prepare_validates_payload_and_preserves_installation()
@@ -61,7 +61,7 @@ fn prepare_rejects_unsafe_corrupt_cancelled_and_incomplete_downloads()
     let result = prepare(&request, |_| Ok(Box::new(Cursor::new(bytes))), &signal,
         &mut |_| { signal.store(true, Ordering::Relaxed); Ok(()) });
     assert_eq!(result["type"], "cancelled");
-    assert!(!root.join("cache/updater").exists());
+    assert!(!root.join("cache/updater/prepared").exists());
     std::fs::create_dir_all(root.join("cache/updater/run")).unwrap();
     std::fs::write(root.join("cache/updater/run/old"), "old").unwrap();
     let result = prepare(&request, |_| {
@@ -196,5 +196,109 @@ fn prepare_process_abandons_work_when_gui_pipe_closes()
     let lines = String::from_utf8(output.stdout).unwrap();
     assert!(lines.lines().any(|line| serde_json::from_str::<Value>(line).unwrap()["type"] == "cancelled"), "{lines}");
     assert!(!root.join("cache/updater/prepared").exists());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+fn installation(name: &str) -> std::path::PathBuf
+{
+    let root = std::env::temp_dir().join(format!("maanop-resume-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("interface.json"),
+        r#"{"name":"MaaNOP","version":"1.0.0","github":"https://github.com/test/product"}"#).unwrap();
+    root
+}
+
+// Existing package fixtures replace only transport; cache and validation use production prepare.
+fn prepare(
+    request: &str, source: impl FnOnce(&str) -> Result<Box<dyn std::io::Read>, String>,
+    cancelled: &AtomicBool, emit: &mut dyn FnMut(Value) -> Result<(), String>,
+) -> Value
+{
+    maanop_update_engine::prepare(request, |download: Download<'_>| {
+        let mut input = source(download.url)?;
+        (download.progress)(0, 0.0)?;
+        if download.cancelled.load(Ordering::Relaxed) { return Err("cancelled".into()); }
+        let mut output = std::fs::File::create(download.path).map_err(|e| e.to_string())?;
+        std::io::copy(&mut input, &mut output).map_err(|e| e.to_string())?;
+        Ok(())
+    }, cancelled, emit)
+}
+#[test]
+fn prepare_keeps_interrupted_bytes_and_reuses_only_the_same_candidate()
+{
+    let root = installation("cache");
+    let bytes = package(&[]);
+    let request = prepare_request(&root, &bytes);
+    let part = root.join("cache/updater/download/package.part");
+    for cancel in [false, true] {
+        let signal = AtomicBool::new(false);
+        let failed = maanop_update_engine::prepare(&request, |download| {
+            std::fs::write(download.path, &bytes[..100]).unwrap();
+            signal.store(cancel, Ordering::Relaxed);
+            Err("interrupted".into())
+        }, &signal, &mut |_| Ok(()));
+        assert_eq!(failed["type"], if cancel { "cancelled" } else { "error" });
+        assert_eq!(std::fs::read(&part).unwrap(), bytes[..100]);
+        assert!(!root.join("cache/updater/prepared").exists());
+        let resumed = maanop_update_engine::prepare(&request, |download| {
+            assert_eq!(std::fs::read(download.path).unwrap(), bytes[..100]);
+            let mut file = std::fs::OpenOptions::new().append(true).open(download.path).unwrap();
+            file.write_all(&bytes[100..]).unwrap();
+            Ok(())
+        }, &AtomicBool::new(false), &mut |_| Ok(()));
+        assert_eq!(resumed["type"], "result", "{resumed}");
+        assert!(!part.exists());
+    }
+    // A changed SHA256 must discard partial bytes even when version/name/size stay the same.
+    let _ = maanop_update_engine::prepare(&request, |download| {
+        std::fs::write(download.path, b"old candidate").unwrap();
+        Err("interrupted".into())
+    }, &AtomicBool::new(false), &mut |_| Ok(()));
+    let mut changed: Value = serde_json::from_str(&request).unwrap();
+    let mut descriptor: Value = serde_json::from_str(changed["descriptor"].as_str().unwrap()).unwrap();
+    descriptor["sha256"] = json!("0".repeat(64));
+    changed["descriptor"] = json!(descriptor.to_string());
+    let _ = maanop_update_engine::prepare(&changed.to_string(), |download| {
+        assert!(!download.path.exists());
+        Err("different candidate".into())
+    }, &AtomicBool::new(false), &mut |_| Ok(()));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn complete_cache_is_verified_and_corruption_is_discarded()
+{
+    let root = installation("hash");
+    let bytes = package(&[]);
+    let request = prepare_request(&root, &bytes);
+    for corrupt in [true, false] {
+        let _ = maanop_update_engine::prepare(&request, |download| {
+            let mut cached = bytes.clone();
+            if corrupt { cached[0] ^= 1; }
+            std::fs::write(download.path, cached).unwrap();
+            Err("process exited after final write".into())
+        }, &AtomicBool::new(false), &mut |_| Ok(()));
+        // download() must use the complete file without contacting example.com.
+        let result = maanop_update_engine::prepare(&request, maanop_update_engine::download,
+            &AtomicBool::new(false), &mut |_| Ok(()));
+        assert_eq!(result["type"], if corrupt { "error" } else { "result" }, "{result}");
+        if corrupt { assert!(result["message"].as_str().unwrap().contains("SHA256")); }
+        assert!(!root.join("cache/updater/download").exists());
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn concurrent_prepare_cannot_replace_an_active_download()
+{
+    let root = installation("lock");
+    std::fs::create_dir_all(root.join("cache")).unwrap();
+    let lock = std::fs::File::create(root.join("cache/updater.lock")).unwrap();
+    lock.lock().unwrap();
+    let result = maanop_update_engine::prepare(&prepare_request(&root, &package(&[])), |_| panic!("locked"),
+        &AtomicBool::new(false), &mut |_| Ok(()));
+    assert_eq!(result["type"], "error");
+    assert!(result["message"].as_str().unwrap().contains("已有更新准备"));
+    drop(lock);
     std::fs::remove_dir_all(root).unwrap();
 }

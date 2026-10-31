@@ -7,6 +7,8 @@ using System.Windows.Threading;
 using NarutoAutoGUI.Worker;
 using WpfButton = System.Windows.Controls.Button;
 using WpfTextBox = System.Windows.Controls.TextBox;
+using ContextMenu = System.Windows.Controls.ContextMenu;
+using MenuItem = System.Windows.Controls.MenuItem;
 
 namespace NarutoAutoGUI.Views;
 
@@ -22,6 +24,7 @@ public partial class MainWindow
     private void RenderConfigurationTabs()
     {
         var project = _projectPlan!;
+        PresetConfigurationButton.Visibility = project.Presets.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         var existing = ConfigurationTabs.Items.Cast<TabItem>().ToArray();
         if (!existing.Select(item => (Id: (Guid)item.Tag, Name: AutomationProperties.GetName(item)))
             .SequenceEqual(project.Configurations.Select(item => (item.Id, item.Name)))) {
@@ -238,6 +241,27 @@ public partial class MainWindow
     private void NewConfigurationButton_Click(object sender, RoutedEventArgs e)
     {
         ChangeConfiguration(() => _projectPlan!.CreateConfiguration());
+    }
+
+    private void PresetConfigurationButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!CurrentControls.ConfigurationEditable || _configurationNameEditor is not null
+            || !CommitFocusedConfigurationInput() || _projectPlan is null) {
+            return;
+        }
+        var menu = new ContextMenu {
+            PlacementTarget = PresetConfigurationButton,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom
+        };
+        foreach (var preset in _projectPlan.Presets) {
+            var item = new MenuItem { Header = preset.Label, ToolTip = preset.Description };
+            AutomationProperties.SetName(item, $"从预设新建配置：{preset.Label}");
+            BindConfigurationEditable(item);
+            item.Click += (_, _) => ChangeConfiguration(() => _projectPlan!.CreateConfigurationFromPreset(preset.Name));
+            menu.Items.Add(item);
+        }
+        PresetConfigurationButton.ContextMenu = menu;
+        menu.IsOpen = true;
     }
 
     private void ConfigurationTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)

@@ -4,12 +4,12 @@ using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoGUI.ProjectModel;
 
-internal static class ProjectInterfaceLoader
+internal static partial class ProjectInterfaceLoader
 {
     private static readonly HashSet<string> AllowedTopLevelProperties = new(StringComparer.Ordinal)
     {
         "interface_version", "name", "label", "version", "description", "icon", "github",
-        "controller", "resource", "agent", "global_option", "task", "option", "group", "pretask"
+        "controller", "resource", "agent", "global_option", "task", "option", "group", "pretask", "preset"
     };
 
     private static readonly HashSet<string> AllowedControllerProperties = new(StringComparer.Ordinal)
@@ -133,7 +133,7 @@ internal static class ProjectInterfaceLoader
             projectRoot, controller, resources, agent);
         return new ProjectDefinition(
             projectRoot, provenance, controller, resources, agent, runtimeProfileDigest,
-            globalOptions, tasks, options, groups, pretasks);
+            globalOptions, tasks, options, groups, pretasks, ParsePresets(root));
     }
 
     private static IReadOnlyList<PretaskDefinition> ParsePretasks(

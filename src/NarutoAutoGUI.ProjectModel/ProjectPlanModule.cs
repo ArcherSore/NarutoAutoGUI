@@ -13,7 +13,7 @@ public sealed record ProjectTaskGroup(string Name, string Label, string Descript
 
 public sealed record RunStartAttempt(Guid RunId, RunPlan Plan, string PlanDigest);
 
-public sealed class ProjectPlanModule
+public sealed partial class ProjectPlanModule
 {
     private readonly ProjectDefinition _project;
     private readonly MaaNopConfigStore _configStore;

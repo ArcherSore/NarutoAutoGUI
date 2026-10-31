@@ -132,6 +132,7 @@ public partial class MainWindow : FluentWindow
         _runLog = new RunLogFeed(LogLines, MaximumGuiLogEntries);
         DataContext = this;
         BindConfigurationEditable(NewConfigurationButton);
+        BindConfigurationEditable(PresetConfigurationButton);
         BindConfigurationEditable(TaskShelfHeaderButton);
         BindConfigurationEditable(EmptyPlanAddButton);
         _logger = logger;

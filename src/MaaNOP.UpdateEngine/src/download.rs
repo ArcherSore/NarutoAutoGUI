@@ -1,4 +1,4 @@
-use curl::easy::{Easy2, Handler, SslOpt, WriteError};
+use curl::easy::{Easy2, Handler, List, SslOpt, WriteError};
 use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
@@ -93,24 +93,105 @@ fn allowed(url: &Url, allow_http: bool) -> bool
     url.scheme() == "https" || (allow_http && url.scheme() == "http")
 }
 
-fn configure(
-    easy: &mut Easy2<Transfer<'_, '_>>, url: &str, timeout: Duration, stall: Duration, offset: u64,
-) -> Result<(), curl::Error>
+fn status_code(line: &str) -> u32
+{
+    line.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0)
+}
+
+/// The binding lacks protocol setters. Reject unsafe redirects before libcurl follows them.
+fn unsafe_redirect(base: &Url, allow_http: bool, status: u32, name: &str, value: &str) -> bool
+{
+    name.eq_ignore_ascii_case("Location") && (300..400).contains(&status)
+        && !base.join(value).is_ok_and(|target| allowed(&target, allow_http))
+}
+
+/// Options shared by check and download.
+fn common<H: Handler>(easy: &mut Easy2<H>, url: &str, timeout: Duration) -> Result<(), curl::Error>
 {
     easy.url(url)?;
     easy.useragent(crate::USER_AGENT)?;
     easy.follow_location(true)?;
     easy.max_redirections(10)?;
     easy.fail_on_error(true)?;
+    easy.timeout(timeout)?;
+    // Schannel fails when revocation servers are unreachable; keep chain and host checks, tolerate only that.
+    easy.ssl_options(SslOpt::new().revoke_best_effort(true))
+}
+
+fn configure(
+    easy: &mut Easy2<Transfer<'_, '_>>, url: &str, timeout: Duration, stall: Duration, offset: u64,
+) -> Result<(), curl::Error>
+{
+    common(easy, url, timeout)?;
     easy.resume_from(offset)?;
     easy.connect_timeout(Duration::from_secs(15).min(timeout))?;
-    easy.timeout(timeout)?;
     easy.low_speed_limit(1)?;
     easy.low_speed_time(stall)?;
     easy.http_content_decoding(false)?;
-    // Schannel fails when revocation servers are unreachable; keep chain and host checks, tolerate only that.
-    easy.ssl_options(SslOpt::new().revoke_best_effort(true))?;
     easy.progress(true)
+}
+
+/// GET a small text resource, such as check metadata, under the same TLS and redirect rules as downloads.
+pub fn fetch(url: &str, headers: &[&str], limit: u64, timeout: Duration) -> Result<String, String>
+{
+    fetch_with(url, headers, limit, timeout, false)
+}
+
+fn fetch_with(url: &str, headers: &[&str], limit: u64, timeout: Duration, allow_http: bool) -> Result<String, String>
+{
+    let base = Url::parse(url).map_err(|e| e.to_string())?;
+    if !allowed(&base, allow_http) { return Err("更新检查只允许 HTTPS。".into()); }
+    let mut list = List::new();
+    for header in headers { list.append(header).map_err(|e| e.to_string())?; }
+    let mut easy = Easy2::new(Fetch { base, allow_http, limit, status: 0, body: Vec::new(), error: None });
+    let configured = (|| {
+        common(&mut easy, url, timeout)?;
+        easy.http_headers(list)?;
+        easy.accept_encoding("")
+    })();
+    configured.map_err(|e| e.to_string())?;
+    let result = easy.perform();
+    let fetch = easy.get_mut();
+    if let Some(message) = fetch.error.take() { return Err(message); }
+    result.map_err(|e| e.to_string())?;
+    String::from_utf8(std::mem::take(&mut fetch.body)).map_err(|e| e.to_string())
+}
+
+struct Fetch
+{
+    base: Url,
+    allow_http: bool,
+    limit: u64,
+    status: u32,
+    body: Vec<u8>,
+    error: Option<String>,
+}
+
+impl Handler for Fetch
+{
+    fn header(&mut self, data: &[u8]) -> bool
+    {
+        let line = String::from_utf8_lossy(data);
+        if line.starts_with("HTTP/") {
+            self.status = status_code(&line);
+        } else if let Some((name, value)) = line.split_once(':')
+            && unsafe_redirect(&self.base, self.allow_http, self.status, name, value.trim()) {
+            self.error = Some("更新检查重定向必须使用 HTTPS。".into());
+            return false;
+        }
+        true
+    }
+
+    fn write(&mut self, data: &[u8]) -> Result<usize, WriteError>
+    {
+        if (300..400).contains(&self.status) { return Ok(data.len()); }
+        if (self.body.len() + data.len()) as u64 > self.limit {
+            self.error = Some("更新信息超出大小限制。".into());
+            return Ok(0);
+        }
+        self.body.extend_from_slice(data);
+        Ok(data.len())
+    }
 }
 
 struct Transfer<'a, 'b>
@@ -135,16 +216,13 @@ impl Handler for Transfer<'_, '_>
     {
         let line = String::from_utf8_lossy(data);
         if line.starts_with("HTTP/") {
-            self.status = line.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            self.status = status_code(&line);
             self.range_ok = false;
         } else if let Some((name, value)) = line.split_once(':') {
             let value = value.trim();
-            if name.eq_ignore_ascii_case("Location") && (300..400).contains(&self.status) {
-                // The binding lacks protocol setters. Reject unsafe redirects before libcurl follows them.
-                if !self.base.join(value).is_ok_and(|target| allowed(&target, self.allow_http)) {
-                    self.error = Some("更新下载重定向必须使用 HTTPS。".into());
-                    return false;
-                }
+            if unsafe_redirect(self.base, self.allow_http, self.status, name, value) {
+                self.error = Some("更新下载重定向必须使用 HTTPS。".into());
+                return false;
             } else if name.eq_ignore_ascii_case("Content-Range") && self.status == 206 {
                 self.range_ok = value == format!("bytes {}-{}/{}", self.offset,
                     self.request.size - 1, self.request.size);

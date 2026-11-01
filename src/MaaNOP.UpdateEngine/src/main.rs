@@ -1,5 +1,5 @@
 use maanop_update_engine::{
-    MAX_MESSAGE_BYTES, MAX_RELEASE_BYTES, USER_AGENT, error, execute, prepare, handoff, download,
+    MAX_MESSAGE_BYTES, MAX_RELEASE_BYTES, error, execute, prepare, handoff, download, fetch,
 };
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, Read, Write};
@@ -64,14 +64,7 @@ fn emit(value: Value) -> Result<(), String>
 
 fn fetch_release(url: &str) -> Result<String, String>
 {
-    let config = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(30)))
-        .https_only(true).build();
-    let agent: ureq::Agent = config.into();
-    let mut response = agent.get(url).header("User-Agent", USER_AGENT)
-        .header("Accept", "application/vnd.github+json").header("X-GitHub-Api-Version", "2022-11-28")
-        .call().map_err(|e| {
-            eprintln!("Release request failed: {e}");
-            e.to_string()
-        })?;
-    response.body_mut().with_config().limit(MAX_RELEASE_BYTES).read_to_string().map_err(|e| e.to_string())
+    let headers = ["Accept: application/vnd.github+json", "X-GitHub-Api-Version: 2022-11-28"];
+    fetch(url, &headers, MAX_RELEASE_BYTES, Duration::from_secs(30))
+        .inspect_err(|e| eprintln!("Release request failed: {e}"))
 }

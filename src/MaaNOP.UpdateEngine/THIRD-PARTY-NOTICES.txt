@@ -1,4 +1,4 @@
-Notices for the libcurl download dependencies bundled in MaaNOP Update Engine.
+Notices for the libcurl HTTP dependencies bundled in MaaNOP Update Engine.
 
 curl 0.4.51
 ===========

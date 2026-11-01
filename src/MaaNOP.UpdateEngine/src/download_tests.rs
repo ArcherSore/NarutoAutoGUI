@@ -59,7 +59,7 @@ fn accept_raw(listener: &TcpListener) -> TcpStream
     stream
 }
 
-fn accept(listener: &TcpListener, offset: Option<u64>) -> TcpStream
+fn accept_request(listener: &TcpListener) -> (TcpStream, String)
 {
     let stream = accept_raw(listener);
     let mut request = String::new();
@@ -70,6 +70,12 @@ fn accept(listener: &TcpListener, offset: Option<u64>) -> TcpStream
         request.push_str(&line);
         if line == "\r\n" { break; }
     }
+    (stream, request)
+}
+
+fn accept(listener: &TcpListener, offset: Option<u64>) -> TcpStream
+{
+    let (stream, request) = accept_request(listener);
     let range = request.lines().find(|line| line.to_ascii_lowercase().starts_with("range:"));
     assert_eq!(range.map(|s| s.trim().to_ascii_lowercase()), offset.map(|n| format!("range: bytes={n}-")));
     stream
@@ -294,6 +300,38 @@ fn interrupted_tls_handshake_is_retried()
         }
     });
     assert!(fixture.run(&format!("https://127.0.0.1:{port}/package"), 10).is_err());
+    server.join().unwrap();
+}
+
+#[test]
+fn fetch_sends_headers_returns_body_and_enforces_limit()
+{
+    let body = r#"{"tag_name":"v2.0.0"}"#;
+    let (listener, port) = listen();
+    let server = thread::spawn(move || {
+        let (mut stream, request) = accept_request(&listener);
+        stream.write_all(full(body).as_bytes()).unwrap();
+        accept(&listener, None).write_all(full(body).as_bytes()).unwrap();
+        request.to_ascii_lowercase()
+    });
+    let url = format!("http://127.0.0.1:{port}/release");
+    let timeout = Duration::from_secs(5);
+    assert_eq!(fetch_with(&url, &["X-GitHub-Api-Version: 2022-11-28"], 64, timeout, true).unwrap(), body);
+    assert!(fetch_with(&url, &[], body.len() as u64 - 1, timeout, true).unwrap_err().contains("大小限制"));
+    let request = server.join().unwrap();
+    assert!(request.contains("x-github-api-version: 2022-11-28"), "{request}");
+    assert!(request.contains("user-agent: maanop-updateengine/2"), "{request}");
+}
+
+#[test]
+fn fetch_rejects_http_unsafe_redirects_and_error_status()
+{
+    let timeout = Duration::from_secs(5);
+    assert!(fetch("http://127.0.0.1:1/release", &[], 64, timeout).unwrap_err().contains("HTTPS"));
+    let redirect = "HTTP/1.1 302 Found\r\nLocation: file:///test\r\nContent-Length: 0\r\n\r\n".to_owned();
+    let (url, server) = serve(vec![(None, redirect), (None, status(404))]);
+    assert!(fetch_with(&url, &[], 64, timeout, true).unwrap_err().contains("HTTPS"));
+    assert!(fetch_with(&url, &[], 64, timeout, true).is_err());
     server.join().unwrap();
 }
 

@@ -2,7 +2,7 @@ mod version;
 mod payload;
 mod files;
 mod download;
-pub use download::{Download, download};
+pub use download::{Download, download, fetch};
 pub use payload::prepare;
 mod install;
 pub use install::install;

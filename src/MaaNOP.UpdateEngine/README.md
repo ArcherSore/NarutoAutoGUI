@@ -42,8 +42,8 @@ libcurl 通过 Rust curl 绑定执行 HTTPS 下载、重定向和按文件长度
 网络失败、取消、进程退出后保留已写入文件；缓存长度达到目标后仍须校验整个文件的 SHA256。
 下载后校验长度/SHA256、全部 ZIP 路径与完整包布局，再形成 Payload；成功准备或哈希不符时清理下载缓存。
 cache/updater.lock 的操作系统文件锁防止多个 prepare 同时写缓存，进程退出释放锁。
-下载使用静态链接 libcurl 与 Windows Schannel，无需用户安装 curl，也不依赖外部 curl.exe。
-吊销信息无法获取时继续下载（revoke best effort），证书链与主机名校验不变；TLS 握手失败按暂时性错误重试。
+check 与下载均使用静态链接 libcurl 与 Windows Schannel，无需用户安装 curl，也不依赖外部 curl.exe；重定向只允许 HTTPS。
+吊销信息无法获取时继续（revoke best effort），证书链与主机名校验不变；下载的 TLS 握手失败按暂时性错误重试。
 包内 config/logs/debug/cache 内容忽略，保留名称类型冲突拒绝；不复制旧用户数据，不接受 state 或缺少内置 Python 的包。
 install 只做前置检查，不重复整包验证；GUI 退出后先移走全部受管理根内容，再写入新版。
 先尽力清理 old/Payload，再 relaunch。失败不回滚；文件失败停止，启动失败可手动启动，清理失败仅记日志。

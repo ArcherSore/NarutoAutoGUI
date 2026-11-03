@@ -245,15 +245,11 @@ public partial class MainWindow
 
     private void PresetConfigurationButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!CurrentControls.ConfigurationEditable || _configurationNameEditor is not null
-            || !CommitFocusedConfigurationInput() || _projectPlan is null) {
-            return;
-        }
         var menu = new ContextMenu {
             PlacementTarget = PresetConfigurationButton,
             Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom
         };
-        foreach (var preset in _projectPlan.Presets) {
+        foreach (var preset in _projectPlan!.Presets) {
             var item = new MenuItem { Header = preset.Label, ToolTip = preset.Description };
             AutomationProperties.SetName(item, $"从预设新建配置：{preset.Label}");
             BindConfigurationEditable(item);

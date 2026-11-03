@@ -52,14 +52,8 @@ internal static partial class ProjectInterfaceLoader
             if (!names.Add(name)) {
                 throw new InvalidDataException($"{path} 不支持重复任务 {name}。");
             }
-            var enabled = true;
-            if (obj.TryGetProperty("enabled", out var value)) {
-                if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) {
-                    throw new InvalidDataException($"{itemPath}.enabled 必须是 boolean。");
-                }
-                enabled = value.GetBoolean();
-            }
-            result.Add(new PresetItem(name, enabled, ReadObjectOrEmpty(obj, "option", itemPath)));
+            result.Add(new PresetItem(name, OptionalBoolean(obj, "enabled", itemPath, fallback: true),
+                ReadObjectOrEmpty(obj, "option", itemPath)));
         }
         return result;
     }

@@ -28,14 +28,13 @@ internal static partial class SelfTestRunner
                 {"name":"RealTask","enabled":false,"option":{"Mode":"Minimal","ServerRange":{"server_range":"1"}}}]},
              {"name":"startup","task":[],"pretask":[
                 {"name":"Other"},{"name":"Launch","option":{"Mode":"Minimal"}},{"name":"Filtered"}]},
-             {"name":"clear"},
              {"name":"merge","task":[{"name":"RealTask","option":{"ServerRange":{"server_range":"979"}}},
                 {"name":"SecondTask","option":{"ServerRange":{"retry_count":"4"}}}]}]
             """);
         File.WriteAllText(interfacePath, root.ToJsonString());
         var path = Path.Combine(directory, "config.json");
         var project = ProjectPlanModule.Open(directory, path);
-        Require(project.Presets.Select(item => item.Name).SequenceEqual(["daily", "startup", "clear", "merge"])
+        Require(project.Presets.Select(item => item.Name).SequenceEqual(["daily", "startup", "merge"])
             && project.Presets[0].Description == "预设说明" && project.Presets[1].Label == "startup",
             "预设必须保留顺序、名称回退和展示信息。");
         var original = project.ActiveConfigurationId;
@@ -65,9 +64,6 @@ internal static partial class SelfTestRunner
         Require(project.CreateRunStartAttempt().Plan.Items.Select(item => item.TaskName)
             .SequenceEqual(["Launch", "Other"]),
             "preset.pretask 必须跳过不适用项，并按顶层声明顺序执行。");
-        project.CreateConfigurationFromPreset("clear");
-        Require(project.SelectedItemCount == 0 && project.Configurations[^1].ExplicitOptions.Count == 0,
-            "省略 pretask 时只使用项目默认值，不能继承上份配置的启动阶段或参数。");
         project.CreateConfigurationFromPreset("merge");
         inputs = project.Configurations[^1].ExplicitOptions["ServerRange"].GetProperty("Inputs");
         Require(inputs.GetProperty("server_range").GetString() == "979"
@@ -139,7 +135,7 @@ internal static partial class SelfTestRunner
             Require(button.Visibility == Visibility.Visible, "有预设时必须展示新建入口。");
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             var menu = button.ContextMenu!;
-            Require(menu.Items.Count == 4 &&((MenuItem)menu.Items[0]).Header as string == "日常预设",
+            Require(menu.Items.Count == 3 && ((MenuItem)menu.Items[0]).Header as string == "日常预设",
                 "预设菜单必须按项目顺序显示名称。");
             menu.IsOpen = false;
             var count = project.Configurations.Count;

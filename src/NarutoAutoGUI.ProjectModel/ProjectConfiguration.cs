@@ -80,11 +80,6 @@ internal static class ExplicitOptionIntent
         return ToElement(new JsonObject { ["Inputs"] = inputs });
     }
 
-    // Reads an intent built by CreateInputs; a selected-case intent has no inputs.
-    internal static Dictionary<string, string>? ReadInputs(JsonElement intent) =>
-        intent.TryGetProperty("Inputs", out var inputs) ? inputs.EnumerateObject()
-            .ToDictionary(item => item.Name, item => item.Value.GetString()!, StringComparer.Ordinal) : null;
-
     internal static JsonElement CreateSelectedCase(string selectedCase) =>
         ToElement(new JsonObject { ["SelectedCase"] = selectedCase });
 

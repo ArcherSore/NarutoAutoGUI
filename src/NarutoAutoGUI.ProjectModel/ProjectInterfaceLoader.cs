@@ -254,13 +254,7 @@ internal static partial class ProjectInterfaceLoader
             if (!names.Add(name)) {
                 throw new InvalidDataException($"重复 group.name：{name}。 ");
             }
-            var defaultExpand = true;
-            if (obj.TryGetProperty("default_expand", out var expand)) {
-                if (expand.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) {
-                    throw new InvalidDataException($"{path}.default_expand 必须是 boolean。 ");
-                }
-                defaultExpand = expand.GetBoolean();
-            }
+            var defaultExpand = OptionalBoolean(obj, "default_expand", path, fallback: true);
             groups.Add(new ProjectTaskGroup(
                 name, OptionalString(obj, "label") ?? name,
                 ReadOptionalDescription(obj, "description") ?? string.Empty,
@@ -590,6 +584,17 @@ internal static partial class ProjectInterfaceLoader
             throw new InvalidDataException($"{name} 必须是非空 string。 ");
         }
         return value.GetString();
+    }
+
+    private static bool OptionalBoolean(JsonElement obj, string name, string path, bool fallback)
+    {
+        if (!obj.TryGetProperty(name, out var value)) {
+            return fallback;
+        }
+        if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) {
+            throw new InvalidDataException($"{path}.{name} 必须是 boolean。 ");
+        }
+        return value.GetBoolean();
     }
 
     private static string? ReadDisplayString(JsonElement obj, string name)

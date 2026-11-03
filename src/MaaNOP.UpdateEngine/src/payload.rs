@@ -7,7 +7,7 @@ use std::fs::{self, File};
 use std::io::{Read, Write, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use crate::download::{Download, interrupted};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -33,7 +33,7 @@ struct Descriptor
 }
 
 pub fn prepare(
-    request: &str, download: impl FnOnce(&str) -> Result<Box<dyn Read>, String>,
+    request: &str, download: impl FnOnce(Download<'_>) -> Result<(), String>,
     cancelled: &AtomicBool, emit: &mut dyn FnMut(Value) -> Result<(), String>,
 ) -> Value
 {
@@ -46,13 +46,8 @@ pub fn prepare(
     }
 }
 
-fn interrupted(cancelled: &AtomicBool) -> Result<(), String>
-{
-    if cancelled.load(Ordering::Relaxed) { Err("已取消更新准备。".into()) } else { Ok(()) }
-}
-
 fn run(
-    request: &str, download: impl FnOnce(&str) -> Result<Box<dyn Read>, String>,
+    request: &str, download: impl FnOnce(Download<'_>) -> Result<(), String>,
     cancelled: &AtomicBool, emit: &mut dyn FnMut(Value) -> Result<(), String>,
 ) -> Result<Value, String>
 {
@@ -80,37 +75,48 @@ fn run(
     let cache = root.join("cache");
     fs::create_dir_all(&cache).map_err(|e| e.to_string())?;
     files::ancestors(&cache)?;
+    let lock_path = cache.join("updater.lock");
+    if fs::symlink_metadata(&lock_path).is_ok() { files::reject_link(&lock_path)?; }
+    let lock = File::options().write(true).create(true).truncate(false).open(lock_path)
+        .map_err(|e| e.to_string())?;
+    lock.try_lock().map_err(|_| "已有更新准备正在进行。".to_string())?;
     let work = cache.join("updater");
-    if fs::symlink_metadata(&work).is_ok() { files::remove(&work)?; }
-    fs::create_dir(&work).map_err(|e| e.to_string())?;
+    // clean_preparation checks every entry it removes; only the kept download cache needs its own walk.
+    if work.exists() { files::reject_link(&work)?; }
+    fs::create_dir_all(&work).map_err(|e| e.to_string())?;
+    clean_preparation(&work)?;
+    let saved = work.join("download");
+    if saved.exists() { files::tree(&saved)?; }
+    let identity = json!([descriptor.repository, descriptor.tag, descriptor.name, descriptor.size,
+        descriptor.sha256.to_ascii_lowercase()]).to_string();
+    if saved.exists() && fs::read_to_string(saved.join("identity")).ok().as_deref() != Some(&identity) {
+        files::remove(&saved)?;
+    }
+    if !saved.exists() {
+        fs::create_dir(&saved).map_err(|e| e.to_string())?;
+        // Write identity before any bytes; never truncate matching metadata during a resumed attempt.
+        fs::write(saved.join("identity"), identity).map_err(|e| e.to_string())?;
+    }
     let outcome = (|| {
-        let zip_path = work.join("download.zip");
-        let mut stream = download(&descriptor.download_url)?;
+        let zip_path = saved.join("package.part");
+        let mut progress = |bytes, speed| emit(json!({"protocolVersion":1,"type":"progress",
+            "phase":"download","bytes":bytes,"total":descriptor.size,"bytesPerSecond":speed}));
+        download(Download { url: &descriptor.download_url, path: &zip_path, size: descriptor.size,
+            cancelled, progress: &mut progress })?;
         interrupted(cancelled)?;
-        let mut output = File::create(&zip_path).map_err(|e| e.to_string())?;
+        let mut input = File::open(&zip_path).map_err(|e| e.to_string())?;
         let mut hash = Sha256::new();
-        let mut bytes = 0u64;
-        let clock = Instant::now();
-        let mut last = Instant::now();
         let mut buffer = [0u8; 81920];
-        emit(json!({"protocolVersion":1,"type":"progress","phase":"download","bytes":0,
-            "total":descriptor.size,"bytesPerSecond":0}))?;
         loop {
             interrupted(cancelled)?;
-            let count = stream.read(&mut buffer).map_err(|e| e.to_string())?;
+            let count = input.read(&mut buffer).map_err(|e| e.to_string())?;
             if count == 0 { break; }
-            bytes += count as u64;
-            if bytes > descriptor.size { return Err("更新包长度不符。".into()); }
-            output.write_all(&buffer[..count]).map_err(|e| e.to_string())?;
             hash.update(&buffer[..count]);
-            if last.elapsed().as_millis() >= 100 || bytes == descriptor.size {
-                emit(json!({"protocolVersion":1,"type":"progress","phase":"download","bytes":bytes,
-                    "total":descriptor.size,"bytesPerSecond":bytes as f64 / clock.elapsed().as_secs_f64()}))?;
-                last = Instant::now();
-            }
         }
-        drop(output);
-        if bytes != descriptor.size || !format!("{:x}", hash.finalize()).eq_ignore_ascii_case(&descriptor.sha256) {
+        let size = input.metadata().map_err(|e| e.to_string())?.len();
+        drop(input);
+        if size != descriptor.size || !format!("{:x}", hash.finalize()).eq_ignore_ascii_case(&descriptor.sha256) {
+            files::remove(&saved)?;
             return Err("更新包长度或 SHA256 不符，请重新检查并下载。".into());
         }
         emit(json!({"protocolVersion":1,"type":"progress","phase":"validate"}))?;
@@ -118,15 +124,24 @@ fn run(
         extract(&zip_path, &payload, cancelled)?;
         validate(&payload, &descriptor.tag)?;
         interrupted(cancelled)?;
-        fs::remove_file(zip_path).map_err(|e| e.to_string())?;
+        files::remove(&saved)?;
         let token = format!("{}-{}", std::process::id(),
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
         // Ephemeral capability, never read by GUI and never recovered on GUI startup.
         fs::write(work.join("prepared"), &token).map_err(|e| e.to_string())?;
         Ok(json!({"protocolVersion":1,"type":"result","operation":"prepare","reference":token}))
     })();
-    if outcome.is_err() { let _ = files::remove(&work); }
+    if outcome.is_err() { let _ = clean_preparation(&work); }
     outcome
+}
+
+fn clean_preparation(work: &Path) -> Result<(), String>
+{
+    for entry in fs::read_dir(work).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if entry.file_name() != "download" { files::remove(&entry.path())?; }
+    }
+    Ok(())
 }
 
 fn safe_part(part: &str) -> bool

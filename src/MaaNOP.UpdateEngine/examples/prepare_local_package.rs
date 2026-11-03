@@ -30,7 +30,10 @@ fn main()
                 "digest":format!("sha256:{:x}",hash.finalize())}]}).to_string()));
     let descriptor = candidate["update"]["descriptor"].as_str().expect("check did not select local candidate");
     let result = prepare(&json!({"protocolVersion":1,"operation":"prepare","installation":root,
-        "descriptor":descriptor}).to_string(), |_| Ok(Box::new(File::open(zip).unwrap())),
+        "descriptor":descriptor}).to_string(), |download| {
+            std::fs::copy(zip, download.path).map_err(|e| e.to_string())?;
+            (download.progress)(download.size, 0.0)
+        },
         &AtomicBool::new(false), &mut |message| { println!("{message}"); Ok(()) });
     println!("{result}");
     if result["type"] != "result" { std::process::exit(1); }

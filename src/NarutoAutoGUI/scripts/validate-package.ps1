@@ -99,6 +99,8 @@ if (-not (Test-Path -LiteralPath $PackageDirectory -PathType Container)) {
 }
 
 Assert-PackageFile -Name 'Rust Engine' -Path (Join-Path $PackageDirectory 'maanop-update-engine.exe')
+Assert-PackageFile -Name 'Engine third-party notices' `
+    -Path (Join-Path $PackageDirectory 'update-engine-third-party-notices.txt')
 if (Get-ChildItem -LiteralPath $PackageDirectory -Filter 'NarutoAutoUpdater*') {
     throw '旧 .NET Updater 不得进入 V2 包。'
 }

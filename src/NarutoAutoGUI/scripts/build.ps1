@@ -106,6 +106,8 @@ try {
     Copy-CleanTree -Source $guiPublishDir -Destination $packageStagingDir
     Copy-CleanTree -Source $workerPublishDir -Destination (Join-Path $packageStagingDir 'worker')
     Copy-Item -LiteralPath $engine -Destination $packageStagingDir
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'src\MaaNOP.UpdateEngine\THIRD-PARTY-NOTICES.txt') `
+        -Destination (Join-Path $packageStagingDir 'update-engine-third-party-notices.txt')
 
     # Deploy assembled package to target OutputDirectory safely.
     $resolvedOutput = (New-Item -ItemType Directory -Force -Path $OutputDirectory).FullName

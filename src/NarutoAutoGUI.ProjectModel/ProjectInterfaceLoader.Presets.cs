@@ -33,8 +33,7 @@ internal static partial class ProjectInterfaceLoader
             result.Add(new PresetDefinition(name, string.IsNullOrWhiteSpace(label) ? name : label,
                 ReadOptionalDescription(obj, "description") ?? string.Empty,
                 obj.TryGetProperty("task", out var tasks) ? ParsePresetItems(tasks, $"{path}.task") : [],
-                obj.TryGetProperty("pretask", out var pretasks)
-                    ? ParsePresetItems(pretasks, $"{path}.pretask") : null));
+                obj.TryGetProperty("pretask", out var pretasks) ? ParsePresetItems(pretasks, $"{path}.pretask") : []));
         }
         return result;
     }

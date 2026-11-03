@@ -19,29 +19,17 @@ public sealed partial class ProjectPlanModule
                 ?? throw new InvalidDataException($"预设引用了不存在的任务 {item.Name}。");
             ReadPresetOptions(item, _project.GlobalOptions.Concat(task.Options), options, typed: true);
         }
-        IReadOnlyList<string> pretasks;
-        if (preset.Pretasks is null) {
-            var current = LoadConfig();
-            pretasks = current.SelectedPretasks.ToArray();
-            var roots = _project.Pretasks.Where(item => pretasks.Contains(item.Name))
-                .SelectMany(item => item.Options);
-            foreach (var name in CollectPresetOptionNames(roots)) {
-                if (current.ExplicitOptions.TryGetValue(name, out var value)) {
-                    MergePresetOption(options, name, value);
-                }
-            }
-        } else {
-            var applicable = preset.Pretasks.Where(item =>
-                _project.Pretasks.Any(definition => definition.Name == item.Name && definition.Applicable)).ToArray();
-            pretasks = applicable.Where(item => item.Enabled).Select(item => item.Name).ToArray();
-            foreach (var item in applicable) {
-                ReadPresetOptions(item, FindPretask(item.Name).Options, options, typed: false);
-            }
+        // A preset starts from project defaults; nothing is taken from the current configuration.
+        var pretasks = preset.Pretasks.Where(item =>
+            _project.Pretasks.Any(definition => definition.Name == item.Name && definition.Applicable)).ToArray();
+        foreach (var item in pretasks) {
+            ReadPresetOptions(item, FindPretask(item.Name).Options, options, typed: false);
         }
         var configuration = new TaskConfiguration {
             Id = Guid.NewGuid(), Name = preset.Label,
             SelectedTasks = preset.Tasks.Where(item => item.Enabled).Select(item => item.Name).ToArray(),
-            SelectedPretasks = pretasks, ExplicitOptions = options
+            SelectedPretasks = pretasks.Where(item => item.Enabled).Select(item => item.Name).ToArray(),
+            ExplicitOptions = options
         };
         ValidateActiveConfiguration(configuration);
         SaveConfig(_config with {
@@ -51,24 +39,10 @@ public sealed partial class ProjectPlanModule
         return configuration.Id;
     }
 
-    private HashSet<string> CollectPresetOptionNames(IEnumerable<string> roots)
-    {
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        var pending = new Stack<string>(roots);
-        while (pending.TryPop(out var name)) {
-            if (names.Add(name)) {
-                foreach (var child in _project.Options[name].Cases.SelectMany(item => item.Options)) {
-                    pending.Push(child);
-                }
-            }
-        }
-        return names;
-    }
-
     private void ReadPresetOptions(PresetItem item, IEnumerable<string> roots,
         Dictionary<string, JsonElement> result, bool typed)
     {
-        var allowed = CollectPresetOptionNames(roots);
+        var allowed = ProjectInterfaceLoader.CollectOptionNames(roots, _project.Options);
         foreach (var property in item.Options.EnumerateObject()) {
             if (!allowed.Contains(property.Name)) {
                 throw new InvalidDataException($"预设任务 {item.Name} 引用了不属于该任务的选项 {property.Name}。");
@@ -111,15 +85,13 @@ public sealed partial class ProjectPlanModule
     {
         if (!options.TryGetValue(name, out var previous)) {
             options.Add(name, value);
-        } else if (previous.TryGetProperty("Inputs", out var previousInputs)
-            && value.TryGetProperty("Inputs", out var newInputs)) {
-            var merged = previousInputs.EnumerateObject()
-                .ToDictionary(item => item.Name, item => item.Value.GetString()!, StringComparer.Ordinal);
-            foreach (var input in newInputs.EnumerateObject()) {
-                if (merged.TryGetValue(input.Name, out var existing) && existing != input.Value.GetString()) {
-                    throw new InvalidDataException($"预设对共享选项 {name}.{input.Name} 指定了不同值，无法创建配置。");
+        } else if (ExplicitOptionIntent.ReadInputs(previous) is { } merged
+            && ExplicitOptionIntent.ReadInputs(value) is { } inputs) {
+            foreach (var (field, input) in inputs) {
+                if (merged.TryGetValue(field, out var existing) && existing != input) {
+                    throw new InvalidDataException($"预设对共享选项 {name}.{field} 指定了不同值，无法创建配置。");
                 }
-                merged[input.Name] = input.Value.GetString()!;
+                merged[field] = input;
             }
             options[name] = ExplicitOptionIntent.CreateInputs(merged);
         } else if (!JsonElement.DeepEquals(previous, value)) {

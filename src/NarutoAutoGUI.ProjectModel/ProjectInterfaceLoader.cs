@@ -406,7 +406,7 @@ internal static partial class ProjectInterfaceLoader
         }
     }
 
-    private static HashSet<string> CollectOptionNames(
+    internal static HashSet<string> CollectOptionNames(
         IEnumerable<string> roots, IReadOnlyDictionary<string, OptionDefinition> options)
     {
         var result = new HashSet<string>(StringComparer.Ordinal);

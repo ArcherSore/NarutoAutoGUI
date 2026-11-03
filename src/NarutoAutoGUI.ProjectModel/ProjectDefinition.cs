@@ -26,7 +26,7 @@ internal sealed record ProjectDefinition(
 
 internal sealed record PresetDefinition(
     string Name, string Label, string Description, IReadOnlyList<PresetItem> Tasks,
-    IReadOnlyList<PresetItem>? Pretasks);
+    IReadOnlyList<PresetItem> Pretasks);
 
 internal sealed record PresetItem(string Name, bool Enabled, JsonElement Options);
 

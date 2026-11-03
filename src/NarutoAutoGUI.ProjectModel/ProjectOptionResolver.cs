@@ -59,23 +59,26 @@ internal static class ProjectOptionResolver
                                 : input.Default;
                             values[input.Name] = resolvedValue;
                             substitutions[input.Name] = ProjectInputValue.Parse(input, resolvedValue,
-                                $"option {optionName} input {input.Name} 的值", typed: pipelineOverrides is not null);
+                                $"option {optionName} input {input.Name} 的值", typed: pipelineOverrides is not null,
+                                isDefault: !explicitInputs.ContainsKey(input.Name));
                         }
                         resolvedValues[optionName] = values;
                         pipelineOverrides?.Add(CreateTemplatedOverride(option.PipelineOverride, substitutions));
                         break;
                     }
                 case OptionDefinitionKind.Select:
-                case OptionDefinitionKind.Switch: {
-                        var selectedName = ExplicitOptionIntent.ReadSelectedCase(option, config)
-                                           ?? option.DefaultCase!;
-                        var selected = option.Cases.SingleOrDefault(item => item.Name == selectedName)
-                                       ?? throw new InvalidDataException(
-                                           $"option {optionName} 的 case {selectedName} 不存在。 ");
-                        resolvedValues[optionName] = selected.Name;
-                        pipelineOverrides?.Add(ParseObject(selected.PipelineOverride));
-                        foreach (var nested in selected.Options) {
-                            ResolveOption(project, nested, config, resolvedValues, pipelineOverrides, scope);
+                case OptionDefinitionKind.Switch:
+                case OptionDefinitionKind.Checkbox: {
+                        // Checked checkbox cases merge in declaration order, not in the order they were checked.
+                        var active = ExplicitOptionIntent.ReadActiveCases(option, config);
+                        resolvedValues[optionName] = option.Kind == OptionDefinitionKind.Checkbox
+                            ? new JsonArray(active.Select(item => (JsonNode)item.Name).ToArray())
+                            : (JsonNode)active[0].Name;
+                        foreach (var selected in active) {
+                            pipelineOverrides?.Add(ParseObject(selected.PipelineOverride));
+                            foreach (var nested in selected.Options) {
+                                ResolveOption(project, nested, config, resolvedValues, pipelineOverrides, scope);
+                            }
                         }
                         break;
                     }

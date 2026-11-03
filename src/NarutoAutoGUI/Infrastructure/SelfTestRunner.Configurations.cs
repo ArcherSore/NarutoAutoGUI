@@ -224,7 +224,7 @@ internal static partial class SelfTestRunner
             .OfType<System.Windows.Controls.TextBlock>()
             .SingleOrDefault(item => item.Text == "Use ranges such as 978 or 978-1012"
                 && item.Visibility == System.Windows.Visibility.Visible);
-        bool RevealDraft() => (bool)typeof(Views.MainWindow).GetMethod("RevealInvalidInputDraft",
+        bool RevealDraft() => (bool)typeof(Views.MainWindow).GetMethod("RevealInvalidParameter",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null)!;
         string SavedServer() => project.Configurations[0].ExplicitOptions["ServerRange"].GetProperty("Inputs")
             .GetProperty("server_range").GetString()!;

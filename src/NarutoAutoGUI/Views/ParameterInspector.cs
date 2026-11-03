@@ -11,15 +11,17 @@ internal sealed record InspectorInput(
 {
     internal string SavedValue => Input.Value;
     internal string DisplayValue => Draft?.Text ?? Input.Value;
+    // An unsaved draft's problem, otherwise a saved default that still fails verify.
+    internal string? Error => Draft?.Message ?? Input.Error;
 }
 
-// One inspector row per option: a select or switch, or an input option with all of its inputs side by side.
+// One inspector row per option: a select, switch or checkbox, or an input option with all of its inputs side by side.
 internal sealed record InspectorRow(
     ProjectOptionEditor Option, string Label, int Depth, bool IsGlobal, string Description,
     string? CaseDescription, IReadOnlyList<string> SharedWith, IReadOnlyList<InspectorInput> Inputs)
 {
     internal ProjectOptionKind Kind => Option.Kind;
-    internal bool IsInvalid => Inputs.Any(input => input.Draft is not null);
+    internal bool IsInvalid => Option.StartBlocker is not null || Inputs.Any(input => input.Draft is not null);
     internal ProjectCaseEditor? SelectedCase => Option.Cases.SingleOrDefault(item => item.Name == Option.SelectedCase);
 }
 
@@ -45,6 +47,24 @@ internal static class ParameterInspector
 
     // An empty value is spelled out so a note never ends in nothing.
     internal static string ShowValue(string value) => value.Length == 0 ? "空" : value;
+
+    // Checked labels in declaration order; a lone case reads as yes or no.
+    internal static string ShowCases(ProjectOptionEditor option)
+    {
+        if (option.Cases.Count == 1) {
+            return option.SelectedCases.Count == 0 ? "否" : "是";
+        }
+        var labels = option.Cases.Where(item => option.SelectedCases.Contains(item.Name)).Select(item => item.Label);
+        return option.SelectedCases.Count == 0 ? "无" : string.Join("、", labels);
+    }
+
+    internal static string? DescribeLimits(ProjectOptionEditor option) => (option.MinCount, option.MaxCount) switch {
+        (0, null) => null,
+        (0, { } max) => $"最多 {max} 项",
+        (var min, null) => $"至少 {min} 项",
+        var (min, max) when min == max => $"选择 {min} 项",
+        var (min, max) => $"至少 {min} 项，最多 {max} 项"
+    };
 
     private static IEnumerable<(ProjectOptionEditor Option, int Depth)> Flatten(
         IEnumerable<ProjectOptionEditor> options, int depth)

@@ -165,7 +165,6 @@ internal static partial class SelfTestRunner
                 && notes.All(note => !note.Text.StartsWith("默认：", StringComparison.Ordinal)),
                 "输入说明必须直接可见，显式值偏离默认时也不显示默认提示。");
             var planScroll = (System.Windows.Controls.ScrollViewer)window.FindName("PlanScroll");
-            var screenshots = Environment.GetEnvironmentVariable("NARUTO_TASK_SCREENSHOTS");
             foreach (var (width, stacked) in new[] { (920, true), (1180, false), (1440, false) }) {
                 window.Width = width;
                 window.Height = width == 920 ? 640 : width == 1180 ? 760 : 900;
@@ -174,18 +173,26 @@ internal static partial class SelfTestRunner
                 Require(rows.Length == 6 && rows.All(row => row.IsStacked == stacked)
                     && planScroll.ComputedHorizontalScrollBarVisibility != System.Windows.Visibility.Visible,
                     $"{width} 宽度下参数检查器应{(stacked ? "上下堆叠" : "为两列")}，且没有横向滚动。");
-                if (!string.IsNullOrEmpty(screenshots)) {
-                    Directory.CreateDirectory(screenshots);
-                    var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)window.ActualWidth,
-                        (int)window.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
-                    bitmap.Render(window);
-                    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
-                    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
-                    using var stream = File.Create(Path.Combine(screenshots, $"inspector-{width}.png"));
-                    encoder.Save(stream);
-                }
+                SaveWindowScreenshot(window, $"inspector-{width}.png");
             }
         }, AddComplexInspectorOptions);
+    }
+
+    // Set NARUTO_TASK_SCREENSHOTS to a directory to keep rendered windows for a visual check.
+    private static void SaveWindowScreenshot(MainWindow window, string fileName)
+    {
+        var screenshots = Environment.GetEnvironmentVariable("NARUTO_TASK_SCREENSHOTS");
+        if (string.IsNullOrEmpty(screenshots)) {
+            return;
+        }
+        Directory.CreateDirectory(screenshots);
+        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)window.ActualWidth,
+            (int)window.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        bitmap.Render(window);
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+        using var stream = File.Create(Path.Combine(screenshots, fileName));
+        encoder.Save(stream);
     }
 
     private static void VerifyParameterRowLayout()

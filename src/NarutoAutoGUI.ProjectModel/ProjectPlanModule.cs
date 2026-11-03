@@ -320,6 +320,29 @@ public sealed class ProjectPlanModule
         return BuildConfiguration(updated);
     }
 
+    public ProjectConfigurationView SetSelectedCases(string optionName, IReadOnlyCollection<string> selectedCases)
+        => SetSelectedCases(ActiveConfigurationId, optionName, selectedCases);
+
+    public ProjectConfigurationView SetSelectedCases(
+        Guid configurationId, string optionName, IReadOnlyCollection<string> selectedCases)
+    {
+        var option = FindOption(optionName);
+        if (option.Kind != OptionDefinitionKind.Checkbox) {
+            throw new ArgumentException($"option {optionName} 不是 checkbox。", nameof(optionName));
+        }
+        var ordered = option.Cases.Select(item => item.Name).Where(selectedCases.Contains).ToArray();
+        if (ordered.Length != selectedCases.Count || ordered.Length > option.MaxCount) {
+            throw new ArgumentException(
+                $"option {optionName} 的勾选项不存在、重复或超过上限。", nameof(selectedCases));
+        }
+
+        var config = FindConfiguration(configurationId);
+        var updated = ReplaceExplicit(config, optionName, ExplicitOptionIntent.CreateSelectedCases(ordered));
+        ValidateActiveConfiguration(updated);
+        SaveConfiguration(updated);
+        return BuildConfiguration(updated);
+    }
+
     public LaunchManifest CreateLaunchManifest(Guid workerInstanceId) => new(
         ProtocolConstants.LaunchContextVersion, workerInstanceId,
         _project.RuntimeProfileDigest, _project.ProjectRoot, _project.Provenance,
@@ -335,6 +358,7 @@ public sealed class ProjectPlanModule
         if (config.SelectedTasks.Count + config.SelectedPretasks.Count == 0) {
             throw new InvalidOperationException("请先勾选要执行的任务或前置任务。");
         }
+        RequireRunnableOptions(config);
 
         var resolvedItems = config.SelectedTasks.Select(taskName => {
             var task = FindTask(taskName);
@@ -428,8 +452,8 @@ public sealed class ProjectPlanModule
             if (!visited.Add(name) || option.Kind == OptionDefinitionKind.Input) {
                 continue;
             }
-            var selected = ExplicitOptionIntent.ReadSelectedCase(option, config) ?? option.DefaultCase;
-            foreach (var nested in option.Cases.SingleOrDefault(item => item.Name == selected)?.Options ?? []) {
+            var active = ExplicitOptionIntent.ReadActiveCases(option, config);
+            foreach (var nested in active.SelectMany(item => item.Options)) {
                 pending.Push(nested);
             }
         }
@@ -478,29 +502,50 @@ public sealed class ProjectPlanModule
             var inputs = option.Inputs.Select(input => new ProjectInputEditor(
                 input.Name, input.Label, input.Description, input.Default,
                 explicitInputs.TryGetValue(input.Name, out var value) ? value : input.Default,
-                explicitInputs.ContainsKey(input.Name), input.Verify, input.PatternMessage)).ToArray();
+                explicitInputs.ContainsKey(input.Name), input.Verify, input.PatternMessage) {
+                // Saved values passed verify when they were set; only an untouched default can still fail it.
+                Error = explicitInputs.ContainsKey(input.Name) || ProjectInputValue.Matches(input, input.Default,
+                    $"option {optionName} input {input.Name}") ? null : input.PatternMessage ?? "未通过校验"
+            }).ToArray();
             return new ProjectOptionEditor(
                 option.Name, option.Label, option.Description, ProjectOptionKind.Input,
                 explicitInputs.Count != 0, null, null, [], inputs, []);
         }
 
-        var explicitCase = ExplicitOptionIntent.ReadSelectedCase(option, config);
-        var selectedCase = explicitCase ?? option.DefaultCase!;
-        var selected = option.Cases.SingleOrDefault(item => item.Name == selectedCase)
-            ?? throw new InvalidDataException(
-                $"option {optionName} 的 case {selectedCase} 不存在。 ");
-        var children = BuildEditors(selected.Options, config);
+        var active = ExplicitOptionIntent.ReadActiveCases(option, config);
+        var checkbox = option.Kind == OptionDefinitionKind.Checkbox;
+        var children = BuildEditors(active.SelectMany(item => item.Options).ToArray(), config);
         return new ProjectOptionEditor(
             option.Name, option.Label, option.Description,
-            option.Kind == OptionDefinitionKind.Switch
-                ? ProjectOptionKind.Switch
-                : ProjectOptionKind.Select,
-            explicitCase is not null, selectedCase, option.DefaultCase,
+            option.Kind switch {
+                OptionDefinitionKind.Switch => ProjectOptionKind.Switch,
+                OptionDefinitionKind.Checkbox => ProjectOptionKind.Checkbox,
+                _ => ProjectOptionKind.Select
+            },
+            config.ExplicitOptions.ContainsKey(option.Name), checkbox ? null : active[0].Name, option.DefaultCase,
             option.Cases.Select(item => new ProjectCaseEditor(
                 item.Name, item.Label, item.Description)).ToArray(),
             [],
-            children);
+            children) {
+            SelectedCases = active.Select(item => item.Name).ToArray(),
+            MinCount = option.MinCount, MaxCount = option.MaxCount
+        };
     }
+
+    // A checkbox below min_count or an input whose default still fails verify may be saved, but cannot start a Run.
+    private void RequireRunnableOptions(TaskConfiguration config)
+    {
+        IEnumerable<string> roots = config.SelectedTasks.Count == 0 ? [] : _project.GlobalOptions;
+        roots = roots.Concat(config.SelectedTasks.SelectMany(name => FindTask(name).Options))
+            .Concat(SelectedPretaskDefinitions(config).SelectMany(item => item.Options));
+        if (Flatten(BuildEditors(roots.ToArray(), config)).FirstOrDefault(option => option.StartBlocker is not null)
+            is { } blocked) {
+            throw new InvalidOperationException($"参数“{blocked.Label}”：{blocked.StartBlocker}。");
+        }
+    }
+
+    private static IEnumerable<ProjectOptionEditor> Flatten(IEnumerable<ProjectOptionEditor> options) =>
+        options.SelectMany(option => Flatten(option.ActiveChildren).Prepend(option));
 
     private TaskDefinition FindTask(string taskName) =>
         _project.Tasks.SingleOrDefault(task => task.Name == taskName)

@@ -124,7 +124,7 @@ public partial class MainWindow
     private async void RunStartupOnly_Click(object sender, RoutedEventArgs e)
     {
         if (_startupOnlyButton?.IsEnabled != true || !CommitFocusedConfigurationInput()
-            || RevealInvalidInputDraft() || OperationOrExitInProgress) {
+            || RevealInvalidParameter() || OperationOrExitInProgress) {
             return;
         }
         if (CurrentControls.Action is RuntimeAction.Prepare

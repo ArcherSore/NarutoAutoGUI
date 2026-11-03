@@ -3,11 +3,15 @@ using System.Text.Json.Nodes;
 
 namespace NarutoAutoGUI.ProjectModel;
 
-public enum ProjectOptionKind { Input, Select, Switch }
+public enum ProjectOptionKind { Input, Select, Switch, Checkbox }
 
 public sealed record ProjectInputEditor(
     string Name, string Label, string Description, string DefaultValue, string Value,
-    bool IsExplicit, string? Verify, string? PatternMessage);
+    bool IsExplicit, string? Verify, string? PatternMessage)
+{
+    // Set when the value still fails verify; it may be shown and saved around, but blocks Start.
+    public string? Error { get; init; }
+}
 
 public sealed record ProjectCaseEditor(string Name, string Label, string Description);
 
@@ -15,7 +19,20 @@ public sealed record ProjectOptionEditor(
     string Name, string Label, string Description, ProjectOptionKind Kind, bool IsExplicit,
     string? SelectedCase, string? DefaultCase,
     IReadOnlyList<ProjectCaseEditor> Cases, IReadOnlyList<ProjectInputEditor> Inputs,
-    IReadOnlyList<ProjectOptionEditor> ActiveChildren);
+    IReadOnlyList<ProjectOptionEditor> ActiveChildren)
+{
+    // The active cases in declaration order: the one select/switch case, or every checked checkbox case.
+    public IReadOnlyList<string> SelectedCases { get; init; } = [];
+    public int MinCount { get; init; }
+    public int? MaxCount { get; init; }
+
+    // A checkbox below min_count may be saved, but a Run cannot start with it.
+    public bool IsBelowMinimum => SelectedCases.Count < MinCount;
+
+    // Why a Run cannot start with this option yet, or null when it can.
+    public string? StartBlocker => IsBelowMinimum ? $"至少选择 {MinCount} 项"
+        : Inputs.Select(input => input.Error).FirstOrDefault(error => error is not null);
+}
 
 public sealed record ProjectConfigurationView(
     IReadOnlyList<ProjectOptionEditor> GlobalOptions, IReadOnlyList<ProjectOptionEditor> TaskOptions);
@@ -55,7 +72,34 @@ internal static class ExplicitOptionIntent
         return result;
     }
 
-    internal static string? ReadSelectedCase(OptionDefinition option, TaskConfiguration config)
+    // The cases a select, switch or checkbox uses, in declaration order; without an explicit choice, its defaults.
+    internal static IReadOnlyList<CaseDefinition> ReadActiveCases(OptionDefinition option, TaskConfiguration config)
+    {
+        IReadOnlyList<string> names = option.Kind == OptionDefinitionKind.Checkbox
+            ? ReadSelectedCases(option, config) ?? option.DefaultCases
+            : [ReadSelectedCase(option, config) ?? option.DefaultCase!];
+        if (names.FirstOrDefault(name => option.Cases.All(item => item.Name != name)) is { } unknown) {
+            throw new InvalidDataException($"option {option.Name} 的 case {unknown} 不存在。 ");
+        }
+        return option.Cases.Where(item => names.Contains(item.Name)).ToArray();
+    }
+
+    private static IReadOnlyList<string>? ReadSelectedCases(OptionDefinition option, TaskConfiguration config)
+    {
+        if (!config.ExplicitOptions.TryGetValue(option.Name, out var element)) {
+            return null;
+        }
+        var root = RequireObject(element, option.Name);
+        RejectUnknown(root, "SelectedCases", option.Name);
+        if (!root.TryGetProperty("SelectedCases", out var selected) || selected.ValueKind != JsonValueKind.Array
+            || selected.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.String)) {
+            throw new InvalidDataException(
+                $"ExplicitOptions.{option.Name}.SelectedCases 必须是 string 数组。 ");
+        }
+        return selected.EnumerateArray().Select(item => item.GetString()!).ToArray();
+    }
+
+    private static string? ReadSelectedCase(OptionDefinition option, TaskConfiguration config)
     {
         if (!config.ExplicitOptions.TryGetValue(option.Name, out var element)) {
             return null;
@@ -82,6 +126,10 @@ internal static class ExplicitOptionIntent
 
     internal static JsonElement CreateSelectedCase(string selectedCase) =>
         ToElement(new JsonObject { ["SelectedCase"] = selectedCase });
+
+    internal static JsonElement CreateSelectedCases(IEnumerable<string> selectedCases) => ToElement(new JsonObject {
+        ["SelectedCases"] = new JsonArray(selectedCases.Select(name => (JsonNode)name).ToArray())
+    });
 
     private static JsonElement RequireObject(JsonElement element, string optionName)
     {

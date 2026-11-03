@@ -508,7 +508,7 @@ public partial class MainWindow : FluentWindow
 
     private async void PrepareAndRunButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!CommitFocusedConfigurationInput() || RevealInvalidInputDraft() || OperationOrExitInProgress) {
+        if (!CommitFocusedConfigurationInput() || RevealInvalidParameter() || OperationOrExitInProgress) {
             return;
         }
         await PrepareFromPanelAsync(startRun: true);
@@ -576,7 +576,7 @@ public partial class MainWindow : FluentWindow
 
     private async void StartRunButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!CommitFocusedConfigurationInput() || RevealInvalidInputDraft()) {
+        if (!CommitFocusedConfigurationInput() || RevealInvalidParameter()) {
             return;
         }
         if (CurrentControls.Action is not (RuntimeAction.Start { Enabled: true }
@@ -734,33 +734,36 @@ public partial class MainWindow : FluentWindow
             new ColorAnimation(restoreSurface, duration) { BeginTime = delay });
     }
 
-    // A field holding an invalid, unsaved value blocks Start: show that field instead of running the saved value.
-    private bool RevealInvalidInputDraft()
+    // An invalid parameter blocks Start: show the field holding an invalid, unsaved value, or the checkbox row below
+    // min_count, instead of running.
+    private bool RevealInvalidParameter()
     {
-        if (_projectPlan is not { } project
-            || !_invalidInputDrafts.Keys.Any(key => key.Item1 == project.ActiveConfigurationId)) {
+        if (_projectPlan is not { } project) {
             return false;
         }
         var match = project.SelectedItems.OrderBy(task => IsExpanded(task) ? 0 : 1)
             .SelectMany(task => DeriveInspectorRows(task.Name, GetConfigurationOrEmpty(task.Name, task.Kind),
-                shared: false, task.Kind).SelectMany(row => row.Inputs.Select(input => (Task: task,
-                    Option: row.Option.Name, Key: (project.ActiveConfigurationId, row.Option.Name, input.Input.Name)))))
-            .FirstOrDefault(item => _invalidInputDrafts.ContainsKey(item.Key));
+                shared: false, task.Kind).Where(row => row.IsInvalid).Select(row => (Task: task, Row: row)))
+            .FirstOrDefault();
         if (match.Task is null) {
             return false;
         }
-        if (!IsExpanded(match.Task) || !_optionInputEditors.ContainsKey(match.Key)) {
+        var option = match.Row.Option.Name;
+        var field = match.Row.Inputs.FirstOrDefault(input => input.Error is not null);
+        FrameworkElement? Target() => field is null ? _inspectorRows.GetValueOrDefault(option)?.Row
+            : _optionInputEditors.GetValueOrDefault((project.ActiveConfigurationId, option, field.Input.Name));
+        if (!IsExpanded(match.Task) || Target() is null) {
             _expandedTaskName = match.Task.Name;
             _expandedTaskKind = match.Task.Kind;
             RenderTaskPlan();
         }
-        if (_optionInputEditors.TryGetValue(match.Key, out var editor)) {
+        if (Target() is { } target) {
             _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => {
-                BringIntoPlanView(editor);
-                editor.Focus();
+                BringIntoPlanView(target);
+                target.Focus();
             });
         }
-        _logger.Info($"参数 {match.Option} 未通过校验，已阻止开始任务。 ");
+        _logger.Info($"参数 {option} 未通过校验，已阻止开始任务。 ");
         return true;
     }
 
@@ -904,7 +907,13 @@ public partial class MainWindow : FluentWindow
         AutomationProperties.SetItemStatus(editor, message ?? string.Empty);
     }
 
-    private void SaveSelectedCase(Guid configurationId, string optionName, string caseName)
+    private void SaveSelectedCase(Guid configurationId, string optionName, string caseName) =>
+        SaveCaseChoice(optionName, project => project.SetSelectedCase(configurationId, optionName, caseName));
+
+    private void SaveSelectedCases(Guid configurationId, string optionName, IReadOnlyCollection<string> caseNames) =>
+        SaveCaseChoice(optionName, project => project.SetSelectedCases(configurationId, optionName, caseNames));
+
+    private void SaveCaseChoice(string optionName, Action<ProjectPlanModule> save)
     {
         if (_updatingOptionEditors || !CurrentControls.ConfigurationEditable) {
             return;
@@ -912,12 +921,12 @@ public partial class MainWindow : FluentWindow
 
         try {
             var before = GetExpandedOptionNames();
-            _ = RequireProject().SetSelectedCase(configurationId, optionName, caseName);
+            save(RequireProject());
             _pendingStartAttempt = null;
             RefreshAfterOptionSaved(!before.SequenceEqual(GetExpandedOptionNames()));
             _logger.Info($"已保存 MaaNOP explicit case：option={optionName}。 ");
         } catch (Exception exception) {
-            HandleOperationError("保存 MaaNOP select/switch option 失败", exception);
+            HandleOperationError("保存 MaaNOP select/switch/checkbox option 失败", exception);
             TryRenderTaskPlan();
             ShowProjectValidationError(exception);
         }
@@ -1400,8 +1409,9 @@ public partial class MainWindow : FluentWindow
         summary.Inlines.Clear();
         foreach (var row in DeriveInspectorRows(taskName, configuration, shared: false, kind)) {
             var parts = row.Kind == ProjectOptionKind.Input
-                ? row.Inputs.Select(input => (input.Label, Value: input.DisplayValue, Invalid: input.Draft is not null))
-                : [(row.Label, Value: row.SelectedCase?.Label ?? string.Empty, Invalid: false)];
+                ? row.Inputs.Select(input => (input.Label, Value: input.DisplayValue, Invalid: input.Error is not null))
+                : [(row.Label, Value: row.Kind == ProjectOptionKind.Checkbox ? ParameterInspector.ShowCases(row.Option)
+                    : row.SelectedCase?.Label ?? string.Empty, Invalid: row.IsInvalid)];
             foreach (var (label, value, invalid) in parts) {
                 if (summary.Inlines.Count != 0) {
                     summary.Inlines.Add(new System.Windows.Documents.Run(" · "));
@@ -1546,9 +1556,6 @@ public partial class MainWindow : FluentWindow
         editor.PreviewKeyDown += OptionInputTextBox_PreviewKeyDown;
         BindConfigurationEditable(editor);
         _optionInputEditors[tag.Key] = editor;
-        if (input.Draft is { } draft) {
-            ShowOptionInputError(editor, draft.Message);
-        }
         return editor;
     }
 
@@ -1558,7 +1565,40 @@ public partial class MainWindow : FluentWindow
         var configurationId = _projectPlan!.ActiveConfigurationId;
         System.Windows.Controls.Control selector;
         FrameworkElement field;
-        if (option.Kind == ProjectOptionKind.Switch) {
+        if (option.Kind == ProjectOptionKind.Checkbox && option.Cases.Count == 1) {
+            var only = option.Cases[0];
+            var checkBox = new System.Windows.Controls.CheckBox {
+                Content = only.Label, IsChecked = option.SelectedCases.Count == 1,
+                ToolTip = string.IsNullOrWhiteSpace(only.Description) ? null : only.Description,
+                MinWidth = 0, Padding = new Thickness(0), Margin = new Thickness(0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            checkBox.Click += (_, _) =>
+                SaveSelectedCases(configurationId, option.Name, checkBox.IsChecked == true ? [only.Name] : []);
+            selector = checkBox;
+            field = new Grid { Height = (double)FindResource("Height.OptionEditor"), Children = { checkBox } };
+        } else if (option.Kind == ProjectOptionKind.Checkbox) {
+            var segments = new System.Windows.Controls.ListBox {
+                ItemsSource = option.Cases, Style = (Style)FindResource("Option.Segments")
+            };
+            foreach (var item in option.Cases.Where(item => option.SelectedCases.Contains(item.Name))) {
+                segments.SelectedItems.Add(item);
+            }
+            segments.SelectionChanged += (_, e) => {
+                var selected = segments.SelectedItems.Cast<ProjectCaseEditor>().ToArray();
+                if (selected.Length > option.MaxCount) {
+                    // At max_count 1 a new pick replaces the old one; a wider limit refuses the extra pick. Either
+                    // removal raises SelectionChanged again, which saves.
+                    var extra = option.MaxCount == 1 ? selected.Except(e.AddedItems.Cast<ProjectCaseEditor>())
+                        : e.AddedItems.Cast<ProjectCaseEditor>();
+                    extra.ToList().ForEach(segments.SelectedItems.Remove);
+                    return;
+                }
+                SaveSelectedCases(configurationId, option.Name, selected.Select(item => item.Name).ToArray());
+            };
+            selector = segments;
+            field = segments;
+        } else if (option.Kind == ProjectOptionKind.Switch) {
             // One click flips a switch; the on/off captions keep the PI case labels visible.
             var (on, off) = GetSwitchCases(option);
             var toggle = new Wpf.Ui.Controls.ToggleSwitch {
@@ -1605,14 +1645,26 @@ public partial class MainWindow : FluentWindow
         if (row.CaseDescription is { } caseDescription) {
             view.CaseNotes.Children.Add(CreateInspectorNote(caseDescription, "Inspector.Note"));
         }
+        if (row.Option.IsBelowMinimum) {
+            view.CaseNotes.Children.Add(CreateInspectorNote(
+                $"至少选择 {row.Option.MinCount} 项，否则不能开始任务", "Inspector.Error"));
+        } else if (row.Option.Cases.Count > 1 && ParameterInspector.DescribeLimits(row.Option) is { } limits) {
+            view.CaseNotes.Children.Add(CreateInspectorNote(limits, "Inspector.Note"));
+        }
         foreach (var input in row.Inputs) {
             if (!view.InputNotes.TryGetValue(input.Input.Name, out var notes)) {
                 continue;
             }
             notes.Children.Clear();
-            if (input.Draft is { } draft) {
+            if (_optionInputEditors.TryGetValue(
+                (_projectPlan!.ActiveConfigurationId, row.Option.Name, input.Input.Name), out var editor)) {
+                ShowOptionInputError(editor, input.Error);
+            }
+            if (input.Error is { } error) {
+                notes.Children.Add(CreateInspectorNote(error, "Inspector.Error"));
+            }
+            if (input.Draft is not null) {
                 var saved = ParameterInspector.ShowValue(input.SavedValue);
-                notes.Children.Add(CreateInspectorNote(draft.Message, "Inspector.Error"));
                 notes.Children.Add(CreateInspectorNote($"未保存，仍使用「{saved}」· Esc 还原", "Inspector.DraftNote"));
             }
         }

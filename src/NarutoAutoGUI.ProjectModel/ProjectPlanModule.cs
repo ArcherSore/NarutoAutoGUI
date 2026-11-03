@@ -13,7 +13,7 @@ public sealed record ProjectTaskGroup(string Name, string Label, string Descript
 
 public sealed record RunStartAttempt(Guid RunId, RunPlan Plan, string PlanDigest);
 
-public sealed class ProjectPlanModule
+public sealed partial class ProjectPlanModule
 {
     private readonly ProjectDefinition _project;
     private readonly MaaNopConfigStore _configStore;
@@ -103,17 +103,9 @@ public sealed class ProjectPlanModule
     public string? InitializedTaskName { get; }
     public IReadOnlyList<TaskConfiguration> Configurations => _config.Configurations;
 
-    public Guid CreateConfiguration()
-    {
-        var configuration = new TaskConfiguration {
-            Id = Guid.NewGuid(), Name = $"配置 {_config.Configurations.Count + 1}"
-        };
-        SaveConfig(_config with {
-            ActiveConfigurationId = configuration.Id,
-            Configurations = _config.Configurations.Append(configuration).ToArray()
-        });
-        return configuration.Id;
-    }
+    public Guid CreateConfiguration() => AddConfiguration(new TaskConfiguration {
+        Id = Guid.NewGuid(), Name = $"配置 {_config.Configurations.Count + 1}"
+    });
 
     public void ActivateConfiguration(Guid id)
     {
@@ -399,6 +391,15 @@ public sealed class ProjectPlanModule
     private TaskConfiguration FindConfiguration(Guid id) =>
         _config.Configurations.SingleOrDefault(item => item.Id == id)
         ?? throw new InvalidOperationException("目标配置已不存在。");
+
+    private Guid AddConfiguration(TaskConfiguration configuration)
+    {
+        SaveConfig(_config with {
+            ActiveConfigurationId = configuration.Id,
+            Configurations = _config.Configurations.Append(configuration).ToArray()
+        });
+        return configuration.Id;
+    }
 
     private void SaveConfiguration(TaskConfiguration configuration)
     {

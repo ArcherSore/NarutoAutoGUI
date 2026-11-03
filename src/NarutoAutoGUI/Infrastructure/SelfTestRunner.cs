@@ -47,6 +47,7 @@ internal static partial class SelfTestRunner
             var projectDirectory = CreateProjectFixture(testDirectory);
             VerifyPretaskModel(testDirectory);
             VerifyPretaskGuiWiring(logger, testDirectory);
+            VerifyPresets(logger, testDirectory);
             VerifyFirstConfiguration(testDirectory, projectDirectory);
             VerifyConfigurationMigration(testDirectory, projectDirectory);
             VerifyIndependentConfigurations(testDirectory, projectDirectory);

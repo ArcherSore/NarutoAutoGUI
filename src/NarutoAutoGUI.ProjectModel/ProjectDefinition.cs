@@ -23,7 +23,13 @@ internal sealed record ProjectDefinition(
     IReadOnlyList<ResourceDefinition> Resources, AgentDefinition Agent, string RuntimeProfileDigest,
     IReadOnlyList<string> GlobalOptions, IReadOnlyList<TaskDefinition> Tasks,
     IReadOnlyDictionary<string, OptionDefinition> Options, IReadOnlyList<ProjectTaskGroup> Groups,
-    IReadOnlyList<PretaskDefinition> Pretasks);
+    IReadOnlyList<PretaskDefinition> Pretasks, IReadOnlyList<PresetDefinition> Presets);
+
+internal sealed record PresetDefinition(
+    string Name, string Label, string Description, IReadOnlyList<PresetItem> Tasks,
+    IReadOnlyList<PresetItem> Pretasks);
+
+internal sealed record PresetItem(string Name, bool Enabled, JsonElement Options);
 
 internal sealed record PretaskDefinition(
     string Name, string Label, string Description, string Executable, IReadOnlyList<string> Arguments,

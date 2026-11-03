@@ -4,12 +4,12 @@ using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoGUI.ProjectModel;
 
-internal static class ProjectInterfaceLoader
+internal static partial class ProjectInterfaceLoader
 {
     private static readonly HashSet<string> AllowedTopLevelProperties = new(StringComparer.Ordinal)
     {
         "interface_version", "name", "label", "version", "description", "icon", "github",
-        "controller", "resource", "agent", "global_option", "task", "option", "group", "pretask"
+        "controller", "resource", "agent", "global_option", "task", "option", "group", "pretask", "preset"
     };
 
     private static readonly HashSet<string> AllowedControllerProperties = new(StringComparer.Ordinal)
@@ -134,7 +134,7 @@ internal static class ProjectInterfaceLoader
             projectRoot, controller, resources, agent);
         return new ProjectDefinition(
             projectRoot, provenance, controller, resources, agent, runtimeProfileDigest,
-            globalOptions, tasks, options, groups, pretasks);
+            globalOptions, tasks, options, groups, pretasks, ParsePresets(root));
     }
 
     private static IReadOnlyList<PretaskDefinition> ParsePretasks(
@@ -255,13 +255,7 @@ internal static class ProjectInterfaceLoader
             if (!names.Add(name)) {
                 throw new InvalidDataException($"重复 group.name：{name}。 ");
             }
-            var defaultExpand = true;
-            if (obj.TryGetProperty("default_expand", out var expand)) {
-                if (expand.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) {
-                    throw new InvalidDataException($"{path}.default_expand 必须是 boolean。 ");
-                }
-                defaultExpand = expand.GetBoolean();
-            }
+            var defaultExpand = OptionalBoolean(obj, "default_expand", path, fallback: true);
             groups.Add(new ProjectTaskGroup(
                 name, OptionalString(obj, "label") ?? name,
                 ReadOptionalDescription(obj, "description") ?? string.Empty,
@@ -409,7 +403,7 @@ internal static class ProjectInterfaceLoader
         }
     }
 
-    private static HashSet<string> CollectOptionNames(
+    internal static HashSet<string> CollectOptionNames(
         IEnumerable<string> roots, IReadOnlyDictionary<string, OptionDefinition> options)
     {
         var result = new HashSet<string>(StringComparer.Ordinal);
@@ -619,6 +613,17 @@ internal static class ProjectInterfaceLoader
             throw new InvalidDataException($"{path}.{name} 必须是非负整数。 ");
         }
         return count;
+    }
+
+    private static bool OptionalBoolean(JsonElement obj, string name, string path, bool fallback)
+    {
+        if (!obj.TryGetProperty(name, out var value)) {
+            return fallback;
+        }
+        if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) {
+            throw new InvalidDataException($"{path}.{name} 必须是 boolean。 ");
+        }
+        return value.GetBoolean();
     }
 
     private static string? ReadDisplayString(JsonElement obj, string name)

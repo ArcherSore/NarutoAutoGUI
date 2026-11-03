@@ -930,6 +930,12 @@
                                             Click="NewConfigurationButton_Click">
                                         <ui:SymbolIcon Symbol="Add16" FontSize="15" />
                                     </Button>
+                                    <Button x:Name="PresetConfigurationButton" DockPanel.Dock="Right"
+                                            Style="{StaticResource Configuration.Add}" Visibility="Collapsed"
+                                            ToolTip="从预设新建配置" AutomationProperties.Name="从预设新建配置"
+                                            Click="PresetConfigurationButton_Click">
+                                        <ui:SymbolIcon Symbol="ChevronDown16" FontSize="15" />
+                                    </Button>
                                     <TabControl x:Name="ConfigurationTabs" BorderThickness="0" Padding="0"
                                                 Background="Transparent"
                                                 SelectionChanged="ConfigurationTabs_SelectionChanged"

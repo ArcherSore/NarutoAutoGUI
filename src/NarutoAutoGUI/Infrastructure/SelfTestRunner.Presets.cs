@@ -23,17 +23,19 @@ internal static partial class SelfTestRunner
             """);
         root["preset"] = JsonNode.Parse("""
             [{"name":"daily","label":"日常预设","description":"预设说明","icon":"daily.png","task":[
-                {"name":"SecondTask","option":{"Mode":"Default","Nested":"Off","ServerRange":{"server_range":"979"}}},
-                {"name":"RealTask","enabled":false,"option":{"Mode":"Default","ServerRange":{"retry_count":"4"}}}]},
+                {"name":"SecondTask","option":{"Mode":"Default","Nested":"Off",
+                    "ServerRange":{"server_range":"979","retry_count":"4"}}},
+                {"name":"RealTask","enabled":false,"option":{"Mode":"Minimal","ServerRange":{"server_range":"1"}}}]},
              {"name":"startup","task":[],"pretask":[
-                {"name":"Other"},{"name":"Launch","option":{"Mode":"Minimal"}},
-                {"name":"Missing"},{"name":"Filtered"}]},
-             {"name":"clear"}]
+                {"name":"Other"},{"name":"Launch","option":{"Mode":"Minimal"}},{"name":"Filtered"}]},
+             {"name":"clear"},
+             {"name":"merge","task":[{"name":"RealTask","option":{"ServerRange":{"server_range":"979"}}},
+                {"name":"SecondTask","option":{"ServerRange":{"retry_count":"4"}}}]}]
             """);
         File.WriteAllText(interfacePath, root.ToJsonString());
         var path = Path.Combine(directory, "config.json");
         var project = ProjectPlanModule.Open(directory, path);
-        Require(project.Presets.Select(item => item.Name).SequenceEqual(["daily", "startup", "clear"])
+        Require(project.Presets.Select(item => item.Name).SequenceEqual(["daily", "startup", "clear", "merge"])
             && project.Presets[0].Description == "预设说明" && project.Presets[1].Label == "startup",
             "预设必须保留顺序、名称回退和展示信息。");
         var original = project.ActiveConfigurationId;
@@ -52,9 +54,8 @@ internal static partial class SelfTestRunner
         project = ProjectPlanModule.Open(directory, path);
         var inputs = project.Configurations[1].ExplicitOptions["ServerRange"].GetProperty("Inputs");
         Require(project.ActiveConfigurationId == daily && project.SelectedTaskNames.SequenceEqual(["SecondTask"])
-            && inputs.GetProperty("server_range").GetString() == "979"
-            && inputs.GetProperty("retry_count").GetString() == "4",
-            "预设配置必须通过现有持久化重开；禁用任务保留选项但不能重新启用，不同任务的 input 字段必须合并。");
+            && inputs.GetProperty("server_range").GetString() == "979",
+            "预设配置必须通过现有持久化重开；禁用任务不加入配置，其选项也必须被忽略。");
         project.SetInputValue(daily, "ServerRange", "retry_count", "5");
         project.CreateConfigurationFromPreset("daily");
         Require(project.Configurations.Single(item => item.Id == daily).ExplicitOptions["ServerRange"]
@@ -63,10 +64,14 @@ internal static partial class SelfTestRunner
         project.CreateConfigurationFromPreset("startup");
         Require(project.CreateRunStartAttempt().Plan.Items.Select(item => item.TaskName)
             .SequenceEqual(["Launch", "Other"]),
-            "preset.pretask 必须忽略缺失/不适用项，并按顶层声明顺序执行。");
+            "preset.pretask 必须跳过不适用项，并按顶层声明顺序执行。");
         project.CreateConfigurationFromPreset("clear");
         Require(project.SelectedItemCount == 0 && project.Configurations[^1].ExplicitOptions.Count == 0,
             "省略 pretask 时只使用项目默认值，不能继承上份配置的启动阶段或参数。");
+        project.CreateConfigurationFromPreset("merge");
+        inputs = project.Configurations[^1].ExplicitOptions["ServerRange"].GetProperty("Inputs");
+        Require(inputs.GetProperty("server_range").GetString() == "979"
+            && inputs.GetProperty("retry_count").GetString() == "4", "不同任务对同一 input 的不同字段必须合并。");
         Require(Throws<ArgumentException>(() => project.CreateConfigurationFromPreset("Missing")),
             "不存在的预设必须拒绝，不能创建空配置。");
         VerifyPresetFailures(directory, root);
@@ -79,6 +84,8 @@ internal static partial class SelfTestRunner
         var interfacePath = Path.Combine(directory, "interface.json");
         string[] invalid = [
             """[{"name":"bad","task":[{"name":"Missing"}]}]""",
+            """[{"name":"bad","task":[{"name":"Missing","enabled":false}]}]""",
+            """[{"name":"bad","pretask":[{"name":"Missing"}]}]""",
             """[{"name":"bad","task":[{"name":"RealTask","option":{"Mode":"Missing"}}]}]""",
             """[{"name":"bad","task":[{"name":"RealTask","option":{"Mode":true}}]}]""",
             """[{"name":"bad","task":[{"name":"RealTask","option":{"Other":"x"}}]}]""",
@@ -132,7 +139,7 @@ internal static partial class SelfTestRunner
             Require(button.Visibility == Visibility.Visible, "有预设时必须展示新建入口。");
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             var menu = button.ContextMenu!;
-            Require(menu.Items.Count == 3 && ((MenuItem)menu.Items[0]).Header as string == "日常预设",
+            Require(menu.Items.Count == 4 &&((MenuItem)menu.Items[0]).Header as string == "日常预设",
                 "预设菜单必须按项目顺序显示名称。");
             menu.IsOpen = false;
             var count = project.Configurations.Count;

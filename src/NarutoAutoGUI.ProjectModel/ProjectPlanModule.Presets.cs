@@ -13,23 +13,29 @@ public sealed partial class ProjectPlanModule
     {
         var preset = _project.Presets.SingleOrDefault(item => item.Name == presetName)
             ?? throw new ArgumentException($"预设不存在：{presetName}。", nameof(presetName));
+        // A preset starts from project defaults; nothing is taken from the current configuration. A configuration
+        // cannot persist an unchecked item, so a disabled item is left out together with its options.
         var options = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var item in preset.Tasks) {
             var task = _project.Tasks.SingleOrDefault(task => task.Name == item.Name)
                 ?? throw new InvalidDataException($"预设引用了不存在的任务 {item.Name}。");
-            ReadPresetOptions(item, _project.GlobalOptions.Concat(task.Options), options, typed: true);
+            if (item.Enabled) {
+                ReadPresetOptions(item, _project.GlobalOptions.Concat(task.Options), options, typed: true);
+            }
         }
-        // A preset starts from project defaults; nothing is taken from the current configuration.
-        var pretasks = preset.Pretasks.Where(item =>
-            _project.Pretasks.Any(definition => definition.Name == item.Name && definition.Applicable)).ToArray();
-        foreach (var item in pretasks) {
-            ReadPresetOptions(item, FindPretask(item.Name).Options, options, typed: false);
+        var pretasks = new List<string>();
+        foreach (var item in preset.Pretasks) {
+            var pretask = _project.Pretasks.SingleOrDefault(pretask => pretask.Name == item.Name)
+                ?? throw new InvalidDataException($"预设引用了不存在的前置任务 {item.Name}。");
+            if (item.Enabled && pretask.Applicable) {
+                ReadPresetOptions(item, pretask.Options, options, typed: false);
+                pretasks.Add(item.Name);
+            }
         }
         var configuration = new TaskConfiguration {
             Id = Guid.NewGuid(), Name = preset.Label,
             SelectedTasks = preset.Tasks.Where(item => item.Enabled).Select(item => item.Name).ToArray(),
-            SelectedPretasks = pretasks.Where(item => item.Enabled).Select(item => item.Name).ToArray(),
-            ExplicitOptions = options
+            SelectedPretasks = pretasks, ExplicitOptions = options
         };
         ValidateActiveConfiguration(configuration);
         SaveConfig(_config with {

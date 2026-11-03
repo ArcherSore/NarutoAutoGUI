@@ -107,14 +107,11 @@ internal static partial class SelfTestRunner
             Require(Option("Tier").SelectedCases.SequenceEqual(["High"]) && Segments("Tier").SelectedItems.Count == 1,
                 "max_count 为 1 时，新勾选必须替换旧勾选。");
 
-            var single = ConfigurationDescendants(items).OfType<CheckBox>()
-                .Single(box => AutomationProperties.GetName(box) == "Finish");
-            single.IsChecked = true;
-            single.RaiseEvent(new System.Windows.RoutedEventArgs(
-                System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-            Require(single.Content as string == "Finish directly" && Equals(single.ToolTip, "Skip the progress check")
-                && ParameterInspector.ShowCases(Option("Single")) == "是",
-                "单 case checkbox 必须显示为勾选框，摘要显示为是/否。");
+            Segments("Finish").SelectedItems.Add(Case(Segments("Finish"), "Enabled"));
+            Require(Option("Single").SelectedCases.SequenceEqual(["Enabled"])
+                && !ConfigurationDescendants(items).OfType<CheckBox>().Any(box => AutomationProperties.GetName(box)
+                    == "Finish") && ParameterInspector.ShowCases(Option("Single")) == "Finish directly",
+                "单 case checkbox 也必须显示为分段，摘要显示 case 标签。");
         }, AddCheckboxOptions);
     }
 

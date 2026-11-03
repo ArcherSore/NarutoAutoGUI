@@ -1565,19 +1565,7 @@ public partial class MainWindow : FluentWindow
         var configurationId = _projectPlan!.ActiveConfigurationId;
         System.Windows.Controls.Control selector;
         FrameworkElement field;
-        if (option.Kind == ProjectOptionKind.Checkbox && option.Cases.Count == 1) {
-            var only = option.Cases[0];
-            var checkBox = new System.Windows.Controls.CheckBox {
-                Content = only.Label, IsChecked = option.SelectedCases.Count == 1,
-                ToolTip = string.IsNullOrWhiteSpace(only.Description) ? null : only.Description,
-                MinWidth = 0, Padding = new Thickness(0), Margin = new Thickness(0),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            checkBox.Click += (_, _) =>
-                SaveSelectedCases(configurationId, option.Name, checkBox.IsChecked == true ? [only.Name] : []);
-            selector = checkBox;
-            field = new Grid { Height = (double)FindResource("Height.OptionEditor"), Children = { checkBox } };
-        } else if (option.Kind == ProjectOptionKind.Checkbox) {
+        if (option.Kind == ProjectOptionKind.Checkbox) {
             var segments = new System.Windows.Controls.ListBox {
                 ItemsSource = option.Cases, Style = (Style)FindResource("Option.Segments")
             };

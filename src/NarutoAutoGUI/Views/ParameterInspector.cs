@@ -48,12 +48,9 @@ internal static class ParameterInspector
     // An empty value is spelled out so a note never ends in nothing.
     internal static string ShowValue(string value) => value.Length == 0 ? "空" : value;
 
-    // Checked labels in declaration order; a lone case reads as yes or no.
+    // Checked labels in declaration order.
     internal static string ShowCases(ProjectOptionEditor option)
     {
-        if (option.Cases.Count == 1) {
-            return option.SelectedCases.Count == 0 ? "否" : "是";
-        }
         var labels = option.Cases.Where(item => option.SelectedCases.Contains(item.Name)).Select(item => item.Label);
         return option.SelectedCases.Count == 0 ? "无" : string.Join("、", labels);
     }

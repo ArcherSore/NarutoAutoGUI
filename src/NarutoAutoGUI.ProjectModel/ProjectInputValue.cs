@@ -6,10 +6,15 @@ namespace NarutoAutoGUI.ProjectModel;
 
 internal static class ProjectInputValue
 {
-    // An untyped value is only verified and stays a string; pretask programs receive inputs as raw text.
-    internal static JsonNode Parse(InputDefinition input, string value, string context, bool typed)
+    // An untyped value is only verified and stays a string; pretask programs receive inputs as raw text. A default that
+    // fails verify marks a field the user must still fill in: it stays raw text, and the caller blocks Start instead.
+    internal static JsonNode Parse(InputDefinition input, string value, string context, bool typed,
+        bool isDefault = false)
     {
-        ValidatePattern(input, value, context);
+        if (!Matches(input, value, context)) {
+            return isDefault ? JsonValue.Create(value)! : throw new InvalidDataException(input.PatternMessage is null
+                ? $"{context} 未通过 verify。 " : $"{context}: {input.PatternMessage}");
+        }
         if (!typed) {
             return JsonValue.Create(value)!;
         }
@@ -29,10 +34,10 @@ internal static class ProjectInputValue
         };
     }
 
-    private static void ValidatePattern(InputDefinition input, string value, string context)
+    internal static bool Matches(InputDefinition input, string value, string context)
     {
         if (input.Verify is null) {
-            return;
+            return true;
         }
 
         const string defaultSuffix = ".default";
@@ -49,12 +54,7 @@ internal static class ProjectInputValue
         }
 
         try {
-            if (!regex.IsMatch(value)) {
-                throw new InvalidDataException(
-                    input.PatternMessage is null
-                        ? $"{context} 未通过 verify。 "
-                        : $"{context}: {input.PatternMessage}");
-            }
+            return regex.IsMatch(value);
         } catch (RegexMatchTimeoutException exception) {
             throw new InvalidDataException(
                 $"{verifyContext} 执行超时。",

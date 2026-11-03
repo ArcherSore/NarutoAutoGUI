@@ -62,7 +62,8 @@ internal static class ProjectInterfaceLoader
 
     private static readonly HashSet<string> AllowedOptionProperties = new(StringComparer.Ordinal)
     {
-        "type", "label", "description", "icon", "default_case", "cases", "inputs", "pipeline_override"
+        "type", "label", "description", "icon", "default_case", "cases", "inputs", "pipeline_override", "min_count",
+        "max_count"
     };
 
     private static readonly HashSet<string> AllowedInputProperties = new(StringComparer.Ordinal)
@@ -305,16 +306,18 @@ internal static class ProjectInterfaceLoader
             var option = RequireObject(property.Value, path);
             RejectUnknownProperties(option, AllowedOptionProperties, path);
             var kind = ParseOptionKind(OptionalString(option, "type") ?? "select", path);
-            if (kind is OptionDefinitionKind.Select or OptionDefinitionKind.Switch
-                && option.TryGetProperty("pipeline_override", out _)) {
+            if (kind is not OptionDefinitionKind.Input && option.TryGetProperty("pipeline_override", out _)) {
                 throw new InvalidDataException(
                     $"{FormatOptionKind(kind)} option {path} 不能声明 pipeline_override；请放到对应 case 中。 ");
             }
+            var checkbox = kind == OptionDefinitionKind.Checkbox;
             result.Add(property.Name, new OptionDefinition(
                 property.Name,
                 ReadDisplayString(option, "label") ?? property.Name,
                 ReadDisplayString(option, "description") ?? string.Empty,
-                kind, OptionalString(option, "default_case"),
+                kind, checkbox ? null : OptionalString(option, "default_case"),
+                checkbox ? ReadStringArray(option, "default_case", required: false, path) : [],
+                ReadCount(option, "min_count", path) ?? 0, ReadCount(option, "max_count", path),
                 ParseInputs(option, path), ParseCases(option, path),
                 ReadObjectOrEmpty(option, "pipeline_override", path)));
         }
@@ -440,7 +443,7 @@ internal static class ProjectInterfaceLoader
                 for (var inputIndex = 0; inputIndex < option.Inputs.Count; inputIndex++) {
                     var input = option.Inputs[inputIndex];
                     _ = ProjectInputValue.Parse(input, input.Default, $"{path}.inputs[{inputIndex}].default",
-                        typed: !pretaskOnlyOptions.Contains(option.Name));
+                        typed: !pretaskOnlyOptions.Contains(option.Name), isDefault: true);
                 }
                 continue;
             }
@@ -454,6 +457,20 @@ internal static class ProjectInterfaceLoader
             }
             if (option.Kind == OptionDefinitionKind.Switch && option.Cases.Count != 2) {
                 throw new InvalidDataException($"switch option {path} 必须恰好有两个 case。 ");
+            }
+            if (option.Kind == OptionDefinitionKind.Checkbox) {
+                if (option.MinCount > (option.MaxCount ?? option.Cases.Count) || option.MaxCount > option.Cases.Count) {
+                    throw new InvalidDataException(
+                        $"{path} 需满足 min_count ≤ max_count ≤ cases 数量。 ");
+                }
+                if (option.DefaultCases.Count > option.MaxCount) {
+                    throw new InvalidDataException($"{path}.default_case 超过 max_count {option.MaxCount}。 ");
+                }
+                if (option.DefaultCases.FirstOrDefault(name => option.Cases.All(item => item.Name != name))
+                    is { } unknown) {
+                    throw new InvalidDataException($"{path}.default_case 引用了不存在的 case：{unknown}。 ");
+                }
+                continue;
             }
             if (option.DefaultCase is null) {
                 throw new InvalidDataException($"{path}.default_case 必须是非空 string。 ");
@@ -469,6 +486,7 @@ internal static class ProjectInterfaceLoader
         value switch {
             "select" => OptionDefinitionKind.Select,
             "switch" => OptionDefinitionKind.Switch,
+            "checkbox" => OptionDefinitionKind.Checkbox,
             "input" => OptionDefinitionKind.Input,
             _ => throw new InvalidDataException(
                 $"首版不支持 option type：{value}（{path}）。 ")
@@ -590,6 +608,17 @@ internal static class ProjectInterfaceLoader
             throw new InvalidDataException($"{name} 必须是非空 string。 ");
         }
         return value.GetString();
+    }
+
+    private static int? ReadCount(JsonElement obj, string name, string path)
+    {
+        if (!obj.TryGetProperty(name, out var value)) {
+            return null;
+        }
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var count) || count < 0) {
+            throw new InvalidDataException($"{path}.{name} 必须是非负整数。 ");
+        }
+        return count;
     }
 
     private static string? ReadDisplayString(JsonElement obj, string name)

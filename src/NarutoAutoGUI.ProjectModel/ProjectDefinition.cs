@@ -7,6 +7,7 @@ internal enum OptionDefinitionKind
 {
     Select,
     Switch,
+    Checkbox,
     Input
 }
 
@@ -34,7 +35,7 @@ internal sealed record TaskDefinition(
 
 internal sealed record OptionDefinition(
     string Name, string Label, string Description,
-    OptionDefinitionKind Kind, string? DefaultCase,
+    OptionDefinitionKind Kind, string? DefaultCase, IReadOnlyList<string> DefaultCases, int MinCount, int? MaxCount,
     IReadOnlyList<InputDefinition> Inputs, IReadOnlyList<CaseDefinition> Cases,
     JsonElement PipelineOverride);
 

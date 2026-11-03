@@ -60,6 +60,9 @@ internal static partial class SelfTestRunner
             VerifyParameterInspector(testDirectory, projectDirectory);
             VerifyPlanItemHeaders(logger, testDirectory);
             VerifyParameterInspectorWindow(logger, testDirectory);
+            VerifyCheckboxOptions(testDirectory);
+            VerifyCheckboxEditor(logger, testDirectory);
+            VerifyRequiredInputDefault(logger, testDirectory);
             VerifyProjectPlan(testDirectory, projectDirectory);
             VerifyTaskCatalogVariants(testDirectory, projectDirectory);
             VerifyTaskGroups(testDirectory, projectDirectory);

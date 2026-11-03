@@ -726,6 +726,89 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+        <!-- Checkbox cases as separate segments that wrap; checked ones fill with the primary colour. A case with a
+             description shows it as a tooltip. -->
+        <Style x:Key="Option.Segments" TargetType="ListBox">
+            <Setter Property="SelectionMode" Value="Multiple" />
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <WrapPanel />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBox">
+                        <ItemsPresenter />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemTemplate">
+                <Setter.Value>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Label}" Foreground="{Binding Foreground,
+                                   RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
+                    </DataTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Height" Value="30" />
+                        <Setter Property="Margin" Value="0,3,6,3" />
+                        <Setter Property="Padding" Value="12,0" />
+                        <Setter Property="Background" Value="{StaticResource Brush.Surface}" />
+                        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+                        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Body}" />
+                        <Setter Property="Cursor" Value="Hand" />
+                        <Setter Property="ToolTip" Value="{Binding Description}" />
+                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+                        <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                                            CornerRadius="{StaticResource Radius.Control}"
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter VerticalAlignment="Center" />
+                                    </Border>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Description}" Value="">
+                                <Setter Property="ToolTip" Value="{x:Null}" />
+                            </DataTrigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{StaticResource Brush.Surface.Subdued}" />
+                                <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Strong}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="{StaticResource Brush.Primary}" />
+                                <Setter Property="BorderBrush" Value="{StaticResource Brush.Primary}" />
+                                <Setter Property="Foreground" Value="{StaticResource Brush.Text.Inverse}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsSelected" Value="True" />
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                </MultiTrigger.Conditions>
+                                <Setter Property="Background" Value="{StaticResource Brush.Primary.Hover}" />
+                                <Setter Property="BorderBrush" Value="{StaticResource Brush.Primary.Hover}" />
+                            </MultiTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="{StaticResource Opacity.Disabled}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </ui:FluentWindow.Resources>
     <Grid x:Name="WindowOverlayRoot">
     <Grid x:Name="MainWindowContent">

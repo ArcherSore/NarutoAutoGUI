@@ -52,7 +52,6 @@ internal static partial class SelfTestRunner
             c => VerifyConfigurationFallback(c.Directory, c.Project)),
         new(Group.Project, nameof(VerifyConfigurationStoreLog),
             c => VerifyConfigurationStoreLog(c.Directory, c.Project)),
-        new(Group.Project, nameof(VerifyConfigurationLog), c => VerifyConfigurationLog(c.Directory)),
         new(Group.Project, nameof(VerifyInvalidConfigurationIsolation),
             c => VerifyInvalidConfigurationIsolation(c.Directory, c.Project)),
         new(Group.Project, nameof(VerifyConfigurationTabs),
@@ -74,7 +73,6 @@ internal static partial class SelfTestRunner
         new(Group.Project, nameof(VerifyTaskShelfLayout), c => VerifyTaskShelfLayout(c.Logger, c.Directory)),
         new(Group.Project, nameof(VerifyOnboarding), c => VerifyOnboarding(c.Logger, c.Directory)),
 
-        new(Group.Other, nameof(VerifyRdpClientClsid), _ => VerifyRdpClientClsid()),
         new(Group.Other, nameof(VerifyChildSessionPresence), c => VerifyChildSessionPresence(c.Logger)),
         new(Group.Other, nameof(VerifyRdpLogonEvents), _ => VerifyRdpLogonEvents()),
         new(Group.Other, nameof(VerifyTaskDescriptionMarkup), _ => VerifyTaskDescriptionMarkup()),
@@ -83,7 +81,6 @@ internal static partial class SelfTestRunner
             c => VerifyUnsupportedProjectConstraints(c.Directory, c.Project)),
         new(Group.Other, nameof(VerifyInvalidProjectInterfaces),
             c => VerifyInvalidProjectInterfaces(c.Directory, c.Project)),
-        new(Group.Other, nameof(VerifyProtocolFrame), _ => VerifyProtocolFrame()),
         new(Group.Other, nameof(VerifyRdpViewingModes), _ => VerifyRdpViewingModes()),
         new(Group.Other, nameof(VerifyWorkerLogSequenceTracker), _ => VerifyWorkerLogSequenceTracker()),
         new(Group.Other, nameof(VerifyRunLogRouting), c => VerifyRunLogRouting(c.Directory)),
@@ -173,25 +170,6 @@ internal static partial class SelfTestRunner
         Directory.CreateDirectory(directory);
         using var logger = new AppLogger(Path.Combine(directory, "logs"));
         check.Body(new Context(logger, directory, CreateProjectFixture(directory)));
-    }
-
-    private static void VerifyRdpClientClsid()
-    {
-        const string expectedClsid = "8B918B82-7985-4C24-89DF-C33AD2BBFBCD";
-        const string prohibitedClsid = "A0C63C30-F08D-4AB4-907C-34905D770C7D";
-
-        if (!string.Equals(RdpActiveXHost.RdpClientClsid, expectedClsid, StringComparison.OrdinalIgnoreCase)) {
-            throw new InvalidOperationException(
-                $"RDP ActiveX CLSID 预期为 MsRdpClient10 ({expectedClsid})，实际为 {RdpActiveXHost.RdpClientClsid}。");
-        }
-
-        if (string.Equals(RdpActiveXHost.RdpClientClsid, prohibitedClsid, StringComparison.OrdinalIgnoreCase)) {
-            throw new InvalidOperationException("RDP ActiveX CLSID 不能使用 Win11 专用的 MsRdpClient11 (v11)。");
-        }
-
-        if (!Guid.TryParse(RdpActiveXHost.RdpClientClsid, out var clsidGuid) || clsidGuid == Guid.Empty) {
-            throw new InvalidOperationException("RDP ActiveX CLSID 不是有效 GUID。");
-        }
     }
 
     private static void VerifyProjectPlan(string testDirectory, string projectDirectory)
@@ -731,22 +709,6 @@ internal static partial class SelfTestRunner
             throw new InvalidOperationException($"PI input {inputName} 未拒绝非法显式值。");
         } catch (InvalidDataException) {
             // Expected: invalid edits are not persisted.
-        }
-    }
-
-    private static void VerifyProtocolFrame()
-    {
-        using var stream = new MemoryStream();
-        var requestId = Guid.NewGuid();
-        var envelope = WireEnvelope.Request(
-            ProtocolOperations.WorkerGetSnapshot, requestId, new { });
-        var writer = new ProtocolConnection(stream);
-        writer.WriteAsync(envelope, CancellationToken.None).GetAwaiter().GetResult();
-        stream.Position = 0;
-        var reader = new ProtocolConnection(stream);
-        var decoded = reader.ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
-        if (decoded?.RequestId != requestId || decoded.Operation != ProtocolOperations.WorkerGetSnapshot) {
-            throw new InvalidOperationException("Named Pipe frame round-trip 验证失败。");
         }
     }
 

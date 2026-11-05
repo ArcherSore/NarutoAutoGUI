@@ -39,6 +39,5 @@ internal static partial class SelfTestRunner
             Directory.CreateDirectory(Path.GetDirectoryName(preference)!);
             File.WriteAllText(preference, "false");
         });
-        Console.WriteLine("NAVIGATION SELF-TEST PASS: fixed rail, sections, update indicators, legacy preference.");
     }
 }

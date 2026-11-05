@@ -86,8 +86,6 @@ internal static partial class SelfTestRunner
             && !logText.Contains("localuser", StringComparison.Ordinal), "日志不得包含账户名或密码。");
 
         VerifyCredentialSettingsStatus(logger, testDirectory);
-        Console.WriteLine("CHILD SESSION CREDENTIAL SELF-TEST PASS: RDP identity, store, failures, "
-            + "native prompt results, settings status and log redaction.");
     }
 
     private static void VerifyCredentialPromptResults(AppLogger logger, string testDirectory,

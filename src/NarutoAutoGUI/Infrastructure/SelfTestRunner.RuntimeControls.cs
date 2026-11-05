@@ -160,7 +160,6 @@ internal static partial class SelfTestRunner
                     $"{desktop} 的分身按钮显示不符。");
             }
         });
-        Console.WriteLine("RUNTIME CONTROL MAPPING PASS: header actions, configuration lock and desktop toggle.");
     }
 
     private static void VerifyRuntimeControlScenarios()
@@ -188,7 +187,6 @@ internal static partial class SelfTestRunner
             throw new InvalidOperationException(
                 $"运行控制场景不符：{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
         }
-        Console.WriteLine($"RUNTIME CONTROL SCENARIOS PASS: {scenarios.Length} scenarios.");
     }
 
     // Each row states the controls a user sees for one situation; expected values come from the rules in #12.

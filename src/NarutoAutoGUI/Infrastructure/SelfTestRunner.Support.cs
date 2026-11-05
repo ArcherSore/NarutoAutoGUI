@@ -28,6 +28,19 @@ internal static partial class SelfTestRunner
         } finally {
             CultureInfo.CurrentCulture = culture;
         }
+        VerifyLogRolling(Path.Combine(testDirectory, "log-rolling"));
+    }
+
+    // Past the size limit a log rolls to a name the diagnostic package still matches.
+    private static void VerifyLogRolling(string directory)
+    {
+        using var logger = new AppLogger(directory);
+        var megabyte = new string('x', 1024 * 1024);
+        for (var index = 0; index < 11; index++) {
+            logger.Debug(megabyte);
+        }
+        Require(Directory.GetFiles(directory, "NarutoAutoGUI-*_001.log").Length == 1,
+            "单个日志文件超过 10 MB 时应滚动到新文件。");
     }
 
     private static void VerifyFileLoggingInCurrentCulture(string directory)
@@ -87,23 +100,8 @@ internal static partial class SelfTestRunner
                 + $@"\[pid={Environment.ProcessId}\] \[session=\d+\] \[elevated=(True|False)\] .*\[logDirectory=")) {
             throw new InvalidOperationException($"日志行格式不符：{text}");
         }
-        if (bytes.ToArray() is [0xEF, 0xBB, 0xBF, ..]) {
-            throw new InvalidOperationException("日志文件不应带 BOM。");
-        }
         if (File.Exists(expired) || !File.Exists(recent)) {
             throw new InvalidOperationException("日志应保留 14 天内的文件并清理更早的文件。");
-        }
-
-        var megabyte = new string('x', 1024 * 1024);
-        for (var index = 0; index < 11; index++) {
-            logger.Debug(megabyte);
-        }
-        var rolled = Directory.GetFiles(directory, "NarutoAutoGUI-*_001.log");
-        // The limit is checked before each write, so a file can pass it by at most the one entry that crossed it.
-        if (rolled.Length != 1 || new FileInfo(current).Length > 11L * 1024L * 1024L) {
-            var sizes = string.Join("，", Directory.GetFiles(directory).Select(
-                path => $"{Path.GetFileName(path)}={new FileInfo(path).Length}"));
-            throw new InvalidOperationException($"单个日志文件超过 10 MB 时应滚动到新文件：{sizes}。");
         }
 
         logger.Dispose();

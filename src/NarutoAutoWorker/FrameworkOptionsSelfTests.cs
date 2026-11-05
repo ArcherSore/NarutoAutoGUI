@@ -48,7 +48,6 @@ internal static class FrameworkOptionsSelfTests
                 Directory.Delete(root, recursive: true);
             }
         }
-        Console.WriteLine("FRAMEWORK OPTIONS SELF-TEST PASS: defaults, explicit paths, rejected options and NotReady.");
     }
 
     private static void VerifyNotReady(string root)

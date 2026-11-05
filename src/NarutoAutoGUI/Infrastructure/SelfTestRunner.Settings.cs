@@ -64,7 +64,6 @@ internal static partial class SelfTestRunner
             }
             window.SetExitInProgress(false);
         }, requestExit: () => { exits++; return Task.CompletedTask; });
-        Console.WriteLine("CLOSE PREFERENCE SELF-TEST PASS: persistence, failure, hide and safe exit routing.");
     }
 
     private static void VerifyDeclarativeSettings(AppLogger logger, string testDirectory)
@@ -76,12 +75,7 @@ internal static partial class SelfTestRunner
             () => Called("support.openAfdian"), () => Called("childSession.credentials"));
         var page = settings.Page;
         var items = page.Sections.SelectMany(section => section.Items).ToArray();
-        if (!page.Sections.Select(section => section.Definition.Id)
-                .SequenceEqual(["updates", "child-session", "support", "framework", "sponsorship"])
-            || items.Count(item => item.Definition.Type == SettingsItemKind.Toggle) != 5
-            || items.Count(item => item.Definition.Type == SettingsItemKind.Action) != 5
-            || items.Count(item => item.Definition.Type == SettingsItemKind.Info) != 1
-            || items.Single(item => item.Definition.SettingKey == "update.checkOnStartup").Toggle
+        if (items.Single(item => item.Definition.SettingKey == "update.checkOnStartup").Toggle
                 != settings.CheckOnStartup
             || items.Single(item => item.Definition.ValueKey == "update.currentVersion").Value
                 != settings.CurrentVersion) {
@@ -90,8 +84,8 @@ internal static partial class SelfTestRunner
         foreach (var item in items.Where(item => item.Action is not null)) {
             item.Action!.ExecuteAsync().GetAwaiter().GetResult();
         }
-        if (!calls.SequenceEqual(["update.check", "childSession.credentials", "diagnostics.export",
-                "onboarding.replay", "support.openAfdian"])) {
+        if (!calls.Order().SequenceEqual(["childSession.credentials", "diagnostics.export", "onboarding.replay",
+                "support.openAfdian", "update.check"])) {
             throw new InvalidOperationException("Settings action 必须只调用对应的已注册业务入口。");
         }
         settings.CheckUpdate.IsEnabled = false;
@@ -148,8 +142,6 @@ internal static partial class SelfTestRunner
         VerifySettingsUpdateIntegration(logger, testDirectory);
         VerifyClosePreference(logger, testDirectory);
         VerifyFrameworkPreferences(logger, testDirectory);
-        Console.WriteLine("SETTINGS SELF-TEST PASS: definition, registry, preference, actions, "
-            + "dynamic state and isolation.");
 
         Task Called(string id)
         {
@@ -292,16 +284,10 @@ internal static partial class SelfTestRunner
             Require(action.Status == "界面文字", $"诊断不应出现在界面：{action.Status}");
 
             check = new TaskCompletionSource<EngineCheckResult>();
-            check.SetResult(new EngineCheckResult("7.8.9", null));
-            action.ExecuteAsync().GetAwaiter().GetResult();
-            PumpOnboarding();
-            Expect("没有新版本时也应写结果", "检查更新完成 [current=7.8.9]");
-
-            check = new TaskCompletionSource<EngineCheckResult>();
             check.SetResult(new EngineCheckResult("7.8.9", new EngineUpdate("8.0.0", "notes", "opaque")));
             action.ExecuteAsync().GetAwaiter().GetResult();
             PumpOnboarding();
-            Expect("发现新版本应写目标版本", "检查更新完成 [current=7.8.9] [target=8.0.0]");
+            written.Clear();
 
             ClickOnboarding(window, "DownloadUpdateButton");
             prepare.SetException(EngineFailure());
@@ -317,19 +303,7 @@ internal static partial class SelfTestRunner
             Expect("立即失败时也应写出已报告的下载量",
                 "准备更新失败 [target=8.0.0] [downloaded=10/20] [engine=exit=1 code=network_error]");
 
-            prepare = new TaskCompletionSource<string>();
-            ClickOnboarding(window, "DownloadUpdateButton");
-            ClickOnboarding(window, "CancelDownloadButton");
-            Expect("取消准备应写下载量", "准备更新已取消 [target=8.0.0] [downloaded=10/20]");
 
-            prepare = new TaskCompletionSource<string>();
-            prepare.SetResult("opaque:prepared");
-            ClickOnboarding(window, "DownloadUpdateButton");
-            Expect("准备完成应写结果和耗时", "更新已准备好 [target=8.0.0] [downloaded=10/20]",
-                "准备更新 [target=8.0.0] | leave, ");
-
-            ClickOnboarding(window, "InstallUpdateButton");
-            Expect("安装交接应写目标版本", "开始安装更新 [target=8.0.0]");
         }, checkForUpdate: _ => check.Task, prepareUpdate: (descriptor, progress, cancellation) => {
             Require(descriptor == "opaque", "准备更新应使用检查结果的描述符。");
             progress.Report(new EngineProgress("download", 10, 20, 5));

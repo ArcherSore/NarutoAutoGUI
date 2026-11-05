@@ -48,7 +48,6 @@ internal static partial class SelfTestRunner
             }
             File.Delete(path);
         }
-        Console.WriteLine("FRAMEWORK SETTINGS SELF-TEST PASS: defaults, independent persistence and failure rollback.");
     }
 
     private static void VerifySettingsLog(string testDirectory)

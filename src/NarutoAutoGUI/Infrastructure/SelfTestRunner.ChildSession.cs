@@ -39,7 +39,6 @@ internal static partial class SelfTestRunner
         Require(serialized, "Windows 注销完成前不能释放操作锁或开始第二次注销。");
         Require(notificationsOnUi && manager.Snapshot.State == ChildSessionState.NotRunning,
             "注销完成状态应在 UI 线程发布，且结束后回到未运行。");
-        Console.WriteLine("CHILD SESSION END RESPONSIVENESS PASS: Dispatcher, pending state, gate, UI notification.");
     }
 
     private static void VerifyChildSessionPresence(AppLogger logger)
@@ -119,7 +118,6 @@ internal static partial class SelfTestRunner
                 "已出现新的 Child Session 时不能把注销失败当作结束成功。");
         }
 
-        Console.WriteLine("CHILD SESSION SELF-TEST PASS: none, live, stale ID, unverifiable, vanished, failed logoff.");
 
         static Exception? Terminate(ChildSessionManager manager)
         {
@@ -256,8 +254,6 @@ internal static partial class SelfTestRunner
             probe.Raise("OnLogonError", badPassword);
             Require(probe.Failures.SequenceEqual([badPassword]), "未提交保存的凭据的新尝试必须按原规则处理。");
         }
-        Console.WriteLine(
-            "RDP LOGON EVENT SELF-TEST PASS: saved-credential fallback, terminal errors, unchanged default.");
     }
 
     // A connection attempt on a host whose ActiveX is never created; handlers are invoked as the event sink does.

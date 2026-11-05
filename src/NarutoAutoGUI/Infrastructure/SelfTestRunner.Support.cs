@@ -1,9 +1,11 @@
 using System.IO.Compression;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using NarutoAutoGUI.Models;
 using NarutoAutoGUI.Protocol;
 using NarutoAutoGUI.Worker;
 
@@ -11,6 +13,70 @@ namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
+    // Serilog owns rolling and retention; this pins the settings and the line format that diagnosis relies on.
+    private static void VerifyFileLogging(string testDirectory)
+    {
+        var directory = Path.Combine(testDirectory, "file-logging");
+        Directory.CreateDirectory(directory);
+        var expired = Path.Combine(directory, $"NarutoAutoGUI-{DateTime.Now.AddDays(-20):yyyyMMdd}.log");
+        var recent = Path.Combine(directory, $"NarutoAutoGUI-{DateTime.Now.AddDays(-3):yyyyMMdd}.log");
+        File.WriteAllText(expired, "expired");
+        File.WriteAllText(recent, "recent");
+
+        var logger = new AppLogger(directory);
+        var written = new List<LogEntry>();
+        logger.EntryWritten += (_, entry) => written.Add(entry);
+        logger.Info("""花括号 {"key":"{value}"} {0} {Text}""");
+        logger.Error("失败", new InvalidOperationException("file-logging-exception"));
+        logger.WriteWorker(LogLevel.Warn, "Worker #1 [run.lifecycle] 转写");
+        App.LogStartup(logger);
+        var current =Directory.GetFiles(directory, "NarutoAutoGUI-*.log")
+            .Single(path => path != expired && path != recent);
+        // The diagnostic package reads a log the running logger still holds open.
+        var bytes = new MemoryStream();
+        using (var source = new FileStream(
+            current, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) {
+            source.CopyTo(bytes);
+        }
+        var text = System.Text.Encoding.UTF8.GetString(bytes.ToArray());
+        if (!Regex.IsMatch(text, @"^\[\d\d:\d\d:\d\d\.\d{3}\] \[INFO\] \[T\d+\] "
+                + @"\[SelfTestRunner\.Support\.VerifyFileLogging:\d+\] "
+                + @"花括号 \{""key"":""\{value\}""\} \{0\} \{Text\}\r?$", RegexOptions.Multiline)
+            || !Regex.IsMatch(text, @"\[ERROR\] \[T\d+\] \[[^\]]+\] 失败\r?\nSystem\.InvalidOperationException: "
+                + "file-logging-exception")
+            || !Regex.IsMatch(text, @"\[WARN\] \[T\d+\] \[Worker\] Worker #1 \[run\.lifecycle\] 转写")
+            || !Regex.IsMatch(text, @"\[App\.LogStartup:\d+\] NarutoAutoGUI 正式 GUI 启动 \[version=\S+\] "
+                + $@"\[pid={Environment.ProcessId}\] \[session=\d+\] \[elevated=(True|False)\] .*\[logDirectory=")) {
+            throw new InvalidOperationException($"日志行格式不符：{text}");
+        }
+        if (bytes.ToArray() is [0xEF, 0xBB, 0xBF, ..]) {
+            throw new InvalidOperationException("日志文件不应带 BOM。");
+        }
+        if (File.Exists(expired) || !File.Exists(recent)) {
+            throw new InvalidOperationException("日志应保留 14 天内的文件并清理更早的文件。");
+        }
+
+        var megabyte = new string('x', 1024 * 1024);
+        for (var index = 0; index < 11; index++) {
+            logger.Debug(megabyte);
+        }
+        var rolled = Directory.GetFiles(directory, "NarutoAutoGUI-*_001.log");
+        // The limit is checked before each write, so a file can pass it by at most the one entry that crossed it.
+        if (rolled.Length != 1 || new FileInfo(current).Length > 11L * 1024L * 1024L) {
+            var sizes = string.Join("，", Directory.GetFiles(directory).Select(
+                path => $"{Path.GetFileName(path)}={new FileInfo(path).Length}"));
+            throw new InvalidOperationException($"单个日志文件超过 10 MB 时应滚动到新文件：{sizes}。");
+        }
+
+        logger.Dispose();
+        var count = written.Count;
+        logger.Info("释放后不再写入");
+        if (written.Count != count
+            || Directory.GetFiles(directory).Any(path => File.ReadAllText(path).Contains("释放后不再写入"))) {
+            throw new InvalidOperationException("释放后写日志应被安全忽略。");
+        }
+    }
+
     private static void VerifyTerminalNotifications()
     {
         var tracker = new RunTerminalNotificationTracker();

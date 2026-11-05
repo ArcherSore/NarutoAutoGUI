@@ -20,6 +20,21 @@
         "resolved": "2.1.5",
         "contentHash": "+88sEKa7vRNC5aYvyajGkzFHcXrwshM921i4/J/GMtJdCw7I0LFvmmgoaDDgTOPJE9zCi1yzBOUVZPSGfYFjkA=="
       },
+      "Serilog": {
+        "type": "Direct",
+        "requested": "[4.4.0, )",
+        "resolved": "4.4.0",
+        "contentHash": "ZC6Le3rr4TVJJjS4KsQAesxeF1EhW9qcZmmG7eP5Y2G3+gTGkJEUXkq4+tZNPtyp05I0wWOxnIjwtxFweJsObw=="
+      },
+      "Serilog.Sinks.File": {
+        "type": "Direct",
+        "requested": "[7.0.0, )",
+        "resolved": "7.0.0",
+        "contentHash": "fKL7mXv7qaiNBUC71ssvn/dU0k9t0o45+qm2XgKAlSt19xF+ijjxyA3R6HmCgfKEKwfcfkwWjayuQtRueZFkYw==",
+        "dependencies": {
+          "Serilog": "4.2.0"
+        }
+      },
       "System.Management": {
         "type": "Direct",
         "requested": "[8.0.0, )",

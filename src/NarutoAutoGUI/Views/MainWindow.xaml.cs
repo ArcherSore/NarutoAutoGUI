@@ -1950,7 +1950,8 @@ public partial class MainWindow : FluentWindow
     }
 
     internal static void WriteWorkerDiagnosticLog(AppLogger logger, WorkerLogEntry entry) =>
-        logger.Write(ParseWorkerLogLevel(entry.Level), $"Worker #{entry.Sequence} [{entry.Source}] {entry.Message}");
+        logger.WriteWorker(
+            ParseWorkerLogLevel(entry.Level), $"Worker #{entry.Sequence} [{entry.Source}] {entry.Message}");
 
     private void AddRunLogEntry(WorkerLogEntry workerEntry)
     {

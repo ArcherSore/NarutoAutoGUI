@@ -1,32 +1,39 @@
 using System.Diagnostics;
-using System.Text;
+using System.Runtime.CompilerServices;
 using NarutoAutoGUI.Models;
+using Serilog;
+using Serilog.Core;
+using Serilog.Events;
 
 namespace NarutoAutoGUI.Infrastructure;
 
+// The application's logging surface over Serilog, which owns the files, rolling and retention. Callers pass rendered
+// text, so a message's braces (JSON, for one) are never parsed as a Serilog template.
 internal sealed class AppLogger : IDisposable
 {
     private const long MaximumFileBytes = 10L * 1024L * 1024L;
+    private const string OutputTemplate =
+        "[{Timestamp:HH:mm:ss.fff}] [{LevelName:l}] [T{ThreadId}] [{Source:l}] {Message:l}{NewLine}{Exception}";
     private static readonly TimeSpan Retention = TimeSpan.FromDays(14);
     private readonly object _sync = new();
-    private readonly string _logDirectory;
-    private StreamWriter? _writer;
-    private DateOnly _fileDate;
-    private int _fileSequence;
+    private readonly Logger _logger;
     private bool _disposed;
 
     internal AppLogger(string? logDirectory = null)
     {
         string? fallbackMessage = null;
-        if (logDirectory is not null) {
-            _logDirectory = logDirectory;
-            Directory.CreateDirectory(_logDirectory);
-        } else {
-            (_logDirectory, fallbackMessage) = ResolveDefaultLogDirectory();
+        if (logDirectory is null) {
+            (logDirectory, fallbackMessage) = ResolveDefaultLogDirectory();
         }
-
-        Directory.CreateDirectory(_logDirectory);
-        DeleteExpiredFiles();
+        Directory.CreateDirectory(logDirectory);
+        LogDirectory = logDirectory;
+        _logger = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .WriteTo.File(
+                Path.Combine(logDirectory, "NarutoAutoGUI-.log"), outputTemplate: OutputTemplate,
+                rollingInterval: RollingInterval.Day, fileSizeLimitBytes: MaximumFileBytes, rollOnFileSizeLimit: true,
+                retainedFileCountLimit: null, retainedFileTimeLimit: Retention, shared: true)
+            .CreateLogger();
         if (fallbackMessage is not null) {
             Warn(fallbackMessage);
         }
@@ -34,38 +41,59 @@ internal sealed class AppLogger : IDisposable
 
     internal event EventHandler<LogEntry>? EntryWritten;
 
-    internal string LogDirectory => _logDirectory;
+    internal string LogDirectory { get; }
 
-    internal void Debug(string message) => Write(LogLevel.Debug, message);
+    internal void Debug(
+        string message, [CallerFilePath] string file = "", [CallerMemberName] string member = "",
+        [CallerLineNumber] int line = 0) => Emit(LogLevel.Debug, FormatSource(file, member, line), message, null);
 
-    internal void Info(string message) => Write(LogLevel.Info, message);
+    internal void Info(
+        string message, [CallerFilePath] string file = "", [CallerMemberName] string member = "",
+        [CallerLineNumber] int line = 0) => Emit(LogLevel.Info, FormatSource(file, member, line), message, null);
 
-    internal void Warn(string message, Exception? exception = null) =>
-        Write(LogLevel.Warn, message, exception);
+    internal void Warn(
+        string message, Exception? exception = null, [CallerFilePath] string file = "",
+        [CallerMemberName] string member = "", [CallerLineNumber] int line = 0) =>
+        Emit(LogLevel.Warn, FormatSource(file, member, line), message, exception);
 
-    internal void Error(string message, Exception? exception = null) =>
-        Write(LogLevel.Error, message, exception);
+    internal void Error(
+        string message, Exception? exception = null, [CallerFilePath] string file = "",
+        [CallerMemberName] string member = "", [CallerLineNumber] int line = 0) =>
+        Emit(LogLevel.Error, FormatSource(file, member, line), message, exception);
 
-    internal void Critical(string message, Exception? exception = null) =>
-        Write(LogLevel.Critical, message, exception);
+    internal void Critical(
+        string message, Exception? exception = null, [CallerFilePath] string file = "",
+        [CallerMemberName] string member = "", [CallerLineNumber] int line = 0) =>
+        Emit(LogLevel.Critical, FormatSource(file, member, line), message, exception);
 
-    internal void Write(LogLevel level, string message, Exception? exception = null)
+    // Worker logs are relayed here, so the local call site says nothing about where they came from.
+    internal void WriteWorker(LogLevel level, string message) => Emit(level, "Worker", message, null);
+
+    public void Dispose()
+    {
+        lock (_sync) {
+            if (_disposed) {
+                return;
+            }
+
+            _disposed = true;
+            _logger.Dispose();
+        }
+    }
+
+    private void Emit(LogLevel level, string source, string message, Exception? exception)
     {
         var entry = new LogEntry(DateTimeOffset.Now, level, message);
-        var line = entry.ToString();
-        if (exception is not null) {
-            line += Environment.NewLine + exception;
-        }
-
         lock (_sync) {
             if (_disposed) {
                 return;
             }
 
             try {
-                EnsureWriter(Encoding.UTF8.GetByteCount(line) + Environment.NewLine.Length);
-                _writer!.WriteLine(line);
-                _writer.Flush();
+                _logger.ForContext("LevelName", entry.DisplayLevel)
+                    .ForContext("ThreadId", Environment.CurrentManagedThreadId)
+                    .ForContext("Source", source)
+                    .Write(ToSerilogLevel(level), exception, "{Text:l}", message);
             } catch (Exception loggingException) when (loggingException is IOException or UnauthorizedAccessException) {
                 Debugger.Log(0, "NarutoAutoGUI", $"File logging failed: {loggingException}\n");
             }
@@ -78,72 +106,20 @@ internal sealed class AppLogger : IDisposable
         }
     }
 
-    public void Dispose()
+    // A partial class keeps its part name (MainWindow.Updates); ".xaml" only repeats the class.
+    private static string FormatSource(string file, string member, int line)
     {
-        lock (_sync) {
-            if (_disposed) {
-                return;
-            }
-
-            _disposed = true;
-            _writer?.Dispose();
-            _writer = null;
-        }
+        var type = Path.GetFileNameWithoutExtension(file).Replace(".xaml", string.Empty, StringComparison.Ordinal);
+        return $"{type}.{member}:{line}";
     }
 
-    private void EnsureWriter(int nextWriteBytes)
-    {
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        if (_writer is null || _fileDate != today) {
-            OpenWriter(today, sequence: 0);
-        }
-
-        if (_writer!.BaseStream.Length + nextWriteBytes <= MaximumFileBytes) {
-            return;
-        }
-
-        OpenWriter(today, _fileSequence + 1);
-    }
-
-    private void OpenWriter(DateOnly date, int sequence)
-    {
-        _writer?.Dispose();
-        _fileDate = date;
-        _fileSequence = sequence;
-
-        string path;
-        do {
-            var suffix = _fileSequence == 0 ? string.Empty : $".{_fileSequence}";
-            path = Path.Combine(_logDirectory, $"NarutoAutoGUI-{date:yyyyMMdd}{suffix}.log");
-            if (!File.Exists(path) || new FileInfo(path).Length < MaximumFileBytes) {
-                break;
-            }
-
-            _fileSequence++;
-        } while (true);
-
-        var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
-        _writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        DeleteExpiredFiles();
-    }
-
-    private void DeleteExpiredFiles()
-    {
-        try {
-            var cutoff = DateTime.UtcNow - Retention;
-            foreach (var path in Directory.EnumerateFiles(_logDirectory, "NarutoAutoGUI-*.log")) {
-                try {
-                    if (File.GetLastWriteTimeUtc(path) < cutoff) {
-                        File.Delete(path);
-                    }
-                } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
-                    Debugger.Log(0, "NarutoAutoGUI", $"Log retention cleanup failed: {exception}\n");
-                }
-            }
-        } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
-            Debugger.Log(0, "NarutoAutoGUI", $"Log enumeration failed: {exception}\n");
-        }
-    }
+    private static LogEventLevel ToSerilogLevel(LogLevel level) => level switch {
+        LogLevel.Debug => LogEventLevel.Debug,
+        LogLevel.Info => LogEventLevel.Information,
+        LogLevel.Warn => LogEventLevel.Warning,
+        LogLevel.Error => LogEventLevel.Error,
+        _ => LogEventLevel.Fatal
+    };
 
     private static (string Path, string? Warning) ResolveDefaultLogDirectory()
     {
@@ -152,9 +128,10 @@ internal sealed class AppLogger : IDisposable
             Directory.CreateDirectory(preferred);
             return (preferred, null);
         } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+            var localData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             var candidates = new[]
             {
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NarutoAutoGUI", "logs"),
+                Path.Combine(localData, "NarutoAutoGUI", "logs"),
                 Path.Combine(Path.GetTempPath(), "NarutoAutoGUI", "logs")
             };
 

@@ -1,6 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -510,6 +511,7 @@ public partial class MainWindow : FluentWindow
     private async void PrepareAndRunButton_Click(object sender, RoutedEventArgs e)
     {
         if (!CommitFocusedConfigurationInput() || RevealInvalidParameter() || OperationOrExitInProgress) {
+            LogIgnoredAction();
             return;
         }
         await PrepareFromPanelAsync(startRun: true);
@@ -523,6 +525,7 @@ public partial class MainWindow : FluentWindow
     private async Task PrepareFromPanelAsync(bool startRun = false, bool startupOnly = false)
     {
         if (OperationOrExitInProgress) {
+            LogIgnoredAction();
             return;
         }
         _environmentPreparationFailed = false;
@@ -572,16 +575,17 @@ public partial class MainWindow : FluentWindow
     {
         if (CurrentControls.Action is RuntimeAction.Recover { Enabled: true }) {
             await _endEnvironmentAsync();
+        } else {
+            LogIgnoredAction();
         }
     }
 
     private async void StartRunButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!CommitFocusedConfigurationInput() || RevealInvalidParameter()) {
-            return;
-        }
-        if (CurrentControls.Action is not (RuntimeAction.Start { Enabled: true }
-            or RuntimeAction.Retry { Target: RetryTarget.Start, Enabled: true })) {
+        if (!CommitFocusedConfigurationInput() || RevealInvalidParameter()
+            || CurrentControls.Action is not (RuntimeAction.Start { Enabled: true }
+                or RuntimeAction.Retry { Target: RetryTarget.Start, Enabled: true })) {
+            LogIgnoredAction();
             return;
         }
         await RunOperationAsync(PendingOperation.StartingRun, () => StartCurrentPlanAsync());
@@ -605,6 +609,7 @@ public partial class MainWindow : FluentWindow
         }
         _pendingStartupOnly = startupOnly;
         _pendingStartAttempt ??= project.CreateRunStartAttempt(startupOnly);
+        RunResultLog.WritePlan(_logger, _pendingStartAttempt, ActiveConfigurationName, startupOnly);
         var response = await _workerCoordinator.StartRunAsync(_pendingStartAttempt);
         if (response.Disposition is not ("accepted" or "already_accepted")) {
             throw new InvalidDataException($"未知 run.start disposition：{response.Disposition}。 ");
@@ -618,6 +623,7 @@ public partial class MainWindow : FluentWindow
     private async void StopRunButton_Click(object sender, RoutedEventArgs e)
     {
         if (CurrentControls.Action is not RuntimeAction.Stop { Enabled: true }) {
+            LogIgnoredAction();
             return;
         }
         await RunOperationAsync(
@@ -1830,12 +1836,20 @@ public partial class MainWindow : FluentWindow
         ProjectValidationBorder.Visibility = Visibility.Visible;
     }
 
-    private async Task RunOperationAsync(PendingOperation pending, Func<Task> operation)
+    // A control can stay clickable for a moment after its state changes; "nothing happened" is then still in the log.
+    private void LogIgnoredAction([CallerMemberName] string action = "") => _logger.Debug(
+        $"操作未执行{AppLogger.Field("action", action)}{AppLogger.Field("current", CurrentControls.Action)}"
+        + $"{AppLogger.Field("pending", _pendingOperation)}{AppLogger.Field("exiting", _exitInProgress)}");
+
+    private async Task RunOperationAsync(
+        PendingOperation pending, Func<Task> operation, [CallerMemberName] string caller = "")
     {
         if (OperationOrExitInProgress) {
+            LogIgnoredAction(caller);
             return;
         }
 
+        using var scope = _logger.Scope(OperationLabel(pending));
         SetPendingOperation(pending);
         try {
             await _environment.RunExclusiveAsync(operation);

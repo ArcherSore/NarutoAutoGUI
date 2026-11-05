@@ -171,6 +171,7 @@ public partial class App : System.Windows.Application
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("退出程序", null, async (_, _) =>
             await Dispatcher.InvokeAsync(async () => await RequestExitAsync()).Task.Unwrap());
+        menu.ItemClicked += (_, args) => _logger.Info($"托盘操作{AppLogger.Field("action", args.ClickedItem?.Text)}");
 
         _trayIcon = new Forms.NotifyIcon {
             Icon = LoadTrayIcon(),

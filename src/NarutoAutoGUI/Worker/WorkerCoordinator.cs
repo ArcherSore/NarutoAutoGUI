@@ -892,7 +892,30 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         _logRecoveryGeneration == logRecoveryGeneration && _connection is not null
         && _admission?.WorkerInstanceId == workerInstanceId && _logSequence.WorkerInstanceId == workerInstanceId;
 
-    private async Task<TResponse> SendRequestAsync<TRequest, TResponse>(string operation, TRequest data, CancellationToken cancellationToken)
+    private async Task<TResponse> SendRequestAsync<TRequest, TResponse>(
+        string operation, TRequest data, CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.GetTimestamp();
+        string Details() => AppLogger.Field("operation", operation)
+            + AppLogger.Field("cost", $"{Stopwatch.GetElapsedTime(started).TotalMilliseconds:0}ms");
+        try {
+            var response = await SendRequestCoreAsync<TRequest, TResponse>(operation, data, cancellationToken);
+            // Log recovery pages can be frequent, and the logs they carry show their own effect.
+            if (operation != ProtocolOperations.LogGetSince) {
+                _logger.Debug($"Worker 请求完成{Details()}");
+            }
+            return response;
+        } catch (OperationCanceledException) {
+            _logger.Debug($"Worker 请求已取消{Details()}");
+            throw;
+        } catch (Exception exception) {
+            _logger.Warn($"Worker 请求失败{Details()}{AppLogger.Field("error", exception.GetBaseException().Message)}");
+            throw;
+        }
+    }
+
+    private async Task<TResponse> SendRequestCoreAsync<TRequest, TResponse>(
+        string operation, TRequest data, CancellationToken cancellationToken)
     {
         ProtocolConnection connection;
         lock (_gate) {

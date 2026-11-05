@@ -67,6 +67,16 @@ internal sealed class AppLogger : IDisposable
         [CallerMemberName] string member = "", [CallerLineNumber] int line = 0) =>
         Emit(LogLevel.Critical, FormatSource(file, member, line), message, exception);
 
+    // Logs entering a stretch of work and, when disposed, leaving it with how long it took.
+    internal IDisposable Scope(
+        string name, [CallerFilePath] string file = "", [CallerMemberName] string member = "",
+        [CallerLineNumber] int line = 0)
+    {
+        var source = FormatSource(file, member, line);
+        Emit(LogLevel.Info, source, $"{name} | enter", null);
+        return new LogScope(this, source, name);
+    }
+
     // Worker logs are relayed here, so the local call site says nothing about where they came from, and the local clock
     // nothing about when: a log recovered after a reconnect or a GUI restart keeps the time the Worker wrote it.
     internal void WriteWorker(LogLevel level, string message, DateTimeOffset timestamp) =>
@@ -137,6 +147,14 @@ internal sealed class AppLogger : IDisposable
         LogLevel.Error => LogEventLevel.Error,
         _ => LogEventLevel.Fatal
     };
+
+    private sealed class LogScope(AppLogger logger, string source, string name) : IDisposable
+    {
+        private readonly long _started = Stopwatch.GetTimestamp();
+
+        public void Dispose() => logger.Emit(
+            LogLevel.Info, source, $"{name} | leave, {Stopwatch.GetElapsedTime(_started).TotalMilliseconds:0}ms", null);
+    }
 
     private static (string Path, string? Warning) ResolveDefaultLogDirectory()
     {

@@ -52,7 +52,9 @@ internal static partial class SelfTestRunner
         MainWindow.WriteWorkerDiagnosticLog(logger, new WorkerLogEntry(
             2, relayedAt.AddDays(-2).ToUniversalTime(), "INFO", "run.lifecycle", "回放", false, null, null, null, null));
         App.LogStartup(logger);
-        var current =Directory.GetFiles(directory, "NarutoAutoGUI-*.log")
+        using (logger.Scope("作用域")) {
+        }
+        var current = Directory.GetFiles(directory, "NarutoAutoGUI-*.log")
             .Single(path => path != expired && path != recent);
         // The diagnostic package reads a log the running logger still holds open.
         var bytes = new MemoryStream();
@@ -71,6 +73,8 @@ internal static partial class SelfTestRunner
             || !text.Contains($"[{relayedAt.AddDays(-2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} "
                 + "01:02:03.004] [INFO]")
             || !text.Contains("Worker #2 [run.lifecycle] 回放")
+            || !Regex.IsMatch(text, @"\[INFO\] \[T\d+\] \[[^\]]+\] 作用域 \| enter\r?\n.*\] 作用域 \| leave, \d+ms\r?$",
+                RegexOptions.Multiline)
             || !Regex.IsMatch(text, @"\[App\.LogStartup:\d+\] NarutoAutoGUI 正式 GUI 启动 \[version=\S+\] "
                 + $@"\[pid={Environment.ProcessId}\] \[session=\d+\] \[elevated=(True|False)\] .*\[logDirectory=")) {
             throw new InvalidOperationException($"日志行格式不符：{text}");
@@ -220,6 +224,22 @@ internal static partial class SelfTestRunner
         reconnected.Observe(terminal);
         Require(written.Count(entry => entry.Message.StartsWith("Run 结束")) == 1 && written.Count == 4,
             "重连后应补写已结束的 Run，且只写一次。");
+
+        // The plan is written whole, its options as the Run will use them, and long options cut with their length.
+        written.Clear();
+        var plan = running.Plan;
+        var longOption = ProtocolJson.ToElement(new { text = new string('x', 3000) });
+        RunResultLog.WritePlan(logger, new NarutoAutoGUI.ProjectModel.RunStartAttempt(
+            running.RunId, plan with { Items = [
+                plan.Items[0] with { ResolvedOptions = ProtocolJson.ToElement(new { server = "公测1006" }) },
+                plan.Items[0] with { ResolvedOptions = longOption, Kind = PlanItemKind.Pretask }
+            ] }, "digest"), "配置 1", startupOnly: false);
+        Require(written.Count == 3 && written[0].Message.StartsWith($"Run 计划 [configuration=配置 1] "
+                + $"[startupOnly=False] [runId={running.RunId}] [planDigest=digest] [items=2]")
+            && written[1].Message == "→ 计划项 [index=1/2] [task=日常任务] [name=Task] [kind=MaaTask] [entry=Entry] "
+                + "[options={\"server\":\"公测1006\"}]"
+            && written[2].Message.Contains("[kind=Pretask]") && written[2].Message.EndsWith("…（共 3011 字符）]"),
+            $"Run 计划日志不符：{string.Join(" | ", written)}");
 
         // A stopped Run is an expected end: nothing is written as an error.
         written.Clear();

@@ -146,6 +146,25 @@ internal static partial class SelfTestRunner
 
     private static void VerifyPrepareAndRunWiring(AppLogger logger, string directory)
     {
+        var written = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        void Record(object? sender, LogEntry entry) => written.Enqueue(entry.Message);
+        logger.EntryWritten += Record;
+        try {
+            VerifyPrepareAndRunScenarios(logger, directory);
+        } finally {
+            logger.EntryWritten -= Record;
+        }
+        // The log alone tells what was run, with which plan, and how long each part took.
+        foreach (var expected in new[] {
+            "准备运行环境 | enter", "准备运行环境 | leave, ", "Run 计划 [configuration=", "→ 计划项 [index=1/",
+            "Worker 请求完成 [operation=run.start] [cost="
+        }) {
+            Require(written.Any(message => message.Contains(expected)), $"开始任务的日志缺少：{expected}");
+        }
+    }
+
+    private static void VerifyPrepareAndRunScenarios(AppLogger logger, string directory)
+    {
         foreach (var scenario in new[] { "run", "delayed-ready", "exit-waiting", "prepare-only", "cancel" }) {
             var windowDirectory = Path.Combine(directory, $"prepare-run-{scenario}");
             var projectDirectory = CreateProjectFixture(windowDirectory);

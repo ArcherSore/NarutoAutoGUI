@@ -43,6 +43,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     private readonly object _gate = new();
     private readonly object _logDispatchGate = new();
     private readonly AppLogger _logger;
+    private readonly RunResultLog _runResults;
     private readonly WorkerAdmissionStore _store;
     private readonly string _workerExecutablePath;
     private readonly string _workerImageName;
@@ -82,6 +83,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             launchWorker = null)
     {
         _logger = logger;
+        _runResults = new RunResultLog(logger);
         _store = new WorkerAdmissionStore(stateDirectory);
         _workerExecutablePath = Path.GetFullPath(workerExecutablePath);
         _workerImageName = Path.GetFileName(_workerExecutablePath);
@@ -1164,7 +1166,11 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         Snapshot = snapshot;
     }
 
-    private void RaiseStateChanged() => StateChanged?.Invoke(this, Snapshot);
+    private void RaiseStateChanged()
+    {
+        _runResults.Observe(Snapshot.WorkerSnapshot);
+        StateChanged?.Invoke(this, Snapshot);
+    }
 
     private static int GetClientPid(NamedPipeServerStream server)
     {

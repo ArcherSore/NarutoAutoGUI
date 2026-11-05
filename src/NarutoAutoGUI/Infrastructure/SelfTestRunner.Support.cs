@@ -93,6 +93,80 @@ internal static partial class SelfTestRunner
         }
     }
 
+    private static void VerifyRunResultLog(string testDirectory)
+    {
+        using var logger = new AppLogger(Path.Combine(testDirectory, "run-result-log"));
+        var written = new List<LogEntry>();
+        logger.EntryWritten += (_, entry) => written.Add(entry);
+        var log = new RunResultLog(logger);
+        var worker = CreateNotificationSnapshot(RunState.Running).WorkerSnapshot!;
+        var started = DateTime.UtcNow.AddSeconds(-98);
+        PlanItemSnapshot Item(string label, PlanItemState state, DateTime? startedAt = null) => new(
+            Guid.NewGuid(), label, label, $"{label}Entry", ProtocolJson.ToElement(new { }),
+            ProtocolJson.ToElement(new { }), state, startedAt, null, null, null, null);
+        var first = Item("第一项", PlanItemState.Running, started);
+        var second = Item("第二项", PlanItemState.Pending);
+        var third = Item("第三项", PlanItemState.Pending);
+        var running = worker.ActiveRun! with { StartedAtUtc = started, Items = [first, second, third] };
+        var active = worker with { ActiveRun = running };
+
+        log.Observe(active);
+        log.Observe(active);
+        Require(written.Count == 1 && written[0].Level == LogLevel.Info
+            && written[0].Message == "→ 任务开始 [task=第一项] [kind=MaaTask] [entry=第一项Entry] [index=1/3]",
+            $"重复 Snapshot 不应重复写任务开始：{string.Join(" | ", written)}");
+
+        // A merged change: the second item failed with no Starting or Running snapshot ever seen for it.
+        var reason = new StructuredReason("MaaTaskFailed", "MaaFramework task 终态为 Failed。 ");
+        var result = ProtocolJson.ToElement(new { maaJobStatus = "Failed" });
+        var ended = started.AddSeconds(98);
+        var failedRun = running with {
+            State = RunState.Failed, EndedAtUtc = ended, Error = reason, Result = result, Items = [
+                first with { State = PlanItemState.Succeeded, EndedAtUtc = started.AddSeconds(8) },
+                second with {
+                    State = PlanItemState.Failed, StartedAtUtc = started.AddSeconds(8), EndedAtUtc = ended,
+                    Error = reason, Result = result
+                },
+                third with { State = PlanItemState.Cancelled, EndedAtUtc = ended, Reason = "prior_item_failed" }
+            ]
+        };
+        var terminal = worker with { RunState = RunState.Idle, ActiveRun = null, LastRun = failedRun };
+        written.Clear();
+        log.Observe(terminal);
+        log.Observe(terminal);
+        log.Observe(active);
+        Require(written.Count == 4 && written[0].Message.StartsWith("→ 任务结束 [task=第一项] [state=Succeeded]")
+            && written[1].Level == LogLevel.Error && written[1].Message.StartsWith(
+                "→ 任务结束 [task=第二项] [state=Failed] [cost=90.0s] [code=MaaTaskFailed] "
+                + "[message=MaaFramework task 终态为 Failed。] [result={\"maaJobStatus\":\"Failed\"}]")
+            && written[2].Level == LogLevel.Info
+            && written[2].Message == "→ 任务未执行 [task=第三项] [state=Cancelled] [reason=prior_item_failed]"
+            && written[3].Level == LogLevel.Error && written[3].Message.Contains("Run 结束 [state=Failed]")
+            && written[3].Message.Contains("[failedTask=第二项] [code=MaaTaskFailed]")
+            && written[3].Message.Contains("[items=Succeeded:1,Failed:1,Cancelled:1]"),
+            $"失败 Run 的日志不符，且迟到的旧 Snapshot 不应再写：{string.Join(" | ", written)}");
+
+        // After a GUI restart or a reconnect, a Run that already ended is still written, once.
+        written.Clear();
+        var reconnected = new RunResultLog(logger);
+        reconnected.Observe(terminal);
+        reconnected.Observe(terminal);
+        Require(written.Count(entry => entry.Message.StartsWith("Run 结束")) == 1 && written.Count == 4,
+            "重连后应补写已结束的 Run，且只写一次。");
+
+        // A stopped Run is an expected end: nothing is written as an error.
+        written.Clear();
+        var cancelled = running with {
+            RunId = Guid.NewGuid(), State = RunState.Cancelled, EndedAtUtc = ended, Items = [
+                Item("已停止", PlanItemState.Cancelled, started) with { EndedAtUtc = ended, Reason = "user_requested" }
+            ]
+        };
+        log.Observe(worker with { RunState = RunState.Idle, ActiveRun = null, LastRun = cancelled });
+        Require(written.Count == 2 && written.All(entry => entry.Level == LogLevel.Info)
+            && written[0].Message.Contains("[state=Cancelled] [reason=user_requested]"),
+            $"手动停止不应写成错误：{string.Join(" | ", written)}");
+    }
+
     private static void VerifyTerminalNotifications()
     {
         var tracker = new RunTerminalNotificationTracker();

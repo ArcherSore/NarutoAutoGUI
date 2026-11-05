@@ -28,6 +28,7 @@ internal static partial class SelfTestRunner
         VerifyKilledWorkerWiring(logger, directory);
         VerifyStopUnconfirmedRecoveryWiring(logger, directory);
         VerifyStopWithoutProjectWiring(logger, directory);
+        VerifyRunResultLogWiring(directory);
         Console.WriteLine("RUNTIME CONTROL WIRING PASS: startup, exit, project failure, restore, end, "
             + "end with Worker, retry, stop, killed Worker, recovery, stop without project.");
     }
@@ -401,6 +402,28 @@ internal static partial class SelfTestRunner
                 PumpUntil(() => HeaderShows(window, "StopTaskHeaderButton", enabled: true),
                     "项目未加载时，运行中的 Run 仍应可以停止。");
             }, coordinator: coordinator, loadProject: false));
+    }
+
+    // A real state event carries the failure reason into the GUI log, which the Worker's own log line lacks.
+    private static void VerifyRunResultLogWiring(string directory)
+    {
+        using var logger = new AppLogger(Path.Combine(directory, "run-result-logs"));
+        var written = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        logger.EntryWritten += (_, entry) => written.Enqueue(entry.Message);
+        WithRunningFakeWorker(logger, Path.Combine(directory, "run-result"), async (worker, cancellationToken) => {
+            while (worker.Coordinator.Snapshot is not { SnapshotFresh: true }) {
+                await Task.Delay(10, cancellationToken);
+            }
+            await worker.Pipe.WriteAsync(StateEvent(worker.Coordinator.Snapshot.WorkerSnapshot! with {
+                StateRevision = 2, RunState = RunState.Idle, ActiveRun = null,
+                LastRun = worker.ActiveRun with {
+                    State = RunState.Failed, EndedAtUtc = DateTime.UtcNow,
+                    Error = new StructuredReason("RunExecutionFailed", "未找到游戏窗口")
+                }
+            }), cancellationToken);
+        }, _ => Require(SpinWait.SpinUntil(() => written.Any(message => message.StartsWith("Run 结束 [state=Failed]")
+            && message.Contains("[code=RunExecutionFailed] [message=未找到游戏窗口]")), TimeSpan.FromSeconds(10)),
+            $"状态事件未写入 Run 失败原因：{string.Join(" | ", written)}"));
     }
 
     private sealed record FakeWorker(ProtocolConnection Pipe, WorkerCoordinator Coordinator, RunSnapshot ActiveRun);

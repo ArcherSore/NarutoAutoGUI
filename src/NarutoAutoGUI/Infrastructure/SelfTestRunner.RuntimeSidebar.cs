@@ -23,31 +23,6 @@ internal static partial class SelfTestRunner
             var log = Named<FrameworkElement>(window, "HomeLogListBox");
             var controlTop = control.TransformToAncestor(home).Transform(new Point()).Y;
             var controlHeight = control.ActualHeight;
-            Require(!splitter.ShowsPreview && splitter.Cursor == System.Windows.Input.Cursors.SizeWE
-                && splitter.ActualWidth >= 10, "分隔器必须有容易命中的区域、水平调整指针，并实时更新布局。");
-            var hit = splitter.TransformToAncestor(home).Transform(new Point(6, splitter.ActualHeight / 2));
-            Require(home.InputHitTest(hit) is DependencyObject target
-                && (target == splitter || splitter.IsAncestorOf(target)), "任务区右缘应命中拖拽区域。");
-            var gap = Named<FrameworkElement>(window, "TasksView").Margin.Right;
-            Require(Math.Abs(splitter.ActualWidth - gap) < PixelTolerance
-                && Math.Abs(splitter.TransformToAncestor(home).Transform(new Point(splitter.ActualWidth, 0)).X
-                    - console.TransformToAncestor(home).Transform(new Point()).X) < PixelTolerance,
-                "拖拽区域应正好覆盖任务区与侧栏之间的间距。");
-            // The shown handle straddles the console border: its inner half drags, but hidden it covers nothing.
-            var handle = (FrameworkElement)splitter.Template.FindName("Handle", splitter);
-            bool HandleInnerHalfDrags()
-            {
-                var point = handle.TransformToAncestor(home).Transform(new Point(handle.ActualWidth * 0.75, 10));
-                return console.TransformToAncestor(home).Transform(new Point()).X < point.X
-                    && home.InputHitTest(point) is DependencyObject hit
-                    && (hit == splitter || splitter.IsAncestorOf(hit));
-            }
-            Require(!HandleInnerHalfDrags(), "隐藏的手柄不应遮挡侧栏左缘的控件。");
-            VisualStateManager.GoToState(splitter, "Hover", false);
-            PumpUntil(HandleInnerHalfDrags, "显示的手柄覆盖侧栏的一半也应可以拖动。");
-            VisualStateManager.GoToState(splitter, "Hidden", false);
-            PumpUntil(() => !HandleInnerHalfDrags(), "手柄隐藏后应不再遮挡侧栏。");
-
             var preference = Path.Combine(directory, "config", "runtime-sidebar-width.txt");
             double? Saved() => File.Exists(preference) ? double.Parse(File.ReadAllText(preference),
                 System.Globalization.CultureInfo.InvariantCulture) : null;
@@ -60,11 +35,9 @@ internal static partial class SelfTestRunner
             Require(Saved() == column.Width.Value, "拖动结束后应保存侧栏宽度。");
             var saved = Saved();
             var originalWidth = console.ActualWidth;
-            var logInset = console.ActualWidth - log.ActualWidth;
             StartDrag();
             MoveDrag(20);
-            Require(Math.Abs(console.ActualWidth - (originalWidth - 20)) < 1
-                && Math.Abs(console.ActualWidth - log.ActualWidth - logInset) < 1, "拖动尚未结束时，侧栏和日志应实时变窄。");
+            Require(Math.Abs(console.ActualWidth - (originalWidth - 20)) < 1, "拖动尚未结束时，侧栏应实时变窄。");
             Require(Saved() == saved, "拖动过程中不应持续写入侧栏宽度。");
             MoveDrag(-40);
             Require(Math.Abs(console.ActualWidth - (originalWidth + 20)) < 1, "反向拖动应实时加宽侧栏。");

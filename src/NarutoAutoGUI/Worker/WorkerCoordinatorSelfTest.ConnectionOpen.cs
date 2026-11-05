@@ -60,11 +60,56 @@ internal static partial class WorkerCoordinatorSelfTest
             await RequireNoEffectAsync(name);
         }
 
+        // This process could be admitted, as the last step shows, so only the differing field can refuse each request.
+        foreach (var (name, request) in new[] {
+            ("wrong-token", new ConnectionOpenRequest(record.WorkerInstanceId,
+                Convert.ToHexString(Guid.NewGuid().ToByteArray()), record.RuntimeProfileDigest)),
+            ("wrong-instance", new ConnectionOpenRequest(
+                Guid.NewGuid(), record.LaunchToken, record.RuntimeProfileDigest)),
+            ("wrong-digest", new ConnectionOpenRequest(record.WorkerInstanceId, record.LaunchToken, "other-runtime"))
+        }) {
+            await RequireOpenRefusedAsync(pipeName, name, request, timeout.Token);
+            await RequireNoEffectAsync(name);
+        }
+
         await SendOpenFromExitedClientAsync(pipeName, record, timeout.Token);
         await RequireNoEffectAsync("exited-client");
 
+        await VerifyForeignImageRefusedAsync(logger, testDirectory, record, timeout.Token);
+
         await using var worker = await OpenConnectionAsync(pipeName, record, 0, timeout.Token);
         await WaitForFreshAsync(coordinator, timeout.Token);
+    }
+
+    // A client presenting the right identity is still refused when it is not the package's own Worker executable.
+    private static async Task VerifyForeignImageRefusedAsync(
+        AppLogger logger, string testDirectory, WorkerAdmissionRecord record, CancellationToken cancellationToken)
+    {
+        var stateDirectory = Path.Combine(testDirectory, "connection-open-image");
+        Directory.CreateDirectory(stateDirectory);
+        File.WriteAllBytes(Path.Combine(stateDirectory, "worker.json"),
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(record, ProtocolJson.Options));
+        var pipeName = $"NarutoAutoGUI.Worker.SelfTest.{Guid.NewGuid():N}";
+        await using var coordinator = new WorkerCoordinator(logger, stateDirectory,
+            Path.Combine(stateDirectory, "package", "NarutoAutoWorker.exe"), pipeName, usePipeAcl: false);
+        await coordinator.WaitForServerReadyAsync(cancellationToken);
+        await RequireOpenRefusedAsync(pipeName, "foreign-image", new ConnectionOpenRequest(
+            record.WorkerInstanceId, record.LaunchToken, record.RuntimeProfileDigest), cancellationToken);
+        Require(coordinator.Snapshot.Observation != WorkerObservation.Connected, "foreign-image：不应标记为已连接。");
+    }
+
+    private static async Task RequireOpenRefusedAsync(
+        string pipeName, string name, ConnectionOpenRequest request, CancellationToken cancellationToken)
+    {
+        await using var pipe = await ConnectRawAsync(pipeName, cancellationToken);
+        await pipe.WriteAsync(
+            WireEnvelope.Request(ProtocolOperations.ConnectionOpen, Guid.NewGuid(), request), cancellationToken);
+        try {
+            Require(await pipe.ReadAsync(cancellationToken) is null or { Success: false },
+                $"{name}：身份不符的 connection.open 被接纳。");
+        } catch (IOException) {
+            // The server closing the rejected connection is the expected outcome.
+        }
     }
 
     private static async Task<ProtocolConnection> ConnectRawAsync(string pipeName, CancellationToken cancellationToken)

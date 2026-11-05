@@ -26,6 +26,7 @@ internal static class ChildSessionNativeMethods
         @"SYSTEM\CurrentControlSet\Services\TermService\Parameters";
     private const string RdpWrapperLibraryName = "rdpwrap.dll";
     private const uint NoChildSessionId = uint.MaxValue;
+    private const int WtsClientDisplayClass = 15;
     private static readonly IntPtr CurrentServerHandle = IntPtr.Zero;
 
     [DllImport("wtsapi32.dll", SetLastError = true)]
@@ -49,8 +50,34 @@ internal static class ChildSessionNativeMethods
     private static extern bool WTSEnumerateSessions(
         IntPtr serverHandle, int reserved, int version, out IntPtr sessions, out int count);
 
+    [DllImport("wtsapi32.dll", SetLastError = true, EntryPoint = "WTSQuerySessionInformationW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool WTSQuerySessionInformation(
+        IntPtr serverHandle, uint sessionId, int infoClass, out IntPtr buffer, out int bytes);
+
     [DllImport("wtsapi32.dll")]
     private static extern void WTSFreeMemory(IntPtr memory);
+
+    // The display Windows reports for a session, for diagnostics only; null with the Win32 error when unavailable.
+    internal static (uint Width, uint Height, uint ColorDepth)? TryGetClientDisplay(uint sessionId, out int error)
+    {
+        error = 0;
+        if (!WTSQuerySessionInformation(
+            CurrentServerHandle, sessionId, WtsClientDisplayClass, out var buffer, out var bytes)) {
+            error = Marshal.GetLastPInvokeError();
+            return null;
+        }
+
+        try {
+            if (bytes < Marshal.SizeOf<WtsClientDisplay>()) {
+                return null;
+            }
+            var display = Marshal.PtrToStructure<WtsClientDisplay>(buffer);
+            return (display.HorizontalResolution, display.VerticalResolution, display.ColorDepth);
+        } finally {
+            WTSFreeMemory(buffer);
+        }
+    }
 
     // Returns false when WTS reports no Child Session, either as a successful ULONG(-1)
     // result or as ERROR_NOT_FOUND on Windows builds that use that native result shape.
@@ -229,6 +256,14 @@ internal static class ChildSessionNativeMethods
     {
         var error = Marshal.GetLastPInvokeError();
         return new Win32Exception(error, $"{operation}（Win32 错误 {error}）");
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WtsClientDisplay
+    {
+        public uint HorizontalResolution;
+        public uint VerticalResolution;
+        public uint ColorDepth;
     }
 
     [StructLayout(LayoutKind.Sequential)]

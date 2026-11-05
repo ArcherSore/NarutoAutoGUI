@@ -4,6 +4,8 @@ using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using NarutoAutoGUI.Models;
+using static NarutoAutoGUI.Infrastructure.AppLogger;
 using DrawingSize = System.Drawing.Size;
 
 namespace NarutoAutoGUI.ChildSession;
@@ -47,6 +49,11 @@ internal sealed class RdpActiveXHost : AxHost
     internal event EventHandler? LoginCompleted;
 
     internal event EventHandler<ChildSessionConnectionFailedEventArgs>? ConnectionFailed;
+
+    // What only the host sees and no failure reports: interim logon events and ignored failures. Never credentials.
+    internal event Action<LogLevel, string>? Diagnostic;
+
+    internal void ReportDiagnostic(LogLevel level, string message) => Diagnostic?.Invoke(level, message);
 
     internal ChildSessionConnectionFailedEventArgs? LastConnectionDiagnostic => _lastConnectionDiagnostic;
 
@@ -205,11 +212,14 @@ internal sealed class RdpActiveXHost : AxHost
 
         if (_disconnectRequested) {
             _disconnectRequested = false;
+            ReportDiagnostic(LogLevel.Debug, $"RDP 已按请求断开{Field("reason", FormatErrorCode(disconnectReason))}");
             return;
         }
 
         var extendedDisconnectReason = TryGetExtendedDisconnectReason();
         if (_connectionFailureReported) {
+            ReportDiagnostic(LogLevel.Debug, $"RDP 已断开，此前已报告失败{Field("reason", FormatErrorCode(disconnectReason))}"
+                + Field("extended", FormatErrorCode(extendedDisconnectReason)));
             return;
         }
 
@@ -245,6 +255,9 @@ internal sealed class RdpActiveXHost : AxHost
         var message =
             $"RDP 登录阶段：{GetLogonErrorDescription(errorCode)}\n\n错误代码：{FormatErrorCode(errorCode)}";
         if (IsNonTerminalLogonEvent(errorCode, _savedCredentialSubmitted)) {
+            ReportDiagnostic(LogLevel.Info, $"RDP 登录阶段事件{Field("code", FormatErrorCode(errorCode))}"
+                + $"{Field("description", GetLogonErrorDescription(errorCode))}"
+                + Field("savedCredential", _savedCredentialSubmitted));
             _lastConnectionDiagnostic = new ChildSessionConnectionFailedEventArgs(message, errorCode);
             SavedCredentialRejected |= _savedCredentialSubmitted && errorCode is 0 or 1 or 2;
             return;
@@ -318,6 +331,7 @@ internal sealed class RdpActiveXHost : AxHost
         -5 => "Winlogon 正在显示会话争用选项。",
         -4 => "Winlogon 正在显示重新连接选项。",
         -3 => "Winlogon 已静默终止登录。",
+        -2 => "Winlogon 正在继续登录。",
         -1 => "访问被拒绝。",
         0 => "登录凭据无效。",
         1 => "密码已过期，必须先修改密码。",
@@ -361,13 +375,15 @@ internal sealed class RdpActiveXHost : AxHost
             [value], CultureInfo.InvariantCulture);
     }
 
-    private static void TrySetExtendedProperty(
+    private void TrySetExtendedProperty(
         IMsRdpExtendedSettings extendedSettings, string propertyName, object value)
     {
         try {
             extendedSettings.set_Property(propertyName, ref value);
-        } catch (COMException) {
+        } catch (COMException exception) {
             // Older MsTscAx may not support the extended property; keep default behavior.
+            ReportDiagnostic(LogLevel.Warn, $"RDP 扩展属性未生效，按默认行为继续{Field("property", propertyName)}"
+                + Field("error", FormatErrorCode(exception.ErrorCode)));
         }
     }
 

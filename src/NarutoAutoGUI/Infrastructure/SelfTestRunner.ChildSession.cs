@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Reflection;
 using System.Windows.Threading;
 using NarutoAutoGUI.ChildSession;
+using NarutoAutoGUI.Models;
 
 namespace NarutoAutoGUI.Infrastructure;
 
@@ -140,6 +141,60 @@ internal static partial class SelfTestRunner
 
     // Drives the RDP event handlers as the ActiveX would, without creating the control. With a saved credential,
     // logon failures 0/1/2 leave Windows' logon screen to the user and the attempt ends through the usual events.
+    private static void VerifyChildSessionLog(string testDirectory)
+    {
+        using var logger = new AppLogger(Path.Combine(testDirectory, "child-session-log"));
+        var written = new List<LogEntry>();
+        logger.EntryWritten += (_, entry) => written.Add(entry);
+
+        // Each real state change is written once, whichever operation caused it.
+        using (var manager = new SimulatedWts { ReportedId = 7, Sessions = [0, 1, 7] }.CreateManager(logger)) {
+            manager.DetectExistingSession();
+            manager.DetectExistingSession();
+            Require(written.Count(entry => entry.Message.Contains("[to=Existing] [session=7]")) == 1,
+                $"重复的状态不应重复写日志：{string.Join(" | ", written)}");
+            var ending = manager.TerminateAsync();
+            PumpUntil(() => ending.IsCompleted, "结束 Child Session 未完成。");
+            ending.GetAwaiter().GetResult();
+            Require(written.Any(entry => entry.Message.Contains("[from=Existing] [to=Disconnecting] [session=7]"))
+                && written.Any(entry => entry.Message.Contains("[from=Disconnecting] [to=NotRunning]")),
+                $"结束过程应写出每次状态变化：{string.Join(" | ", written)}");
+        }
+
+        // Interim logon events leave a trail, so a logon that times out on Windows's screen can be explained later.
+        const int badPassword = 0;
+        using (var probe = new RdpEventProbe(savedCredential: true)) {
+            var diagnostics = new List<(LogLevel Level, string Message)>();
+            probe.Host.Diagnostic += (level, message) => diagnostics.Add((level, message));
+            probe.Raise("OnLogonError", badPassword);
+            Require(diagnostics.Count == 1 && diagnostics[0].Level == LogLevel.Info && diagnostics[0].Message
+                == "RDP 登录阶段事件 [code=0 (0x00000000)] [description=登录凭据无效。] [savedCredential=True]"
+                && probe.Failures.Count == 0, $"登录中间事件未写出：{string.Join(" | ", diagnostics)}");
+            probe.Raise("OnDisconnected", 2308);
+            Require(diagnostics.Count == 1 && probe.Failures.SequenceEqual([2308]), "未报告过的断开应走失败路径。");
+            probe.Raise("OnDisconnected", 2308);
+            Require(diagnostics.Count == 2 && diagnostics[1].Level == LogLevel.Debug
+                && diagnostics[1].Message.StartsWith("RDP 已断开，此前已报告失败 [reason=2308 (0x00000904)]")
+                && probe.Failures.SequenceEqual([2308]), "已报告失败后的断开只写诊断，不再报告。");
+        }
+
+        // Every normal saved-credential logon raises -2, so it must not read like an error in the log.
+        using (var probe = new RdpEventProbe(savedCredential: true)) {
+            var diagnostics = new List<string>();
+            probe.Host.Diagnostic += (_, message) => diagnostics.Add(message);
+            probe.Raise("OnLogonError", -2);
+            Require(diagnostics.SequenceEqual(
+                ["RDP 登录阶段事件 [code=-2 (0xFFFFFFFE)] [description=Winlogon 正在继续登录。] [savedCredential=True]"])
+                && probe.Failures.Count == 0, $"-2 应记录为继续登录：{string.Join(" | ", diagnostics)}");
+        }
+
+        // The display query reports failure as data: it only ever adds a line to the log.
+        var missing = ChildSessionNativeMethods.TryGetClientDisplay(65000, out var error);
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        _ = ChildSessionNativeMethods.TryGetClientDisplay(checked((uint)process.SessionId), out _);
+        Require(missing is null && error != 0, "不存在的 Session 应返回不可用和 Win32 错误。");
+    }
+
     private static void VerifyRdpLogonEvents()
     {
         const int badPassword = 0, expiredPassword = 1, otherFailure = 2, logonFailure = unchecked((int)0xC000006D);

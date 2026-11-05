@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using NarutoAutoGUI.Models;
 using Serilog;
 using Serilog.Core;
@@ -13,9 +14,9 @@ namespace NarutoAutoGUI.Infrastructure;
 internal sealed class AppLogger : IDisposable
 {
     private const long MaximumFileBytes = 10L * 1024L * 1024L;
-    private const string OutputTemplate =
-        "[{Time:l}] [{LevelName:l}] [T{ThreadId}] [{Source:l}] {Message:l}{NewLine}{Exception}";
+    private const string OutputTemplate = "[{Time:l}] [{LevelName:l}] [T{ThreadId}] [{Source:l}] {Message:l}{NewLine}";
     private static readonly TimeSpan Retention = TimeSpan.FromDays(14);
+    private static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private readonly object _sync = new();
     private readonly Logger _logger;
     private bool _disposed;
@@ -86,6 +87,19 @@ internal sealed class AppLogger : IDisposable
     internal static string Field(string name, object? value) =>
         value is null or "" ? string.Empty : $" [{name}={value}]";
 
+    // A profile folder is usually named after the Windows account, which stays out of the logs. JSON doubles the
+    // backslashes in a path, and a longer sibling such as C:\Users\name2 is a different folder.
+    internal static string MaskUserProfile(string text, string profile)
+    {
+        if (profile.Length == 0) {
+            return text;
+        }
+
+        var segments = profile.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries).Select(Regex.Escape);
+        var pattern = string.Join(@"[\\/]+", segments) + @"(?![\p{L}\p{N}_-]|\.[\p{L}\p{N}])";
+        return Regex.Replace(text, pattern, "%USERPROFILE%", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
     public void Dispose()
     {
         lock (_sync) {
@@ -101,7 +115,11 @@ internal sealed class AppLogger : IDisposable
     private void Emit(
         LogLevel level, string source, string message, Exception? exception, DateTimeOffset? timestamp = null)
     {
-        var entry = new LogEntry(timestamp ?? DateTimeOffset.Now, level, message);
+        var text = MaskUserProfile(message, UserProfile);
+        var entry = new LogEntry(timestamp ?? DateTimeOffset.Now, level, text);
+        // Serilog would render an exception after this point, where its paths could no longer be masked.
+        var rendered = exception is null
+            ? text : $"{text}{Environment.NewLine}{MaskUserProfile(exception.ToString(), UserProfile)}";
         lock (_sync) {
             if (_disposed) {
                 return;
@@ -112,7 +130,7 @@ internal sealed class AppLogger : IDisposable
                     .ForContext("LevelName", entry.DisplayLevel)
                     .ForContext("ThreadId", Environment.CurrentManagedThreadId)
                     .ForContext("Source", source)
-                    .Write(ToSerilogLevel(level), exception, "{Text:l}", message);
+                    .Write(ToSerilogLevel(level), "{Text:l}", rendered);
             } catch (Exception loggingException) when (loggingException is IOException or UnauthorizedAccessException) {
                 Debugger.Log(0, "NarutoAutoGUI", $"File logging failed: {loggingException}\n");
             }

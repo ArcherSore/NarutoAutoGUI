@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using NarutoAutoGUI.Infrastructure;
+using NarutoAutoGUI.Models;
 
 namespace NarutoAutoGUI.ChildSession;
 
@@ -93,6 +94,7 @@ internal sealed class ChildSessionManager : IDisposable
                 var preview = new RdpPreviewWindow();
                 var service = new ChildSessionService(preview);
                 preview.Host.ConnectionFailed += OnConnectionFailed;
+                preview.Host.Diagnostic += OnRdpDiagnostic;
                 preview.Closing += OnPreviewClosing;
                 preview.InteractiveChanged += OnPreviewInteractiveChanged;
                 _previewWindow = preview;
@@ -120,6 +122,7 @@ internal sealed class ChildSessionManager : IDisposable
                     ?? throw new InvalidOperationException("RDP 登录完成后未取得 childSessionId。");
                 _logger.Info($"Child Session 已连接：childSessionId={sessionId}，ConnectedState={service.ConnectedState}"
                     + (savedCredentialSubmitted ? "（本次 RDP 登录提交了保存的 Windows 登录凭据）。" : "。"));
+                LogSessionDisplay(sessionId);
                 if (preview.Host.SavedCredentialRejected) {
                     _logger.Warn("Windows 未接受保存的登录凭据，本次通过 Windows 登录界面手动完成登录。"
                         + "如果密码已更改，请在“设置 → 桌面分身”中更新。");
@@ -304,6 +307,33 @@ internal sealed class ChildSessionManager : IDisposable
 
         // Closing the window disposes the RDP host.
         preview.Close();
+        preview.Host.Diagnostic -= OnRdpDiagnostic;
+    }
+
+    private void OnRdpDiagnostic(LogLevel level, string message)
+    {
+        switch (level) {
+            case LogLevel.Debug:
+                _logger.Debug(message);
+                break;
+            case LogLevel.Info:
+                _logger.Info(message);
+                break;
+            default:
+                _logger.Warn(message);
+                break;
+        }
+    }
+
+    // The connect settings request 1920×1080; this records what Windows reports for the session it created.
+    private void LogSessionDisplay(uint sessionId)
+    {
+        var display = ChildSessionNativeMethods.TryGetClientDisplay(sessionId, out var error);
+        var session = AppLogger.Field("session", sessionId);
+        _logger.Info(display is var (width, height, colorDepth)
+            ? $"Child Session 显示参数{session}{AppLogger.Field("display", $"{width}x{height}")}"
+                + AppLogger.Field("colorDepth", colorDepth)
+            : $"Child Session 显示参数不可用{session}{AppLogger.Field("win32Error", error)}");
     }
 
     private int SafeConnectedState()
@@ -379,7 +409,14 @@ internal sealed class ChildSessionManager : IDisposable
     private void UpdateState(ChildSessionState state, uint? sessionId, int connectedState, string detail)
     {
         var inputUnlocked = state == ChildSessionState.ConnectedVisible && _previewWindow?.Interactive == true;
+        var previous = Snapshot;
         Snapshot = new ChildSessionSnapshot(state, sessionId, connectedState, detail, inputUnlocked);
+        if (Snapshot != previous) {
+            _logger.Info($"Child Session 状态变化{AppLogger.Field("from", previous.State)}{AppLogger.Field("to", state)}"
+                + $"{AppLogger.Field("session", sessionId)}{AppLogger.Field("connected", connectedState)}"
+                + $"{AppLogger.Field("inputUnlocked", inputUnlocked)}"
+                + AppLogger.Field("detail", detail.ReplaceLineEndings(" ")));
+        }
         StateChanged?.Invoke(this, Snapshot);
     }
 

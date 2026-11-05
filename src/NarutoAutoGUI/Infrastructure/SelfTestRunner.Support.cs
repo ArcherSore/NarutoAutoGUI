@@ -107,6 +107,48 @@ internal static partial class SelfTestRunner
         }
     }
 
+    private static void VerifyUserProfileMasking(string testDirectory)
+    {
+        const string sample = @"C:\Users\Alice";
+        foreach (var (input, expected) in new[] {
+            (@"C:\Users\Alice\AppData", @"%USERPROFILE%\AppData"),
+            (@"路径 c:\users\ALICE\x。", @"路径 %USERPROFILE%\x。"),
+            (@"C:/Users/Alice/x", "%USERPROFILE%/x"),
+            (@"{""path"":""C:\\Users\\Alice\\x""}", @"{""path"":""%USERPROFILE%\\x""}"),
+            (@"目录是 C:\Users\Alice。", "目录是 %USERPROFILE%。"),
+            (@"目录是 C:\Users\Alice.", "目录是 %USERPROFILE%."),
+            (@"C:\Users\Alice2\x", @"C:\Users\Alice2\x"),
+            (@"C:\Users\Alice.old\x", @"C:\Users\Alice.old\x"),
+            (@"D:\Program Files\x", @"D:\Program Files\x")
+        }) {
+            var masked = AppLogger.MaskUserProfile(input, sample);
+            Require(masked == expected, $"用户目录替换不符：{input} -> {masked}");
+        }
+        Require(AppLogger.MaskUserProfile(sample, string.Empty) == sample, "取不到用户目录时不应改动日志。");
+
+        // Whichever way a path reaches the log, the file and the entries raised for the UI both hide the real folder.
+        var directory = Path.Combine(testDirectory, "user-profile-log");
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var path = Path.Combine(profile, "AppData", "x.exe");
+        var written = new List<LogEntry>();
+        using (var logger = new AppLogger(directory)) {
+            logger.EntryWritten += (_, entry) => written.Add(entry);
+            logger.Info($"消息 {path}");
+            logger.Error($"异常 {path}", new IOException($"异常内容 {path}"));
+            logger.Warn(System.Text.Json.JsonSerializer.Serialize(new { path }));
+            logger.WriteWorker(LogLevel.Info, $"Worker 转写 {path}", DateTimeOffset.Now);
+        }
+        var text = File.ReadAllText(Directory.GetFiles(directory, "NarutoAutoGUI-*.log").Single());
+        Require(!text.Contains(profile, StringComparison.OrdinalIgnoreCase)
+            && !text.Contains(profile.Replace(@"\", @"\\"), StringComparison.OrdinalIgnoreCase)
+            && written.All(entry => !entry.Message.Contains(profile, StringComparison.OrdinalIgnoreCase)),
+            $"日志不应包含真实用户目录：{text}");
+        Require(Regex.Matches(text, @"%USERPROFILE%\\AppData\\x\.exe").Count == 4
+            && text.Contains(@"%USERPROFILE%\\AppData\\x.exe")
+            && text.Contains(@"System.IO.IOException: 异常内容 %USERPROFILE%\AppData\x.exe"),
+            $"路径应替换为 %USERPROFILE% 并保留后续部分：{text}");
+    }
+
     private static void VerifyWorkerStateLog(string testDirectory)
     {
         using var logger = new AppLogger(Path.Combine(testDirectory, "worker-state-log"));

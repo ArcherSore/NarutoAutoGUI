@@ -35,8 +35,10 @@ internal static partial class SelfTestRunner
             }
             VerifyTerminalNotifications();
             VerifyFileLogging(testDirectory);
+            VerifyUserProfileMasking(testDirectory);
             VerifyRunResultLog(testDirectory);
             VerifyWorkerStateLog(testDirectory);
+            VerifyChildSessionLog(testDirectory);
             VerifyDiagnosticPackage(logger, testDirectory);
             VerifyDebugImageCleanup(logger, testDirectory);
             VerifyDeclarativeSettings(logger, testDirectory);

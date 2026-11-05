@@ -50,4 +50,31 @@ internal static partial class SelfTestRunner
         }
         Console.WriteLine("FRAMEWORK SETTINGS SELF-TEST PASS: defaults, independent persistence and failure rollback.");
     }
+
+    private static void VerifySettingsLog(string testDirectory)
+    {
+        var directory = Path.Combine(testDirectory, "settings-log");
+        using var logger = new AppLogger(Path.Combine(directory, "logs"));
+        var written = new List<string>();
+        logger.EntryWritten += (_, entry) => written.Add(entry.Message);
+        var settings = new ApplicationSettings(directory, logger, () => Task.CompletedTask,
+            () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask);
+        foreach (var (key, toggle) in settings.Registry.Toggles) {
+            written.Clear();
+            var value = !toggle.Value;
+            toggle.Value = value;
+            var expected = $"设置已更改 [key={key}] [value={(value ? "true" : "false")}]";
+            Require(written.SequenceEqual([expected]), $"设置变化应写键和新值：{string.Join(" | ", written)}");
+        }
+        written.Clear();
+        settings.DebugMode.Initialize(!settings.DebugMode.Value);
+        Require(written.Count == 0, "读取设置不是用户修改，不应写设置变化。");
+        using (new FileStream(Path.Combine(directory, "config", "maa-debug-mode.txt"),
+            FileMode.Open, FileAccess.Read, FileShare.Read)) {
+            settings.DebugMode.Value = !settings.DebugMode.Value;
+        }
+        Require(written.Count == 1
+            && written[0].StartsWith("保存 MaaFramework debug-mode 设置失败", StringComparison.Ordinal),
+            $"保存失败只写失败，不能写成已更改：{string.Join(" | ", written)}");
+    }
 }

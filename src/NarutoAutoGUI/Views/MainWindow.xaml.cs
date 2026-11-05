@@ -504,7 +504,9 @@ public partial class MainWindow : FluentWindow
         try {
             Directory.CreateDirectory(Path.GetDirectoryName(AutoSessionPath)!);
             File.WriteAllText(AutoSessionPath, AutoSessionMenuItem.IsChecked ? "true" : "false");
+            _settings.LogToggleChanged("application.autoSession", AutoSessionMenuItem.IsChecked);
         } catch (Exception exception) {
+            _logger.Warn("保存自动启动分身设置失败。", exception);
             AutoSessionMenuItem.IsChecked = !AutoSessionMenuItem.IsChecked;
             ShowActionableError("保存自动启动分身设置失败", exception, "请检查配置目录写入权限。", offerLogDirectory: false);
         }
@@ -1897,7 +1899,8 @@ public partial class MainWindow : FluentWindow
             _onboardingPreferences = new OnboardingPreferences(Path.GetDirectoryName(configPath)!, _logger);
             _onboardingPreferences.CaptureBeforeProjectLoad(configPath);
         }
-        var project = ProjectPlanModule.Open(_applicationDirectory, configPath, _projectPlan);
+        var project = ProjectPlanModule.Open(_applicationDirectory, configPath, _projectPlan,
+            message => _logger.Info(message));
         _projectPlan = project;
         // Preparing the environment reloads the project; an unfixed invalid draft must survive it and keep blocking
         // Start. Drafts for inputs the reloaded PI no longer has are never rendered or matched.

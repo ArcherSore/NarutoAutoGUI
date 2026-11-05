@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
+using NarutoAutoGUI.Infrastructure;
 using NarutoAutoGUI.Worker;
 using WpfButton = System.Windows.Controls.Button;
 using WpfTextBox = System.Windows.Controls.TextBox;
@@ -240,8 +241,15 @@ public partial class MainWindow
 
     private void NewConfigurationButton_Click(object sender, RoutedEventArgs e)
     {
-        ChangeConfiguration(() => _projectPlan!.CreateConfiguration());
+        ChangeConfiguration(() => {
+            var id = _projectPlan!.CreateConfiguration();
+            _logger.Info($"已新建配置{AppLogger.Field("name", ConfigurationName(id))}");
+        });
     }
+
+    // A missing id must not throw: deleting an already removed configuration stays a quiet no-op.
+    private string? ConfigurationName(Guid id) =>
+        _projectPlan!.Configurations.FirstOrDefault(item => item.Id == id)?.Name;
 
     private void PresetConfigurationButton_Click(object sender, RoutedEventArgs e)
     {
@@ -253,7 +261,11 @@ public partial class MainWindow
             var item = new MenuItem { Header = preset.Label, ToolTip = preset.Description };
             AutomationProperties.SetName(item, $"从预设新建配置：{preset.Label}");
             BindConfigurationEditable(item);
-            item.Click += (_, _) => ChangeConfiguration(() => _projectPlan!.CreateConfigurationFromPreset(preset.Name));
+            item.Click += (_, _) => ChangeConfiguration(() => {
+                var id = _projectPlan!.CreateConfigurationFromPreset(preset.Name);
+                _logger.Info($"已从预设新建配置{AppLogger.Field("preset", preset.Name)}"
+                    + AppLogger.Field("name", ConfigurationName(id)));
+            });
             menu.Items.Add(item);
         }
         PresetConfigurationButton.ContextMenu = menu;
@@ -266,13 +278,26 @@ public partial class MainWindow
             || ConfigurationTabs.SelectedItem is not TabItem { Tag: Guid id }) {
             return;
         }
-        ChangeConfiguration(() => _projectPlan!.ActivateConfiguration(id));
+        ChangeConfiguration(() => {
+            var from = _projectPlan!.ActiveConfigurationId;
+            _projectPlan.ActivateConfiguration(id);
+            if (from != id) {
+                _logger.Info($"已切换配置{AppLogger.Field("from", ConfigurationName(from))}"
+                    + AppLogger.Field("to", ConfigurationName(id)));
+            }
+        });
     }
 
     private void DeleteConfiguration_Click(object sender, RoutedEventArgs e)
     {
         if (sender is WpfButton { Tag: Guid id }) {
-            ChangeConfiguration(() => _projectPlan!.DeleteConfiguration(id));
+            ChangeConfiguration(() => {
+                var name = ConfigurationName(id);
+                if (_projectPlan!.DeleteConfiguration(id)) {
+                    _logger.Info($"已删除配置{AppLogger.Field("name", name)}"
+                        + AppLogger.Field("active", ConfigurationName(_projectPlan.ActiveConfigurationId)));
+                }
+            });
         }
     }
 
@@ -378,7 +403,12 @@ public partial class MainWindow
         _committingConfigurationInput = true;
         try {
             if (!string.IsNullOrWhiteSpace(editor.Text)) {
+                var from = ConfigurationName(id);
                 _projectPlan!.RenameConfiguration(id, editor.Text);
+                if (ConfigurationName(id) != from) {
+                    _logger.Info($"已重命名配置{AppLogger.Field("from", from)}"
+                        + AppLogger.Field("to", ConfigurationName(id)));
+                }
             }
             EndConfigurationRename();
             RestoreConfigurationSelection();

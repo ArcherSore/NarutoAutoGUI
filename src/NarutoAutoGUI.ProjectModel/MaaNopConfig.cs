@@ -34,20 +34,22 @@ internal sealed class MaaNopConfigStore
     };
 
     private readonly string _path;
+    private readonly Action<string>? _log;
     private bool _protectOriginal;
     private bool _originalBackedUp;
     internal string? LoadWarning { get; private set; }
     internal bool WasMissing { get; private set; }
 
-    internal MaaNopConfigStore(string path)
+    internal MaaNopConfigStore(string path, Action<string>? log = null)
     {
         _path = Path.GetFullPath(path);
+        _log = log;
     }
 
     internal MaaNopConfig Load()
     {
         MaaNopConfig config;
-        bool needsSave;
+        var changes = new List<string>();
         try {
             using var stream = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.Read);
             using var document = JsonDocument.Parse(stream);
@@ -55,6 +57,9 @@ internal sealed class MaaNopConfigStore
             if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("SchemaVersion", out var version)
                 || version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out var schema)) {
                 throw new InvalidDataException("MaaNOP Config 缺少合法的 SchemaVersion。");
+            }
+            if (schema != MaaNopConfig.CurrentSchemaVersion) {
+                changes.Add($"SchemaVersion {schema} -> {MaaNopConfig.CurrentSchemaVersion}");
             }
             if (schema == 1) {
                 var legacy = root.Deserialize<LegacyConfig>(JsonOptions)
@@ -64,7 +69,6 @@ internal sealed class MaaNopConfigStore
                     SelectedTasks = legacy.SelectedTasks, ExplicitOptions = legacy.ExplicitOptions
                 };
                 config = new MaaNopConfig { ActiveConfigurationId = migrated.Id, Configurations = [migrated] };
-                needsSave = true;
             } else if (schema is 2 || schema == MaaNopConfig.CurrentSchemaVersion) {
                 var active = root.TryGetProperty("ActiveConfigurationId", out var pointer)
                     && pointer.ValueKind == JsonValueKind.String && pointer.TryGetGuid(out var id) ? id : Guid.Empty;
@@ -76,13 +80,10 @@ internal sealed class MaaNopConfigStore
                 Validate(config, requireActive: false);
                 if (config.Configurations.Count == 0) {
                     config = CreateEmpty();
-                    needsSave = true;
-                } else {
-                    var missingActive = !config.Configurations.Any(item => item.Id == active);
-                    needsSave = schema != MaaNopConfig.CurrentSchemaVersion || missingActive;
-                    if (missingActive) {
-                        config = config with { ActiveConfigurationId = config.Configurations[0].Id };
-                    }
+                    changes.Add("配置列表为空");
+                } else if (!config.Configurations.Any(item => item.Id == active)) {
+                    config = config with { ActiveConfigurationId = config.Configurations[0].Id };
+                    changes.Add("激活配置不存在");
                 }
             } else {
                 throw new InvalidDataException($"不支持 MaaNOP Config SchemaVersion {schema}。");
@@ -90,6 +91,7 @@ internal sealed class MaaNopConfigStore
             Validate(config);
         } catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException) {
             WasMissing = true;
+            _log?.Invoke("任务配置文件不存在，使用默认配置。");
             return CreateEmpty();
         } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or JsonException or InvalidDataException or ArgumentException) {
@@ -97,9 +99,10 @@ internal sealed class MaaNopConfigStore
             LoadWarning = $"无法读取任务配置，已提供空配置。首次保存前将保留原文件。{exception.Message}";
             return CreateEmpty();
         }
-        if (needsSave) {
+        if (changes.Count != 0) {
             try {
                 Save(config);
+                _log?.Invoke($"已更新任务配置文件 [reason={string.Join("；", changes)}]");
             } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
                 LoadWarning = $"配置已加载，但未能保存迁移或激活位置，原文件保持不变。{exception.Message}";
             }
@@ -121,6 +124,7 @@ internal sealed class MaaNopConfigStore
                 $"{Path.GetFileNameWithoutExtension(_path)}.invalid-{DateTime.UtcNow:yyyyMMddHHmmssfffffff}.json");
             File.Copy(_path, backup, overwrite: false);
             _originalBackedUp = true;
+            _log?.Invoke($"已备份无法读取的任务配置 [backup={Path.GetFileName(backup)}]");
         }
 
         var directory = Path.GetDirectoryName(_path)

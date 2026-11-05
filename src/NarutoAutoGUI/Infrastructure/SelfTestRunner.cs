@@ -43,6 +43,7 @@ internal static partial class SelfTestRunner
             VerifyDebugImageCleanup(logger, testDirectory);
             VerifyDeclarativeSettings(logger, testDirectory);
             VerifyUpdateLog(testDirectory);
+            VerifySettingsLog(testDirectory);
             VerifyChildSessionCredentials(logger, testDirectory);
             VerifyDiagnosticSettings(logger, testDirectory);
             VerifyNavigationRail(logger, testDirectory);
@@ -59,6 +60,8 @@ internal static partial class SelfTestRunner
             VerifyConfigurationMigration(testDirectory, projectDirectory);
             VerifyIndependentConfigurations(testDirectory, projectDirectory);
             VerifyConfigurationFallback(testDirectory, projectDirectory);
+            VerifyConfigurationStoreLog(testDirectory, projectDirectory);
+            VerifyConfigurationLog(testDirectory);
             VerifyInvalidConfigurationIsolation(testDirectory, projectDirectory);
             VerifyConfigurationTabs(logger, testDirectory, projectDirectory);
             VerifyConfigurationHeader(logger, testDirectory);

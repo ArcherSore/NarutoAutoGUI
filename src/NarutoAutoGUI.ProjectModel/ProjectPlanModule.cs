@@ -144,10 +144,11 @@ public sealed partial class ProjectPlanModule
 
     public void ValidateConfiguration() => ValidateActiveConfiguration(ExecutionConfiguration());
 
-    public static ProjectPlanModule Open(string projectDirectory, string configPath, ProjectPlanModule? previous = null)
+    public static ProjectPlanModule Open(string projectDirectory, string configPath, ProjectPlanModule? previous = null,
+        Action<string>? log = null)
     {
         var project = ProjectInterfaceLoader.Load(projectDirectory);
-        var module = new ProjectPlanModule(project, new MaaNopConfigStore(configPath));
+        var module = new ProjectPlanModule(project, new MaaNopConfigStore(configPath, log));
         if (previous is not null) {
             module._disabledItems.UnionWith(previous._disabledItems.Where(item => module.Configurations.Any(config =>
                 config.Id == item.Configuration && (item.Kind == PlanItemKind.Pretask

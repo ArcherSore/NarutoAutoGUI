@@ -28,6 +28,7 @@ public partial class MainWindow
     internal void SaveChildSessionCredentials(CredentialResult? credential)
     {
         if (credential is null) {
+            _logger.Info("已取消保存桌面分身的 Windows 登录凭据。");
             return;
         }
         var userName = string.IsNullOrEmpty(credential.Domain)

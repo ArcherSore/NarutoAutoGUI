@@ -67,12 +67,9 @@ internal sealed class DebugImageCleaner(string applicationDirectory, AppLogger l
             }
         }
         var result = new DebugImageCleanupResult(deleted, reclaimed, files.Length - deleted, remaining, failed);
-        var summary = $"调试截图清理：删除 {deleted} 个，释放 {ToMiB(reclaimed)}；"
-            + $"剩余 {result.Remaining} 个，共 {ToMiB(remaining)}" + (failed > 0 ? $"；{failed} 个无法删除。" : "。");
         if (deleted > 0 || failed > 0) {
-            logger.Info(summary);
-        } else {
-            logger.Debug(summary);
+            logger.Info($"调试截图清理：删除 {deleted} 个，释放 {ToMiB(reclaimed)}；"
+                + $"剩余 {result.Remaining} 个，共 {ToMiB(remaining)}" + (failed > 0 ? $"；{failed} 个无法删除。" : "。"));
         }
         return result;
     }

@@ -25,9 +25,9 @@ internal sealed class ApplicationSettings
             _logger.Warn("读取关闭窗口偏好失败。", exception);
         }
         CheckOnStartup = new SettingsToggle(SaveUpdatePreference);
-        SaveOnError = CreateFrameworkToggle(applicationDirectory, "save-on-error", defaultValue: true);
-        SaveDraw = CreateFrameworkToggle(applicationDirectory, "save-draw", defaultValue: true);
-        DebugMode = CreateFrameworkToggle(applicationDirectory, "debug-mode", defaultValue: false);
+        SaveOnError = CreateFrameworkToggle(applicationDirectory, "framework.saveOnError", "save-on-error", true);
+        SaveDraw = CreateFrameworkToggle(applicationDirectory, "framework.saveDraw", "save-draw", true);
+        DebugMode = CreateFrameworkToggle(applicationDirectory, "framework.debugMode", "debug-mode", false);
         CheckUpdate = new SettingsAction(checkUpdate);
         ExportDiagnostics = new SettingsAction(exportDiagnostics);
         ReplayOnboarding = new SettingsAction(() => { replayOnboarding(); return Task.CompletedTask; });
@@ -68,7 +68,11 @@ internal sealed class ApplicationSettings
 
     internal MaaFrameworkOptions CreateFrameworkOptions() => new(SaveOnError.Value, SaveDraw.Value, DebugMode.Value);
 
-    private SettingsToggle CreateFrameworkToggle(string applicationDirectory, string name, bool defaultValue)
+    internal void LogToggleChanged(string key, bool value) => _logger.Info(
+        $"设置已更改{AppLogger.Field("key", key)}{AppLogger.Field("value", value ? "true" : "false")}");
+
+    private SettingsToggle CreateFrameworkToggle(
+        string applicationDirectory, string key, string name, bool defaultValue)
     {
         var path = Path.Combine(applicationDirectory, "config", $"maa-{name}.txt");
         SettingsToggle toggle = null!;
@@ -77,6 +81,7 @@ internal sealed class ApplicationSettings
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 File.WriteAllText(path, value ? "true" : "false");
                 toggle.Status = string.Empty;
+                LogToggleChanged(key, value);
             } catch (Exception exception) {
                 toggle.Initialize(!value);
                 toggle.Status = "无法保存设置，已恢复原选择，请重试。";
@@ -107,6 +112,7 @@ internal sealed class ApplicationSettings
             Directory.CreateDirectory(Path.GetDirectoryName(_closePreferencePath)!);
             File.WriteAllText(_closePreferencePath, value ? "true" : "false");
             CloseToTray.Status = string.Empty;
+            LogToggleChanged("application.closeToTray", value);
         } catch (Exception exception) {
             CloseToTray.Initialize(!value);
             CloseToTray.Status = "无法保存关闭偏好，已恢复原选择，请重试。";
@@ -119,6 +125,7 @@ internal sealed class ApplicationSettings
         try {
             Directory.CreateDirectory(Path.GetDirectoryName(_updatePreferencePath)!);
             File.WriteAllText(_updatePreferencePath, value ? "true" : "false");
+            LogToggleChanged("update.checkOnStartup", value);
         } catch (Exception exception) {
             CheckUpdate.Status = "无法保存更新设置，请重试。";
             _logger.Warn("保存更新设置失败。", exception);

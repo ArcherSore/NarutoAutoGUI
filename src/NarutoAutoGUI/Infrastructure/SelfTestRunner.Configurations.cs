@@ -528,6 +528,126 @@ internal static partial class SelfTestRunner
         }
     }
 
+    private static void VerifyConfigurationStoreLog(string testDirectory, string projectDirectory)
+    {
+        var directory = Path.Combine(testDirectory, "store-log");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "maanop-config.json");
+        var written = new List<string>();
+        ProjectPlanModule Open() => ProjectPlanModule.Open(projectDirectory, path, log: written.Add);
+        void Expect(string failure, params string[] lines)
+        {
+            Require(written.SequenceEqual(lines), $"{failure}：{string.Join(" | ", written)}");
+            written.Clear();
+        }
+
+        _ = Open();
+        Expect("文件不存在应写明使用默认配置", "任务配置文件不存在，使用默认配置。");
+        _ = Open();
+        Expect("没有变化时不应写日志");
+
+        File.WriteAllText(path, """{"SchemaVersion":1,"SelectedTasks":["RealTask"],"ExplicitOptions":{}}""");
+        _ = Open();
+        Expect("迁移应写明版本", "已更新任务配置文件 [reason=SchemaVersion 1 -> 3]");
+
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!;
+        json["ActiveConfigurationId"] = Guid.NewGuid().ToString();
+        File.WriteAllText(path, json.ToJsonString());
+        _ = Open();
+        Expect("激活位置修正应写明原因", "已更新任务配置文件 [reason=激活配置不存在]");
+
+        File.WriteAllText(path, """{"SchemaVersion":2,"Configurations":[]}""");
+        _ = Open();
+        Expect("多个原因都应写出", "已更新任务配置文件 [reason=SchemaVersion 2 -> 3；配置列表为空]");
+
+        File.WriteAllText(path, """{"SchemaVersion":1,"SelectedTasks":[],"ExplicitOptions":{}}""");
+        ProjectPlanModule locked;
+        using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+            locked = Open();
+        }
+        Require(locked.LoadWarning is not null, "迁移保存失败应留下警告。");
+        Expect("保存失败不能写成已更新");
+
+        File.WriteAllText(path, "{ broken");
+        var project = Open();
+        Require(project.LoadWarning is not null, "读取回退应留下警告，由 GUI 写入日志。");
+        Expect("回退时尚未备份，不应写备份");
+        project.AddTask("RealTask");
+        var backup = Path.GetFileName(Directory.GetFiles(directory, "maanop-config.invalid-*.json").Single());
+        Expect("备份应只写文件名", $"已备份无法读取的任务配置 [backup={backup}]");
+    }
+
+    private static void VerifyConfigurationLog(string testDirectory)
+    {
+        using var logger = new AppLogger(Path.Combine(testDirectory, "configuration-log"));
+        var written = new List<string>();
+        logger.EntryWritten += (_, entry) => written.Add(entry.Message);
+        void Expect(string failure, string line)
+        {
+            Require(written.Count(text => text == line) == 1, $"{failure}：{string.Join(" | ", written)}");
+            written.Clear();
+        }
+        RunOnboardingScenario(logger, Path.Combine(testDirectory, "configuration-log-window"), (window, _) => {
+            const System.Reflection.BindingFlags flags =
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            var tabs = (System.Windows.Controls.TabControl)window.FindName("ConfigurationTabs");
+            Require(written.Count(text => text.StartsWith("已加载 MaaNOP", StringComparison.Ordinal)) == 1,
+                $"首次加载应写项目信息：{string.Join(" | ", written)}");
+            Expect("首次打开应写明使用默认配置", "任务配置文件不存在，使用默认配置。");
+            InvokeOnboarding(window, "LoadProject");
+            Require(!written.Any(text => text.StartsWith("已加载 MaaNOP", StringComparison.Ordinal)),
+                $"项目没有变化时，重新加载不应再写项目信息：{string.Join(" | ", written)}");
+
+            ClickOnboarding(window, "NewConfigurationButton");
+            Expect("新建应写名称", "已新建配置 [name=配置 2]");
+
+            tabs.SelectedIndex = 0;
+            PumpOnboarding();
+            Expect("切换应写来源和目标", "已切换配置 [from=配置 2] [to=配置 1]");
+
+            void Rename(string name)
+            {
+                typeof(Views.MainWindow).GetMethod("BeginConfigurationRename", flags)!
+                    .Invoke(window, [tabs.SelectedItem]);
+                var editor = (System.Windows.Controls.TextBox)typeof(Views.MainWindow)
+                    .GetField("_configurationNameEditor", flags)!.GetValue(window)!;
+                editor.Text = name;
+                typeof(Views.MainWindow).GetMethod("CommitConfigurationName", flags)!.Invoke(window, null);
+                PumpOnboarding();
+            }
+            Rename("小号");
+            Expect("重命名应写新旧名称", "已重命名配置 [from=配置 1] [to=小号]");
+            Rename("小号");
+            Require(!written.Any(text => text.StartsWith("已重命名配置", StringComparison.Ordinal)),
+                "名称没有变化时不应写重命名。");
+
+            var preset = (System.Windows.Controls.Button)window.FindName("PresetConfigurationButton");
+            preset.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            preset.ContextMenu!.IsOpen = false;
+            ((System.Windows.Controls.MenuItem)preset.ContextMenu.Items[0])
+                .RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
+            PumpOnboarding();
+            Expect("预设新建应写预设和名称", "已从预设新建配置 [preset=daily] [name=日常预设]");
+
+            var delete = ((System.Windows.Controls.Grid)((System.Windows.Controls.TabItem)tabs.SelectedItem).Header)
+                .Children.OfType<System.Windows.Controls.Button>().Single();
+            delete.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            PumpOnboarding();
+            Expect("删除应写名称和新的当前配置", "已删除配置 [name=日常预设] [active=配置 2]");
+
+            var autoSession = (System.Windows.Controls.MenuItem)window.FindName("AutoSessionMenuItem");
+            autoSession.IsChecked = true;
+            autoSession.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
+            Expect("自动启动分身也是设置项", "设置已更改 [key=application.autoSession] [value=true]");
+        }, beforeLoad: directory => {
+            var interfacePath = Path.Combine(directory, "interface.json");
+            var root = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(interfacePath))!;
+            root["preset"] = System.Text.Json.Nodes.JsonNode.Parse(
+                """[{"name":"daily","label":"日常预设","task":[]}]""");
+            File.WriteAllText(interfacePath, root.ToJsonString());
+        });
+    }
+
     private static void VerifyIndependentConfigurations(string testDirectory, string projectDirectory)
     {
         var path = Path.Combine(testDirectory, "independent.json");

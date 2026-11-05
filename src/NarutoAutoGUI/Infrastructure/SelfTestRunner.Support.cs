@@ -1,16 +1,310 @@
+using System.Globalization;
 using System.IO.Compression;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using NarutoAutoGUI.Models;
 using NarutoAutoGUI.Protocol;
+using NarutoAutoGUI.Views;
 using NarutoAutoGUI.Worker;
 
 namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
+    // Serilog owns rolling and retention; this pins the settings and the line format that diagnosis relies on.
+    private static void VerifyFileLogging(string testDirectory)
+    {
+        // Log names and timestamps must not follow the user's calendar (th-TH) or time separator (fi-FI).
+        var culture = CultureInfo.CurrentCulture;
+        try {
+            foreach (var name in new[] { culture.Name, "th-TH", "fi-FI" }) {
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(name);
+                VerifyFileLoggingInCurrentCulture(Path.Combine(testDirectory, $"file-logging-{name}"));
+            }
+        } finally {
+            CultureInfo.CurrentCulture = culture;
+        }
+    }
+
+    private static void VerifyFileLoggingInCurrentCulture(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        string LogPath(int daysAgo) => Path.Combine(directory, "NarutoAutoGUI-"
+            + DateTime.Now.AddDays(-daysAgo).ToString("yyyyMMdd", CultureInfo.InvariantCulture) + ".log");
+        var expired = LogPath(20);
+        var recent = LogPath(3);
+        File.WriteAllText(expired, "expired");
+        File.WriteAllText(recent, "recent");
+
+        var logger = new AppLogger(directory);
+        var written = new List<LogEntry>();
+        logger.EntryWritten += (_, entry) => written.Add(entry);
+        logger.Info("""花括号 {"key":"{value}"} {0} {Text}""");
+        logger.Error("失败", new InvalidOperationException("file-logging-exception"));
+        // Relayed logs keep the Worker's time; one from another day, recovered after a restart, also shows its date.
+        var today = DateTime.Today;
+        var relayedAt = new DateTime(today.Year, today.Month, today.Day, 1, 2, 3, 4, DateTimeKind.Local);
+        logger.WriteWorker(LogLevel.Warn, "#1 [run.lifecycle] 转写", new DateTimeOffset(relayedAt));
+        MainWindow.WriteWorkerDiagnosticLog(logger, new WorkerLogEntry(
+            2, relayedAt.AddDays(-2).ToUniversalTime(), "INFO", "run.lifecycle", "回放", false, null, null, null, null));
+        // Agent output keeps its terminal colours and pretask output its line break; neither belongs in the log.
+        MainWindow.WriteWorkerDiagnosticLog(logger, new WorkerLogEntry(3, relayedAt.ToUniversalTime(), "INFO",
+            "agent.stdout", "\u001b[31m[ERR] 内容\u001b[0m\r\n", false, null, null, null, null));
+        logger.Info("末尾空白。 ");
+        App.LogStartup(logger);
+        using (logger.Scope("作用域")) {
+        }
+        var current = Directory.GetFiles(directory, "NarutoAutoGUI-*.log")
+            .Single(path => path != expired && path != recent);
+        // The diagnostic package reads a log the running logger still holds open.
+        var bytes = new MemoryStream();
+        using (var source = new FileStream(
+            current, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) {
+            source.CopyTo(bytes);
+        }
+        var text = System.Text.Encoding.UTF8.GetString(bytes.ToArray());
+        if (!Regex.IsMatch(text, @"^\[\d\d:\d\d:\d\d\.\d{3}\] \[INFO\] \[T\d+\] "
+                + @"\[SelfTestRunner\.Support\.VerifyFileLoggingInCurrentCulture:\d+\] "
+                + @"花括号 \{""key"":""\{value\}""\} \{0\} \{Text\}\r?$", RegexOptions.Multiline)
+            || !Regex.IsMatch(text, @"\[ERROR\] \[T\d+\] \[[^\]]+\] 失败\r?\nSystem\.InvalidOperationException: "
+                + "file-logging-exception")
+            || !Regex.IsMatch(text, @"^\[01:02:03\.004\] \[WARN\] \[T\d+\] \[Worker\] "
+                + @"#1 \[run\.lifecycle\] 转写\r?$", RegexOptions.Multiline)
+            || !Regex.IsMatch(text, @"\[Worker\] #3 \[agent\.stdout\] \[ERR\] 内容\r?$", RegexOptions.Multiline)
+            || !Regex.IsMatch(text, @"\] 末尾空白。\r?$", RegexOptions.Multiline)
+            || text.Contains("\n\r\n")
+            || !text.Contains($"[{relayedAt.AddDays(-2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} "
+                + "01:02:03.004] [INFO]")
+            || !text.Contains("[Worker] #2 [run.lifecycle] 回放")
+            || !Regex.IsMatch(text, @"\[INFO\] \[T\d+\] \[[^\]]+\] 作用域 \| enter\r?\n.*\] 作用域 \| leave, \d+ms\r?$",
+                RegexOptions.Multiline)
+            || !Regex.IsMatch(text, @"\[App\.LogStartup:\d+\] NarutoAutoGUI 正式 GUI 启动 \[version=\S+\] "
+                + $@"\[pid={Environment.ProcessId}\] \[session=\d+\] \[elevated=(True|False)\] .*\[logDirectory=")) {
+            throw new InvalidOperationException($"日志行格式不符：{text}");
+        }
+        if (bytes.ToArray() is [0xEF, 0xBB, 0xBF, ..]) {
+            throw new InvalidOperationException("日志文件不应带 BOM。");
+        }
+        if (File.Exists(expired) || !File.Exists(recent)) {
+            throw new InvalidOperationException("日志应保留 14 天内的文件并清理更早的文件。");
+        }
+
+        var megabyte = new string('x', 1024 * 1024);
+        for (var index = 0; index < 11; index++) {
+            logger.Debug(megabyte);
+        }
+        var rolled = Directory.GetFiles(directory, "NarutoAutoGUI-*_001.log");
+        // The limit is checked before each write, so a file can pass it by at most the one entry that crossed it.
+        if (rolled.Length != 1 || new FileInfo(current).Length > 11L * 1024L * 1024L) {
+            var sizes = string.Join("，", Directory.GetFiles(directory).Select(
+                path => $"{Path.GetFileName(path)}={new FileInfo(path).Length}"));
+            throw new InvalidOperationException($"单个日志文件超过 10 MB 时应滚动到新文件：{sizes}。");
+        }
+
+        logger.Dispose();
+        var count = written.Count;
+        logger.Info("释放后不再写入");
+        if (written.Count != count
+            || Directory.GetFiles(directory).Any(path => File.ReadAllText(path).Contains("释放后不再写入"))) {
+            throw new InvalidOperationException("释放后写日志应被安全忽略。");
+        }
+    }
+
+    private static void VerifyUserProfileMasking(string testDirectory)
+    {
+        const string sample = @"C:\Users\Alice";
+        foreach (var (input, expected) in new[] {
+            (@"C:\Users\Alice\AppData", @"%USERPROFILE%\AppData"),
+            (@"路径 c:\users\ALICE\x。", @"路径 %USERPROFILE%\x。"),
+            (@"C:/Users/Alice/x", "%USERPROFILE%/x"),
+            (@"{""path"":""C:\\Users\\Alice\\x""}", @"{""path"":""%USERPROFILE%\\x""}"),
+            (@"目录是 C:\Users\Alice。", "目录是 %USERPROFILE%。"),
+            (@"目录是 C:\Users\Alice.", "目录是 %USERPROFILE%."),
+            (@"C:\Users\Alice2\x", @"C:\Users\Alice2\x"),
+            (@"C:\Users\Alice.old\x", @"C:\Users\Alice.old\x"),
+            (@"D:\Program Files\x", @"D:\Program Files\x")
+        }) {
+            var masked = AppLogger.MaskUserProfile(input, sample);
+            Require(masked == expected, $"用户目录替换不符：{input} -> {masked}");
+        }
+        Require(AppLogger.MaskUserProfile(sample, string.Empty) == sample, "取不到用户目录时不应改动日志。");
+
+        // Whichever way a path reaches the log, the file and the entries raised for the UI both hide the real folder.
+        var directory = Path.Combine(testDirectory, "user-profile-log");
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var path = Path.Combine(profile, "AppData", "x.exe");
+        var written = new List<LogEntry>();
+        using (var logger = new AppLogger(directory)) {
+            logger.EntryWritten += (_, entry) => written.Add(entry);
+            logger.Info($"消息 {path}");
+            logger.Error($"异常 {path}", new IOException($"异常内容 {path}"));
+            logger.Warn(System.Text.Json.JsonSerializer.Serialize(new { path }));
+            logger.WriteWorker(LogLevel.Info, $"Worker 转写 {path}", DateTimeOffset.Now);
+        }
+        var text = File.ReadAllText(Directory.GetFiles(directory, "NarutoAutoGUI-*.log").Single());
+        Require(!text.Contains(profile, StringComparison.OrdinalIgnoreCase)
+            && !text.Contains(profile.Replace(@"\", @"\\"), StringComparison.OrdinalIgnoreCase)
+            && written.All(entry => !entry.Message.Contains(profile, StringComparison.OrdinalIgnoreCase)),
+            $"日志不应包含真实用户目录：{text}");
+        Require(Regex.Matches(text, @"%USERPROFILE%\\AppData\\x\.exe").Count == 4
+            && text.Contains(@"%USERPROFILE%\\AppData\\x.exe")
+            && text.Contains(@"System.IO.IOException: 异常内容 %USERPROFILE%\AppData\x.exe"),
+            $"路径应替换为 %USERPROFILE% 并保留后续部分：{text}");
+    }
+
+    private static void VerifyWorkerStateLog(string testDirectory)
+    {
+        using var logger = new AppLogger(Path.Combine(testDirectory, "worker-state-log"));
+        var written = new List<LogEntry>();
+        logger.EntryWritten += (_, entry) => written.Add(entry);
+        var log = new WorkerStateLog(logger);
+        var connected = CreateNotificationSnapshot(RunState.Running);
+        var worker = connected.WorkerSnapshot!;
+        var idle = connected with {
+            WorkerSnapshot = worker with { RunState = RunState.Idle, ActiveRun = null }, Detail = "Worker Snapshot 已同步"
+        };
+        void Expect(WorkerCoordinatorSnapshot snapshot, string failure, params (LogLevel Level, string Text)[] expected)
+        {
+            written.Clear();
+            log.Observe(() => snapshot);
+            log.Observe(() => snapshot);
+            Require(written.Count == expected.Length && written.Zip(expected).All(
+                pair => pair.First.Level == pair.Second.Level && pair.First.Message.Contains(pair.Second.Text)),
+                $"{failure}：{string.Join(" | ", written)}");
+        }
+
+        Expect(WorkerCoordinatorSnapshot.Empty, "启动时应记录初始观察",
+            (LogLevel.Info, "Worker 观察变化 [to=WorkerNotStarted] [detail=Worker 尚未启动]"));
+        Expect(idle, "连接后应记录观察和 Worker 状态",
+            (LogLevel.Info, "[from=WorkerNotStarted] [to=Connected]"), (LogLevel.Info, "Worker 状态变化 [to=Ready]"));
+        Expect(idle with { Detail = "Worker 状态已更新" }, "连接期间的 Detail 变化不应写日志");
+
+        // Ending the Runtime Environment disconnects an idle Worker on purpose: this is not a warning.
+        Expect(idle with { Observation = WorkerObservation.IpcDisconnected, SnapshotFresh = false, Detail = "断开" },
+            "空闲 Worker 断开不应是警告", (LogLevel.Info, "[from=Connected] [to=IpcDisconnected] [detail=断开]"));
+        Expect(idle, "重新连接应写日志", (LogLevel.Info, "[from=IpcDisconnected] [to=Connected]"));
+
+        // Losing a Worker mid-Run, then proving it gone, is what a killed Worker looks like in the log.
+        var running = connected with { Detail = "Worker 状态已更新" };
+        Expect(running, "同状态的 Run 变化不应写 Worker 状态");
+        var lost = running with { SnapshotFresh = false };
+        Expect(lost with { Observation = WorkerObservation.IpcDisconnected, Detail = "Worker 仍存活，IPC 已断开" },
+            "Run 期间断开应警告", (LogLevel.Warn, "[to=IpcDisconnected] [detail=Worker 仍存活，IPC 已断开]"));
+        Expect(lost with { Observation = WorkerObservation.WorkerExited, Detail = "Worker 进程已退出" },
+            "Run 期间 Worker 退出应警告",
+            (LogLevel.Warn, "[from=IpcDisconnected] [to=WorkerExited] [detail=Worker 进程已退出]"));
+        Expect(lost with { Observation = WorkerObservation.WorkerExited, Detail = "详情变化" },
+            "观察没变、只有详情变化时不应写 from", (LogLevel.Warn, "Worker 观察变化 [to=WorkerExited] [detail=详情变化]"));
+        Expect(lost with {
+            Observation = WorkerObservation.WorkerRecoveryConflict, WorkerSnapshot = null, Detail = "无法确认"
+        }, "恢复冲突总是警告", (LogLevel.Warn, "[to=WorkerRecoveryConflict]"));
+
+        // A fault keeps the Run active; its reason reaches the log even though no Run ended.
+        var faulted = running with { WorkerSnapshot = worker with {
+            WorkerState = WorkerState.Faulted, WorkerReason = new StructuredReason("StopTimeout", "Stop 未确认。 ")
+        } };
+        Expect(faulted, "Faulted 应带原因写成错误", (LogLevel.Info, "[to=Connected]"),
+            (LogLevel.Error, "Worker 状态变化 [from=Ready] [to=Faulted] [code=StopTimeout] [message=Stop 未确认。]"));
+
+        // A replacement Worker has no previous state to come from.
+        Expect(idle with { WorkerSnapshot = idle.WorkerSnapshot! with { WorkerInstanceId = Guid.NewGuid() } },
+            "新 Worker 不应沿用旧状态", (LogLevel.Info, "Worker 状态变化 [to=Ready]"));
+    }
+
+    private static void VerifyRunResultLog(string testDirectory)
+    {
+        using var logger = new AppLogger(Path.Combine(testDirectory, "run-result-log"));
+        var written = new List<LogEntry>();
+        logger.EntryWritten += (_, entry) => written.Add(entry);
+        var log = new RunResultLog(logger);
+        var worker = CreateNotificationSnapshot(RunState.Running).WorkerSnapshot!;
+        var started = DateTime.UtcNow.AddSeconds(-98);
+        PlanItemSnapshot Item(string label, PlanItemState state, DateTime? startedAt = null) => new(
+            Guid.NewGuid(), label, label, $"{label}Entry", ProtocolJson.ToElement(new { }),
+            ProtocolJson.ToElement(new { }), state, startedAt, null, null, null, null);
+        var first = Item("第一项", PlanItemState.Running, started);
+        var second = Item("第二项", PlanItemState.Pending);
+        var third = Item("第三项", PlanItemState.Pending);
+        var running = worker.ActiveRun! with { StartedAtUtc = started, Items = [first, second, third] };
+        var active = worker with { ActiveRun = running };
+
+        log.Observe(active);
+        log.Observe(active);
+        Require(written.Count == 1 && written[0].Level == LogLevel.Info
+            && written[0].Message == "→ 任务开始 [task=第一项] [kind=MaaTask] [entry=第一项Entry] [index=1/3]",
+            $"重复 Snapshot 不应重复写任务开始：{string.Join(" | ", written)}");
+
+        // A merged change: the second item failed with no Starting or Running snapshot ever seen for it.
+        var reason = new StructuredReason("MaaTaskFailed", "MaaFramework task 终态为 Failed。 ");
+        var result = ProtocolJson.ToElement(new { maaJobStatus = "Failed" });
+        var ended = started.AddSeconds(98);
+        var failedRun = running with {
+            State = RunState.Failed, EndedAtUtc = ended, Error = reason, Result = result, Items = [
+                first with { State = PlanItemState.Succeeded, EndedAtUtc = started.AddSeconds(8) },
+                second with {
+                    State = PlanItemState.Failed, StartedAtUtc = started.AddSeconds(8), EndedAtUtc = ended,
+                    Error = reason, Result = result
+                },
+                third with { State = PlanItemState.Cancelled, EndedAtUtc = ended, Reason = "prior_item_failed" }
+            ]
+        };
+        var terminal = worker with { RunState = RunState.Idle, ActiveRun = null, LastRun = failedRun };
+        written.Clear();
+        log.Observe(terminal);
+        log.Observe(terminal);
+        log.Observe(active);
+        Require(written.Count == 4 && written[0].Message.StartsWith("→ 任务结束 [task=第一项] [state=Succeeded]")
+            && written[1].Level == LogLevel.Error && written[1].Message.StartsWith(
+                "→ 任务结束 [task=第二项] [state=Failed] [cost=90.0s] [code=MaaTaskFailed] "
+                + "[message=MaaFramework task 终态为 Failed。] [result={\"maaJobStatus\":\"Failed\"}]")
+            && written[2].Level == LogLevel.Info
+            && written[2].Message == "→ 任务未执行 [task=第三项] [state=Cancelled] [reason=prior_item_failed]"
+            && written[3].Level == LogLevel.Error && written[3].Message.Contains("Run 结束 [state=Failed]")
+            && written[3].Message.Contains("[failedTask=第二项] [code=MaaTaskFailed]")
+            && written[3].Message.Contains("[items=Succeeded:1,Failed:1,Cancelled:1]"),
+            $"失败 Run 的日志不符，且迟到的旧 Snapshot 不应再写：{string.Join(" | ", written)}");
+
+        // After a GUI restart or a reconnect, a Run that already ended is still written, once.
+        written.Clear();
+        var reconnected = new RunResultLog(logger);
+        reconnected.Observe(terminal);
+        reconnected.Observe(terminal);
+        Require(written.Count(entry => entry.Message.StartsWith("Run 结束")) == 1 && written.Count == 4,
+            "重连后应补写已结束的 Run，且只写一次。");
+
+        // The plan is written whole, its options as the Run will use them, and long options cut with their length.
+        written.Clear();
+        var plan = running.Plan;
+        var longOption = ProtocolJson.ToElement(new { text = new string('x', 3000) });
+        RunResultLog.WritePlan(logger, new NarutoAutoGUI.ProjectModel.RunStartAttempt(
+            running.RunId, plan with { Items = [
+                plan.Items[0] with { ResolvedOptions = ProtocolJson.ToElement(new { server = "公测1006" }) },
+                plan.Items[0] with { ResolvedOptions = longOption, Kind = PlanItemKind.Pretask }
+            ] }, "digest"), "配置 1", startupOnly: false);
+        Require(written.Count == 3 && written[0].Message.StartsWith($"Run 计划 [configuration=配置 1] "
+                + $"[startupOnly=False] [runId={running.RunId}] [planDigest=digest] [items=2]")
+            && written[1].Message == "→ 计划项 [index=1/2] [task=日常任务] [name=Task] [kind=MaaTask] [entry=Entry] "
+                + "[options={\"server\":\"公测1006\"}]"
+            && written[2].Message.Contains("[kind=Pretask]") && written[2].Message.EndsWith("…（共 3011 字符）]"),
+            $"Run 计划日志不符：{string.Join(" | ", written)}");
+
+        // A stopped Run is an expected end: nothing is written as an error.
+        written.Clear();
+        var cancelled = running with {
+            RunId = Guid.NewGuid(), State = RunState.Cancelled, EndedAtUtc = ended, Items = [
+                Item("已停止", PlanItemState.Cancelled, started) with { EndedAtUtc = ended, Reason = "user_requested" }
+            ]
+        };
+        log.Observe(worker with { RunState = RunState.Idle, ActiveRun = null, LastRun = cancelled });
+        Require(written.Count == 2 && written.All(entry => entry.Level == LogLevel.Info)
+            && written[0].Message.Contains("[state=Cancelled] [reason=user_requested]"),
+            $"手动停止不应写成错误：{string.Join(" | ", written)}");
+    }
+
     private static void VerifyTerminalNotifications()
     {
         var tracker = new RunTerminalNotificationTracker();

@@ -1,3 +1,6 @@
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Windows;
 using System.Windows.Threading;
 using NarutoAutoGUI.ChildSession;
@@ -45,9 +48,7 @@ public partial class App : System.Windows.Application
         Forms.Application.SetCompatibleTextRenderingDefault(false);
         _logger = new AppLogger();
         RegisterGlobalExceptionHandlers(_logger);
-        _logger.Info("NarutoAutoGUI 正式 GUI 启动。");
-        _logger.Debug($"Process={Environment.ProcessPath}；OS={Environment.OSVersion}；"
-                      + $"64BitOS={Environment.Is64BitOperatingSystem}；64BitProcess={Environment.Is64BitProcess}。");
+        LogStartup(_logger);
         _ = new DebugImageCleaner(AppContext.BaseDirectory, _logger).RunAsync(_debugImageCleanup.Token);
 
         _sessionManager = new ChildSessionManager(_logger);
@@ -63,6 +64,21 @@ public partial class App : System.Windows.Application
         MainWindow = _mainWindow;
         CreateTrayIcon();
         _mainWindow.Show();
+    }
+
+    internal static string ApplicationVersion =>
+        typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? typeof(App).Assembly.GetName().Version?.ToString() ?? "unknown";
+
+    internal static void LogStartup(AppLogger logger)
+    {
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        using var identity = WindowsIdentity.GetCurrent();
+        var elevated = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+        logger.Info($"NarutoAutoGUI 正式 GUI 启动 [version={ApplicationVersion}] [pid={process.Id}] "
+            + $"[session={process.SessionId}] [elevated={elevated}] [os={Environment.OSVersion}] "
+            + $"[arch={RuntimeInformation.ProcessArchitecture}] [runtime={RuntimeInformation.FrameworkDescription}] "
+            + $"[directory={AppContext.BaseDirectory}] [logDirectory={logger.LogDirectory}]");
     }
 
     internal async Task RequestExitAsync()
@@ -155,6 +171,7 @@ public partial class App : System.Windows.Application
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("退出程序", null, async (_, _) =>
             await Dispatcher.InvokeAsync(async () => await RequestExitAsync()).Task.Unwrap());
+        menu.ItemClicked += (_, args) => _logger.Info($"托盘操作{AppLogger.Field("action", args.ClickedItem?.Text)}");
 
         _trayIcon = new Forms.NotifyIcon {
             Icon = LoadTrayIcon(),

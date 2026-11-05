@@ -125,6 +125,7 @@ public partial class MainWindow
     {
         if (_startupOnlyButton?.IsEnabled != true || !CommitFocusedConfigurationInput()
             || RevealInvalidParameter() || OperationOrExitInProgress) {
+            LogIgnoredAction();
             return;
         }
         if (CurrentControls.Action is RuntimeAction.Prepare

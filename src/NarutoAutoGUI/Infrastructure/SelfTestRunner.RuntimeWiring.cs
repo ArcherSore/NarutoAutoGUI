@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using NarutoAutoGUI.ChildSession;
+using NarutoAutoGUI.Models;
 using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
 using NarutoAutoGUI.Views;
@@ -28,6 +29,8 @@ internal static partial class SelfTestRunner
         VerifyKilledWorkerWiring(logger, directory);
         VerifyStopUnconfirmedRecoveryWiring(logger, directory);
         VerifyStopWithoutProjectWiring(logger, directory);
+        VerifyRunResultLogWiring(directory);
+        VerifyKilledWorkerLogWiring(directory);
         Console.WriteLine("RUNTIME CONTROL WIRING PASS: startup, exit, project failure, restore, end, "
             + "end with Worker, retry, stop, killed Worker, recovery, stop without project.");
     }
@@ -142,6 +145,25 @@ internal static partial class SelfTestRunner
     }
 
     private static void VerifyPrepareAndRunWiring(AppLogger logger, string directory)
+    {
+        var written = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        void Record(object? sender, LogEntry entry) => written.Enqueue(entry.Message);
+        logger.EntryWritten += Record;
+        try {
+            VerifyPrepareAndRunScenarios(logger, directory);
+        } finally {
+            logger.EntryWritten -= Record;
+        }
+        // The log alone tells what was run, with which plan, and how long each part took.
+        foreach (var expected in new[] {
+            "准备运行环境 | enter", "准备运行环境 | leave, ", "Run 计划 [configuration=", "→ 计划项 [index=1/",
+            "Worker 请求完成 [operation=run.start] [cost="
+        }) {
+            Require(written.Any(message => message.Contains(expected)), $"开始任务的日志缺少：{expected}");
+        }
+    }
+
+    private static void VerifyPrepareAndRunScenarios(AppLogger logger, string directory)
     {
         foreach (var scenario in new[] { "run", "delayed-ready", "exit-waiting", "prepare-only", "cancel" }) {
             var windowDirectory = Path.Combine(directory, $"prepare-run-{scenario}");
@@ -401,6 +423,58 @@ internal static partial class SelfTestRunner
                 PumpUntil(() => HeaderShows(window, "StopTaskHeaderButton", enabled: true),
                     "项目未加载时，运行中的 Run 仍应可以停止。");
             }, coordinator: coordinator, loadProject: false));
+    }
+
+    // A real state event carries the failure reason into the GUI log, which the Worker's own log line lacks.
+    private static void VerifyRunResultLogWiring(string directory)
+    {
+        using var logger = new AppLogger(Path.Combine(directory, "run-result-logs"));
+        var written = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        logger.EntryWritten += (_, entry) => written.Enqueue(entry.Message);
+        WithRunningFakeWorker(logger, Path.Combine(directory, "run-result"), async (worker, cancellationToken) => {
+            while (worker.Coordinator.Snapshot is not { SnapshotFresh: true }) {
+                await Task.Delay(10, cancellationToken);
+            }
+            await worker.Pipe.WriteAsync(StateEvent(worker.Coordinator.Snapshot.WorkerSnapshot! with {
+                StateRevision = 2, RunState = RunState.Idle, ActiveRun = null,
+                LastRun = worker.ActiveRun with {
+                    State = RunState.Failed, EndedAtUtc = DateTime.UtcNow,
+                    Error = new StructuredReason("RunExecutionFailed", "未找到游戏窗口")
+                }
+            }), cancellationToken);
+        }, _ => Require(SpinWait.SpinUntil(() => written.Any(message => message.StartsWith("Run 结束 [state=Failed]")
+            && message.Contains("[code=RunExecutionFailed] [message=未找到游戏窗口]")), TimeSpan.FromSeconds(10)),
+            $"状态事件未写入 Run 失败原因：{string.Join(" | ", written)}"));
+    }
+
+    // A Worker killed mid-Run leaves a readable trail: the pipe closing, then the observation following its process.
+    private static void VerifyKilledWorkerLogWiring(string directory)
+    {
+        using var logger = new AppLogger(Path.Combine(directory, "killed-worker-logs"));
+        var written = new System.Collections.Concurrent.ConcurrentQueue<LogEntry>();
+        logger.EntryWritten += (_, entry) => written.Enqueue(entry);
+        var planDirectory = CreateProjectFixture(Path.Combine(directory, "killed-log-plan"));
+        var activeRun = WorkerCoordinatorSelfTest.CreateActiveRun(
+            ProjectPlanModule.Open(planDirectory, Path.Combine(planDirectory, "plan.json")).CreateRunStartAttempt());
+        var listed = true;
+        WithFakeWorker(logger, Path.Combine(directory, "killed-log-worker"), (coordinator, record, pipeName) => {
+            var pipe = Task.Run(() => WorkerCoordinatorSelfTest.OpenConnectionAsync(
+                pipeName, record, 0, CancellationToken.None, activeRun)).GetAwaiter().GetResult();
+            Require(SpinWait.SpinUntil(() => coordinator.Snapshot is { SnapshotFresh: true }, TimeSpan.FromSeconds(10)),
+                "Worker 未完成接纳。");
+            Task.Run(async () => await pipe.DisposeAsync()).GetAwaiter().GetResult();
+            Require(SpinWait.SpinUntil(() => written.Any(entry => entry.Level == LogLevel.Warn
+                && entry.Message.Contains("[to=IpcDisconnected]")), TimeSpan.FromSeconds(10)),
+                $"Run 期间断开应写警告：{string.Join(" | ", written)}");
+            listed = false;
+            Require(SpinWait.SpinUntil(() => written.Any(entry => entry.Level == LogLevel.Warn
+                && entry.Message.Contains("[from=IpcDisconnected] [to=WorkerExited]")), TimeSpan.FromSeconds(10)),
+                $"Worker 退出应写警告：{string.Join(" | ", written)}");
+            var eof = written.ToList().FindIndex(entry => entry.Message.StartsWith("Worker IPC 已关闭（EOF）"));
+            var disconnected = written.ToList().FindIndex(
+                entry => entry.Level == LogLevel.Warn && entry.Message.Contains("[to=IpcDisconnected]"));
+            Require(eof >= 0 && eof < disconnected, $"应先记录 IPC 关闭再记录观察变化：{string.Join(" | ", written)}");
+        }, workerListed: () => listed);
     }
 
     private sealed record FakeWorker(ProtocolConnection Pipe, WorkerCoordinator Coordinator, RunSnapshot ActiveRun);

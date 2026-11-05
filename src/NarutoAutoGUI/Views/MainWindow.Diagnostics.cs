@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Runtime.InteropServices;
 using NarutoAutoGUI.Infrastructure;
 using SaveFileDialog = Microsoft.Win32.SaveFileDialog;
@@ -30,9 +29,7 @@ public partial class MainWindow
         try {
             var observation = _workerCoordinator.Snapshot;
             var worker = observation.WorkerSnapshot;
-            var version = typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-                ?.InformationalVersion ?? typeof(App).Assembly.GetName().Version?.ToString() ?? "unknown";
-            var metadata = new DiagnosticMetadata(DateTime.UtcNow, version,
+            var metadata = new DiagnosticMetadata(DateTime.UtcNow, App.ApplicationVersion,
                 _projectPlan?.ProjectName, _projectPlan?.ProjectVersion,
                 Environment.OSVersion.ToString(), RuntimeInformation.ProcessArchitecture.ToString(),
                 _sessionManager.Snapshot.State.ToString(),

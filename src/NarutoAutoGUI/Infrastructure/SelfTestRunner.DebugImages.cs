@@ -31,11 +31,22 @@ internal static partial class SelfTestRunner
         File.SetLastWriteTimeUtc(linked, now - expired);
         CreateJunction(Path.Combine(debug, "vision", "link"), outside);
         var cleaner = new DebugImageCleaner(application, logger);
+        var summaries = new List<string>();
+        void CaptureSummary(object? sender, Models.LogEntry entry)
+        {
+            if (entry.Message.StartsWith("调试截图清理：", StringComparison.Ordinal)) {
+                summaries.Add(entry.Message);
+            }
+        }
+        logger.EntryWritten += CaptureSummary;
         var result = cleaner.Clean(now);
         if (result != new DebugImageCleanupResult(3, 300, 1, 100, 0) || expiredImages.Any(File.Exists)
             || !preserved.All(File.Exists) || !File.Exists(linked)) {
             throw new InvalidOperationException("调试截图只能按年龄清理白名单图片，不得跟随链接或删除日志、ZIP 与近期截图。");
         }
+        Require(summaries.Count == 1 && summaries[0].StartsWith("调试截图清理：删除 3 个", StringComparison.Ordinal),
+            $"有删除时应写汇总：{string.Join(" | ", summaries)}");
+        summaries.Clear();
 
         // 100-byte files stand in for the fixed watermarks: trim the oldest from 500 to 250 bytes or below.
         var images = Enumerable.Range(1, 4)
@@ -43,6 +54,8 @@ internal static partial class SelfTestRunner
         if (cleaner.Clean(now, highWatermark: 500, lowWatermark: 250) != new DebugImageCleanupResult(0, 0, 5, 500, 0)) {
             throw new InvalidOperationException("未超过高水位时不得按容量清理。");
         }
+        logger.EntryWritten -= CaptureSummary;
+        Require(summaries.Count == 0, $"没有删除也没有失败时不应写日志：{string.Join(" | ", summaries)}");
         using (new FileStream(images[0], FileMode.Open, FileAccess.Read, FileShare.Read)) {
             result = cleaner.Clean(now, highWatermark: 350, lowWatermark: 250);
         }

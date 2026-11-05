@@ -11,7 +11,12 @@ public sealed record EngineProgress(string Phase, long Bytes, long Total, double
 public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout = null)
 {
     public const int MaxMessageBytes = 1024 * 1024;
+    public const string DiagnosticsKey = "UpdateEngineDiagnostics";
+    private const int MaxStderrChars = 4096;
     private static readonly UTF8Encoding Utf8 = new(false, true);
+
+    // What the Engine left behind when an operation failed, for the log only: Message stays what the user is shown.
+    public static string? Diagnostics(Exception exception) => exception.Data[DiagnosticsKey] as string;
 
     public async Task<EngineCheckResult> CheckAsync(string installation, CancellationToken cancellation)
     {
@@ -44,6 +49,18 @@ public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout
     private async Task<JsonElement> RunAsync(object request, string operation,
         IProgress<EngineProgress>? progress, CancellationToken cancellation)
     {
+        var trace = new EngineTrace();
+        try {
+            return await RunProcessAsync(request, operation, progress, trace, cancellation);
+        } catch (Exception exception) when (exception is not OperationCanceledException) {
+            exception.Data[DiagnosticsKey] = trace.Describe();
+            throw;
+        }
+    }
+
+    private async Task<JsonElement> RunProcessAsync(object request, string operation,
+        IProgress<EngineProgress>? progress, EngineTrace trace, CancellationToken cancellation)
+    {
         cancellation.ThrowIfCancellationRequested();
         using var deadline = new CancellationTokenSource(timeout
             ?? TimeSpan.FromSeconds(operation == "prepare" ? 3660 : 45));
@@ -56,8 +73,9 @@ public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout
         start.RedirectStandardOutput = true;
         start.RedirectStandardError = true;
         start.StandardInputEncoding = Utf8;
+        start.StandardErrorEncoding = new UTF8Encoding(false);
         using var process = Process.Start(start) ?? throw new IOException("无法启动 Update Engine。");
-        var stderr = DrainErrorsAsync(process.StandardError, token);
+        var stderr = DrainErrorsAsync(process.StandardError, trace, token);
         Task? cancelWrite = null;
         CancellationTokenRegistration registration = default;
         var handedOff = false;
@@ -102,12 +120,15 @@ public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout
                 }
             }
             await process.WaitForExitAsync(token);
+            trace.ExitCode = process.ExitCode;
             await stderr;
             cancellation.ThrowIfCancellationRequested();
             if (result is not JsonElement terminal) {
                 throw new InvalidDataException("Update Engine 未返回结果。");
             }
             if (RequiredString(terminal, "type") == "error") {
+                trace.Code = terminal.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.String
+                    ? code.GetString() : null;
                 throw new IOException(RequiredString(terminal, "message"));
             }
             if (operation == "install" || process.ExitCode != 0 || RequiredString(terminal, "type") != "result"
@@ -166,9 +187,35 @@ public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout
         return null;
     }
 
-    private static async Task DrainErrorsAsync(StreamReader reader, CancellationToken cancellation)
+    private static async Task DrainErrorsAsync(StreamReader reader, EngineTrace trace, CancellationToken cancellation)
     {
         var buffer = new char[4096];
-        while (await reader.ReadAsync(buffer, cancellation) > 0) { }
+        int read;
+        while ((read = await reader.ReadAsync(buffer, cancellation)) > 0) {
+            trace.AddStderr(buffer, read);
+        }
+    }
+
+    private sealed class EngineTrace
+    {
+        private readonly StringBuilder _stderr = new();
+
+        internal int? ExitCode { get; set; }
+
+        internal string? Code { get; set; }
+
+        internal void AddStderr(char[] buffer, int count)
+        {
+            _stderr.Append(buffer, 0, count);
+            if (_stderr.Length > MaxStderrChars) {
+                _stderr.Remove(0, _stderr.Length - MaxStderrChars);
+            }
+        }
+
+        internal string Describe() => string.Join(" ", new[] {
+            ExitCode is int exit ? $"exit={exit}" : null,
+            Code is null ? null : $"code={Code}",
+            _stderr.Length == 0 ? null : $"stderr={_stderr.ToString().Trim().ReplaceLineEndings(" ")}"
+        }.Where(part => part is not null));
     }
 }

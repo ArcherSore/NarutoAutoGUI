@@ -53,8 +53,13 @@ internal sealed class RuntimeEnvironment
     // Child Session is connected, just before the Worker is prepared.
     internal async Task PrepareAsync(ProjectPlanModule project, Func<MaaFrameworkOptions> frameworkOptions)
     {
-        var sessionId = await _session.EnsureConnectedAsync(showPreview: true);
-        await _coordinator.PrepareWorkerAsync(sessionId, project, frameworkOptions: frameworkOptions());
+        uint sessionId;
+        using (_logger.Scope("连接 Child Session")) {
+            sessionId = await _session.EnsureConnectedAsync(showPreview: true);
+        }
+        using (_logger.Scope("准备 Worker")) {
+            await _coordinator.PrepareWorkerAsync(sessionId, project, frameworkOptions: frameworkOptions());
+        }
         _session.ShowPreview();
         _logger.Info("运行环境已准备；可开始前置任务，或登录游戏后开始普通任务。");
     }
@@ -92,10 +97,12 @@ internal sealed class RuntimeEnvironment
         // Any other observation may still hold an Admission, and so a Worker that has not been proven gone.
         if (!hasChildSession && _coordinator.Snapshot.Observation
             is WorkerObservation.WorkerNotStarted or WorkerObservation.ChildSessionEnded) {
+            _logger.Debug("结束桌面分身：没有需要结束的运行环境。");
             SetState(Ending, endUnconfirmed: false);
             return EnvironmentEndResult.Ended;
         }
         if (confirm?.Invoke() == false) {
+            _logger.Info("结束桌面分身：用户取消。");
             return EnvironmentEndResult.Declined;
         }
 
@@ -105,7 +112,9 @@ internal sealed class RuntimeEnvironment
             // Capture the already verified Worker before WTS teardown, so a reused PID cannot pass for its exit.
             var workerExit = _coordinator.TrackedWorkerPid is int pid ? _waitForWorkerExit(pid, exitWait.Token) : null;
             _logger.Info("开始结束桌面分身：先停止任务，随后注销 Child Session。");
-            await StopActiveRunAsync();
+            using (_logger.Scope("停止 Active Run")) {
+                await StopActiveRunAsync();
+            }
             failure = "注销桌面分身失败。";
             await _session.TerminateAsync();
             failure = "无法确认桌面分身已结束。";
@@ -115,7 +124,9 @@ internal sealed class RuntimeEnvironment
             // Without a tracked PID, the logged-off Child Session is the proof that no Worker remains.
             failure = "无法确认 Worker 已退出。";
             if (workerExit is not null) {
-                await workerExit.WaitAsync(_waitLimit);
+                using (_logger.Scope("等待 Worker 退出")) {
+                    await workerExit.WaitAsync(_waitLimit);
+                }
             }
             failure = "丢弃 Worker Admission 失败。";
             _coordinator.ChildSessionEnded();
@@ -135,6 +146,11 @@ internal sealed class RuntimeEnvironment
     {
         if (_coordinator.Snapshot is not { Observation: WorkerObservation.Connected, SnapshotFresh: true,
             WorkerSnapshot: { WorkerState: not WorkerState.Faulted, ActiveRun: { } run } }) {
+            var current = _coordinator.Snapshot;
+            _logger.Debug($"无法或无需正常停止任务{AppLogger.Field("observation", current.Observation)}"
+                + $"{AppLogger.Field("fresh", current.SnapshotFresh)}"
+                + $"{AppLogger.Field("workerState", current.WorkerSnapshot?.WorkerState)}"
+                + AppLogger.Field("activeRun", current.WorkerSnapshot?.ActiveRun?.RunId));
             return;
         }
         try {

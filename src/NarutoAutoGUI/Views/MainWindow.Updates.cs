@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Input;
+using NarutoAutoGUI.Infrastructure;
 using NarutoAutoGUI.Updates;
 using Brush = System.Windows.Media.Brush;
 
@@ -9,6 +10,7 @@ namespace NarutoAutoGUI.Views;
 public partial class MainWindow
 {
     private readonly Func<CancellationToken, Task<EngineCheckResult>> _checkForUpdate;
+    private readonly Func<string, IProgress<EngineProgress>, CancellationToken, Task<string>> _prepareUpdate;
     private CancellationTokenSource? _updateCancellation;
     private EngineCheckResult? _updateCheck;
     private string? _preparedReference;
@@ -66,7 +68,10 @@ public partial class MainWindow
         UpdateUpdaterControls();
         _settings.CheckUpdate.Status = "正在检查更新…";
         try {
+            using var scope = _logger.Scope("检查更新");
             var result = await _checkForUpdate(_updateCancellation.Token);
+            _logger.Info($"检查更新完成{AppLogger.Field("current", result.CurrentVersion)}"
+                + AppLogger.Field("target", result.Update?.Version));
             if (_exitInProgress) {
                 _updateCheckState = UpdateCheckState.Idle;
                 return;
@@ -79,9 +84,10 @@ public partial class MainWindow
             RefreshUpdateNotes();
         } catch (OperationCanceledException) when (_exitInProgress) {
             // Exiting cancels this optional operation; it does not alter the runtime shutdown path.
+            _logger.Debug("退出时取消了检查更新。");
             _updateCheckState = UpdateCheckState.Idle;
         } catch (Exception exception) {
-            _logger.Warn("检查更新失败。", exception);
+            _logger.Warn($"检查更新失败{EngineDiagnostics(exception)}", exception);
             _updateCheckState = UpdateCheckState.CheckFailed;
             if (!_exitInProgress) {
                 _settings.CheckUpdate.Status = exception is IOException or InvalidDataException
@@ -103,6 +109,19 @@ public partial class MainWindow
         });
         return engine.CheckAsync(AppContext.BaseDirectory, cancellation);
     }
+
+    private static Task<string> PrepareWithEngineAsync(
+        string descriptor, IProgress<EngineProgress> progress, CancellationToken cancellation)
+    {
+        var engine = new UpdateEngineClient(new ProcessStartInfo(
+            Path.Combine(AppContext.BaseDirectory, "maanop-update-engine.exe")) {
+            WorkingDirectory = AppContext.BaseDirectory
+        });
+        return engine.PrepareAsync(AppContext.BaseDirectory, descriptor, progress, cancellation);
+    }
+
+    private static string EngineDiagnostics(Exception exception) =>
+        AppLogger.Field("engine", UpdateEngineClient.Diagnostics(exception));
 
     private void RefreshUpdateNotes()
     {
@@ -192,28 +211,27 @@ public partial class MainWindow
         UpdateDownloadStatus.Visibility = Visibility.Visible;
         UpdateProgressBar.IsIndeterminate = true;
         UpdateProgressBar.Value = 0;
+        var target = AppLogger.Field("target", update.Version);
+        var progress = new DownloadProgress(value => {
+            if (!_preparingUpdate || _exitInProgress) { return; }
+            UpdateProgressBar.IsIndeterminate = value.Phase != "download" || value.Total <= 0;
+            UpdateProgressBar.Value = value.Total > 0 ? 100.0 * value.Bytes / value.Total : 0;
+            UpdateDownloadStatus.Text = value.Phase == "download"
+                ? $"已下载 {value.Bytes / 1048576.0:F1} / {value.Total / 1048576.0:F1} MB"
+                    + $" · {value.BytesPerSecond / 1048576.0:F1} MB/s"
+                : "正在校验并解压完整包…";
+        });
         try {
-            var engine = new UpdateEngineClient(new ProcessStartInfo(
-                Path.Combine(AppContext.BaseDirectory, "maanop-update-engine.exe")) {
-                WorkingDirectory = AppContext.BaseDirectory
-            });
-            var progress = new Progress<EngineProgress>(value => {
-                if (!_preparingUpdate || _exitInProgress) { return; }
-                UpdateProgressBar.IsIndeterminate = value.Phase != "download" || value.Total <= 0;
-                UpdateProgressBar.Value = value.Total > 0 ? 100.0 * value.Bytes / value.Total : 0;
-                UpdateDownloadStatus.Text = value.Phase == "download"
-                    ? $"已下载 {value.Bytes / 1048576.0:F1} / {value.Total / 1048576.0:F1} MB"
-                        + $" · {value.BytesPerSecond / 1048576.0:F1} MB/s"
-                    : "正在校验并解压完整包…";
-            });
-            _preparedReference = await engine.PrepareAsync(AppContext.BaseDirectory, update.Descriptor,
-                progress, _updateCancellation.Token);
+            using var scope = _logger.Scope($"准备更新{target}");
+            _preparedReference = await _prepareUpdate(update.Descriptor, progress, _updateCancellation.Token);
+            _logger.Info($"更新已准备好{target}{progress.Downloaded}");
             UpdateDownloadStatus.Text = "";
             UpdateDownloadStatus.Visibility = Visibility.Collapsed;
         } catch (OperationCanceledException) {
+            _logger.Info($"准备更新已取消{target}{progress.Downloaded}");
             UpdateDownloadStatus.Text = "已取消，可重新下载。";
         } catch (Exception exception) {
-            _logger.Warn("准备更新失败。", exception);
+            _logger.Warn($"准备更新失败{target}{progress.Downloaded}{EngineDiagnostics(exception)}", exception);
             UpdateDownloadStatus.Text = exception.Message;
         } finally {
             _updateCancellation.Dispose();
@@ -228,10 +246,12 @@ public partial class MainWindow
         if (_updateBusy || _exitInProgress || _preparedReference is null) { return; }
         _updateBusy = true;
         UpdateUpdaterControls();
+        var target = AppLogger.Field("target", _updateCheck?.Update?.Version);
+        _logger.Info($"开始安装更新{target}");
         try {
             await _installUpdateAsync(_preparedReference);
         } catch (Exception exception) {
-            _logger.Warn("安装交接失败。", exception);
+            _logger.Warn($"安装交接失败{target}{EngineDiagnostics(exception)}", exception);
             UpdateDownloadStatus.Text = exception.Message;
             UpdateDownloadStatus.Visibility = Visibility.Visible;
         } finally {
@@ -304,5 +324,23 @@ public partial class MainWindow
         LaterUpdateButton.Visibility = _preparedReference is not null ? Visibility.Visible : Visibility.Collapsed;
         LaterUpdateButton.IsEnabled = !_updateBusy && !_exitInProgress;
         RefreshUpdateNotes();
+    }
+
+    // Progress<T> posts its callback, so an operation can end before the last one runs. The log reads what was
+    // reported, saved here as it arrives; the display still updates through the callback.
+    private sealed class DownloadProgress(Action<EngineProgress> display) : IProgress<EngineProgress>
+    {
+        private readonly IProgress<EngineProgress> _display = new Progress<EngineProgress>(display);
+        private volatile string _downloaded = string.Empty;
+
+        internal string Downloaded => _downloaded;
+
+        public void Report(EngineProgress value)
+        {
+            if (value.Phase == "download") {
+                _downloaded = AppLogger.Field("downloaded", $"{value.Bytes}/{value.Total}");
+            }
+            _display.Report(value);
+        }
     }
 }

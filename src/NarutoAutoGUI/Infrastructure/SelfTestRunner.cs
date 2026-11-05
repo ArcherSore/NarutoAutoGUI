@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Models;
 using NarutoAutoGUI.ProjectModel;
@@ -33,9 +34,16 @@ internal static partial class SelfTestRunner
                 return 0;
             }
             VerifyTerminalNotifications();
+            VerifyFileLogging(testDirectory);
+            VerifyUserProfileMasking(testDirectory);
+            VerifyRunResultLog(testDirectory);
+            VerifyWorkerStateLog(testDirectory);
+            VerifyChildSessionLog(testDirectory);
             VerifyDiagnosticPackage(logger, testDirectory);
             VerifyDebugImageCleanup(logger, testDirectory);
             VerifyDeclarativeSettings(logger, testDirectory);
+            VerifyUpdateLog(testDirectory);
+            VerifySettingsLog(testDirectory);
             VerifyChildSessionCredentials(logger, testDirectory);
             VerifyDiagnosticSettings(logger, testDirectory);
             VerifyNavigationRail(logger, testDirectory);
@@ -52,6 +60,8 @@ internal static partial class SelfTestRunner
             VerifyConfigurationMigration(testDirectory, projectDirectory);
             VerifyIndependentConfigurations(testDirectory, projectDirectory);
             VerifyConfigurationFallback(testDirectory, projectDirectory);
+            VerifyConfigurationStoreLog(testDirectory, projectDirectory);
+            VerifyConfigurationLog(testDirectory);
             VerifyInvalidConfigurationIsolation(testDirectory, projectDirectory);
             VerifyConfigurationTabs(logger, testDirectory, projectDirectory);
             VerifyConfigurationHeader(logger, testDirectory);
@@ -100,8 +110,8 @@ internal static partial class SelfTestRunner
             logger.Dispose();
             var logText = string.Join(
                 Environment.NewLine, Directory.EnumerateFiles(logDirectory, "*.log").Select(File.ReadAllText));
-            if (!logText.Contains("[DEBUG] self-test-debug", StringComparison.Ordinal)
-                || !logText.Contains("[INFO] self-test-info", StringComparison.Ordinal)
+            if (!Regex.IsMatch(logText, @"\[DEBUG\] \[T\d+\] \[[^\]]+\] self-test-debug")
+                || !Regex.IsMatch(logText, @"\[INFO\] \[T\d+\] \[[^\]]+\] self-test-info")
                 || !logText.Contains("[maanop.run] 用户日志", StringComparison.Ordinal)
                 || !logText.Contains("[runtime.task] 用户日志", StringComparison.Ordinal)
                 || !logText.Contains("GUI diagnostic only", StringComparison.Ordinal)) {

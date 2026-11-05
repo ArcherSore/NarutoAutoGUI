@@ -3,6 +3,8 @@ using System.Drawing;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using NarutoAutoGUI.Infrastructure;
+using NarutoAutoGUI.Models;
 using DrawingSize = System.Drawing.Size;
 
 namespace NarutoAutoGUI.ChildSession;
@@ -107,7 +109,8 @@ internal sealed class ChildSessionService
         } catch (Exception exception) when (exception is COMException
                                                 or TargetInvocationException
                                                 or InvalidOperationException) {
-            Console.WriteLine($"RDP disconnect 忽略异常：{exception.GetBaseException().Message}");
+            _host.ReportDiagnostic(LogLevel.Warn, "RDP 断开请求失败，已忽略"
+                + AppLogger.Field("error", exception.GetBaseException().Message));
         }
     }
 

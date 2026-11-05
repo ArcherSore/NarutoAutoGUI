@@ -1,6 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -126,7 +127,8 @@ public partial class MainWindow : FluentWindow
         ChildSessionManager sessionManager, WorkerCoordinator workerCoordinator, RuntimeEnvironment environment,
         Func<Task> requestExitAsync, Func<Task> endEnvironmentAsync, Func<string, Task> installUpdateAsync,
         string? applicationDirectory = null, Func<CancellationToken, Task<EngineCheckResult>>? checkForUpdate = null,
-        Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task>? prepareEnvironment = null)
+        Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task>? prepareEnvironment = null,
+        Func<string, IProgress<EngineProgress>, CancellationToken, Task<string>>? prepareUpdate = null)
     {
         InitializeComponent();
         _runLog = new RunLogFeed(LogLines, MaximumGuiLogEntries);
@@ -138,6 +140,7 @@ public partial class MainWindow : FluentWindow
         _logger = logger;
         _applicationDirectory = applicationDirectory ?? AppContext.BaseDirectory;
         _checkForUpdate = checkForUpdate ?? CheckWithEngineAsync;
+        _prepareUpdate = prepareUpdate ?? PrepareWithEngineAsync;
         _settings = new ApplicationSettings(_applicationDirectory, logger,
             CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding, OpenAfdianAsync,
             ManageChildSessionCredentialsAsync);
@@ -501,7 +504,9 @@ public partial class MainWindow : FluentWindow
         try {
             Directory.CreateDirectory(Path.GetDirectoryName(AutoSessionPath)!);
             File.WriteAllText(AutoSessionPath, AutoSessionMenuItem.IsChecked ? "true" : "false");
+            _settings.LogToggleChanged("application.autoSession", AutoSessionMenuItem.IsChecked);
         } catch (Exception exception) {
+            _logger.Warn("保存自动启动分身设置失败。", exception);
             AutoSessionMenuItem.IsChecked = !AutoSessionMenuItem.IsChecked;
             ShowActionableError("保存自动启动分身设置失败", exception, "请检查配置目录写入权限。", offerLogDirectory: false);
         }
@@ -510,6 +515,7 @@ public partial class MainWindow : FluentWindow
     private async void PrepareAndRunButton_Click(object sender, RoutedEventArgs e)
     {
         if (!CommitFocusedConfigurationInput() || RevealInvalidParameter() || OperationOrExitInProgress) {
+            LogIgnoredAction();
             return;
         }
         await PrepareFromPanelAsync(startRun: true);
@@ -523,6 +529,7 @@ public partial class MainWindow : FluentWindow
     private async Task PrepareFromPanelAsync(bool startRun = false, bool startupOnly = false)
     {
         if (OperationOrExitInProgress) {
+            LogIgnoredAction();
             return;
         }
         _environmentPreparationFailed = false;
@@ -572,16 +579,17 @@ public partial class MainWindow : FluentWindow
     {
         if (CurrentControls.Action is RuntimeAction.Recover { Enabled: true }) {
             await _endEnvironmentAsync();
+        } else {
+            LogIgnoredAction();
         }
     }
 
     private async void StartRunButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!CommitFocusedConfigurationInput() || RevealInvalidParameter()) {
-            return;
-        }
-        if (CurrentControls.Action is not (RuntimeAction.Start { Enabled: true }
-            or RuntimeAction.Retry { Target: RetryTarget.Start, Enabled: true })) {
+        if (!CommitFocusedConfigurationInput() || RevealInvalidParameter()
+            || CurrentControls.Action is not (RuntimeAction.Start { Enabled: true }
+                or RuntimeAction.Retry { Target: RetryTarget.Start, Enabled: true })) {
+            LogIgnoredAction();
             return;
         }
         await RunOperationAsync(PendingOperation.StartingRun, () => StartCurrentPlanAsync());
@@ -605,6 +613,7 @@ public partial class MainWindow : FluentWindow
         }
         _pendingStartupOnly = startupOnly;
         _pendingStartAttempt ??= project.CreateRunStartAttempt(startupOnly);
+        RunResultLog.WritePlan(_logger, _pendingStartAttempt, ActiveConfigurationName, startupOnly);
         var response = await _workerCoordinator.StartRunAsync(_pendingStartAttempt);
         if (response.Disposition is not ("accepted" or "already_accepted")) {
             throw new InvalidDataException($"未知 run.start disposition：{response.Disposition}。 ");
@@ -618,6 +627,7 @@ public partial class MainWindow : FluentWindow
     private async void StopRunButton_Click(object sender, RoutedEventArgs e)
     {
         if (CurrentControls.Action is not RuntimeAction.Stop { Enabled: true }) {
+            LogIgnoredAction();
             return;
         }
         await RunOperationAsync(
@@ -1830,12 +1840,20 @@ public partial class MainWindow : FluentWindow
         ProjectValidationBorder.Visibility = Visibility.Visible;
     }
 
-    private async Task RunOperationAsync(PendingOperation pending, Func<Task> operation)
+    // A control can stay clickable for a moment after its state changes; "nothing happened" is then still in the log.
+    private void LogIgnoredAction([CallerMemberName] string action = "") => _logger.Debug(
+        $"操作未执行{AppLogger.Field("action", action)}{AppLogger.Field("current", CurrentControls.Action)}"
+        + $"{AppLogger.Field("pending", _pendingOperation)}{AppLogger.Field("exiting", _exitInProgress)}");
+
+    private async Task RunOperationAsync(
+        PendingOperation pending, Func<Task> operation, [CallerMemberName] string caller = "")
     {
         if (OperationOrExitInProgress) {
+            LogIgnoredAction(caller);
             return;
         }
 
+        using var scope = _logger.Scope(OperationLabel(pending));
         SetPendingOperation(pending);
         try {
             await _environment.RunExclusiveAsync(operation);
@@ -1881,7 +1899,9 @@ public partial class MainWindow : FluentWindow
             _onboardingPreferences = new OnboardingPreferences(Path.GetDirectoryName(configPath)!, _logger);
             _onboardingPreferences.CaptureBeforeProjectLoad(configPath);
         }
-        var project = ProjectPlanModule.Open(_applicationDirectory, configPath, _projectPlan);
+        var previous = _projectPlan;
+        var project = ProjectPlanModule.Open(_applicationDirectory, configPath, previous,
+            message => _logger.Info(message));
         _projectPlan = project;
         // Preparing the environment reloads the project; an unfixed invalid draft must survive it and keep blocking
         // Start. Drafts for inputs the reloaded PI no longer has are never rendered or matched.
@@ -1898,10 +1918,14 @@ public partial class MainWindow : FluentWindow
         if (project.LoadWarning is not null) {
             _logger.Warn(project.LoadWarning);
         }
-        _logger.Info(
-            $"已加载 MaaNOP Project Interface：{project.ProjectName} {project.ProjectVersion}；"
-            + $"interfaceDigest={project.SourceInterfaceDigest}；"
-            + $"runtimeProfileDigest={project.RuntimeProfileDigest}。 ");
+        // Every prepare reloads the project; the log only needs it the first time and when it has changed.
+        if (previous?.SourceInterfaceDigest != project.SourceInterfaceDigest
+            || previous?.RuntimeProfileDigest != project.RuntimeProfileDigest) {
+            _logger.Info(
+                $"已加载 MaaNOP Project Interface：{project.ProjectName} {project.ProjectVersion}；"
+                + $"interfaceDigest={project.SourceInterfaceDigest}；"
+                + $"runtimeProfileDigest={project.RuntimeProfileDigest}。");
+        }
     }
 
     private ProjectPlanModule RequireProject() =>
@@ -1950,7 +1974,9 @@ public partial class MainWindow : FluentWindow
     }
 
     internal static void WriteWorkerDiagnosticLog(AppLogger logger, WorkerLogEntry entry) =>
-        logger.Write(ParseWorkerLogLevel(entry.Level), $"Worker #{entry.Sequence} [{entry.Source}] {entry.Message}");
+        logger.WriteWorker(
+            ParseWorkerLogLevel(entry.Level), $"#{entry.Sequence} [{entry.Source}] {entry.Message}",
+            new DateTimeOffset(DateTime.SpecifyKind(entry.TimestampUtc, DateTimeKind.Utc)));
 
     private void AddRunLogEntry(WorkerLogEntry workerEntry)
     {

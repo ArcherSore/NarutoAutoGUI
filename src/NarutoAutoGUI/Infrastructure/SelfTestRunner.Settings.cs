@@ -260,6 +260,85 @@ internal static partial class SelfTestRunner
         }, checkForUpdate: _ => { checks++; return check.Task; });
     }
 
+    // Failure details reach the log but never the status the user reads.
+    private static void VerifyUpdateLog(string testDirectory)
+    {
+        using var logger = new AppLogger(Path.Combine(testDirectory, "update-log"));
+        var written = new List<string>();
+        logger.EntryWritten += (_, entry) => written.Add(entry.Message);
+        void Expect(string failure, params string[] lines)
+        {
+            Require(lines.All(line => written.Any(text => text.StartsWith(line, StringComparison.Ordinal))),
+                $"{failure}：{string.Join(" | ", written)}");
+            written.Clear();
+        }
+        static IOException EngineFailure()
+        {
+            var failure = new IOException("界面文字");
+            failure.Data[UpdateEngineClient.DiagnosticsKey] = "exit=1 code=network_error";
+            return failure;
+        }
+
+        var check = new TaskCompletionSource<EngineCheckResult>();
+        var prepare = new TaskCompletionSource<string>();
+        RunOnboardingScenario(logger, Path.Combine(testDirectory, "update-log-window"), (window, _) => {
+            var action = SettingsActionFor(window, "update.check");
+            var finished = action.ExecuteAsync();
+            check.SetException(EngineFailure());
+            PumpOnboarding();
+            finished.GetAwaiter().GetResult();
+            Expect("检查失败应写出 Engine 诊断", "检查更新 | enter", "检查更新 | leave, ",
+                "检查更新失败 [engine=exit=1 code=network_error]");
+            Require(action.Status == "界面文字", $"诊断不应出现在界面：{action.Status}");
+
+            check = new TaskCompletionSource<EngineCheckResult>();
+            check.SetResult(new EngineCheckResult("7.8.9", null));
+            action.ExecuteAsync().GetAwaiter().GetResult();
+            PumpOnboarding();
+            Expect("没有新版本时也应写结果", "检查更新完成 [current=7.8.9]");
+
+            check = new TaskCompletionSource<EngineCheckResult>();
+            check.SetResult(new EngineCheckResult("7.8.9", new EngineUpdate("8.0.0", "notes", "opaque")));
+            action.ExecuteAsync().GetAwaiter().GetResult();
+            PumpOnboarding();
+            Expect("发现新版本应写目标版本", "检查更新完成 [current=7.8.9] [target=8.0.0]");
+
+            ClickOnboarding(window, "DownloadUpdateButton");
+            prepare.SetException(EngineFailure());
+            PumpOnboarding();
+            Expect("准备失败应写目标版本、下载量和诊断", "准备更新 [target=8.0.0] | enter",
+                "准备更新失败 [target=8.0.0] [downloaded=10/20] [engine=exit=1 code=network_error]");
+            Require(((TextBlock)window.FindName("UpdateDownloadStatus")).Text == "界面文字", "诊断不应出现在下载状态中。");
+
+            // Progress<T> posts its callback, so a prepare that ends at once finishes before that callback has run.
+            prepare = new TaskCompletionSource<string>();
+            prepare.SetException(EngineFailure());
+            ClickOnboarding(window, "DownloadUpdateButton");
+            Expect("立即失败时也应写出已报告的下载量",
+                "准备更新失败 [target=8.0.0] [downloaded=10/20] [engine=exit=1 code=network_error]");
+
+            prepare = new TaskCompletionSource<string>();
+            ClickOnboarding(window, "DownloadUpdateButton");
+            ClickOnboarding(window, "CancelDownloadButton");
+            Expect("取消准备应写下载量", "准备更新已取消 [target=8.0.0] [downloaded=10/20]");
+
+            prepare = new TaskCompletionSource<string>();
+            prepare.SetResult("opaque:prepared");
+            ClickOnboarding(window, "DownloadUpdateButton");
+            Expect("准备完成应写结果和耗时", "更新已准备好 [target=8.0.0] [downloaded=10/20]",
+                "准备更新 [target=8.0.0] | leave, ");
+
+            ClickOnboarding(window, "InstallUpdateButton");
+            Expect("安装交接应写目标版本", "开始安装更新 [target=8.0.0]");
+        }, checkForUpdate: _ => check.Task, prepareUpdate: (descriptor, progress, cancellation) => {
+            Require(descriptor == "opaque", "准备更新应使用检查结果的描述符。");
+            progress.Report(new EngineProgress("download", 10, 20, 5));
+            var current = prepare;
+            cancellation.Register(() => current.TrySetCanceled(cancellation));
+            return current.Task;
+        });
+    }
+
     private static IEnumerable<DependencyObject> SettingsVisualDescendants(DependencyObject parent)
     {
         for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++) {

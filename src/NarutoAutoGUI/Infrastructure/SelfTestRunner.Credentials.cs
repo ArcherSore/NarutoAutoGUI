@@ -80,6 +80,7 @@ internal static partial class SelfTestRunner
         var logText = string.Join(Environment.NewLine,
             Directory.EnumerateFiles(logDirectory, "*.log").Select(File.ReadAllText));
         Require(logText.Contains("已保存桌面分身的 Windows 登录凭据", StringComparison.Ordinal)
+            && logText.Contains("已取消保存桌面分身的 Windows 登录凭据", StringComparison.Ordinal)
             && !logText.Contains("Pa55word", StringComparison.Ordinal)
             && !logText.Contains("example.invalid", StringComparison.Ordinal)
             && !logText.Contains("localuser", StringComparison.Ordinal), "日志不得包含账户名或密码。");

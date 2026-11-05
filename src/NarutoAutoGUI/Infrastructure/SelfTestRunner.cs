@@ -42,6 +42,7 @@ internal static partial class SelfTestRunner
             VerifyDiagnosticPackage(logger, testDirectory);
             VerifyDebugImageCleanup(logger, testDirectory);
             VerifyDeclarativeSettings(logger, testDirectory);
+            VerifyUpdateLog(testDirectory);
             VerifyChildSessionCredentials(logger, testDirectory);
             VerifyDiagnosticSettings(logger, testDirectory);
             VerifyNavigationRail(logger, testDirectory);

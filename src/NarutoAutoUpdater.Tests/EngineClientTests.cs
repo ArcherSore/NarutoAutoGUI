@@ -91,6 +91,46 @@ internal static class EngineClientTests
         }
         Console.WriteLine("UPDATE TEST PASS: terminal errors preserve engine messages with exit code zero or nonzero.");
         Console.WriteLine("UPDATE TEST PASS: copy pre-ready error survives a successful parent process exit.");
+        await VerifyDiagnosticsAsync();
+        Console.WriteLine("UPDATE TEST PASS: failure diagnostics keep exit code, code and stderr tail out of Message.");
+    }
+
+    private static async Task VerifyDiagnosticsAsync()
+    {
+        try {
+            await new UpdateEngineClient(FixtureStart("network-error")).CheckAsync(Path.GetTempPath(), default);
+            throw new Exception("Network error accepted.");
+        } catch (IOException exception) {
+            var diagnostics = UpdateEngineClient.Diagnostics(exception);
+            if (exception.Message != "检查更新失败，请稍后重试。"
+                || diagnostics != "exit=1 code=network_error stderr=Release request failed: 底层错误 第二行") {
+                throw new Exception($"Engine diagnostics wrong: {exception.Message} / {diagnostics}");
+            }
+        }
+        try {
+            await new UpdateEngineClient(FixtureStart("noisy-error")).CheckAsync(Path.GetTempPath(), default);
+            throw new Exception("Noisy error accepted.");
+        } catch (IOException exception) {
+            var diagnostics = UpdateEngineClient.Diagnostics(exception) ?? "";
+            if (!diagnostics.EndsWith("TAIL-MARKER", StringComparison.Ordinal) || diagnostics.Length > 4200) {
+                throw new Exception($"Stderr must keep only its tail: {diagnostics.Length} chars.");
+            }
+        }
+        try {
+            await new UpdateEngineClient(FixtureStart("hang"), TimeSpan.FromMilliseconds(250))
+                .CheckAsync(Path.GetTempPath(), default);
+            throw new Exception("Hanging Engine accepted.");
+        } catch (IOException exception) when (UpdateEngineClient.Diagnostics(exception) == "") { }
+        try {
+            await new UpdateEngineClient(FixtureStart("bad-json")).CheckAsync(Path.GetTempPath(), default);
+            throw new Exception("Invalid message accepted.");
+        } catch (InvalidDataException exception) when (UpdateEngineClient.Diagnostics(exception) is not null) { }
+        try {
+            await new UpdateEngineClient(new ProcessStartInfo(Path.Combine(Path.GetTempPath(), "no-such-engine.exe")))
+                .CheckAsync(Path.GetTempPath(), default);
+            throw new Exception("Missing Engine accepted.");
+        } catch (System.ComponentModel.Win32Exception exception)
+            when (UpdateEngineClient.Diagnostics(exception) == "") { }
     }
 
     public static async Task RunFixtureAsync()
@@ -161,6 +201,16 @@ internal static class EngineClientTests
                 {"protocolVersion":1,"type":"error","code":"install_preflight","message":"已准备更新失效，请重新下载。"}
                 """);
             Environment.ExitCode = mode == "error" ? 1 : 0;
+            return;
+        }
+        if (mode is "network-error" or "noisy-error") {
+            await Console.Error.WriteAsync(mode == "network-error"
+                ? "Release request failed: 底层错误\r\n第二行\r\n" : new string('x', 128 * 1024) + "TAIL-MARKER");
+            await Console.Error.FlushAsync();
+            Console.WriteLine("""
+                {"protocolVersion":1,"type":"error","code":"network_error","message":"检查更新失败，请稍后重试。"}
+                """);
+            Environment.ExitCode = 1;
             return;
         }
         if (mode == "stderr") {

@@ -14,8 +14,7 @@ internal static partial class SelfTestRunner
     {
         var persisted = 0.0;
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "sidebar-resize"), (window, directory) => {
-            typeof(MainWindow).GetMethod("EndOnboarding", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .Invoke(window, new object[] { true });
+            EndTour(window);
             var home = Named<Grid>(window, "HomeView");
             var column = Named<ColumnDefinition>(window, "RuntimeSidebarColumn");
             var splitter = Named<GridSplitter>(window, "RuntimeSidebarSplitter");

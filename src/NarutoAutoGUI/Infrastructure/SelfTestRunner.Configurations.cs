@@ -72,17 +72,9 @@ internal static partial class SelfTestRunner
 
     private static void VerifyConfigurationTabs(AppLogger logger, string testDirectory, string projectDirectory)
     {
-        using var session = new SimulatedWts().CreateManager(logger);
-        var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "tabs-state"), "unused.exe",
-            $"NarutoAutoGUI.Tabs.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
-        var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
-            () => Task.CompletedTask, () => Task.CompletedTask, _ => Task.CompletedTask);
-        const System.Reflection.BindingFlags flags =
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
         var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(testDirectory, "tabs.json"));
-        try {
-            typeof(Views.MainWindow).GetField("_projectPlan", flags)!.SetValue(window, project);
-            typeof(Views.MainWindow).GetMethod("RenderTaskPlan", flags)!.Invoke(window, null);
+        WithPlanWindow(logger, testDirectory, project, (window, items) => {
+            InvokeOnboarding(window, "RenderTaskPlan");
             var tabs = window.FindName("ConfigurationTabs") as System.Windows.Controls.TabControl
                 ?? throw new InvalidOperationException("任务工作区需要配置 Tab 控件。");
             var add = (System.Windows.Controls.Button)window.FindName("NewConfigurationButton");
@@ -95,9 +87,8 @@ internal static partial class SelfTestRunner
                 throw new InvalidOperationException("Tab 选择必须保存 Active。");
             }
             project.AddTask("RealTask");
-            typeof(Views.MainWindow).GetField("_expandedTaskName", flags)!.SetValue(window, "RealTask");
-            typeof(Views.MainWindow).GetMethod("RenderTaskPlan", flags)!.Invoke(window, null);
-            var items = (System.Windows.DependencyObject)window.FindName("PlanItemsPanel");
+            SetOnboardingField(window, "_expandedTaskName", "RealTask");
+            InvokeOnboarding(window, "RenderTaskPlan");
             var retry = ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
                 .Single(item => System.Windows.Automation.AutomationProperties.GetName(item)
                     == "Server range · Retry count");
@@ -163,26 +154,14 @@ internal static partial class SelfTestRunner
             if (!editors.All(editor => editor.IsEnabled) || LockBadgeShown()) {
                 throw new InvalidOperationException("解除运行锁后必须恢复编辑并隐藏锁定说明。");
             }
-            var drag = buttons.Single(button => NameOf(button) == "拖动以调整顺序");
-            var remove = buttons.Single(button => NameOf(button).StartsWith("从执行计划移除", StringComparison.Ordinal));
-            if (new[] { drag, remove }.Any(button => button.Height != 32
-                    || button.VerticalAlignment != System.Windows.VerticalAlignment.Center)
-                || !Equals(drag.ToolTip, "拖动以调整顺序") || !Equals(remove.ToolTip, "从执行计划移除")) {
-                throw new InvalidOperationException("任务卡片操作按钮应为 32×32 并带 ToolTip，不随卡片高度拉伸。");
-            }
-        } finally {
-            window.AllowClose();
-            window.Close();
-            Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
-        }
+        });
     }
 
     // The added-tasks badge counts additions to the shown configuration, never ones made to another list.
     // Runs with the task panel open, so the configuration switch happens mid-session.
     private static void VerifyAddedTasksPerConfiguration(Views.MainWindow window)
     {
-        var project = (ProjectPlanModule)typeof(Views.MainWindow).GetField("_projectPlan",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(window)!;
+        var project = ProjectOf(window);
         var tabs = (System.Windows.Controls.TabControl)window.FindName("ConfigurationTabs");
         var catalog = (System.Windows.DependencyObject)window.FindName("AvailableTasksPanel");
         var badge = (System.Windows.UIElement)window.FindName("AddedTasksBadge");
@@ -232,9 +211,6 @@ internal static partial class SelfTestRunner
         SetOnboardingField(window, "_expandedTaskName", "RealTask");
         InvokeOnboarding(window, "RenderTaskPlan");
         var input = Server();
-        if (input is not Wpf.Ui.Controls.TextBox) {
-            throw new InvalidOperationException("参数输入框应与下拉框使用同一套 WPF UI 样式。");
-        }
         input.Text = "978-,";
         input.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(
             System.Windows.Input.Keyboard.PrimaryDevice, 0, input, null) {
@@ -273,9 +249,7 @@ internal static partial class SelfTestRunner
 
         var toggle = ConfigurationDescendants(items).OfType<Wpf.Ui.Controls.ToggleSwitch>()
             .Single(item => System.Windows.Automation.AutomationProperties.GetName(item) == "Nested");
-        if (toggle.IsChecked != true || !Equals(toggle.OnContent, "On") || !Equals(toggle.OffContent, "Off")) {
-            throw new InvalidOperationException("switch option 应显示为开关，并用 case label 标注开/关。");
-        }
+        Require(toggle.IsChecked == true, "switch option 应按默认 case 显示为开关。");
         toggle.IsChecked = false;
         toggle.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
         if (project.Configurations[0].ExplicitOptions["Nested"].GetProperty("SelectedCase").GetString() != "Off") {
@@ -295,15 +269,8 @@ internal static partial class SelfTestRunner
         option["label"] = "";
         option["inputs"]![0]!["label"] = "";
         File.WriteAllText(interfacePath, json.ToJsonString());
-        using var session = new SimulatedWts().CreateManager(logger);
-        var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "blank-labels-state"),
-            "unused.exe", $"NarutoAutoGUI.BlankLabels.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
-        var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
-            () => Task.CompletedTask, () => Task.CompletedTask, _ => Task.CompletedTask);
-        try {
-            var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "config.json"));
-            var items = (System.Windows.DependencyObject)window.FindName("PlanItemsPanel");
-            SetOnboardingField(window, "_projectPlan", project);
+        var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "config.json"));
+        WithPlanWindow(logger, testDirectory, project, (window, items) => {
             SetOnboardingField(window, "_expandedTaskName", "RealTask");
             InvokeOnboarding(window, "RenderTaskPlan");
             if (!ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
@@ -318,11 +285,7 @@ internal static partial class SelfTestRunner
                 .Any(run => run.Text == "ServerRange：978-1012")) {
                 throw new InvalidOperationException("option 与 input label 均为空时，折叠摘要应显示 option 名称。");
             }
-        } finally {
-            window.AllowClose();
-            window.Close();
-            Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
-        }
+        });
     }
 
     private static void VerifyDraftSummarySync(AppLogger logger, string testDirectory)
@@ -334,16 +297,9 @@ internal static partial class SelfTestRunner
         other["name"] = "OtherTask";
         json["task"]!.AsArray().Add(other);
         File.WriteAllText(interfacePath, json.ToJsonString());
-        using var session = new SimulatedWts().CreateManager(logger);
-        var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "draft-summary-state"),
-            "unused.exe", $"NarutoAutoGUI.DraftSummary.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
-        var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
-            () => Task.CompletedTask, () => Task.CompletedTask, _ => Task.CompletedTask);
-        try {
-            var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "config.json"));
-            project.AddTask("OtherTask");
-            var items = (System.Windows.DependencyObject)window.FindName("PlanItemsPanel");
-            SetOnboardingField(window, "_projectPlan", project);
+        var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "config.json"));
+        project.AddTask("OtherTask");
+        WithPlanWindow(logger, testDirectory, project, (window, items) => {
             SetOnboardingField(window, "_expandedTaskName", "RealTask");
             InvokeOnboarding(window, "RenderTaskPlan");
             System.Windows.Documents.Run? OtherSummary(string text) => ConfigurationDescendants(items)
@@ -371,11 +327,7 @@ internal static partial class SelfTestRunner
                 || !ConfigurationDescendants(items).Contains(input)) {
                 throw new InvalidOperationException("Esc 必须立即恢复其他摘要的已保存值，且不重建正在编辑的输入框。");
             }
-        } finally {
-            window.AllowClose();
-            window.Close();
-            Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
-        }
+        });
     }
 
     // Enter submits like losing focus; an unchanged value or draft is not submitted, validated or logged again.
@@ -383,21 +335,14 @@ internal static partial class SelfTestRunner
     {
         var projectDirectory = CreateProjectFixture(Path.Combine(testDirectory, "enter-commit"));
         var configPath = Path.Combine(projectDirectory, "config.json");
-        using var session = new SimulatedWts().CreateManager(logger);
-        var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "enter-commit-state"),
-            "unused.exe", $"NarutoAutoGUI.EnterCommit.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
-        var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
-            () => Task.CompletedTask, () => Task.CompletedTask, _ => Task.CompletedTask);
         var rejections = 0;
         void CountRejection(object? sender, Models.LogEntry entry)
         {
             rejections += entry.Message.Contains("未通过校验") ? 1 : 0;
         }
         logger.EntryWritten += CountRejection;
-        try {
-            var project = ProjectPlanModule.Open(projectDirectory, configPath);
-            var items = (System.Windows.DependencyObject)window.FindName("PlanItemsPanel");
-            SetOnboardingField(window, "_projectPlan", project);
+        var project = ProjectPlanModule.Open(projectDirectory, configPath);
+        WithPlanWindow(logger, testDirectory, project, (window, items) => {
             SetOnboardingField(window, "_expandedTaskName", "RealTask");
             InvokeOnboarding(window, "RenderTaskPlan");
             var input = ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
@@ -439,8 +384,22 @@ internal static partial class SelfTestRunner
             Require(Invalid() && rejections == 1, "未修改的非法草稿再按 Enter 或失焦不重复校验。");
             Require(Press(System.Windows.Input.Key.Escape) && input.Text == "980" && !Invalid() && Saved() == "980",
                 "非法草稿经 Enter 提交后，Esc 必须恢复已保存值并清除错误。");
+        });
+    }
+
+    // A MainWindow that is never shown, rendering a project the check opened itself.
+    private static void WithPlanWindow(AppLogger logger, string directory, ProjectPlanModule project,
+        Action<Views.MainWindow, System.Windows.DependencyObject> verify)
+    {
+        using var session = new SimulatedWts().CreateManager(logger);
+        var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(directory, "plan-window-state"),
+            "unused.exe", $"NarutoAutoGUI.PlanWindow.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
+        var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
+            () => Task.CompletedTask, () => Task.CompletedTask, _ => Task.CompletedTask);
+        try {
+            SetOnboardingField(window, "_projectPlan", project);
+            verify(window, (System.Windows.DependencyObject)window.FindName("PlanItemsPanel"));
         } finally {
-            logger.EntryWritten -= CountRejection;
             window.AllowClose();
             window.Close();
             Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();

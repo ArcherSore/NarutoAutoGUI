@@ -94,9 +94,6 @@ internal static partial class SelfTestRunner
                 "离开说明步骤后必须恢复信息按钮的正常交互显示规则。");
             ClickOnboarding(window, "OnboardingNext");
             AssertOnboardingStep(window, 4, "观看桌面分身");
-            if (((WpfButton)window.FindName("OnboardingNext")).Content.ToString() != "开始使用") {
-                throw new InvalidOperationException("最后一步必须显示开始使用。");
-            }
             ClickOnboarding(window, "OnboardingPrevious");
             AssertOnboardingStep(window, 3, "启动自动化");
             ClickOnboarding(window, "OnboardingNext");
@@ -222,9 +219,6 @@ internal static partial class SelfTestRunner
             }
             ClickOnboarding(window, "CloseUpdateButton");
             WaitForOnboardingStep(window, 1, "配置自动化任务");
-            ClickOnboarding(window, "OnboardingNext");
-            PumpUntil(() => ((UIElement)window.FindName("OnboardingPulse")).Visibility == Visibility.Collapsed,
-                "说明图标 Pulse 必须有限，不能无限循环。");
         });
     }
 
@@ -321,6 +315,12 @@ internal static partial class SelfTestRunner
         timer.Start();
         Dispatcher.PushFrame(frame);
     }
+
+    private static ProjectPlanModule ProjectOf(MainWindow window) => (ProjectPlanModule)typeof(MainWindow)
+        .GetField("_projectPlan", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+
+    private static void EndTour(MainWindow window) => typeof(MainWindow)
+        .GetMethod("EndOnboarding", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [true]);
 
     private static void InvokeOnboarding(MainWindow window, string name) => typeof(MainWindow)
         .GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null);

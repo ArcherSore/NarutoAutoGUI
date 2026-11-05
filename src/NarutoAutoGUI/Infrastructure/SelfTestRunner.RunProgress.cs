@@ -88,8 +88,7 @@ internal static partial class SelfTestRunner
         Require(MainWindow.SidebarWidth(600) == 340 && MainWindow.SidebarWidth(1200) == 420
             && MainWindow.SidebarWidth(2000) == 540, "侧栏宽度应为主页内容的 35%，限制在 340–540。");
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "runtime-console"), (window, _) => {
-            typeof(MainWindow).GetMethod("EndOnboarding", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .Invoke(window, new object[] { true });
+            EndTour(window);
             var console = Named<FrameworkElement>(window, "RuntimeSidebar");
             var home = Named<FrameworkElement>(window, "HomeView");
             var log = Named<FrameworkElement>(window, "HomeLogListBox");
@@ -183,7 +182,7 @@ internal static partial class SelfTestRunner
     {
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "run-progress-wiring"), (window, _) => {
             const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-            typeof(MainWindow).GetMethod("EndOnboarding", flags)!.Invoke(window, new object[] { true });
+            EndTour(window);
             var empty = JsonDocument.Parse("{}").RootElement.Clone();
             var started = DateTime.UtcNow.AddSeconds(-65);
             var item = new RunPlanItem(Guid.NewGuid(), "RealTask", "Real task", "Entry", empty, empty);

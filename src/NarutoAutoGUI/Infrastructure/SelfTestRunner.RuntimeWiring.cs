@@ -200,8 +200,7 @@ internal static partial class SelfTestRunner
                         definition["task"]!.AsArray().Add(skipped);
                         File.WriteAllText(interfacePath, definition.ToJsonString());
                         InvokeOnboarding(window, "LoadProject");
-                        ProjectPlanModule CurrentProject() => (ProjectPlanModule)typeof(MainWindow)
-                            .GetField("_projectPlan", flags)!.GetValue(window)!;
+                        ProjectPlanModule CurrentProject() => ProjectOf(window);
                         CurrentProject().AddTask("SkippedTask");
                         // The fake admission already exists; model the editable UI before a real Prepare creates it.
                         SetOnboardingField(window, "_workerSnapshot", new WorkerCoordinatorSnapshot(

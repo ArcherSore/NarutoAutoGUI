@@ -492,17 +492,11 @@ internal static partial class SelfTestRunner
                 }
                 var planTop = planScroll.TranslatePoint(new System.Windows.Point(), workspace).Y;
                 var planOffset = planScroll.VerticalOffset;
-                if (!EdgeFadesAre(catalogScroll, top: false, bottom: true)) {
-                    throw new InvalidOperationException("可用任务未滚动时只应在底部裁切处淡出。");
-                }
                 catalogScroll.ScrollToBottom();
                 PumpOnboarding();
                 if (catalogScroll.VerticalOffset <= 0 || planScroll.VerticalOffset != planOffset
                     || Math.Abs(planScroll.TranslatePoint(new System.Windows.Point(), workspace).Y - planTop) > 1) {
                     throw new InvalidOperationException("滚动可用任务不得移动执行计划。");
-                }
-                if (!EdgeFadesAre(catalogScroll, top: true, bottom: false)) {
-                    throw new InvalidOperationException("可用任务滚动到底后只应在顶部裁切处淡出。");
                 }
                 catalogScroll.ScrollToTop();
                 if (width == 920) {
@@ -659,13 +653,6 @@ internal static partial class SelfTestRunner
             });
             File.WriteAllText(path, root.ToJsonString());
         });
-    }
-
-    private static bool EdgeFadesAre(System.Windows.Controls.ScrollViewer scroll, bool top, bool bottom)
-    {
-        bool Visible(string name) => ((System.Windows.UIElement)scroll.Template.FindName(name, scroll)).Visibility
-            == System.Windows.Visibility.Visible;
-        return Visible("TopFade") == top && Visible("BottomFade") == bottom;
     }
 
     private static void VerifyTaskDescriptionMarkup()

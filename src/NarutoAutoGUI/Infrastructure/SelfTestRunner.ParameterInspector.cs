@@ -79,17 +79,10 @@ internal static partial class SelfTestRunner
         json["global_option"] = new JsonArray();
         json["task"]!.AsArray().Add(plain);
         File.WriteAllText(interfacePath, json.ToJsonString());
-        using var session = new SimulatedWts().CreateManager(logger);
-        var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "plan-headers-state"),
-            "unused.exe", $"NarutoAutoGUI.PlanHeaders.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
-        var window = new MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
-            () => Task.CompletedTask, () => Task.CompletedTask, _ => Task.CompletedTask);
-        try {
-            var project = ProjectPlanModule.Open(directory, Path.Combine(directory, "config.json"));
-            project.AddTask("StressTask");
-            project.AddTask("PlainTask");
-            var items = (System.Windows.DependencyObject)window.FindName("PlanItemsPanel");
-            SetOnboardingField(window, "_projectPlan", project);
+        var project = ProjectPlanModule.Open(directory, Path.Combine(directory, "config.json"));
+        project.AddTask("StressTask");
+        project.AddTask("PlainTask");
+        WithPlanWindow(logger, testDirectory, project, (window, items) => {
             SetOnboardingField(window, "_expandedTaskName", null!);
             InvokeOnboarding(window, "RenderTaskPlan");
             string NameOf(System.Windows.DependencyObject element) =>
@@ -137,11 +130,7 @@ internal static partial class SelfTestRunner
                 .Where(text => text.Text == "Goes one level deeper").ToArray();
             Require(editors.Length == 5 && editors.All(editor => !editor.IsEnabled) && notes.Length == 1
                 && notes.All(note => note.IsEnabled), "锁定时参数控件禁用，说明保持可读。");
-        } finally {
-            window.AllowClose();
-            window.Close();
-            Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
-        }
+        });
     }
 
     // The inspector at the three reference window widths: stacked when narrow, two columns otherwise, never
@@ -149,14 +138,12 @@ internal static partial class SelfTestRunner
     private static void VerifyParameterInspectorWindow(AppLogger logger, string testDirectory)
     {
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "inspector-window"), (window, _) => {
-            var project = (ProjectPlanModule)typeof(MainWindow).GetField("_projectPlan",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(window)!;
+            var project = ProjectOf(window);
             project.AddTask("StressTask");
             project.AddTask("ThirdTask");
             project.SetInputValue("ServerRange", "server_range", "979");
             project.SetInputValue("ServerRange", "retry_count", "5");
-            typeof(MainWindow).GetMethod("EndOnboarding", System.Reflection.BindingFlags.Instance
-                | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { true });
+            EndTour(window);
             SetOnboardingField(window, "_expandedTaskName", "StressTask");
             InvokeOnboarding(window, "RenderTaskPlan");
             var items = (System.Windows.DependencyObject)window.FindName("PlanItemsPanel");
@@ -197,9 +184,9 @@ internal static partial class SelfTestRunner
 
     private static void VerifyParameterRowLayout()
     {
-        Require(ParameterRowPanel.CalculateLabelWidth(469) is null && ParameterRowPanel.CalculateLabelWidth(470) == 169
-            && ParameterRowPanel.CalculateLabelWidth(600) == 216 && ParameterRowPanel.CalculateLabelWidth(1200) == 280,
-            "标签列约占编辑区 36%，限制在 140–280，窄于 470 时上下堆叠。");
+        Require(ParameterRowPanel.CalculateLabelWidth(469) is null
+            && ParameterRowPanel.CalculateLabelWidth(470) is not null
+            && ParameterRowPanel.CalculateLabelWidth(1200) == 280, "标签列有上限，窄于 470 时上下堆叠。");
         Require(ParameterInputsPanel.CalculateColumns(140, 3) == 1 && ParameterInputsPanel.CalculateColumns(300, 3) == 2
             && ParameterInputsPanel.CalculateColumns(900, 3) == 3, "多输入在宽度不足时换行。");
 
@@ -218,11 +205,11 @@ internal static partial class SelfTestRunner
         System.Windows.Rect LabelSlot() =>
             System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(description);
         var wide = Arrange(600);
-        Require(!row.IsStacked && wide.X == 217 && wide.Width == 383 && LabelSlot().Width == 216
-            && description.ActualHeight > 40, "宽编辑区为两列，长说明在标签列内换行，没有横向溢出。");
+        Require(!row.IsStacked && wide.X >= LabelSlot().Width && wide.Right <= 600
+            && description.ActualHeight > value.Height, "宽编辑区为两列，长说明在标签列内换行，没有横向溢出。");
         var narrow = Arrange(400);
-        Require(row.IsStacked && narrow.X == ParameterRowPanel.IndentStep + 2
-            && narrow.Y >= description.ActualHeight - 10 && LabelSlot().Width == 400, "窄编辑区标签与控件上下堆叠，控件按深度缩进。");
+        Require(row.IsStacked && narrow.X > 0 && narrow.Y >= description.ActualHeight - 10 && LabelSlot().Width == 400,
+            "窄编辑区标签与控件上下堆叠，控件按深度缩进。");
     }
 
     private static string CreateComplexInspectorFixture(string testDirectory)

@@ -30,7 +30,7 @@ internal static partial class SelfTestRunner
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "required-input-window"), (window, _) => {
             const System.Reflection.BindingFlags flags =
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-            typeof(MainWindow).GetMethod("EndOnboarding", flags)!.Invoke(window, [true]);
+            EndTour(window);
             SetOnboardingField(window, "_expandedTaskName", "RealTask");
             InvokeOnboarding(window, "RenderTaskPlan");
             var items = (System.Windows.DependencyObject)window.FindName("PlanItemsPanel");

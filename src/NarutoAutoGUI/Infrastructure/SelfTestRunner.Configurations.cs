@@ -72,7 +72,7 @@ internal static partial class SelfTestRunner
 
     private static void VerifyConfigurationTabs(AppLogger logger, string testDirectory, string projectDirectory)
     {
-        using var session = new ChildSession.ChildSessionManager(logger);
+        using var session = new SimulatedWts().CreateManager(logger);
         var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "tabs-state"), "unused.exe",
             $"NarutoAutoGUI.Tabs.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
         var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
@@ -295,7 +295,7 @@ internal static partial class SelfTestRunner
         option["label"] = "";
         option["inputs"]![0]!["label"] = "";
         File.WriteAllText(interfacePath, json.ToJsonString());
-        using var session = new ChildSession.ChildSessionManager(logger);
+        using var session = new SimulatedWts().CreateManager(logger);
         var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "blank-labels-state"),
             "unused.exe", $"NarutoAutoGUI.BlankLabels.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
         var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
@@ -334,7 +334,7 @@ internal static partial class SelfTestRunner
         other["name"] = "OtherTask";
         json["task"]!.AsArray().Add(other);
         File.WriteAllText(interfacePath, json.ToJsonString());
-        using var session = new ChildSession.ChildSessionManager(logger);
+        using var session = new SimulatedWts().CreateManager(logger);
         var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "draft-summary-state"),
             "unused.exe", $"NarutoAutoGUI.DraftSummary.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
         var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
@@ -383,7 +383,7 @@ internal static partial class SelfTestRunner
     {
         var projectDirectory = CreateProjectFixture(Path.Combine(testDirectory, "enter-commit"));
         var configPath = Path.Combine(projectDirectory, "config.json");
-        using var session = new ChildSession.ChildSessionManager(logger);
+        using var session = new SimulatedWts().CreateManager(logger);
         var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "enter-commit-state"),
             "unused.exe", $"NarutoAutoGUI.EnterCommit.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
         var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),

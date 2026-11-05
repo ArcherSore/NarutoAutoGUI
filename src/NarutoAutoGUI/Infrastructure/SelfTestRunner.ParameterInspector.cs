@@ -79,7 +79,7 @@ internal static partial class SelfTestRunner
         json["global_option"] = new JsonArray();
         json["task"]!.AsArray().Add(plain);
         File.WriteAllText(interfacePath, json.ToJsonString());
-        using var session = new ChildSession.ChildSessionManager(logger);
+        using var session = new SimulatedWts().CreateManager(logger);
         var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "plan-headers-state"),
             "unused.exe", $"NarutoAutoGUI.PlanHeaders.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
         var window = new MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),

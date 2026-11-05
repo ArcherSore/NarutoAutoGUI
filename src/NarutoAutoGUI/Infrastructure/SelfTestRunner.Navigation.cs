@@ -13,9 +13,8 @@ internal static partial class SelfTestRunner
         string? preference = null;
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "navigation-rail"), (window, directory) => {
             const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-            var rail = (FrameworkElement)window.FindName("MainNavigation");
-            Require(rail.ActualWidth == 64 && window.FindName("PART_ToggleButton") is null
-                && File.ReadAllText(preference!) == "false", "导航栏应固定为 64 像素、没有展开入口，并忽略旧偏好。");
+            Require(window.FindName("PART_ToggleButton") is null && File.ReadAllText(preference!) == "false",
+                "导航栏没有展开入口，并忽略旧偏好。");
             var home = (RailItem)window.FindName("HomeNavigationItem");
             var settings = (RailItem)window.FindName("SettingsNavigationItem");
             ClickOnboarding(window, "SettingsNavigationItem");

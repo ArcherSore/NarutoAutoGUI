@@ -138,7 +138,7 @@ internal static partial class SelfTestRunner
             var first = OnPool(() => environment.EndAsync(() => true));
             Require(first is { Outcome: EnvironmentEndOutcome.Unconfirmed, Error.Message: "无法确认 Worker 已退出。" }
                 && coordinator.TrackedWorkerPid is not null && environment.EndUnconfirmed
-                && waitEnded.Task.Wait(5000) && waitEnded.Task.Result,
+                && waitEnded.Task.Wait(WaitLimitMilliseconds) && waitEnded.Task.Result,
                 "Worker 未在上限内退出时，结束应未确认、保留 Admission 并停止等待。");
 
             exited = true;
@@ -161,8 +161,8 @@ internal static partial class SelfTestRunner
                 ReportedId = 7, Sessions = [0, 1, 7], SessionSurvivesLogoff = true
             }.CreateManager(logger), "无法确认桌面分身已结束。", true),
             ("query-failure", () => new ChildSessionManager(logger,
-                () => throw new Win32Exception(5, "self-test WTS failure"), () => [0u, 1u], () => null),
-                "无法确认桌面分身状态。", false)
+                () => throw new Win32Exception(5, "self-test WTS failure"), () => [0u, 1u], () => null,
+                new ChildSessionCredentialStore(logger, new MemoryCredentialVault())), "无法确认桌面分身状态。", false)
         }) {
             using var session = createSession();
             WithFakeWorker(logger, Path.Combine(directory, name), (coordinator, _, _) => {
@@ -306,7 +306,8 @@ internal static partial class SelfTestRunner
             WorkerSnapshot.ActiveRun: not null }, "假 Worker 未报告运行中的 Run。");
 
     private static void AwaitWorker(WorkerCoordinator coordinator, Func<WorkerCoordinatorSnapshot, bool> condition,
-        string failure) => Require(SpinWait.SpinUntil(() => condition(coordinator.Snapshot), 10000), failure);
+        string failure) =>
+        Require(SpinWait.SpinUntil(() => condition(coordinator.Snapshot), WaitLimitMilliseconds), failure);
 
     private static bool AdmissionDiscarded(WorkerCoordinator coordinator) =>
         coordinator.Snapshot.Observation == WorkerObservation.ChildSessionEnded && coordinator.TrackedWorkerPid is null;

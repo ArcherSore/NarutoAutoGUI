@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using NarutoAutoGUI.ChildSession;
@@ -11,6 +11,10 @@ namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
+    // WPF snaps layout to device pixels, so a value can land up to one DIP away at any scale of 100% or more.
+    private const double PixelTolerance = 1;
+    // Only bounds how long a real failure takes to report; a slow machine must never hit it.
+    private const int WaitLimitMilliseconds = 30000;
     private const uint ScenarioSessionId = 7;
     private static readonly Guid ScenarioWorkerId = new("7a0c0e3e-5d1f-4b8e-9a51-000000000007");
     private static readonly string[] RuntimeHeaderControls = [

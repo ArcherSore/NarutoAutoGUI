@@ -130,7 +130,7 @@ internal static partial class SelfTestRunner
 
     private static void VerifyPresetMenu(AppLogger logger, string testDirectory, ProjectPlanModule project)
     {
-        using var session = new ChildSession.ChildSessionManager(logger);
+        using var session = new SimulatedWts().CreateManager(logger);
         var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "preset-state"),
             "unused.exe", $"NarutoAutoGUI.Presets.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
         var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),

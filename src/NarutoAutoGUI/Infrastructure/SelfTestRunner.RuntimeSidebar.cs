@@ -29,9 +29,10 @@ internal static partial class SelfTestRunner
             var hit = splitter.TransformToAncestor(home).Transform(new Point(6, splitter.ActualHeight / 2));
             Require(home.InputHitTest(hit) is DependencyObject target
                 && (target == splitter || splitter.IsAncestorOf(target)), "任务区右缘应命中拖拽区域。");
-            Require(Math.Abs(splitter.ActualWidth - Named<FrameworkElement>(window, "TasksView").Margin.Right) < 0.5
+            var gap = Named<FrameworkElement>(window, "TasksView").Margin.Right;
+            Require(Math.Abs(splitter.ActualWidth - gap) < PixelTolerance
                 && Math.Abs(splitter.TransformToAncestor(home).Transform(new Point(splitter.ActualWidth, 0)).X
-                    - console.TransformToAncestor(home).Transform(new Point()).X) < 0.5,
+                    - console.TransformToAncestor(home).Transform(new Point()).X) < PixelTolerance,
                 "拖拽区域应正好覆盖任务区与侧栏之间的间距。");
             // The shown handle straddles the console border: its inner half drags, but hidden it covers nothing.
             var handle = (FrameworkElement)splitter.Template.FindName("Handle", splitter);
@@ -44,11 +45,9 @@ internal static partial class SelfTestRunner
             }
             Require(!HandleInnerHalfDrags(), "隐藏的手柄不应遮挡侧栏左缘的控件。");
             VisualStateManager.GoToState(splitter, "Hover", false);
-            PumpOnboarding(300);
-            Require(HandleInnerHalfDrags(), "显示的手柄覆盖侧栏的一半也应可以拖动。");
+            PumpUntil(HandleInnerHalfDrags, "显示的手柄覆盖侧栏的一半也应可以拖动。");
             VisualStateManager.GoToState(splitter, "Hidden", false);
-            PumpOnboarding(300);
-            Require(!HandleInnerHalfDrags(), "手柄隐藏后应立即不再遮挡侧栏。");
+            PumpUntil(() => !HandleInnerHalfDrags(), "手柄隐藏后应不再遮挡侧栏。");
 
             var preference = Path.Combine(directory, "config", "runtime-sidebar-width.txt");
             double? Saved() => File.Exists(preference) ? double.Parse(File.ReadAllText(preference),
@@ -82,7 +81,7 @@ internal static partial class SelfTestRunner
             window.Width = 920;
             window.Height = 640;
             PumpOnboarding();
-            Require(home.ColumnDefinitions[0].ActualWidth >= 419.5 && console.ActualWidth < 540,
+            Require(home.ColumnDefinitions[0].ActualWidth >= 420 - PixelTolerance && console.ActualWidth < 540,
                 $"窄窗口应限制侧栏宽度并保留任务区最小宽度：任务区={home.ColumnDefinitions[0].ActualWidth}，"
                 + $"侧栏={console.ActualWidth}，主页={home.ActualWidth}，上界={column.MaxWidth}，窗口={window.ActualWidth}。");
             AssertLayout();
@@ -95,7 +94,8 @@ internal static partial class SelfTestRunner
             var search = Named<FrameworkElement>(window, "TaskSearchBox");
             var badgeBounds = badge.TransformToAncestor(shelf).TransformBounds(new Rect(badge.RenderSize));
             var searchBounds = search.TransformToAncestor(shelf).TransformBounds(new Rect(search.RenderSize));
-            Require(badgeBounds.Right <= searchBounds.Left + 0.5 && searchBounds.Right <= shelf.ActualWidth,
+            Require(badgeBounds.Right <= searchBounds.Left + PixelTolerance
+                && searchBounds.Right <= shelf.ActualWidth + PixelTolerance,
                 "最窄任务区中可用任务标题、新增提示和搜索框不能重叠或溢出。");
             ClickOnboarding(window, "TaskShelfHeaderButton");
             ClickOnboarding(window, "SettingsNavigationItem");
@@ -176,12 +176,12 @@ internal static partial class SelfTestRunner
                 Require(Math.Abs(control.TransformToAncestor(home).Transform(new Point()).Y - controlTop) < 1
                     && Math.Abs(control.ActualHeight - controlHeight) < 1, "运行控制顶部位置和布局应保持稳定。");
                 Require(log.ActualHeight > 0 && log.TransformToAncestor(console)
-                    .Transform(new Point(log.ActualWidth, log.ActualHeight)).Y <= console.ActualHeight + 0.5,
+                    .Transform(new Point(log.ActualWidth, log.ActualHeight)).Y <= console.ActualHeight + PixelTolerance,
                     $"日志应填充剩余高度且不溢出侧栏：日志高度={log.ActualHeight}，侧栏高度={console.ActualHeight}。");
-                Require(home.ColumnDefinitions[0].ActualWidth >= 419.5
-                    && home.ActualWidth <= LayoutInformation.GetLayoutSlot(home).Width + 0.5
+                Require(home.ColumnDefinitions[0].ActualWidth >= 420 - PixelTolerance
+                    && home.ActualWidth <= LayoutInformation.GetLayoutSlot(home).Width + PixelTolerance
                     && console.TransformToAncestor(home).Transform(new Point(console.ActualWidth, 0)).X
-                        <= home.ActualWidth + 0.5, "左右栏必须处于主页边界内。");
+                        <= home.ActualWidth + PixelTolerance, "左右栏必须处于主页边界内。");
             }
         });
         VerifyRuntimeSidebarRestore(logger, testDirectory, persisted);
@@ -203,7 +203,7 @@ internal static partial class SelfTestRunner
                         column.MaxWidth)
                     : Math.Clamp(double.Parse(content, System.Globalization.CultureInfo.InvariantCulture),
                         column.MinWidth, column.MaxWidth);
-                Require(Math.Abs(column.Width.Value - expected) < 0.5
+                Require(Math.Abs(column.Width.Value - expected) < PixelTolerance
                     && File.ReadAllText(Path.Combine(directory, "config", "runtime-sidebar-width.txt")) == content,
                     $"启动时应在宽度边界内恢复保存的侧栏宽度（{name}），无效值使用默认宽度，且不改写偏好。");
             }, project => {

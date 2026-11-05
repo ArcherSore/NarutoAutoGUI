@@ -6,7 +6,9 @@ param(
     [string]$Configuration = 'Release',
     [switch]$NoBuild,
     # Runs only the checks whose name contains this text; for iterating on a GUI or Worker self-test.
-    [string]$Only
+    [string]$Only,
+    # Runs as if the display were at 100% scale, to compare with this machine's real scale.
+    [switch]$Dpi96
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,6 +35,8 @@ function Invoke-VerificationStep
     $start.CreateNoWindow = $true
     $start.RedirectStandardOutput = $true
     $start.RedirectStandardError = $true
+    # Set on the child alone: this script can run inside the caller's shell, which must keep its real scale.
+    if ($Dpi96) { $start.EnvironmentVariables['__COMPAT_LAYER'] = 'DPIUNAWARE' }
     $outputFile = [IO.File]::Create($stdout)
     $errorFile = [IO.File]::Create($stderr)
     $process = $null

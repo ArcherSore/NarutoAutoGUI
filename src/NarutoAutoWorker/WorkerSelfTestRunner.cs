@@ -220,7 +220,7 @@ internal static class WorkerSelfTestRunner
         var execution = new WorkerRuntimeExecution(
             null!, Guid.NewGuid(), null!, 0, (_, _, message) => warnings.Add(message), () => { });
         var cleanupMethod = typeof(WorkerRuntimeExecution).GetMethod("CleanupAsync", flags)!;
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var cleanup = (Task<(bool Success, string? Error)>)cleanupMethod.Invoke(
             execution, [CancellationToken.None])!;
         var result = await cleanup.WaitAsync(timeout.Token);

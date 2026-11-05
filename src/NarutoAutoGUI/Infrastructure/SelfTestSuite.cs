@@ -12,9 +12,13 @@ internal static class SelfTestSuite
 {
     private static readonly TimeSpan CheckLimit = TimeSpan.FromMinutes(5);
 
-    internal static int Run(string title, IEnumerable<(string Name, Action Body)> checks, string[] args)
+    internal static int Run(string title, IEnumerable<(string Name, Action Body)> checks, string[] args,
+        string? environment = null)
     {
         UseUtf8WhenRedirected();
+        if (environment is not null) {
+            Console.WriteLine(environment);
+        }
         var only = OnlyFilter(args);
         var selected = checks
             .Where(check => only is null || check.Name.Contains(only, StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -27,7 +31,8 @@ internal static class SelfTestSuite
         var total = Stopwatch.StartNew();
         foreach (var (name, body) in selected) {
             var timer = Stopwatch.StartNew();
-            using var watchdog = new System.Threading.Timer(_ => Abort(name), null, CheckLimit, Timeout.InfiniteTimeSpan);
+            using var watchdog = new System.Threading.Timer(
+                _ => Abort(name), null, CheckLimit, Timeout.InfiniteTimeSpan);
             try {
                 body();
                 Console.WriteLine($"PASS {name} ({Seconds(timer)}s)");

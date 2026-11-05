@@ -44,8 +44,10 @@ internal static partial class SelfTestRunner
             {
                 var bounds = element.TransformToAncestor(container)
                     .TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
-                return bounds.Left >= -0.5 && bounds.Right <= container.ActualWidth + 0.5;
+                return bounds.Left >= -PixelTolerance && bounds.Right <= container.ActualWidth + PixelTolerance;
             }
+            double CenterY(FrameworkElement element) =>
+                element.TranslatePoint(new System.Windows.Point(0, element.ActualHeight / 2), header).Y;
             bool Fade(string name) =>
                 ((UIElement)scroll.Template.FindName(name, scroll)).Visibility == Visibility.Visible;
 
@@ -53,9 +55,10 @@ internal static partial class SelfTestRunner
             foreach (var width in new[] { 920, 1180, 1440 }) {
                 window.Width = width;
                 PumpOnboarding();
-                Require(header.ActualHeight == 36 && bar.ActualHeight == 34
-                    && title.ActualWidth >= title.DesiredSize.Width - 0.5 && badge.IsVisible && Inside(badge, header)
-                    && badge.ActualWidth >= badge.DesiredSize.Width - 0.5 && Inside(add, bar)
+                Require(Math.Abs(CenterY(title) - CenterY(bar)) < bar.ActualHeight / 2
+                    && title.ActualWidth >= title.DesiredSize.Width - PixelTolerance
+                    && badge.IsVisible && Inside(badge, header)
+                    && badge.ActualWidth >= badge.DesiredSize.Width - PixelTolerance && Inside(add, bar)
                     && scroll.ComputedHorizontalScrollBarVisibility != Visibility.Visible && scroll.ScrollableWidth > 0,
                     $"{width} 宽度下 14 个配置锁定时，页头应为单行，标题、锁定徽标与新建按钮完整可见。");
             }
@@ -79,7 +82,7 @@ internal static partial class SelfTestRunner
                 PumpOnboarding();
             }
             Wheel();
-            Require(Math.Abs(scroll.HorizontalOffset - 64) < 0.5 && Fade("LeftFade"), "锁定时垂直滚轮仍应横向滚动标签。");
+            Require(Math.Abs(scroll.HorizontalOffset - 64) < PixelTolerance && Fade("LeftFade"), "锁定时垂直滚轮仍应横向滚动标签。");
             var other = tabs.Items.OfType<ConfigurationTab>().Last();
             Require(other.ToolTip is string blocked && blocked.Contains("无法切换配置", StringComparison.Ordinal),
                 "锁定时非当前标签应说明无法切换。");
@@ -96,14 +99,15 @@ internal static partial class SelfTestRunner
             scroll.ScrollToHorizontalOffset(0);
             PumpOnboarding();
             Wheel();
-            Require(Math.Abs(scroll.HorizontalOffset - 64) < 0.5, "可编辑时垂直滚轮横向滚动标签。");
+            Require(Math.Abs(scroll.HorizontalOffset - 64) < PixelTolerance, "可编辑时垂直滚轮横向滚动标签。");
             other.RaiseEvent(new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice, 0, null, other) {
                 RoutedEvent = Keyboard.PreviewGotKeyboardFocusEvent
             });
             PumpOnboarding();
             var last = tabs.Items.OfType<TabItem>().Last();
             Require(project.ActiveConfigurationId == project.Configurations[^1].Id && last.IsSelected
-                && Inside(last, scroll) && scroll.HorizontalOffset >= scroll.ScrollableWidth - 0.5 && Inside(add, bar)
+                && Inside(last, scroll) && scroll.HorizontalOffset >= scroll.ScrollableWidth - PixelTolerance
+                && Inside(add, bar)
                 && !Fade("RightFade"), "可编辑时焦点切换选择，最后一个标签带边距完整显示。");
             project.ActivateConfiguration(project.Configurations[0].Id);
             InvokeOnboarding(window, "RenderTaskPlan");

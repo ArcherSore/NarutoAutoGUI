@@ -36,8 +36,7 @@ internal static partial class SelfTestRunner
             }
             CompleteOnboardingStartup(window);
             InvokeOnboarding(window, "ReevaluateOnboarding");
-            PumpOnboarding(600);
-            AssertOnboardingStep(window, 1, "配置自动化任务");
+            WaitForOnboardingStep(window, 1, "配置自动化任务");
             ClickOnboarding(window, "OnboardingSkip");
             if (File.ReadAllText(Path.Combine(directory, "config", "onboarding.txt")) != "1"
                 || File.Exists(Path.Combine(directory, "config", "onboarding-new-user.pending"))
@@ -76,10 +75,10 @@ internal static partial class SelfTestRunner
             var root = (FrameworkElement)window.FindName("WindowOverlayRoot");
             var workspace = (FrameworkElement)window.FindName("TaskWorkspacePanel");
             var viewport = workspace.TransformToAncestor(root).TransformBounds(new Rect(workspace.RenderSize));
-            var outline = ((System.Windows.Shapes.Path)window.FindName("OnboardingOutline")).Data.Bounds;
-            if (outline.Top < viewport.Top || outline.Bottom > viewport.Bottom) {
-                throw new InvalidOperationException("超高任务卡的高亮外扩不能越过滚动视口。");
-            }
+            var outline = (System.Windows.Shapes.Path)window.FindName("OnboardingOutline");
+            PumpUntil(() => outline.Data.Bounds.Top >= viewport.Top - PixelTolerance
+                && outline.Data.Bounds.Bottom <= viewport.Bottom + PixelTolerance,
+                "超高任务卡的高亮外扩不能越过滚动视口。");
             window.Hide();
             PumpOnboarding();
             if (((UIElement)window.FindName("OnboardingOverlay")).Visibility != Visibility.Collapsed
@@ -131,8 +130,7 @@ internal static partial class SelfTestRunner
     private static void VerifyOnboardingEligibility(AppLogger logger, string testDirectory)
     {
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "immediate-recovery"), (window, directory) => {
-            PumpOnboarding(600);
-            AssertOnboardingStep(window, 1, "配置自动化任务");
+            WaitForOnboardingStep(window, 1, "配置自动化任务");
         }, recoveryCompleted: true);
         foreach (var existing in new[] { "old", "corrupt", "completed", "invalid-version" }) {
             RunOnboardingScenario(logger, Path.Combine(testDirectory, existing), (window, directory) => {
@@ -223,13 +221,10 @@ internal static partial class SelfTestRunner
                 throw new InvalidOperationException("更新弹层打开时自动 Tour 必须延后。");
             }
             ClickOnboarding(window, "CloseUpdateButton");
-            PumpOnboarding(500);
-            AssertOnboardingStep(window, 1, "配置自动化任务");
+            WaitForOnboardingStep(window, 1, "配置自动化任务");
             ClickOnboarding(window, "OnboardingNext");
-            PumpOnboarding(3700);
-            if (((UIElement)window.FindName("OnboardingPulse")).Visibility != Visibility.Collapsed) {
-                throw new InvalidOperationException("说明图标 Pulse 必须有限，不能无限循环。");
-            }
+            PumpUntil(() => ((UIElement)window.FindName("OnboardingPulse")).Visibility == Visibility.Collapsed,
+                "说明图标 Pulse 必须有限，不能无限循环。");
         });
     }
 
@@ -240,8 +235,14 @@ internal static partial class SelfTestRunner
     {
         CompleteOnboardingStartup(window);
         InvokeOnboarding(window, "ReevaluateOnboarding");
-        PumpOnboarding(600);
-        AssertOnboardingStep(window, 1, "配置自动化任务");
+        WaitForOnboardingStep(window, 1, "配置自动化任务");
+    }
+
+    private static void WaitForOnboardingStep(MainWindow window, int step, string title)
+    {
+        PumpUntil(() => ((UIElement)window.FindName("OnboardingOverlay")).Visibility == Visibility.Visible,
+            $"新手指引第 {step} 步未显示。");
+        AssertOnboardingStep(window, step, title);
     }
 
     private static void RunOnboardingScenario(AppLogger logger, string directory,
@@ -254,9 +255,7 @@ internal static partial class SelfTestRunner
         beforeLoad?.Invoke(projectDirectory);
         Directory.CreateDirectory(Path.Combine(projectDirectory, "config"));
         File.WriteAllText(Path.Combine(projectDirectory, "config", "update-check.txt"), "false");
-        // Settings reads the saved credential; the scenario never touches the real Windows Credential Manager.
-        using var session = new ChildSessionManager(logger,
-            credentials: credentials ?? new ChildSessionCredentialStore(logger, new MemoryCredentialVault()));
+        using var session = new SimulatedWts().CreateManager(logger, credentials);
         var coordinator = new WorkerCoordinator(logger, Path.Combine(directory, "tour-state"), "unused.exe",
             $"NarutoAutoGUI.Tour.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
         var window = new MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
@@ -385,8 +384,9 @@ internal static partial class SelfTestRunner
         var bounds = popover.TransformToAncestor(root).TransformBounds(new Rect(popover.RenderSize));
         var navigation = (FrameworkElement)window.FindName("MainNavigation");
         var contentTop = navigation.TransformToAncestor(root).Transform(new System.Windows.Point()).Y;
-        if (bounds.Left < 0 || bounds.Top < contentTop + 16
-            || bounds.Right > root.ActualWidth || bounds.Bottom > root.ActualHeight) {
+        if (bounds.Left < -PixelTolerance || bounds.Top < contentTop + 16 - PixelTolerance
+            || bounds.Right > root.ActualWidth + PixelTolerance
+            || bounds.Bottom > root.ActualHeight + PixelTolerance) {
             throw new InvalidOperationException("新手指引浮层必须完整位于窗口内并避开标题栏。");
         }
     }

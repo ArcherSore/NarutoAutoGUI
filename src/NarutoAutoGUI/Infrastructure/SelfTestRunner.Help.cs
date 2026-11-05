@@ -32,20 +32,19 @@ internal static partial class SelfTestRunner
             Require(headers.Length == 3 && answers.All(answer => answer.ActualHeight == 0), "问题默认应全部收起。");
             Capture("collapsed");
             headers[1].IsChecked = true;
-            PumpOnboarding(400);
-            Require(page.Sections[0].Questions[1].IsExpanded && answers[1].ActualHeight > 100
-                && answers[0].ActualHeight == 0 && answers[2].ActualHeight == 0, "展开一个问题应只显示它的答案。");
+            PumpUntil(() => answers[1].ActualHeight > 0, "展开一个问题应显示它的答案。");
+            Require(page.Sections[0].Questions[1].IsExpanded && answers[0].ActualHeight == 0
+                && answers[2].ActualHeight == 0, "展开一个问题不应显示其他答案。");
             headers[2].IsChecked = true;
-            PumpOnboarding(400);
-            Require(answers[1].ActualHeight > 100 && answers[2].ActualHeight > 50, "多个问题应可同时展开。");
+            PumpUntil(() => answers[2].ActualHeight > 0 && answers[1].ActualHeight > 0, "多个问题应可同时展开。");
             Capture("expanded");
             SettingsVisualDescendants(view).OfType<ScrollViewer>().First().ScrollToEnd();
             PumpOnboarding();
             Capture("bottom");
             headers[1].IsChecked = false;
-            PumpOnboarding(400);
-            Require(!page.Sections[0].Questions[1].IsExpanded && answers[1].ActualHeight == 0
-                && answers[2].ActualHeight > 50, "收起一个问题不应影响其他问题。");
+            PumpUntil(() => answers[1].ActualHeight == 0, "收起问题后应隐藏它的答案。");
+            Require(!page.Sections[0].Questions[1].IsExpanded && answers[2].ActualHeight > 0,
+                "收起一个问题不应影响其他问题。");
 
             void Capture(string suffix)
             {

@@ -293,8 +293,10 @@ internal static partial class SelfTestRunner
         internal Action<SimulatedWts>? DuringLogoff { get; set; }
         internal List<uint> LogoffAttempts { get; } = [];
 
-        internal ChildSessionManager CreateManager(AppLogger logger) =>
-            new(logger, () => ReportedId, Enumerate, Logoff);
+        // Never the real WTS or Windows Credential Manager: what is on this machine must not affect a check.
+        internal ChildSessionManager CreateManager(AppLogger logger, ChildSessionCredentialStore? credentials = null) =>
+            new(logger, () => ReportedId, Enumerate, Logoff,
+                credentials ?? new ChildSessionCredentialStore(logger, new MemoryCredentialVault()));
 
         private IReadOnlyCollection<uint> Enumerate() => EnumerationFails
             ? throw new Win32Exception(5, "self-test enumeration failure")

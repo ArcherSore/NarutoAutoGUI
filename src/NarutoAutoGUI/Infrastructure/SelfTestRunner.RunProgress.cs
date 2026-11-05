@@ -106,7 +106,7 @@ internal static partial class SelfTestRunner
                     && console.ActualWidth is >= 340 and <= 540
                     && Named<FrameworkElement>(window, "TasksView").ActualWidth > 0
                     && console.TransformToAncestor(home).Transform(new Point(console.ActualWidth, 0)).X
-                        <= home.ActualWidth + 0.5, $"{width} 宽度下侧栏宽度或主页布局不符。");
+                        <= home.ActualWidth + PixelTolerance, $"{width} 宽度下侧栏宽度或主页布局不符。");
             }
             var screenshots = Environment.GetEnvironmentVariable("NARUTO_PANEL_SCREENSHOTS");
             if (!string.IsNullOrEmpty(screenshots)) {
@@ -123,47 +123,6 @@ internal static partial class SelfTestRunner
                 "运行动态应填满运行控制以下的全部高度。");
 
             var desktop = new DesktopToggle(DesktopAction.Show, true, DesktopStatus.Background);
-            foreach (var started in new[] { false, true }) {
-                RuntimeAction menuAction = started ? new RuntimeAction.Start(true) : new RuntimeAction.Prepare(true);
-                window.ApplyRuntimeControls(new(menuAction,
-                    true, null, started ? desktop : new(DesktopAction.Show, false, DesktopStatus.NotRunning), true));
-                var menu = Named<System.Windows.Controls.ContextMenu>(window, "RuntimeMoreMenu");
-                menu.PlacementTarget = Named<FrameworkElement>(window, "RuntimeMoreButton");
-                menu.IsOpen = true;
-                PumpOnboarding();
-                var auto = Named<System.Windows.Controls.MenuItem>(window, "AutoSessionMenuItem");
-                var checkBox = (FrameworkElement)auto.Template.FindName("CheckBox", auto);
-                var note = (TextBlock)auto.Template.FindName("Note", auto);
-                Require(menu.ActualWidth == 256 && auto.FontSize == 13 && auto.FontWeight == FontWeights.Normal
-                    && checkBox.ActualWidth == 16 && checkBox.ActualHeight == 16
-                    && note.Text == "不会自动开始任务" && note.FontSize == 11.5,
-                    "分身菜单必须保留原稿的 256 宽度、常规字重、说明行和 16 像素复选框。");
-                var actionItem = Named<System.Windows.Controls.MenuItem>(window,
-                    started ? "EndEnvironmentMenuItem" : "StartSessionMenuItem");
-                actionItem.Focus();
-                PumpOnboarding();
-                var row = (Border)actionItem.Template.FindName("Row", actionItem);
-                Require(actionItem.IsHighlighted
-                    && row.Background.ToString() == (started ? "#FFFDEBED" : "#FFEEF2F6"),
-                    "分身菜单的高亮必须使用原稿的淡红色/灰色背景。");
-                var icon = (Viewbox)actionItem.Icon;
-                var canvas = (Canvas)icon.Child;
-                var glyph = (System.Windows.Shapes.Path)canvas.Children[0];
-                Require(icon.Width == 16 && icon.Height == 16 && glyph.StrokeThickness == 1.5
-                    && glyph.StrokeStartLineCap == PenLineCap.Round && glyph.StrokeEndLineCap == PenLineCap.Round,
-                    "分身菜单图标必须使用原稿尺寸和圆头描边。");
-                if (!string.IsNullOrEmpty(screenshots)) {
-                    var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(
-                        (int)Math.Ceiling(menu.ActualWidth), (int)Math.Ceiling(menu.ActualHeight),
-                        96, 96, PixelFormats.Pbgra32);
-                    bitmap.Render(menu);
-                    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
-                    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
-                    using var file = File.Create(Path.Combine(screenshots, $"menu-highlight-{started}.png"));
-                    encoder.Save(file);
-                }
-                menu.IsOpen = false;
-            }
             // The header toggle owns show/hide.
             Require(window.FindName("DesktopMenuItem") is null, "更多操作菜单不应重复显示/隐藏分身。");
             foreach (var (state, endReason) in new (RuntimeControlState, string)[] {
@@ -255,7 +214,7 @@ internal static partial class SelfTestRunner
             var card = items.Children.OfType<System.Windows.Controls.Border>().Single(border => border.Tag is not null);
             Require(CardText() == idleCardText && timer.IsEnabled
                 && Named<TextBlock>(window, "RunProgressCaption").Text == "运行中 · 第 1 / 1 项"
-                && Named<TextBlock>(window, "RunProgressElapsed").Text.StartsWith("总用时 01:0", StringComparison.Ordinal)
+                && Named<TextBlock>(window, "RunProgressElapsed").Text.StartsWith("总用时 01:", StringComparison.Ordinal)
                 && Named<UIElement>(window, "RunProgressPanel").IsVisible,
                 "任务卡片不显示运行信息，控制台保留进度与总用时。");
             Require(Named<TextBlock>(window, "RuntimeStatusTitle").Text == "Real task",

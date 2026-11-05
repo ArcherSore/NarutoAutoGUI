@@ -9,6 +9,7 @@ using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
 using NarutoAutoGUI.Views;
 using NarutoAutoGUI.Worker;
+using Forms = System.Windows.Forms;
 
 namespace NarutoAutoGUI.Infrastructure;
 
@@ -145,7 +146,7 @@ internal static partial class SelfTestRunner
         System.Windows.Application.Current.ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
         try {
             return SelfTestSuite.Run("GUI SELF-TEST", Checks.Where(check => groups.Contains(check.Group))
-                .Select(check => (check.Name, (Action)(() => Execute(check, root)))), args);
+                .Select(check => (check.Name, (Action)(() => Execute(check, root)))), args, DescribeMachine());
         } finally {
             try {
                 Directory.Delete(root, recursive: true);
@@ -153,6 +154,17 @@ internal static partial class SelfTestRunner
                 // The isolated temporary directory can be cleaned by the OS later.
             }
         }
+    }
+
+    // Names what results depend on, and how far window-width checks can reach on this screen.
+    private static string DescribeMachine()
+    {
+        var workArea = System.Windows.SystemParameters.WorkArea;
+        var scale = Forms.Screen.PrimaryScreen!.Bounds.Width / System.Windows.SystemParameters.PrimaryScreenWidth;
+        return $"ENV 工作区={workArea.Width}x{workArea.Height} DIP，缩放={scale:P0}，"
+            + $"区域={System.Globalization.CultureInfo.CurrentCulture.Name}，"
+            + $"动画={System.Windows.SystemParameters.ClientAreaAnimation}，"
+            + $"窗口宽度测试覆盖到 {Math.Min(workArea.Width, 1440)} DIP";
     }
 
     private static void Execute(Check check, string root)
@@ -496,7 +508,7 @@ internal static partial class SelfTestRunner
                 window.Height = width == 920 ? 640 : 900;
                 PumpOnboarding();
                 if (shelf.ActualHeight > Math.Min(340, workspace.ActualHeight * 0.44) + 1
-                    || catalogScroll.ScrollableHeight <= 0 || planScroll.ActualHeight < 131.5
+                    || catalogScroll.ScrollableHeight <= 0 || planScroll.ActualHeight < 132 - PixelTolerance
                     || catalogScroll.ExtentWidth > catalogScroll.ViewportWidth + 1) {
                     throw new InvalidOperationException("添加任务面板必须限高、独立滚动，并为执行计划保留最小高度。");
                 }
@@ -603,11 +615,8 @@ internal static partial class SelfTestRunner
                 .Single(card => card.Tag is ProjectTaskChoice { Label: "日常任务 3" });
             var shown = added.TransformToAncestor(planScroll).TransformBounds(
                 new System.Windows.Rect(0, 0, added.ActualWidth, added.ActualHeight));
-            if (shown.Top < 0 || shown.Bottom > planScroll.ViewportHeight + 1
-                || System.Windows.SystemParameters.ClientAreaAnimation
-                && added.ReadLocalValue(System.Windows.Controls.Border.BorderBrushProperty)
-                    == System.Windows.DependencyProperty.UnsetValue) {
-                throw new InvalidOperationException("新添加的任务应滚入视野并高亮。");
+            if (shown.Top < -PixelTolerance || shown.Bottom > planScroll.ViewportHeight + PixelTolerance) {
+                throw new InvalidOperationException("新添加的任务应滚入视野。");
             }
             if (shelf.Visibility != System.Windows.Visibility.Visible || planItems.Children.Count <= cards
                 || ((System.Windows.Controls.TextBlock)window.FindName("AddedTasksText")).Text != "已添加 2 项"

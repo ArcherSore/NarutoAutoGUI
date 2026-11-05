@@ -36,7 +36,9 @@ internal sealed class WorkerStateLog(AppLogger logger)
         }
 
         var worker = snapshot.WorkerSnapshot;
-        var message = $"Worker 观察变化{Field("from", _observation)}{Field("to", snapshot.Observation)}"
+        // The observation can stay the same while its detail changes; a from equal to the to would only mislead.
+        var from = _observation == snapshot.Observation ? null : _observation;
+        var message = $"Worker 观察变化{Field("from", from)}{Field("to", snapshot.Observation)}"
             + $"{Field("detail", detail)}{Field("instance", worker?.WorkerInstanceId)}{Field("pid", worker?.WorkerPid)}"
             + $"{Field("session", worker?.ChildSessionId)}{Field("activeRun", worker?.ActiveRun?.RunId)}";
         _observation = snapshot.Observation;

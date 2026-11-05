@@ -47,12 +47,10 @@ internal sealed class ChildSessionManager : IDisposable
             var sessionId = QueryChildSessionId();
             if (sessionId is null) {
                 UpdateState(ChildSessionState.NotRunning, null, 0, "未检测到桌面分身");
-                _logger.Info("启动检测：当前没有 Child Session。");
                 return null;
             }
 
             UpdateState(ChildSessionState.Existing, sessionId, 0, "检测到已有桌面分身，正在恢复连接");
-            _logger.Info($"启动检测：发现已有 Child Session {sessionId}。");
             return sessionId;
         } catch (Exception exception) {
             _logger.Error("检测已有 Child Session 失败。", exception);
@@ -248,7 +246,6 @@ internal sealed class ChildSessionManager : IDisposable
             show ? ChildSessionState.ConnectedVisible : ChildSessionState.ConnectedHidden,
             sessionId, connectedState,
             show ? "已连接，子桌面可见" : "已连接，子桌面已隐藏");
-        _logger.Info(show ? "已显示子桌面。" : "已隐藏子桌面（RDP 连接保持存活）。");
     }
 
     private void OnPreviewClosing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -275,7 +272,7 @@ internal sealed class ChildSessionManager : IDisposable
     private void OnConnectionFailed(object? sender, ChildSessionConnectionFailedEventArgs e)
     {
         _logger.Error(
-            $"RDP 状态异常：{e.Message}；ErrorCode={e.ErrorCode}"
+            $"RDP 状态异常：{e.Message.ReplaceLineEndings(" ").Replace("  ", " ")}；ErrorCode={e.ErrorCode}"
             + (e.ExtendedErrorCode is int extended ? $"；ExtendedErrorCode={extended}" : string.Empty));
         UpdateState(
             ChildSessionState.Faulted, SafeChildSessionId(Snapshot.ChildSessionId),
@@ -412,7 +409,9 @@ internal sealed class ChildSessionManager : IDisposable
         var previous = Snapshot;
         Snapshot = new ChildSessionSnapshot(state, sessionId, connectedState, detail, inputUnlocked);
         if (Snapshot != previous) {
-            _logger.Info($"Child Session 状态变化{AppLogger.Field("from", previous.State)}{AppLogger.Field("to", state)}"
+            // The state can stay the same while its details change; a from equal to the to would only mislead.
+            var from = previous.State == state ? null : (ChildSessionState?)previous.State;
+            _logger.Info($"Child Session 状态变化{AppLogger.Field("from", from)}{AppLogger.Field("to", state)}"
                 + $"{AppLogger.Field("session", sessionId)}{AppLogger.Field("connected", connectedState)}"
                 + $"{AppLogger.Field("inputUnlocked", inputUnlocked)}"
                 + AppLogger.Field("detail", detail.ReplaceLineEndings(" ")));

@@ -591,7 +591,12 @@ internal static partial class SelfTestRunner
             const System.Reflection.BindingFlags flags =
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
             var tabs = (System.Windows.Controls.TabControl)window.FindName("ConfigurationTabs");
+            Require(written.Count(text => text.StartsWith("已加载 MaaNOP", StringComparison.Ordinal)) == 1,
+                $"首次加载应写项目信息：{string.Join(" | ", written)}");
             Expect("首次打开应写明使用默认配置", "任务配置文件不存在，使用默认配置。");
+            InvokeOnboarding(window, "LoadProject");
+            Require(!written.Any(text => text.StartsWith("已加载 MaaNOP", StringComparison.Ordinal)),
+                $"项目没有变化时，重新加载不应再写项目信息：{string.Join(" | ", written)}");
 
             ClickOnboarding(window, "NewConfigurationButton");
             Expect("新建应写名称", "已新建配置 [name=配置 2]");

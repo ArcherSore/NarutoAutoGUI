@@ -48,9 +48,13 @@ internal static partial class SelfTestRunner
         // Relayed logs keep the Worker's time; one from another day, recovered after a restart, also shows its date.
         var today = DateTime.Today;
         var relayedAt = new DateTime(today.Year, today.Month, today.Day, 1, 2, 3, 4, DateTimeKind.Local);
-        logger.WriteWorker(LogLevel.Warn, "Worker #1 [run.lifecycle] 转写", new DateTimeOffset(relayedAt));
+        logger.WriteWorker(LogLevel.Warn, "#1 [run.lifecycle] 转写", new DateTimeOffset(relayedAt));
         MainWindow.WriteWorkerDiagnosticLog(logger, new WorkerLogEntry(
             2, relayedAt.AddDays(-2).ToUniversalTime(), "INFO", "run.lifecycle", "回放", false, null, null, null, null));
+        // Agent output keeps its terminal colours and pretask output its line break; neither belongs in the log.
+        MainWindow.WriteWorkerDiagnosticLog(logger, new WorkerLogEntry(3, relayedAt.ToUniversalTime(), "INFO",
+            "agent.stdout", "\u001b[31m[ERR] 内容\u001b[0m\r\n", false, null, null, null, null));
+        logger.Info("末尾空白。 ");
         App.LogStartup(logger);
         using (logger.Scope("作用域")) {
         }
@@ -69,10 +73,13 @@ internal static partial class SelfTestRunner
             || !Regex.IsMatch(text, @"\[ERROR\] \[T\d+\] \[[^\]]+\] 失败\r?\nSystem\.InvalidOperationException: "
                 + "file-logging-exception")
             || !Regex.IsMatch(text, @"^\[01:02:03\.004\] \[WARN\] \[T\d+\] \[Worker\] "
-                + @"Worker #1 \[run\.lifecycle\] 转写\r?$", RegexOptions.Multiline)
+                + @"#1 \[run\.lifecycle\] 转写\r?$", RegexOptions.Multiline)
+            || !Regex.IsMatch(text, @"\[Worker\] #3 \[agent\.stdout\] \[ERR\] 内容\r?$", RegexOptions.Multiline)
+            || !Regex.IsMatch(text, @"\] 末尾空白。\r?$", RegexOptions.Multiline)
+            || text.Contains("\n\r\n")
             || !text.Contains($"[{relayedAt.AddDays(-2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} "
                 + "01:02:03.004] [INFO]")
-            || !text.Contains("Worker #2 [run.lifecycle] 回放")
+            || !text.Contains("[Worker] #2 [run.lifecycle] 回放")
             || !Regex.IsMatch(text, @"\[INFO\] \[T\d+\] \[[^\]]+\] 作用域 \| enter\r?\n.*\] 作用域 \| leave, \d+ms\r?$",
                 RegexOptions.Multiline)
             || !Regex.IsMatch(text, @"\[App\.LogStartup:\d+\] NarutoAutoGUI 正式 GUI 启动 \[version=\S+\] "
@@ -190,6 +197,8 @@ internal static partial class SelfTestRunner
         Expect(lost with { Observation = WorkerObservation.WorkerExited, Detail = "Worker 进程已退出" },
             "Run 期间 Worker 退出应警告",
             (LogLevel.Warn, "[from=IpcDisconnected] [to=WorkerExited] [detail=Worker 进程已退出]"));
+        Expect(lost with { Observation = WorkerObservation.WorkerExited, Detail = "详情变化" },
+            "观察没变、只有详情变化时不应写 from", (LogLevel.Warn, "Worker 观察变化 [to=WorkerExited] [detail=详情变化]"));
         Expect(lost with {
             Observation = WorkerObservation.WorkerRecoveryConflict, WorkerSnapshot = null, Detail = "无法确认"
         }, "恢复冲突总是警告", (LogLevel.Warn, "[to=WorkerRecoveryConflict]"));

@@ -161,6 +161,23 @@ internal static partial class SelfTestRunner
                 $"结束过程应写出每次状态变化：{string.Join(" | ", written)}");
         }
 
+        // The state line says it all, without a from equal to its to or a second line repeating it; a failure's
+        // dialog text keeps to one line.
+        using (var manager = new SimulatedWts().CreateManager(logger)) {
+            written.Clear();
+            manager.DetectExistingSession();
+            Require(written.Count == 1
+                && written[0].Message.StartsWith("Child Session 状态变化 [to=NotRunning]", StringComparison.Ordinal),
+                $"状态名没变时不应写 from，也不应重复写：{string.Join(" | ", written)}");
+            written.Clear();
+            typeof(ChildSessionManager).GetMethod("OnConnectionFailed",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(manager,
+                [null, new ChildSessionConnectionFailedEventArgs("RDP 连接失败：内部错误\n\n断开原因：1\n扩展原因：0", 1, 0)]);
+            Require(written.Any(entry => entry.Message
+                == "RDP 状态异常：RDP 连接失败：内部错误 断开原因：1 扩展原因：0；ErrorCode=1；ExtendedErrorCode=0"),
+                $"RDP 失败日志应为单行：{string.Join(" | ", written)}");
+        }
+
         // Interim logon events leave a trail, so a logon that times out on Windows's screen can be explained later.
         const int badPassword = 0;
         using (var probe = new RdpEventProbe(savedCredential: true)) {

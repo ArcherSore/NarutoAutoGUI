@@ -1899,7 +1899,8 @@ public partial class MainWindow : FluentWindow
             _onboardingPreferences = new OnboardingPreferences(Path.GetDirectoryName(configPath)!, _logger);
             _onboardingPreferences.CaptureBeforeProjectLoad(configPath);
         }
-        var project = ProjectPlanModule.Open(_applicationDirectory, configPath, _projectPlan,
+        var previous = _projectPlan;
+        var project = ProjectPlanModule.Open(_applicationDirectory, configPath, previous,
             message => _logger.Info(message));
         _projectPlan = project;
         // Preparing the environment reloads the project; an unfixed invalid draft must survive it and keep blocking
@@ -1917,10 +1918,14 @@ public partial class MainWindow : FluentWindow
         if (project.LoadWarning is not null) {
             _logger.Warn(project.LoadWarning);
         }
-        _logger.Info(
-            $"已加载 MaaNOP Project Interface：{project.ProjectName} {project.ProjectVersion}；"
-            + $"interfaceDigest={project.SourceInterfaceDigest}；"
-            + $"runtimeProfileDigest={project.RuntimeProfileDigest}。 ");
+        // Every prepare reloads the project; the log only needs it the first time and when it has changed.
+        if (previous?.SourceInterfaceDigest != project.SourceInterfaceDigest
+            || previous?.RuntimeProfileDigest != project.RuntimeProfileDigest) {
+            _logger.Info(
+                $"已加载 MaaNOP Project Interface：{project.ProjectName} {project.ProjectVersion}；"
+                + $"interfaceDigest={project.SourceInterfaceDigest}；"
+                + $"runtimeProfileDigest={project.RuntimeProfileDigest}。");
+        }
     }
 
     private ProjectPlanModule RequireProject() =>
@@ -1970,7 +1975,7 @@ public partial class MainWindow : FluentWindow
 
     internal static void WriteWorkerDiagnosticLog(AppLogger logger, WorkerLogEntry entry) =>
         logger.WriteWorker(
-            ParseWorkerLogLevel(entry.Level), $"Worker #{entry.Sequence} [{entry.Source}] {entry.Message}",
+            ParseWorkerLogLevel(entry.Level), $"#{entry.Sequence} [{entry.Source}] {entry.Message}",
             new DateTimeOffset(DateTime.SpecifyKind(entry.TimestampUtc, DateTimeKind.Utc)));
 
     private void AddRunLogEntry(WorkerLogEntry workerEntry)

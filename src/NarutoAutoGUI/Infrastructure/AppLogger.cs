@@ -17,6 +17,8 @@ internal sealed class AppLogger : IDisposable
     private const string OutputTemplate = "[{Time:l}] [{LevelName:l}] [T{ThreadId}] [{Source:l}] {Message:l}{NewLine}";
     private static readonly TimeSpan Retention = TimeSpan.FromDays(14);
     private static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    // Agent output relayed by the Worker carries terminal colours.
+    private static readonly Regex AnsiCode = new(@"\x1B\[[0-9;]*[A-Za-z]", RegexOptions.CultureInvariant);
     private readonly object _sync = new();
     private readonly Logger _logger;
     private bool _disposed;
@@ -81,7 +83,7 @@ internal sealed class AppLogger : IDisposable
     // Worker logs are relayed here, so the local call site says nothing about where they came from, and the local clock
     // nothing about when: a log recovered after a reconnect or a GUI restart keeps the time the Worker wrote it.
     internal void WriteWorker(LogLevel level, string message, DateTimeOffset timestamp) =>
-        Emit(level, "Worker", message, null, timestamp);
+        Emit(level, "Worker", AnsiCode.Replace(message, string.Empty), null, timestamp);
 
     // One diagnostic field of a message; a missing value leaves no empty brackets behind.
     internal static string Field(string name, object? value) =>
@@ -115,7 +117,8 @@ internal sealed class AppLogger : IDisposable
     private void Emit(
         LogLevel level, string source, string message, Exception? exception, DateTimeOffset? timestamp = null)
     {
-        var text = MaskUserProfile(message, UserProfile);
+        // Relayed output ends in its own line break, which would leave a blank line in the file.
+        var text = MaskUserProfile(message.TrimEnd(), UserProfile);
         var entry = new LogEntry(timestamp ?? DateTimeOffset.Now, level, text);
         // Serilog would render an exception after this point, where its paths could no longer be masked.
         var rendered = exception is null

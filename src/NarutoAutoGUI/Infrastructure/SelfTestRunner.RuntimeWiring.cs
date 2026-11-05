@@ -16,25 +16,6 @@ namespace NarutoAutoGUI.Infrastructure;
 // Drives a real MainWindow through real seams and checks that state changes reach the runtime controls.
 internal static partial class SelfTestRunner
 {
-    private static void VerifyRuntimeControlWiring(AppLogger logger, string testDirectory)
-    {
-        VerifyChildSessionEndResponsiveness(logger);
-        var directory = Path.Combine(testDirectory, "runtime-wiring");
-        VerifyStartupAndExitWiring(logger, directory);
-        VerifySessionRestoreAndEndWiring(logger, directory);
-        VerifySessionEndWithWorkerWiring(logger, directory);
-        VerifyFaultedSessionRetryWiring(logger, directory);
-        VerifyPrepareAndRunWiring(logger, directory);
-        VerifyWorkerStopWiring(logger, directory);
-        VerifyKilledWorkerWiring(logger, directory);
-        VerifyStopUnconfirmedRecoveryWiring(logger, directory);
-        VerifyStopWithoutProjectWiring(logger, directory);
-        VerifyRunResultLogWiring(directory);
-        VerifyKilledWorkerLogWiring(directory);
-        Console.WriteLine("RUNTIME CONTROL WIRING PASS: startup, exit, project failure, restore, end, "
-            + "end with Worker, retry, stop, killed Worker, recovery, stop without project.");
-    }
-
     private static void VerifyStartupAndExitWiring(AppLogger logger, string directory)
     {
         WithRuntimeControlWindow(logger, Path.Combine(directory, "startup"), window => {
@@ -318,8 +299,6 @@ internal static partial class SelfTestRunner
                 }
             }, runtimeProfileDigest: project.RuntimeProfileDigest);
         }
-        Console.WriteLine(
-            "PREPARE AND RUN PASS: current plan, delayed Ready, prepare-only, cancellation, exit while waiting.");
     }
 
     private static void VerifyWorkerStopWiring(AppLogger logger, string directory)

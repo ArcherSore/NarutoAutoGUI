@@ -185,8 +185,6 @@ internal static partial class SelfTestRunner
             }
         });
         VerifyRuntimeSidebarRestore(logger, testDirectory, persisted);
-        Console.WriteLine("RUNTIME SIDEBAR RESIZE PASS: native drag/key events, bounds, log space, navigation, "
-            + "persistence.");
     }
 
     // A restart restores the saved width through the same clamp as window resizing; bad files fall back to default.

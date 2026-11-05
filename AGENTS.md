@@ -57,7 +57,8 @@
 | Rust Engine | `-Suite Engine` | Cargo tests + 全 targets Clippy |
 | 跨组件、Protocol、依赖或完成工作前的完整自动验证 | `-Suite All` | GUI/Worker 增量构建 + 原 test-automated.ps1 全覆盖 |
 
-定向验证用于迭代；共享代码修改应扩大范围，完成后运行 `-Suite All`。
+定向验证用于迭代；`-Only <名称片段>` 只运行名称匹配的 GUI 或 Worker 自检。共享代码修改应扩大范围，完成后运行 `-Suite All`。
+自检逐项隔离，一项失败不影响其他项，结束时汇总全部失败；`SKIP` 表示本机条件不足、该项未验证，不能算作通过。
 `-NoBuild` 仅用于已成功构建且源码/依赖未变时重跑测试；All 时也跳过 Updater 构建，Rust 仍由 Cargo 编译。
 不要在同一输出目录并行构建/自检；DLL 被占用时先确认正在运行的程序或自检，不要盲目重试或终止用户进程。
 临时目录权限或交互桌面条件导致失败时，应如实报告环境限制，不得跳过断言或将旧 DLL 的结果当成新代码验证。

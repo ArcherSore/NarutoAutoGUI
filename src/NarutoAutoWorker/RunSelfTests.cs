@@ -9,42 +9,43 @@ internal static partial class RunSelfTests
     private const int RaceIterations = 16;
     private static readonly TimeSpan StoppingWriteHold = TimeSpan.FromMilliseconds(300);
 
-    internal static void Run() => RunAsync().GetAwaiter().GetResult();
+    internal static (string Name, Action Body)[] Checks => [
+        Scenario("A1/C2/W3", VerifyAcceptedRunAsync),
+        Scenario("A2", VerifyRetryWhileActiveAsync),
+        Scenario("A3/A4/A10", VerifyRetryAfterTerminalAsync),
+        Scenario("A5/A6/A7/A8", VerifyLedgerPrecedesStateAsync),
+        Scenario("A7", VerifyStartingWorkerRejectsAsync, initialize: false),
+        Scenario("A7", VerifyNotReadyWorkerRejectsAsync, initialize: false),
+        Scenario("A9", VerifyPlanValidationAsync),
+        Scenario("P1", VerifyPretaskProgressionAsync),
+        Scenario("P2", VerifyPretaskOnlyAsync),
+        Scenario("P3", VerifyPretaskFailureAsync),
+        Scenario("P4", VerifyPretaskValidationAsync),
+        Scenario("A9", VerifySnapshotReserveAsync),
+        Scenario("R1-R4/C2", VerifyProgressionAsync),
+        Scenario("F1", VerifyFailureBeforeRunningAsync),
+        Scenario("F2", VerifyFailureMidPlanAsync),
+        Scenario("F3", VerifyCleanupFailureAsync),
+        Scenario("S1/S3/W1", VerifyStopRunningAsync),
+        Scenario("S2", VerifyStopStartingAsync),
+        Scenario("S4/S5", VerifyStopWinsEveryOutcomeAsync),
+        Scenario("S6", VerifyStopBeforeCompletionAsync),
+        Scenario("S7", VerifyCompletionBeforeStopAsync),
+        Scenario("S8", VerifyStopMismatchAsync),
+        Scenario("S9", VerifyStopFailureOnlyLogsAsync),
+        Scenario("T1/T2", VerifyStopTimedOutContractAsync),
+        Scenario("L1", VerifyExecutionThrowsAsync),
+        Scenario("L2", VerifyNextExecutionFailsAsync),
+        Scenario("C3", VerifyRunningRacesStopAsync),
+        Scenario("C4", VerifyCompletionRacesStopAsync),
+        Scenario("C5", VerifyConcurrentSnapshotsAsync),
+        Scenario("W2", VerifyStopSurvivesWriteFailureAsync),
+        Scenario("W5", VerifyUnknownOperationRejectedAsync)
+    ];
 
-    private static async Task RunAsync()
-    {
-        await ScenarioAsync("A1/C2/W3", VerifyAcceptedRunAsync);
-        await ScenarioAsync("A2", VerifyRetryWhileActiveAsync);
-        await ScenarioAsync("A3/A4/A10", VerifyRetryAfterTerminalAsync);
-        await ScenarioAsync("A5/A6/A7/A8", VerifyLedgerPrecedesStateAsync);
-        await ScenarioAsync("A7", VerifyStartingWorkerRejectsAsync, initialize: false);
-        await ScenarioAsync("A7", VerifyNotReadyWorkerRejectsAsync, initialize: false);
-        await ScenarioAsync("A9", VerifyPlanValidationAsync);
-        await ScenarioAsync("P1", VerifyPretaskProgressionAsync);
-        await ScenarioAsync("P2", VerifyPretaskOnlyAsync);
-        await ScenarioAsync("P3", VerifyPretaskFailureAsync);
-        await ScenarioAsync("P4", VerifyPretaskValidationAsync);
-        await ScenarioAsync("A9", VerifySnapshotReserveAsync);
-        await ScenarioAsync("R1-R4/C2", VerifyProgressionAsync);
-        await ScenarioAsync("F1", VerifyFailureBeforeRunningAsync);
-        await ScenarioAsync("F2", VerifyFailureMidPlanAsync);
-        await ScenarioAsync("F3", VerifyCleanupFailureAsync);
-        await ScenarioAsync("S1/S3/W1", VerifyStopRunningAsync);
-        await ScenarioAsync("S2", VerifyStopStartingAsync);
-        await ScenarioAsync("S4/S5", VerifyStopWinsEveryOutcomeAsync);
-        await ScenarioAsync("S6", VerifyStopBeforeCompletionAsync);
-        await ScenarioAsync("S7", VerifyCompletionBeforeStopAsync);
-        await ScenarioAsync("S8", VerifyStopMismatchAsync);
-        await ScenarioAsync("S9", VerifyStopFailureOnlyLogsAsync);
-        await ScenarioAsync("T1/T2", VerifyStopTimedOutContractAsync);
-        await ScenarioAsync("L1", VerifyExecutionThrowsAsync);
-        await ScenarioAsync("L2", VerifyNextExecutionFailsAsync);
-        await ScenarioAsync("C3", VerifyRunningRacesStopAsync);
-        await ScenarioAsync("C4", VerifyCompletionRacesStopAsync);
-        await ScenarioAsync("C5", VerifyConcurrentSnapshotsAsync);
-        await ScenarioAsync("W2", VerifyStopSurvivesWriteFailureAsync);
-        await ScenarioAsync("W5", VerifyUnknownOperationRejectedAsync);
-    }
+    private static (string Name, Action Body) Scenario(
+        string id, Func<RunHarness, Task> body, bool initialize = true) =>
+        ($"Run.{id}.{body.Method.Name}", () => ScenarioAsync(id, body, initialize).GetAwaiter().GetResult());
 
     // C1 applies to every scenario: no execution member may be called while the state lock is held.
     private static async Task ScenarioAsync(string id, Func<RunHarness, Task> body, bool initialize = true)

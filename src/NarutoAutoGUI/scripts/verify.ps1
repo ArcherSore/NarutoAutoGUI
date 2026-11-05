@@ -4,7 +4,9 @@ param(
     [string]$Suite = 'Gui',
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    # Runs only the checks whose name contains this text; for iterating on a GUI or Worker self-test.
+    [string]$Only
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,8 +55,9 @@ function Invoke-VerificationStep
     if ($code -ne 0) {
         Write-Host "FAIL $Name (${seconds}s, exit=$code)"
         $lines = @(Get-Content -LiteralPath $stdout, $stderr -Encoding UTF8 |
-            Where-Object { $_.Trim() } | Select-Object -Unique)
-        $errors = @($lines | Where-Object { $_ -match '\berror\b|FAIL|Exception' } | Select-Object -First 8)
+            Where-Object { $_.Trim() -and $_ -notmatch '^\s+at ' } | Select-Object -Unique)
+        $errors = @($lines | Where-Object { $_ -cmatch '\berror\b|^FAIL |SELF-TEST FAIL|Exception' } |
+            Select-Object -First 8)
         @($errors + @($lines | Select-Object -Last 12)) | Select-Object -Unique | ForEach-Object {
             if ($_.Length -gt 500) { Write-Host ($_.Substring(0, 500) + ' ...') } else { Write-Host $_ }
         }
@@ -82,6 +85,7 @@ function Invoke-SelfTest
 
     $binary = Join-Path $repositoryRoot "src\$Project\bin\x64\$Configuration\net10.0-windows\win-x64\$Project.dll"
     if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw "Missing build output: $binary" }
+    if ($Only) { $Selection += @('--only', $Only) }
     Invoke-VerificationStep $Name 'dotnet' (@($binary, '--self-test') + $Selection) (Split-Path $binary)
 }
 

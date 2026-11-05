@@ -13,21 +13,6 @@ internal static partial class SelfTestRunner
     private static readonly TimeSpan EnvironmentWaitLimit = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan OnPoolLimit = TimeSpan.FromSeconds(30);
 
-    private static void VerifyRuntimeEnvironment(AppLogger logger, string testDirectory)
-    {
-        var directory = Path.Combine(testDirectory, "runtime-environment");
-        VerifyEndStopsRunFirst(logger, directory);
-        VerifyEndAfterUnconfirmedStop(logger, directory);
-        VerifyEndWithFaultedWorker(logger, directory);
-        VerifyEndWaitsForWorker(logger, directory);
-        VerifyEndUnconfirmed(logger, directory);
-        VerifyEndConfirmation(logger, directory);
-        VerifyEndHoldsGate(logger, directory);
-        VerifyEnvironmentClosing(logger, directory);
-        Console.WriteLine("RUNTIME ENVIRONMENT PASS: stop first, unconfirmed stop, faulted Worker, Worker exit, "
-            + "unconfirmed end, confirmation, gate, closing.");
-    }
-
     // U1, U9: the Active Run is stopped and has ended before logoff, and the Admission is discarded only after the
     // Worker has exited. The end is in progress from asking the user to the last step.
     private static void VerifyEndStopsRunFirst(AppLogger logger, string directory)

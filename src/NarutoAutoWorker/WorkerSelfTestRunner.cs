@@ -1,52 +1,25 @@
 using MaaFramework.Binding;
 using MaaFramework.Binding.Notification;
+using NarutoAutoGUI.Infrastructure;
 using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoWorker;
 
 internal static class WorkerSelfTestRunner
 {
-    internal static int Run(bool runOnly)
-    {
-        if (runOnly) {
-            return RunCharacterization();
-        }
-        try {
-            RunSelfTests.Run();
-            VerifyFocusProjection();
-            VerifyCallbackAdapter();
-            VerifyLogResponseBudget();
-            VerifyTransportWriteBeforeSendGuard();
-            VerifyAgentExecutableResolution();
-            VerifyStopCleanupRaceAsync().GetAwaiter().GetResult();
-            VerifyTaskerTaskCallbackCompletion();
-            NativeTaskCleanupSelfTests.RunAsync().GetAwaiter().GetResult();
-            FrameworkOptionsSelfTests.Run();
-            PretaskSelfTests.Run();
-            Console.WriteLine(
-                "WORKER SELF-TEST PASS: Run characterization; MaaNOP string focus projection; Callback adapter; "
-                + "log response budget; "
-                + "budget rejection; transport write guard; agent executable resolution; "
-                + "stop/cleanup serialization; "
-                + "Tasker.Task callback completion; native cleanup barrier; pretask processes/jobs/output");
-            return 0;
-        } catch (Exception exception) {
-            Console.Error.WriteLine($"WORKER SELF-TEST FAIL: {exception}");
-            return 1;
-        }
-    }
-
-    private static int RunCharacterization()
-    {
-        try {
-            RunSelfTests.Run();
-            Console.WriteLine("WORKER RUN SELF-TEST PASS: Run characterization");
-            return 0;
-        } catch (Exception exception) {
-            Console.Error.WriteLine($"WORKER RUN SELF-TEST FAIL: {exception}");
-            return 1;
-        }
-    }
+    internal static int Run(string[] args) => SelfTestSuite.Run("WORKER SELF-TEST", [
+        .. RunSelfTests.Checks,
+        (nameof(VerifyFocusProjection), VerifyFocusProjection),
+        (nameof(VerifyCallbackAdapter), VerifyCallbackAdapter),
+        (nameof(VerifyLogResponseBudget), VerifyLogResponseBudget),
+        (nameof(VerifyTransportWriteBeforeSendGuard), VerifyTransportWriteBeforeSendGuard),
+        (nameof(VerifyAgentExecutableResolution), VerifyAgentExecutableResolution),
+        (nameof(VerifyStopCleanupRaceAsync), () => VerifyStopCleanupRaceAsync().GetAwaiter().GetResult()),
+        (nameof(VerifyTaskerTaskCallbackCompletion), VerifyTaskerTaskCallbackCompletion),
+        (nameof(NativeTaskCleanupSelfTests), () => NativeTaskCleanupSelfTests.RunAsync().GetAwaiter().GetResult()),
+        (nameof(FrameworkOptionsSelfTests), FrameworkOptionsSelfTests.Run),
+        .. PretaskSelfTests.Checks
+    ], args);
 
     private static void VerifyFocusProjection()
     {

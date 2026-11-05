@@ -13,13 +13,31 @@ namespace NarutoAutoGUI.Worker;
 
 internal static partial class WorkerCoordinatorSelfTest
 {
-    internal static async Task RunAsync(
-        AppLogger logger, string testDirectory, string projectDirectory, string configPath)
+    private static string WorkerPath => Process.GetCurrentProcess().MainModule?.FileName
+        ?? throw new InvalidOperationException("无法取得自检进程路径。 ");
+
+    private static uint CurrentSession => checked((uint)Process.GetCurrentProcess().SessionId);
+
+    private static ProjectPlanModule OpenProject(string projectDirectory, string testDirectory) =>
+        ProjectPlanModule.Open(projectDirectory, Path.Combine(testDirectory, "maanop-config.json"));
+
+    internal static (string Name, Func<AppLogger, string, string, Task> Body)[] Checks => [
+        (nameof(VerifyConnectionLifecycleAsync),
+            (logger, directory, _) => VerifyConnectionLifecycleAsync(logger, directory)),
+        (nameof(VerifyAdmissionRecoveryAsync), (logger, directory, project) => VerifyAdmissionRecoveryAsync(
+            logger, directory, WorkerPath, CurrentSession, OpenProject(project, directory))),
+        (nameof(VerifyConnectionOpenRejectionAsync), (logger, directory, _) => VerifyConnectionOpenRejectionAsync(
+            logger, directory, WorkerPath, CurrentSession)),
+        (nameof(VerifyWorkerPipeEofAsync), (logger, directory, project) => VerifyWorkerPipeEofAsync(
+            logger, directory, WorkerPath, CurrentSession, OpenProject(project, directory)))
+    ];
+
+    private static async Task VerifyConnectionLifecycleAsync(AppLogger logger, string testDirectory)
     {
         var stateDirectory = Path.Combine(testDirectory, "worker-coordinator");
         var workerInstanceId = Guid.NewGuid();
         var launchToken = Convert.ToHexString(Guid.NewGuid().ToByteArray()).ToLowerInvariant();
-        var childSessionId = checked((uint)Process.GetCurrentProcess().SessionId);
+        var childSessionId = CurrentSession;
         const string runtimeProfileDigest = "self-test-runtime";
         var record = new WorkerAdmissionRecord(
             workerInstanceId, launchToken, childSessionId, Environment.ProcessId,
@@ -28,8 +46,7 @@ internal static partial class WorkerCoordinatorSelfTest
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "worker.json"),
             System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(record, ProtocolJson.Options));
-        var executablePath = Process.GetCurrentProcess().MainModule?.FileName
-                             ?? throw new InvalidOperationException("无法取得自检进程路径。 ");
+        var executablePath = WorkerPath;
         var received = new ConcurrentQueue<WorkerLogEntry>();
         var pipeName = $"NarutoAutoGUI.Worker.SelfTest.{Guid.NewGuid():N}";
 
@@ -38,15 +55,11 @@ internal static partial class WorkerCoordinatorSelfTest
         coordinator.LogReceived += (_, entry) => received.Enqueue(entry);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         await coordinator.WaitForServerReadyAsync(timeout.Token);
-        var project = ProjectPlanModule.Open(projectDirectory, configPath);
         await VerifyRecoveryAndRetryAsync(pipeName, record, received, timeout.Token);
         await VerifyDisconnectDuringRecoveryAsync(pipeName, record, received, timeout.Token);
         await VerifySameInstanceReconnectAndTeardownAsync(coordinator, pipeName, record, received, timeout.Token);
         await VerifyWorkerInstanceReplacementAsync(
             logger, stateDirectory, executablePath, childSessionId, received, timeout.Token);
-        await VerifyAdmissionRecoveryAsync(logger, testDirectory, executablePath, childSessionId, project);
-        await VerifyConnectionOpenRejectionAsync(logger, testDirectory, executablePath, childSessionId);
-        await VerifyWorkerPipeEofAsync(logger, testDirectory, executablePath, childSessionId, project);
     }
 
     private static async Task VerifyRecoveryAndRetryAsync(

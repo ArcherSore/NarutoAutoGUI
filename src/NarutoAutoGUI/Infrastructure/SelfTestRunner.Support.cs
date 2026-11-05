@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -16,10 +17,25 @@ internal static partial class SelfTestRunner
     // Serilog owns rolling and retention; this pins the settings and the line format that diagnosis relies on.
     private static void VerifyFileLogging(string testDirectory)
     {
-        var directory = Path.Combine(testDirectory, "file-logging");
+        // Log names and timestamps must not follow the user's calendar (th-TH) or time separator (fi-FI).
+        var culture = CultureInfo.CurrentCulture;
+        try {
+            foreach (var name in new[] { culture.Name, "th-TH", "fi-FI" }) {
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(name);
+                VerifyFileLoggingInCurrentCulture(Path.Combine(testDirectory, $"file-logging-{name}"));
+            }
+        } finally {
+            CultureInfo.CurrentCulture = culture;
+        }
+    }
+
+    private static void VerifyFileLoggingInCurrentCulture(string directory)
+    {
         Directory.CreateDirectory(directory);
-        var expired = Path.Combine(directory, $"NarutoAutoGUI-{DateTime.Now.AddDays(-20):yyyyMMdd}.log");
-        var recent = Path.Combine(directory, $"NarutoAutoGUI-{DateTime.Now.AddDays(-3):yyyyMMdd}.log");
+        string LogPath(int daysAgo) => Path.Combine(directory, "NarutoAutoGUI-"
+            + DateTime.Now.AddDays(-daysAgo).ToString("yyyyMMdd", CultureInfo.InvariantCulture) + ".log");
+        var expired = LogPath(20);
+        var recent = LogPath(3);
         File.WriteAllText(expired, "expired");
         File.WriteAllText(recent, "recent");
 
@@ -40,7 +56,7 @@ internal static partial class SelfTestRunner
         }
         var text = System.Text.Encoding.UTF8.GetString(bytes.ToArray());
         if (!Regex.IsMatch(text, @"^\[\d\d:\d\d:\d\d\.\d{3}\] \[INFO\] \[T\d+\] "
-                + @"\[SelfTestRunner\.Support\.VerifyFileLogging:\d+\] "
+                + @"\[SelfTestRunner\.Support\.VerifyFileLoggingInCurrentCulture:\d+\] "
                 + @"花括号 \{""key"":""\{value\}""\} \{0\} \{Text\}\r?$", RegexOptions.Multiline)
             || !Regex.IsMatch(text, @"\[ERROR\] \[T\d+\] \[[^\]]+\] 失败\r?\nSystem\.InvalidOperationException: "
                 + "file-logging-exception")

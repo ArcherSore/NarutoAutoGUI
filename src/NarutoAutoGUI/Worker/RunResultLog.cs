@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using NarutoAutoGUI.Infrastructure;
 using NarutoAutoGUI.Protocol;
+using static NarutoAutoGUI.Infrastructure.AppLogger;
 
 namespace NarutoAutoGUI.Worker;
 
@@ -90,7 +91,4 @@ internal sealed class RunResultLog(AppLogger logger)
         startedAtUtc is { } started && endedAtUtc is { } ended
             ? Field("cost", ((ended - started).TotalSeconds).ToString("0.0", CultureInfo.InvariantCulture) + "s")
             : string.Empty;
-
-    private static string Field(string name, object? value) =>
-        value is null || value is "" ? string.Empty : $" [{name}={value}]";
 }

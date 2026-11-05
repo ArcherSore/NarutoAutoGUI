@@ -44,6 +44,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     private readonly object _logDispatchGate = new();
     private readonly AppLogger _logger;
     private readonly RunResultLog _runResults;
+    private readonly WorkerStateLog _stateLog;
     private readonly WorkerAdmissionStore _store;
     private readonly string _workerExecutablePath;
     private readonly string _workerImageName;
@@ -84,6 +85,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     {
         _logger = logger;
         _runResults = new RunResultLog(logger);
+        _stateLog = new WorkerStateLog(logger);
         _store = new WorkerAdmissionStore(stateDirectory);
         _workerExecutablePath = Path.GetFullPath(workerExecutablePath);
         _workerImageName = Path.GetFileName(_workerExecutablePath);
@@ -98,7 +100,8 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         // Stale recovery runs before the pipe accepts connections; a kept record still lets its Worker reconnect.
         Snapshot = WorkerCoordinatorSnapshot.Empty;
         LoadAdmission();
-        _serverTask = Task.Run(() => ServerLoopAsync(_shutdown.Token));
+        _stateLog.Observe(() => Snapshot);
+        _serverTask =Task.Run(() => ServerLoopAsync(_shutdown.Token));
         _ = _serverTask.ContinueWith(
             task => _serverReady.TrySetException(task.Exception!.GetBaseException()),
             CancellationToken.None,
@@ -590,6 +593,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         while (!cancellationToken.IsCancellationRequested) {
             var envelope = await connection.ReadAsync(cancellationToken);
             if (envelope is null) {
+                _logger.Info($"Worker IPC 已关闭（EOF）{AppLogger.Field("instance", workerInstanceId)}");
                 return;
             }
             if (envelope.MessageType == ProtocolMessageTypes.Response && envelope.RequestId is Guid requestId) {
@@ -695,6 +699,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     private void ApplyStateEvent(StateChangedEvent state)
     {
         WorkerAdmissionRecord admission;
+        long? revisionGapFrom = null;
         lock (_gate) {
             admission = _admission
                         ?? throw new ProtocolException("没有 Admission Record 却收到 state event。 ");
@@ -708,12 +713,19 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
                     Detail = "stateRevision 断档，等待完整 Snapshot"
                 });
                 _ = Task.Run(RefreshSnapshotAfterGapAsync);
-                return;
+                revisionGapFrom = currentRevision;
+            } else {
+                ValidateSnapshot(state.Snapshot, admission);
+                UpdateSnapshotLocked(new WorkerCoordinatorSnapshot(
+                    WorkerObservation.Connected, true, state.Snapshot,
+                    "Worker 状态已更新"));
             }
-            ValidateSnapshot(state.Snapshot, admission);
-            UpdateSnapshotLocked(new WorkerCoordinatorSnapshot(
-                WorkerObservation.Connected, true, state.Snapshot,
-                "Worker 状态已更新"));
+        }
+        if (revisionGapFrom is long from) {
+            // The Worker keeps only its newest state event, so a gap is routine and a full Snapshot closes it.
+            _logger.Debug($"Worker 状态断档，正在取完整 Snapshot{AppLogger.Field("from", from)}"
+                + AppLogger.Field("received", state.StateRevision));
+            return;
         }
         RaiseStateChanged();
     }
@@ -1168,6 +1180,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
 
     private void RaiseStateChanged()
     {
+        _stateLog.Observe(() => Snapshot);
         _runResults.Observe(Snapshot.WorkerSnapshot);
         StateChanged?.Invoke(this, Snapshot);
     }

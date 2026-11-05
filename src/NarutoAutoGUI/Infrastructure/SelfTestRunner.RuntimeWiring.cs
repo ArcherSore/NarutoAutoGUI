@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using NarutoAutoGUI.ChildSession;
+using NarutoAutoGUI.Models;
 using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
 using NarutoAutoGUI.Views;
@@ -29,6 +30,7 @@ internal static partial class SelfTestRunner
         VerifyStopUnconfirmedRecoveryWiring(logger, directory);
         VerifyStopWithoutProjectWiring(logger, directory);
         VerifyRunResultLogWiring(directory);
+        VerifyKilledWorkerLogWiring(directory);
         Console.WriteLine("RUNTIME CONTROL WIRING PASS: startup, exit, project failure, restore, end, "
             + "end with Worker, retry, stop, killed Worker, recovery, stop without project.");
     }
@@ -424,6 +426,36 @@ internal static partial class SelfTestRunner
         }, _ => Require(SpinWait.SpinUntil(() => written.Any(message => message.StartsWith("Run 结束 [state=Failed]")
             && message.Contains("[code=RunExecutionFailed] [message=未找到游戏窗口]")), TimeSpan.FromSeconds(10)),
             $"状态事件未写入 Run 失败原因：{string.Join(" | ", written)}"));
+    }
+
+    // A Worker killed mid-Run leaves a readable trail: the pipe closing, then the observation following its process.
+    private static void VerifyKilledWorkerLogWiring(string directory)
+    {
+        using var logger = new AppLogger(Path.Combine(directory, "killed-worker-logs"));
+        var written = new System.Collections.Concurrent.ConcurrentQueue<LogEntry>();
+        logger.EntryWritten += (_, entry) => written.Enqueue(entry);
+        var planDirectory = CreateProjectFixture(Path.Combine(directory, "killed-log-plan"));
+        var activeRun = WorkerCoordinatorSelfTest.CreateActiveRun(
+            ProjectPlanModule.Open(planDirectory, Path.Combine(planDirectory, "plan.json")).CreateRunStartAttempt());
+        var listed = true;
+        WithFakeWorker(logger, Path.Combine(directory, "killed-log-worker"), (coordinator, record, pipeName) => {
+            var pipe = Task.Run(() => WorkerCoordinatorSelfTest.OpenConnectionAsync(
+                pipeName, record, 0, CancellationToken.None, activeRun)).GetAwaiter().GetResult();
+            Require(SpinWait.SpinUntil(() => coordinator.Snapshot is { SnapshotFresh: true }, TimeSpan.FromSeconds(10)),
+                "Worker 未完成接纳。");
+            Task.Run(async () => await pipe.DisposeAsync()).GetAwaiter().GetResult();
+            Require(SpinWait.SpinUntil(() => written.Any(entry => entry.Level == LogLevel.Warn
+                && entry.Message.Contains("[to=IpcDisconnected]")), TimeSpan.FromSeconds(10)),
+                $"Run 期间断开应写警告：{string.Join(" | ", written)}");
+            listed = false;
+            Require(SpinWait.SpinUntil(() => written.Any(entry => entry.Level == LogLevel.Warn
+                && entry.Message.Contains("[from=IpcDisconnected] [to=WorkerExited]")), TimeSpan.FromSeconds(10)),
+                $"Worker 退出应写警告：{string.Join(" | ", written)}");
+            var eof = written.ToList().FindIndex(entry => entry.Message.StartsWith("Worker IPC 已关闭（EOF）"));
+            var disconnected = written.ToList().FindIndex(
+                entry => entry.Level == LogLevel.Warn && entry.Message.Contains("[to=IpcDisconnected]"));
+            Require(eof >= 0 && eof < disconnected, $"应先记录 IPC 关闭再记录观察变化：{string.Join(" | ", written)}");
+        }, workerListed: () => listed);
     }
 
     private sealed record FakeWorker(ProtocolConnection Pipe, WorkerCoordinator Coordinator, RunSnapshot ActiveRun);

@@ -8,6 +8,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using NarutoAutoGUI.Models;
 using NarutoAutoGUI.Protocol;
+using NarutoAutoGUI.Views;
 using NarutoAutoGUI.Worker;
 
 namespace NarutoAutoGUI.Infrastructure;
@@ -44,7 +45,12 @@ internal static partial class SelfTestRunner
         logger.EntryWritten += (_, entry) => written.Add(entry);
         logger.Info("""花括号 {"key":"{value}"} {0} {Text}""");
         logger.Error("失败", new InvalidOperationException("file-logging-exception"));
-        logger.WriteWorker(LogLevel.Warn, "Worker #1 [run.lifecycle] 转写");
+        // Relayed logs keep the Worker's time; one from another day, recovered after a restart, also shows its date.
+        var today = DateTime.Today;
+        var relayedAt = new DateTime(today.Year, today.Month, today.Day, 1, 2, 3, 4, DateTimeKind.Local);
+        logger.WriteWorker(LogLevel.Warn, "Worker #1 [run.lifecycle] 转写", new DateTimeOffset(relayedAt));
+        MainWindow.WriteWorkerDiagnosticLog(logger, new WorkerLogEntry(
+            2, relayedAt.AddDays(-2).ToUniversalTime(), "INFO", "run.lifecycle", "回放", false, null, null, null, null));
         App.LogStartup(logger);
         var current =Directory.GetFiles(directory, "NarutoAutoGUI-*.log")
             .Single(path => path != expired && path != recent);
@@ -60,7 +66,11 @@ internal static partial class SelfTestRunner
                 + @"花括号 \{""key"":""\{value\}""\} \{0\} \{Text\}\r?$", RegexOptions.Multiline)
             || !Regex.IsMatch(text, @"\[ERROR\] \[T\d+\] \[[^\]]+\] 失败\r?\nSystem\.InvalidOperationException: "
                 + "file-logging-exception")
-            || !Regex.IsMatch(text, @"\[WARN\] \[T\d+\] \[Worker\] Worker #1 \[run\.lifecycle\] 转写")
+            || !Regex.IsMatch(text, @"^\[01:02:03\.004\] \[WARN\] \[T\d+\] \[Worker\] "
+                + @"Worker #1 \[run\.lifecycle\] 转写\r?$", RegexOptions.Multiline)
+            || !text.Contains($"[{relayedAt.AddDays(-2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} "
+                + "01:02:03.004] [INFO]")
+            || !text.Contains("Worker #2 [run.lifecycle] 回放")
             || !Regex.IsMatch(text, @"\[App\.LogStartup:\d+\] NarutoAutoGUI 正式 GUI 启动 \[version=\S+\] "
                 + $@"\[pid={Environment.ProcessId}\] \[session=\d+\] \[elevated=(True|False)\] .*\[logDirectory=")) {
             throw new InvalidOperationException($"日志行格式不符：{text}");
@@ -91,6 +101,63 @@ internal static partial class SelfTestRunner
             || Directory.GetFiles(directory).Any(path => File.ReadAllText(path).Contains("释放后不再写入"))) {
             throw new InvalidOperationException("释放后写日志应被安全忽略。");
         }
+    }
+
+    private static void VerifyWorkerStateLog(string testDirectory)
+    {
+        using var logger = new AppLogger(Path.Combine(testDirectory, "worker-state-log"));
+        var written = new List<LogEntry>();
+        logger.EntryWritten += (_, entry) => written.Add(entry);
+        var log = new WorkerStateLog(logger);
+        var connected = CreateNotificationSnapshot(RunState.Running);
+        var worker = connected.WorkerSnapshot!;
+        var idle = connected with {
+            WorkerSnapshot = worker with { RunState = RunState.Idle, ActiveRun = null }, Detail = "Worker Snapshot 已同步"
+        };
+        void Expect(WorkerCoordinatorSnapshot snapshot, string failure, params (LogLevel Level, string Text)[] expected)
+        {
+            written.Clear();
+            log.Observe(() => snapshot);
+            log.Observe(() => snapshot);
+            Require(written.Count == expected.Length && written.Zip(expected).All(
+                pair => pair.First.Level == pair.Second.Level && pair.First.Message.Contains(pair.Second.Text)),
+                $"{failure}：{string.Join(" | ", written)}");
+        }
+
+        Expect(WorkerCoordinatorSnapshot.Empty, "启动时应记录初始观察",
+            (LogLevel.Info, "Worker 观察变化 [to=WorkerNotStarted] [detail=Worker 尚未启动]"));
+        Expect(idle, "连接后应记录观察和 Worker 状态",
+            (LogLevel.Info, "[from=WorkerNotStarted] [to=Connected]"), (LogLevel.Info, "Worker 状态变化 [to=Ready]"));
+        Expect(idle with { Detail = "Worker 状态已更新" }, "连接期间的 Detail 变化不应写日志");
+
+        // Ending the Runtime Environment disconnects an idle Worker on purpose: this is not a warning.
+        Expect(idle with { Observation = WorkerObservation.IpcDisconnected, SnapshotFresh = false, Detail = "断开" },
+            "空闲 Worker 断开不应是警告", (LogLevel.Info, "[from=Connected] [to=IpcDisconnected] [detail=断开]"));
+        Expect(idle, "重新连接应写日志", (LogLevel.Info, "[from=IpcDisconnected] [to=Connected]"));
+
+        // Losing a Worker mid-Run, then proving it gone, is what a killed Worker looks like in the log.
+        var running = connected with { Detail = "Worker 状态已更新" };
+        Expect(running, "同状态的 Run 变化不应写 Worker 状态");
+        var lost = running with { SnapshotFresh = false };
+        Expect(lost with { Observation = WorkerObservation.IpcDisconnected, Detail = "Worker 仍存活，IPC 已断开" },
+            "Run 期间断开应警告", (LogLevel.Warn, "[to=IpcDisconnected] [detail=Worker 仍存活，IPC 已断开]"));
+        Expect(lost with { Observation = WorkerObservation.WorkerExited, Detail = "Worker 进程已退出" },
+            "Run 期间 Worker 退出应警告",
+            (LogLevel.Warn, "[from=IpcDisconnected] [to=WorkerExited] [detail=Worker 进程已退出]"));
+        Expect(lost with {
+            Observation = WorkerObservation.WorkerRecoveryConflict, WorkerSnapshot = null, Detail = "无法确认"
+        }, "恢复冲突总是警告", (LogLevel.Warn, "[to=WorkerRecoveryConflict]"));
+
+        // A fault keeps the Run active; its reason reaches the log even though no Run ended.
+        var faulted = running with { WorkerSnapshot = worker with {
+            WorkerState = WorkerState.Faulted, WorkerReason = new StructuredReason("StopTimeout", "Stop 未确认。 ")
+        } };
+        Expect(faulted, "Faulted 应带原因写成错误", (LogLevel.Info, "[to=Connected]"),
+            (LogLevel.Error, "Worker 状态变化 [from=Ready] [to=Faulted] [code=StopTimeout] [message=Stop 未确认。]"));
+
+        // A replacement Worker has no previous state to come from.
+        Expect(idle with { WorkerSnapshot = idle.WorkerSnapshot! with { WorkerInstanceId = Guid.NewGuid() } },
+            "新 Worker 不应沿用旧状态", (LogLevel.Info, "Worker 状态变化 [to=Ready]"));
     }
 
     private static void VerifyRunResultLog(string testDirectory)

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using NarutoAutoGUI.Models;
 using Serilog;
@@ -13,7 +14,7 @@ internal sealed class AppLogger : IDisposable
 {
     private const long MaximumFileBytes = 10L * 1024L * 1024L;
     private const string OutputTemplate =
-        "[{Timestamp:HH:mm:ss.fff}] [{LevelName:l}] [T{ThreadId}] [{Source:l}] {Message:l}{NewLine}{Exception}";
+        "[{Time:l}] [{LevelName:l}] [T{ThreadId}] [{Source:l}] {Message:l}{NewLine}{Exception}";
     private static readonly TimeSpan Retention = TimeSpan.FromDays(14);
     private readonly object _sync = new();
     private readonly Logger _logger;
@@ -66,8 +67,14 @@ internal sealed class AppLogger : IDisposable
         [CallerMemberName] string member = "", [CallerLineNumber] int line = 0) =>
         Emit(LogLevel.Critical, FormatSource(file, member, line), message, exception);
 
-    // Worker logs are relayed here, so the local call site says nothing about where they came from.
-    internal void WriteWorker(LogLevel level, string message) => Emit(level, "Worker", message, null);
+    // Worker logs are relayed here, so the local call site says nothing about where they came from, and the local clock
+    // nothing about when: a log recovered after a reconnect or a GUI restart keeps the time the Worker wrote it.
+    internal void WriteWorker(LogLevel level, string message, DateTimeOffset timestamp) =>
+        Emit(level, "Worker", message, null, timestamp);
+
+    // One diagnostic field of a message; a missing value leaves no empty brackets behind.
+    internal static string Field(string name, object? value) =>
+        value is null or "" ? string.Empty : $" [{name}={value}]";
 
     public void Dispose()
     {
@@ -81,16 +88,18 @@ internal sealed class AppLogger : IDisposable
         }
     }
 
-    private void Emit(LogLevel level, string source, string message, Exception? exception)
+    private void Emit(
+        LogLevel level, string source, string message, Exception? exception, DateTimeOffset? timestamp = null)
     {
-        var entry = new LogEntry(DateTimeOffset.Now, level, message);
+        var entry = new LogEntry(timestamp ?? DateTimeOffset.Now, level, message);
         lock (_sync) {
             if (_disposed) {
                 return;
             }
 
             try {
-                _logger.ForContext("LevelName", entry.DisplayLevel)
+                _logger.ForContext("Time", FormatTime(entry.Timestamp))
+                    .ForContext("LevelName", entry.DisplayLevel)
                     .ForContext("ThreadId", Environment.CurrentManagedThreadId)
                     .ForContext("Source", source)
                     .Write(ToSerilogLevel(level), exception, "{Text:l}", message);
@@ -104,6 +113,14 @@ internal sealed class AppLogger : IDisposable
         } catch (Exception subscriberException) {
             Debugger.Log(0, "NarutoAutoGUI", $"Log subscriber failed: {subscriberException}\n");
         }
+    }
+
+    // The file name carries the date, so only a relayed log from another day needs its own.
+    private static string FormatTime(DateTimeOffset timestamp)
+    {
+        var local = timestamp.ToLocalTime();
+        var format = local.Date == DateTime.Today ? "HH:mm:ss.fff" : "yyyy-MM-dd HH:mm:ss.fff";
+        return local.ToString(format, CultureInfo.InvariantCulture);
     }
 
     // A partial class keeps its part name (MainWindow.Updates); ".xaml" only repeats the class.

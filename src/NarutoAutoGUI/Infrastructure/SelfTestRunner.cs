@@ -72,6 +72,7 @@ internal static partial class SelfTestRunner
         new(Group.Project, nameof(VerifyTaskGroups), c => VerifyTaskGroups(c.Directory, c.Project)),
         new(Group.Project, nameof(VerifyTaskShelfLayout), c => VerifyTaskShelfLayout(c.Logger, c.Directory)),
         new(Group.Project, nameof(VerifyOnboarding), c => VerifyOnboarding(c.Logger, c.Directory)),
+        new(Group.Project, nameof(VerifyRealMaaNopProject), c => VerifyRealMaaNopProject(c.Directory)),
 
         new(Group.Other, nameof(VerifyChildSessionPresence), c => VerifyChildSessionPresence(c.Logger)),
         new(Group.Other, nameof(VerifyRdpClientClsid), _ => VerifyRdpClientClsid()),

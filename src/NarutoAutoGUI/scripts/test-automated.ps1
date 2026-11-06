@@ -54,13 +54,16 @@ function Complete-Stage
     if ($script:firstExitCode -eq 0) { $script:firstExitCode = $LASTEXITCODE }
 }
 
-# Running the DLLs through dotnet bypasses the elevated apphost manifests. The self-tests do not
-# connect RDP or load MaaFramework native runtime. GUI tests create a local RDP control to check input locking.
-foreach ($entry in @($GuiDll, $WorkerDll)) {
-    $entryPath = (Resolve-Path -LiteralPath $entry).Path
+# Running the DLLs through dotnet bypasses the elevated apphost manifests. The self-tests do not connect RDP.
+# GUI tests create a local RDP control to check input locking, and start the real Worker,
+# which probes the native runtime.
+$workerExe = [IO.Path]::ChangeExtension((Resolve-Path -LiteralPath $WorkerDll).Path, '.exe')
+foreach ($entry in @(@{ Dll = $GuiDll; Extra = @('--worker-exe', $workerExe) }, @{ Dll = $WorkerDll; Extra = @() })) {
+    $entryPath = (Resolve-Path -LiteralPath $entry.Dll).Path
+    $extra = $entry.Extra
     Push-Location (Split-Path $entryPath)
     try {
-        dotnet $entryPath --self-test
+        dotnet $entryPath --self-test @extra
         Complete-Stage (Split-Path $entryPath -Leaf)
     } finally { Pop-Location }
 }

@@ -105,8 +105,17 @@ try {
             Invoke-SelfTest "gui-$Suite" 'NarutoAutoGUI' @($selection)
         }
         'Worker' {
+            Build-ManagedProject 'gui' 'NarutoAutoGUI'
             Build-ManagedProject 'worker' 'NarutoAutoWorker'
             Invoke-SelfTest 'worker' 'NarutoAutoWorker'
+            # The Worker's other half of the pipe lives in the GUI, so its real connection is checked from there.
+            if (-not $Only) {
+                $workerExe = Join-Path $repositoryRoot `
+                    "src\NarutoAutoWorker\bin\x64\$Configuration\net10.0-windows\win-x64\NarutoAutoWorker.exe"
+                Invoke-SelfTest 'gui-real-worker' 'NarutoAutoGUI' @(
+                    '--only', 'VerifyRealWorker', '--worker-exe', $workerExe
+                )
+            }
         }
         'Updater' {
             $arguments = @('run', '--project', (Join-Path $repositoryRoot 'src\NarutoAutoUpdater.Tests'),

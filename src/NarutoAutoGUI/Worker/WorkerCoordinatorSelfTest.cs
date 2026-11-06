@@ -29,7 +29,9 @@ internal static partial class WorkerCoordinatorSelfTest
         (nameof(VerifyConnectionOpenRejectionAsync), (logger, directory, _) => VerifyConnectionOpenRejectionAsync(
             logger, directory, WorkerPath, CurrentSession)),
         (nameof(VerifyWorkerPipeEofAsync), (logger, directory, project) => VerifyWorkerPipeEofAsync(
-            logger, directory, WorkerPath, CurrentSession, OpenProject(project, directory)))
+            logger, directory, WorkerPath, CurrentSession, OpenProject(project, directory))),
+        (nameof(VerifyRealWorkerAsync), (logger, directory, project) => VerifyRealWorkerAsync(
+            logger, directory, OpenProject(project, directory)))
     ];
 
     private static async Task VerifyConnectionLifecycleAsync(AppLogger logger, string testDirectory)

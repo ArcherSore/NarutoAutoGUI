@@ -4,7 +4,11 @@ param(
     [string]$Suite = 'Gui',
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    # Runs only the checks whose name contains this text; for iterating on a GUI or Worker self-test.
+    [string]$Only,
+    # Runs as if the display were at 100% scale, to compare with this machine's real scale.
+    [switch]$Dpi96
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,6 +35,8 @@ function Invoke-VerificationStep
     $start.CreateNoWindow = $true
     $start.RedirectStandardOutput = $true
     $start.RedirectStandardError = $true
+    # Set on the child alone: this script can run inside the caller's shell, which must keep its real scale.
+    if ($Dpi96) { $start.EnvironmentVariables['__COMPAT_LAYER'] = 'DPIUNAWARE' }
     $outputFile = [IO.File]::Create($stdout)
     $errorFile = [IO.File]::Create($stderr)
     $process = $null
@@ -53,8 +59,9 @@ function Invoke-VerificationStep
     if ($code -ne 0) {
         Write-Host "FAIL $Name (${seconds}s, exit=$code)"
         $lines = @(Get-Content -LiteralPath $stdout, $stderr -Encoding UTF8 |
-            Where-Object { $_.Trim() } | Select-Object -Unique)
-        $errors = @($lines | Where-Object { $_ -match '\berror\b|FAIL|Exception' } | Select-Object -First 8)
+            Where-Object { $_.Trim() -and $_ -notmatch '^\s+at ' } | Select-Object -Unique)
+        $errors = @($lines | Where-Object { $_ -cmatch '\berror\b|^FAIL |SELF-TEST FAIL|Exception' } |
+            Select-Object -First 8)
         @($errors + @($lines | Select-Object -Last 12)) | Select-Object -Unique | ForEach-Object {
             if ($_.Length -gt 500) { Write-Host ($_.Substring(0, 500) + ' ...') } else { Write-Host $_ }
         }
@@ -82,6 +89,7 @@ function Invoke-SelfTest
 
     $binary = Join-Path $repositoryRoot "src\$Project\bin\x64\$Configuration\net10.0-windows\win-x64\$Project.dll"
     if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw "Missing build output: $binary" }
+    if ($Only) { $Selection += @('--only', $Only) }
     Invoke-VerificationStep $Name 'dotnet' (@($binary, '--self-test') + $Selection) (Split-Path $binary)
 }
 
@@ -97,8 +105,17 @@ try {
             Invoke-SelfTest "gui-$Suite" 'NarutoAutoGUI' @($selection)
         }
         'Worker' {
+            Build-ManagedProject 'gui' 'NarutoAutoGUI'
             Build-ManagedProject 'worker' 'NarutoAutoWorker'
             Invoke-SelfTest 'worker' 'NarutoAutoWorker'
+            # The Worker's other half of the pipe lives in the GUI, so its real connection is checked from there.
+            if (-not $Only) {
+                $workerExe = Join-Path $repositoryRoot `
+                    "src\NarutoAutoWorker\bin\x64\$Configuration\net10.0-windows\win-x64\NarutoAutoWorker.exe"
+                Invoke-SelfTest 'gui-real-worker' 'NarutoAutoGUI' @(
+                    '--only', 'VerifyRealWorker', '--worker-exe', $workerExe
+                )
+            }
         }
         'Updater' {
             $arguments = @('run', '--project', (Join-Path $repositoryRoot 'src\NarutoAutoUpdater.Tests'),

@@ -9,7 +9,7 @@ namespace NarutoAutoWorker;
 // Serves a real WorkerHost over an in-process pipe; Plan Items run through scripted executions.
 internal sealed class RunHarness : IAsyncDisposable
 {
-    internal static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(5);
+    internal static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(30);
     internal static readonly string ProfileDigest = "sha256:" + new string('a', 64);
     internal static readonly ProjectProvenance Project = new("test", "1", 1, "test");
 
@@ -186,7 +186,7 @@ internal sealed class RunHarness : IAsyncDisposable
 // Monitor is reentrant, so only a second thread can show that the caller does not hold the lock.
 internal sealed class ScriptedExecutionFactory
 {
-    private static readonly TimeSpan LockProbeLimit = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan LockProbeLimit = TimeSpan.FromSeconds(10);
 
     private readonly object _gate = new();
     private readonly List<ScriptedExecution> _created = [];

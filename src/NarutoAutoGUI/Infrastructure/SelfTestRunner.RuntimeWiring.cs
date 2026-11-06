@@ -16,25 +16,6 @@ namespace NarutoAutoGUI.Infrastructure;
 // Drives a real MainWindow through real seams and checks that state changes reach the runtime controls.
 internal static partial class SelfTestRunner
 {
-    private static void VerifyRuntimeControlWiring(AppLogger logger, string testDirectory)
-    {
-        VerifyChildSessionEndResponsiveness(logger);
-        var directory = Path.Combine(testDirectory, "runtime-wiring");
-        VerifyStartupAndExitWiring(logger, directory);
-        VerifySessionRestoreAndEndWiring(logger, directory);
-        VerifySessionEndWithWorkerWiring(logger, directory);
-        VerifyFaultedSessionRetryWiring(logger, directory);
-        VerifyPrepareAndRunWiring(logger, directory);
-        VerifyWorkerStopWiring(logger, directory);
-        VerifyKilledWorkerWiring(logger, directory);
-        VerifyStopUnconfirmedRecoveryWiring(logger, directory);
-        VerifyStopWithoutProjectWiring(logger, directory);
-        VerifyRunResultLogWiring(directory);
-        VerifyKilledWorkerLogWiring(directory);
-        Console.WriteLine("RUNTIME CONTROL WIRING PASS: startup, exit, project failure, restore, end, "
-            + "end with Worker, retry, stop, killed Worker, recovery, stop without project.");
-    }
-
     private static void VerifyStartupAndExitWiring(AppLogger logger, string directory)
     {
         WithRuntimeControlWindow(logger, Path.Combine(directory, "startup"), window => {
@@ -112,7 +93,7 @@ internal static partial class SelfTestRunner
                             && !Named<UIElement>(window, "DesktopViewButton").IsEnabled;
                     });
                     Task.Run(async () => await pipe.DisposeAsync()).GetAwaiter().GetResult();
-                    Require(disconnected.Task.Wait(5000), "注销分身时未观察到 Worker 断线。");
+                    Require(disconnected.Task.Wait(WaitLimitMilliseconds), "注销分身时未观察到 Worker 断线。");
                 };
                 operations.RunOperations = true;
                 var ending = environment.EndAsync(() => true);
@@ -131,7 +112,7 @@ internal static partial class SelfTestRunner
     private static void VerifyFaultedSessionRetryWiring(AppLogger logger, string directory)
     {
         using var session = new ChildSessionManager(logger, () => throw new Win32Exception(5, "self-test WTS failure"),
-            () => [0u, 1u], () => null);
+            () => [0u, 1u], () => null, new ChildSessionCredentialStore(logger, new MemoryCredentialVault()));
         var operations = new HeldOperations();
         WithRuntimeControlWindow(logger, Path.Combine(directory, "faulted"), window => {
             Require(HeaderShows(window, "RetryEnvironmentButton", enabled: true), "分身故障时应显示可用的重试。");
@@ -219,8 +200,7 @@ internal static partial class SelfTestRunner
                         definition["task"]!.AsArray().Add(skipped);
                         File.WriteAllText(interfacePath, definition.ToJsonString());
                         InvokeOnboarding(window, "LoadProject");
-                        ProjectPlanModule CurrentProject() => (ProjectPlanModule)typeof(MainWindow)
-                            .GetField("_projectPlan", flags)!.GetValue(window)!;
+                        ProjectPlanModule CurrentProject() => ProjectOf(window);
                         CurrentProject().AddTask("SkippedTask");
                         // The fake admission already exists; model the editable UI before a real Prepare creates it.
                         SetOnboardingField(window, "_workerSnapshot", new WorkerCoordinatorSnapshot(
@@ -318,8 +298,6 @@ internal static partial class SelfTestRunner
                 }
             }, runtimeProfileDigest: project.RuntimeProfileDigest);
         }
-        Console.WriteLine(
-            "PREPARE AND RUN PASS: current plan, delayed Ready, prepare-only, cancellation, exit while waiting.");
     }
 
     private static void VerifyWorkerStopWiring(AppLogger logger, string directory)
@@ -443,7 +421,7 @@ internal static partial class SelfTestRunner
                 }
             }), cancellationToken);
         }, _ => Require(SpinWait.SpinUntil(() => written.Any(message => message.StartsWith("Run 结束 [state=Failed]")
-            && message.Contains("[code=RunExecutionFailed] [message=未找到游戏窗口]")), TimeSpan.FromSeconds(10)),
+            && message.Contains("[code=RunExecutionFailed] [message=未找到游戏窗口]")), WaitLimitMilliseconds),
             $"状态事件未写入 Run 失败原因：{string.Join(" | ", written)}"));
     }
 
@@ -460,15 +438,15 @@ internal static partial class SelfTestRunner
         WithFakeWorker(logger, Path.Combine(directory, "killed-log-worker"), (coordinator, record, pipeName) => {
             var pipe = Task.Run(() => WorkerCoordinatorSelfTest.OpenConnectionAsync(
                 pipeName, record, 0, CancellationToken.None, activeRun)).GetAwaiter().GetResult();
-            Require(SpinWait.SpinUntil(() => coordinator.Snapshot is { SnapshotFresh: true }, TimeSpan.FromSeconds(10)),
+            Require(SpinWait.SpinUntil(() => coordinator.Snapshot is { SnapshotFresh: true }, WaitLimitMilliseconds),
                 "Worker 未完成接纳。");
             Task.Run(async () => await pipe.DisposeAsync()).GetAwaiter().GetResult();
             Require(SpinWait.SpinUntil(() => written.Any(entry => entry.Level == LogLevel.Warn
-                && entry.Message.Contains("[to=IpcDisconnected]")), TimeSpan.FromSeconds(10)),
+                && entry.Message.Contains("[to=IpcDisconnected]")), WaitLimitMilliseconds),
                 $"Run 期间断开应写警告：{string.Join(" | ", written)}");
             listed = false;
             Require(SpinWait.SpinUntil(() => written.Any(entry => entry.Level == LogLevel.Warn
-                && entry.Message.Contains("[from=IpcDisconnected] [to=WorkerExited]")), TimeSpan.FromSeconds(10)),
+                && entry.Message.Contains("[from=IpcDisconnected] [to=WorkerExited]")), WaitLimitMilliseconds),
                 $"Worker 退出应写警告：{string.Join(" | ", written)}");
             var eof = written.ToList().FindIndex(entry => entry.Message.StartsWith("Worker IPC 已关闭（EOF）"));
             var disconnected = written.ToList().FindIndex(
@@ -569,7 +547,7 @@ internal static partial class SelfTestRunner
 
     private static void PumpUntil(Func<bool> condition, string failure)
     {
-        var deadline = Environment.TickCount64 + 15000;
+        var deadline = Environment.TickCount64 + WaitLimitMilliseconds;
         while (!condition()) {
             if (Environment.TickCount64 > deadline) {
                 throw new InvalidOperationException(failure);

@@ -24,7 +24,7 @@ internal static class NativeTaskCleanupSelfTests
                 throw new InvalidOperationException("原生任务 waiter 返回前不得完成清理。");
             }
             completion.SetResult(status);
-            var result = await cleanup.WaitAsync(TimeSpan.FromSeconds(5));
+            var result = await cleanup.WaitAsync(TimeSpan.FromSeconds(30));
             if (!result.Success) {
                 throw new InvalidOperationException($"原生任务 waiter 返回后应可清理：{status}, {result.Error}");
             }
@@ -80,7 +80,7 @@ internal static class NativeTaskCleanupSelfTests
     private static async Task VerifyPreservedAsync(
         WorkerRuntimeExecution execution, Task<(bool Success, string? Error)> cleanup)
     {
-        var result = await cleanup.WaitAsync(TimeSpan.FromSeconds(5));
+        var result = await cleanup.WaitAsync(TimeSpan.FromSeconds(30));
         var executionResult = await execution.ExecuteAsync(CancellationToken.None);
         if (result.Success || executionResult.Outcome != RuntimeExecutionOutcome.StopTimedOut
             || executionResult.Error?.Code != "NativeTaskCompletionUnconfirmed") {

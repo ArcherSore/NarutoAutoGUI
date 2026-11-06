@@ -18,7 +18,7 @@ namespace NarutoAutoGUI.ChildSession;
 // need (LoginComplete/Disconnected/FatalError/LogonError), and the diagnostic helpers.
 internal sealed class RdpActiveXHost : AxHost
 {
-    // MsRdpClient10 CLSID. Supported on Windows 10 and Windows 11.
+    // MsRdpClient10 CLSID, supported on Windows 10 and 11. MsRdpClient11 (A0C63C30-...) exists only on Windows 11.
     internal const string RdpClientClsid = "8B918B82-7985-4C24-89DF-C33AD2BBFBCD";
 
     private ConnectionPointCookie? _eventCookie;

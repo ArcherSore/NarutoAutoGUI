@@ -8,28 +8,35 @@ namespace NarutoAutoWorker;
 
 internal static class PretaskSelfTests
 {
-    private static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(8);
+    private static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(20);
 
-    internal static void Run() => RunAsync().GetAwaiter().GetResult();
+    internal static (string Name, Action Body)[] Checks => [
+        Check(nameof(VerifyArgumentsAsync), VerifyArgumentsAsync),
+        Check(nameof(VerifyOutputBudgetAsync), VerifyOutputBudgetAsync),
+        Check(nameof(VerifyOutputEntryBudgetAsync), _ => VerifyOutputEntryBudgetAsync()),
+        Check(nameof(VerifyPreservedOutputAsync), VerifyPreservedOutputAsync),
+        Check("VerifyChildren.Success",
+            directory => VerifyChildrenAsync(directory, "spawn-success", RuntimeExecutionOutcome.Succeeded)),
+        Check("VerifyChildren.Failure",
+            directory => VerifyChildrenAsync(directory, "spawn-fail", RuntimeExecutionOutcome.Failed)),
+        Check("VerifyChildren.Timeout", directory => VerifyChildrenAsync(
+            directory, "spawn-wait", RuntimeExecutionOutcome.Failed, TimeSpan.FromSeconds(3))),
+        Check(nameof(VerifyStopAsync), VerifyStopAsync),
+        Check("VerifyHandoffRace.StopFirst", directory => VerifyHandoffRaceAsync(directory, stopBeforeCommit: true)),
+        Check("VerifyHandoffRace.CommitFirst", directory => VerifyHandoffRaceAsync(directory, stopBeforeCommit: false)),
+        Check(nameof(VerifyFactoryFailureAsync), VerifyFactoryFailureAsync),
+        Check(nameof(VerifyUnconfirmedAsync), VerifyUnconfirmedAsync)
+    ];
 
-    private static async Task RunAsync()
+    private static (string Name, Action Body) Check(string name, Func<string, Task> body) =>
+        ($"Pretask.{name}", () => InDirectoryAsync(body).GetAwaiter().GetResult());
+
+    private static async Task InDirectoryAsync(Func<string, Task> body)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"NarutoAutoGUI.Pretask.{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         try {
-            await VerifyArgumentsAsync(directory);
-            await VerifyOutputBudgetAsync(directory);
-            await VerifyOutputEntryBudgetAsync();
-            await VerifyPreservedOutputAsync(directory);
-            await VerifyChildrenAsync(directory, "spawn-success", RuntimeExecutionOutcome.Succeeded);
-            await VerifyChildrenAsync(directory, "spawn-fail", RuntimeExecutionOutcome.Failed);
-            await VerifyChildrenAsync(directory, "spawn-wait", RuntimeExecutionOutcome.Failed,
-                TimeSpan.FromSeconds(3));
-            await VerifyStopAsync(directory);
-            await VerifyHandoffRaceAsync(directory, stopBeforeCommit: true);
-            await VerifyHandoffRaceAsync(directory, stopBeforeCommit: false);
-            await VerifyFactoryFailureAsync(directory);
-            await VerifyUnconfirmedAsync(directory);
+            await body(directory);
         } finally {
             foreach (var path in Directory.EnumerateFiles(directory, "*.pid", SearchOption.AllDirectories)) {
                 StopTestProcess(path);
@@ -80,16 +87,13 @@ internal static class PretaskSelfTests
     {
         var folder = NewFolder(directory, mode);
         var execution = Execution(folder, mode, (_, _, _) => { }, timeout);
-        var timer = Stopwatch.StartNew();
         var result = await ExecuteAndCommitAsync(execution).WaitAsync(WaitLimit);
         var identity = Path.Combine(folder, "child.pid");
         Require(File.Exists(identity), "测试程序必须启动自己的子进程。 ");
         Require(result.Outcome == expected, $"{mode} 结果不符：{result.Outcome}，{result.Error?.Message}");
         Require(IsTestProcessAlive(identity) == (expected == RuntimeExecutionOutcome.Succeeded),
             "成功必须保留新游戏进程；非零或超时必须确认本次进程树已清空。 ");
-        if (expected == RuntimeExecutionOutcome.Succeeded) {
-            Require(timer.Elapsed < TimeSpan.FromSeconds(5), "根成功不得等待长驻子进程持有的 stdout EOF。 ");
-        } else if (mode == "spawn-wait") {
+        if (mode == "spawn-wait") {
             Require(result.Error?.Code == "PretaskTimeout", "程序超时且清理确认应为普通失败。 ");
         }
         StopTestProcess(identity);

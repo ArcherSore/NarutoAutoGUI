@@ -20,7 +20,7 @@ internal static class Program
                 return await FrameworkLifecycleSelfTest.RunAsync(args[1]);
             }
             if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase)) {
-                return WorkerSelfTestRunner.Run(args.Contains("--run-only", StringComparer.OrdinalIgnoreCase));
+                return WorkerSelfTestRunner.Run(args);
             }
 
             var arguments = WorkerArguments.Parse(args);

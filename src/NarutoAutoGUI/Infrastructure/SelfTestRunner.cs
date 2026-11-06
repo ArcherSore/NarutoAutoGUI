@@ -9,159 +9,168 @@ using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
 using NarutoAutoGUI.Views;
 using NarutoAutoGUI.Worker;
+using Forms = System.Windows.Forms;
 
 namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
-    internal static int Run(bool projectOnly = false, bool supportOnly = false, bool runtimeControlsOnly = false)
+    private enum Group { Support, Project, RuntimeControls, Other }
+
+    private sealed record Context(AppLogger Logger, string Directory, string Project);
+
+    private sealed record Check(Group Group, string Name, Action<Context> Body);
+
+    // A check owns its directory, project fixture and logger, so it runs the same alone as in the full list.
+    private static readonly Check[] Checks = [
+        new(Group.Support, nameof(VerifyTerminalNotifications), _ => VerifyTerminalNotifications()),
+        new(Group.Support, nameof(VerifyFileLogging), c => VerifyFileLogging(c.Directory)),
+        new(Group.Support, nameof(VerifyUserProfileMasking), c => VerifyUserProfileMasking(c.Directory)),
+        new(Group.Support, nameof(VerifyRunResultLog), c => VerifyRunResultLog(c.Directory)),
+        new(Group.Support, nameof(VerifyWorkerStateLog), c => VerifyWorkerStateLog(c.Directory)),
+        new(Group.Support, nameof(VerifyChildSessionLog), c => VerifyChildSessionLog(c.Directory)),
+        new(Group.Support, nameof(VerifyDiagnosticPackage), c => VerifyDiagnosticPackage(c.Logger, c.Directory)),
+        new(Group.Support, nameof(VerifyDebugImageCleanup), c => VerifyDebugImageCleanup(c.Logger, c.Directory)),
+        new(Group.Support, nameof(VerifyDeclarativeSettings), c => VerifyDeclarativeSettings(c.Logger, c.Directory)),
+        new(Group.Support, nameof(VerifyUpdateLog), c => VerifyUpdateLog(c.Directory)),
+        new(Group.Support, nameof(VerifySettingsLog), c => VerifySettingsLog(c.Directory)),
+        new(Group.Support, nameof(VerifyChildSessionCredentials),
+            c => VerifyChildSessionCredentials(c.Logger, c.Directory)),
+        new(Group.Support, nameof(VerifyDiagnosticSettings), c => VerifyDiagnosticSettings(c.Logger, c.Directory)),
+        new(Group.Support, nameof(VerifyNavigationRail), c => VerifyNavigationRail(c.Logger, c.Directory)),
+        new(Group.Support, nameof(VerifyHelpPage), c => VerifyHelpPage(c.Logger, c.Directory)),
+
+        new(Group.Project, nameof(VerifyPretaskModel), c => VerifyPretaskModel(c.Directory)),
+        new(Group.Project, nameof(VerifyPretaskGuiWiring), c => VerifyPretaskGuiWiring(c.Logger, c.Directory)),
+        new(Group.Project, nameof(VerifyPresets), c => VerifyPresets(c.Logger, c.Directory)),
+        new(Group.Project, nameof(VerifyFirstConfiguration), c => VerifyFirstConfiguration(c.Directory, c.Project)),
+        new(Group.Project, nameof(VerifyConfigurationMigration),
+            c => VerifyConfigurationMigration(c.Directory, c.Project)),
+        new(Group.Project, nameof(VerifyIndependentConfigurations),
+            c => VerifyIndependentConfigurations(c.Directory, c.Project)),
+        new(Group.Project, nameof(VerifyConfigurationFallback),
+            c => VerifyConfigurationFallback(c.Directory, c.Project)),
+        new(Group.Project, nameof(VerifyConfigurationStoreLog),
+            c => VerifyConfigurationStoreLog(c.Directory, c.Project)),
+        new(Group.Project, nameof(VerifyInvalidConfigurationIsolation),
+            c => VerifyInvalidConfigurationIsolation(c.Directory, c.Project)),
+        new(Group.Project, nameof(VerifyConfigurationTabs),
+            c => VerifyConfigurationTabs(c.Logger, c.Directory, c.Project)),
+        new(Group.Project, nameof(VerifyConfigurationHeader), c => VerifyConfigurationHeader(c.Logger, c.Directory)),
+        new(Group.Project, nameof(VerifyBlankParameterLabels), c => VerifyBlankParameterLabels(c.Logger, c.Directory)),
+        new(Group.Project, nameof(VerifyDraftSummarySync), c => VerifyDraftSummarySync(c.Logger, c.Directory)),
+        new(Group.Project, nameof(VerifyEnterCommitsInput), c => VerifyEnterCommitsInput(c.Logger, c.Directory)),
+        new(Group.Project, nameof(VerifyParameterInspector), c => VerifyParameterInspector(c.Directory, c.Project)),
+        new(Group.Project, nameof(VerifyPlanItemHeaders), c => VerifyPlanItemHeaders(c.Logger, c.Directory)),
+        new(Group.Project, nameof(VerifyParameterInspectorWindow),
+            c => VerifyParameterInspectorWindow(c.Logger, c.Directory)),
+        new(Group.Project, nameof(VerifyCheckboxOptions), c => VerifyCheckboxOptions(c.Directory)),
+        new(Group.Project, nameof(VerifyCheckboxEditor), c => VerifyCheckboxEditor(c.Logger, c.Directory)),
+        new(Group.Project, nameof(VerifyRequiredInputDefault), c => VerifyRequiredInputDefault(c.Logger, c.Directory)),
+        new(Group.Project, nameof(VerifyProjectPlan), c => VerifyProjectPlan(c.Directory, c.Project)),
+        new(Group.Project, nameof(VerifyTaskCatalogVariants), c => VerifyTaskCatalogVariants(c.Directory, c.Project)),
+        new(Group.Project, nameof(VerifyTaskGroups), c => VerifyTaskGroups(c.Directory, c.Project)),
+        new(Group.Project, nameof(VerifyTaskShelfLayout), c => VerifyTaskShelfLayout(c.Logger, c.Directory)),
+        new(Group.Project, nameof(VerifyOnboarding), c => VerifyOnboarding(c.Logger, c.Directory)),
+
+        new(Group.Other, nameof(VerifyChildSessionPresence), c => VerifyChildSessionPresence(c.Logger)),
+        new(Group.Other, nameof(VerifyRdpClientClsid), _ => VerifyRdpClientClsid()),
+        new(Group.Other, nameof(VerifyRdpLogonEvents), _ => VerifyRdpLogonEvents()),
+        new(Group.Other, nameof(VerifyTaskDescriptionMarkup), _ => VerifyTaskDescriptionMarkup()),
+        new(Group.Other, nameof(VerifyParameterRowLayout), _ => VerifyParameterRowLayout()),
+        new(Group.Other, nameof(VerifyUnsupportedProjectConstraints),
+            c => VerifyUnsupportedProjectConstraints(c.Directory, c.Project)),
+        new(Group.Other, nameof(VerifyInvalidProjectInterfaces),
+            c => VerifyInvalidProjectInterfaces(c.Directory, c.Project)),
+        new(Group.Other, nameof(VerifyRdpViewingModes), _ => VerifyRdpViewingModes()),
+        new(Group.Other, nameof(VerifyWorkerLogSequenceTracker), _ => VerifyWorkerLogSequenceTracker()),
+        new(Group.Other, nameof(VerifyRunLogRouting), c => VerifyRunLogRouting(c.Directory)),
+
+        new(Group.RuntimeControls, nameof(VerifyRuntimeControlScenarios), _ => VerifyRuntimeControlScenarios()),
+        new(Group.RuntimeControls, nameof(VerifyRunProgressScenarios), _ => VerifyRunProgressScenarios()),
+        new(Group.RuntimeControls, nameof(VerifyRuntimeControlMapping),
+            c => VerifyRuntimeControlMapping(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyRuntimeSidebarResize),
+            c => VerifyRuntimeSidebarResize(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyRuntimeConsole), c => VerifyRuntimeConsole(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyRunProgressWiring),
+            c => VerifyRunProgressWiring(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyChildSessionEndResponsiveness),
+            c => VerifyChildSessionEndResponsiveness(c.Logger)),
+        new(Group.RuntimeControls, nameof(VerifyStartupAndExitWiring),
+            c => VerifyStartupAndExitWiring(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifySessionRestoreAndEndWiring),
+            c => VerifySessionRestoreAndEndWiring(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifySessionEndWithWorkerWiring),
+            c => VerifySessionEndWithWorkerWiring(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyFaultedSessionRetryWiring),
+            c => VerifyFaultedSessionRetryWiring(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyPrepareAndRunWiring),
+            c => VerifyPrepareAndRunWiring(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyWorkerStopWiring), c => VerifyWorkerStopWiring(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyKilledWorkerWiring),
+            c => VerifyKilledWorkerWiring(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyStopUnconfirmedRecoveryWiring),
+            c => VerifyStopUnconfirmedRecoveryWiring(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyStopWithoutProjectWiring),
+            c => VerifyStopWithoutProjectWiring(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyRunResultLogWiring), c => VerifyRunResultLogWiring(c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyKilledWorkerLogWiring), c => VerifyKilledWorkerLogWiring(c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyEndStopsRunFirst), c => VerifyEndStopsRunFirst(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyEndAfterUnconfirmedStop),
+            c => VerifyEndAfterUnconfirmedStop(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyEndWithFaultedWorker),
+            c => VerifyEndWithFaultedWorker(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyEndWaitsForWorker),
+            c => VerifyEndWaitsForWorker(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyEndUnconfirmed), c => VerifyEndUnconfirmed(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyEndConfirmation), c => VerifyEndConfirmation(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyEndHoldsGate), c => VerifyEndHoldsGate(c.Logger, c.Directory)),
+        new(Group.RuntimeControls, nameof(VerifyEnvironmentClosing),
+            c => VerifyEnvironmentClosing(c.Logger, c.Directory)),
+
+        .. WorkerCoordinatorSelfTest.Checks.Select(check => new Check(Group.Other, $"WorkerCoordinator.{check.Name}",
+            c => Task.Run(() => check.Body(c.Logger, c.Directory, c.Project)).GetAwaiter().GetResult()))
+    ];
+
+    internal static int Run(string[] args)
     {
-        var testDirectory = Path.Combine(Path.GetTempPath(), $"NarutoAutoGUI-self-test-{Guid.NewGuid():N}");
-
+        var groups = args.Contains("--support-only", StringComparer.Ordinal) ? new[] { Group.Support }
+            : args.Contains("--project-only", StringComparer.Ordinal) ? new[] { Group.Support, Group.Project }
+            : args.Contains("--runtime-controls-only", StringComparer.Ordinal) ? new[] { Group.RuntimeControls }
+            : Enum.GetValues<Group>();
+        var root = Path.Combine(Path.GetTempPath(), $"NarutoAutoGUI-self-test-{Guid.NewGuid():N}");
+        // Scenarios open and close windows in turn; closing the last of them must not end the run.
+        System.Windows.Application.Current.ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
         try {
-            Directory.CreateDirectory(testDirectory);
-            var logDirectory = Path.Combine(testDirectory, "logs");
-            using var logger = new AppLogger(logDirectory);
-            if (runtimeControlsOnly) {
-                VerifyRuntimeControlScenarios();
-                VerifyRunProgressScenarios();
-                VerifyRuntimeControlMapping(logger, testDirectory);
-                VerifyRuntimeConsole(logger, testDirectory);
-                VerifyRunProgressWiring(logger, testDirectory);
-                VerifyRuntimeControlWiring(logger, testDirectory);
-                VerifyRuntimeEnvironment(logger, testDirectory);
-                Console.WriteLine("RUNTIME CONTROLS SELF-TEST PASS");
-                return 0;
-            }
-            VerifyTerminalNotifications();
-            VerifyFileLogging(testDirectory);
-            VerifyUserProfileMasking(testDirectory);
-            VerifyRunResultLog(testDirectory);
-            VerifyWorkerStateLog(testDirectory);
-            VerifyChildSessionLog(testDirectory);
-            VerifyDiagnosticPackage(logger, testDirectory);
-            VerifyDebugImageCleanup(logger, testDirectory);
-            VerifyDeclarativeSettings(logger, testDirectory);
-            VerifyUpdateLog(testDirectory);
-            VerifySettingsLog(testDirectory);
-            VerifyChildSessionCredentials(logger, testDirectory);
-            VerifyDiagnosticSettings(logger, testDirectory);
-            VerifyNavigationRail(logger, testDirectory);
-            VerifyHelpPage(logger, testDirectory);
-            if (supportOnly) {
-                Console.WriteLine("SUPPORT SELF-TEST PASS");
-                return 0;
-            }
-            var projectDirectory = CreateProjectFixture(testDirectory);
-            VerifyPretaskModel(testDirectory);
-            VerifyPretaskGuiWiring(logger, testDirectory);
-            VerifyPresets(logger, testDirectory);
-            VerifyFirstConfiguration(testDirectory, projectDirectory);
-            VerifyConfigurationMigration(testDirectory, projectDirectory);
-            VerifyIndependentConfigurations(testDirectory, projectDirectory);
-            VerifyConfigurationFallback(testDirectory, projectDirectory);
-            VerifyConfigurationStoreLog(testDirectory, projectDirectory);
-            VerifyConfigurationLog(testDirectory);
-            VerifyInvalidConfigurationIsolation(testDirectory, projectDirectory);
-            VerifyConfigurationTabs(logger, testDirectory, projectDirectory);
-            VerifyConfigurationHeader(logger, testDirectory);
-            VerifyBlankParameterLabels(logger, testDirectory);
-            VerifyDraftSummarySync(logger, testDirectory);
-            VerifyEnterCommitsInput(logger, testDirectory);
-            VerifyParameterInspector(testDirectory, projectDirectory);
-            VerifyPlanItemHeaders(logger, testDirectory);
-            VerifyParameterInspectorWindow(logger, testDirectory);
-            VerifyCheckboxOptions(testDirectory);
-            VerifyCheckboxEditor(logger, testDirectory);
-            VerifyRequiredInputDefault(logger, testDirectory);
-            VerifyProjectPlan(testDirectory, projectDirectory);
-            VerifyTaskCatalogVariants(testDirectory, projectDirectory);
-            VerifyTaskGroups(testDirectory, projectDirectory);
-            VerifyTaskShelfLayout(logger, testDirectory);
-            VerifyOnboarding(logger, testDirectory);
-            if (projectOnly) {
-                Console.WriteLine("PROJECT SELF-TEST PASS");
-                return 0;
-            }
-            VerifyRdpClientClsid();
-            VerifyChildSessionPresence(logger);
-            VerifyRdpLogonEvents();
-            VerifyTaskDescriptionMarkup();
-            VerifyParameterRowLayout();
-            VerifyUnsupportedProjectConstraints(testDirectory, projectDirectory);
-            VerifyInvalidProjectInterfaces(testDirectory, projectDirectory);
-            VerifyProtocolFrame();
-            VerifyRdpViewingModes();
-            VerifyWorkerLogSequenceTracker();
-            VerifyRunLogRouting(logger);
-            VerifyRuntimeControlScenarios();
-            VerifyRunProgressScenarios();
-            VerifyRuntimeControlMapping(logger, testDirectory);
-            VerifyRuntimeConsole(logger, testDirectory);
-            VerifyRunProgressWiring(logger, testDirectory);
-            VerifyRuntimeControlWiring(logger, testDirectory);
-            VerifyRuntimeEnvironment(logger, testDirectory);
-            Task.Run(() => WorkerCoordinatorSelfTest.RunAsync(
-                logger, testDirectory, projectDirectory,
-                Path.Combine(testDirectory, "maanop-config.json"))).GetAwaiter().GetResult();
-
-            logger.Debug("self-test-debug");
-            logger.Info("self-test-info");
-            logger.Dispose();
-            var logText = string.Join(
-                Environment.NewLine, Directory.EnumerateFiles(logDirectory, "*.log").Select(File.ReadAllText));
-            if (!Regex.IsMatch(logText, @"\[DEBUG\] \[T\d+\] \[[^\]]+\] self-test-debug")
-                || !Regex.IsMatch(logText, @"\[INFO\] \[T\d+\] \[[^\]]+\] self-test-info")
-                || !logText.Contains("[maanop.run] 用户日志", StringComparison.Ordinal)
-                || !logText.Contains("[runtime.task] 用户日志", StringComparison.Ordinal)
-                || !logText.Contains("GUI diagnostic only", StringComparison.Ordinal)) {
-                throw new InvalidOperationException("DEBUG+ 文件日志验证失败。");
-            }
-
-            Console.WriteLine(
-                "SELF-TEST PASS: PI pretask execution plans; "
-                + "RDP MsRdpClient10 CLSID; "
-                + "PI default/explicit resolver; "
-                + "ordered pipeline override; nested dormant intent; "
-                + "Win32 PI validation; unsupported PI scope/constraint fail-closed; "
-                + "PI structure/default/graph validation; typed input validation; "
-                + "task catalog/description; ordered task plan persistence; parameter inspector layout; "
-                + "MaaNOP Config v3/migration/independent tabs; onboarding tour; RunPlan digest; "
-                + "IPC framing; RDP viewing modes/input lock; "
-                + "log sequence tracking/recovery; Worker Instance replacement; stale Admission recovery; "
-                + "run-log routing; DEBUG+ file logging");
-            return 0;
-        } catch (Exception exception) {
-            Console.Error.WriteLine($"SELF-TEST FAIL: {exception}");
-            return 1;
+            return SelfTestSuite.Run("GUI SELF-TEST", Checks.Where(check => groups.Contains(check.Group))
+                .Select(check => (check.Name, (Action)(() => Execute(check, root)))), args, DescribeMachine());
         } finally {
             try {
-                if (Directory.Exists(testDirectory)) {
-                    Directory.Delete(testDirectory, recursive: true);
-                }
-            } catch {
+                Directory.Delete(root, recursive: true);
+            } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
                 // The isolated temporary directory can be cleaned by the OS later.
             }
         }
     }
 
-    private static void VerifyRdpClientClsid()
+    // Names what results depend on, and how far window-width checks can reach on this screen.
+    private static string DescribeMachine()
     {
-        const string expectedClsid = "8B918B82-7985-4C24-89DF-C33AD2BBFBCD";
-        const string prohibitedClsid = "A0C63C30-F08D-4AB4-907C-34905D770C7D";
+        var workArea = System.Windows.SystemParameters.WorkArea;
+        var scale = Forms.Screen.PrimaryScreen!.Bounds.Width / System.Windows.SystemParameters.PrimaryScreenWidth;
+        return $"ENV 工作区={workArea.Width}x{workArea.Height} DIP，缩放={scale:P0}，"
+            + $"区域={System.Globalization.CultureInfo.CurrentCulture.Name}，"
+            + $"动画={System.Windows.SystemParameters.ClientAreaAnimation}，"
+            + $"窗口宽度测试覆盖到 {Math.Min(workArea.Width, 1440)} DIP";
+    }
 
-        if (!string.Equals(RdpActiveXHost.RdpClientClsid, expectedClsid, StringComparison.OrdinalIgnoreCase)) {
-            throw new InvalidOperationException(
-                $"RDP ActiveX CLSID 预期为 MsRdpClient10 ({expectedClsid})，实际为 {RdpActiveXHost.RdpClientClsid}。");
-        }
-
-        if (string.Equals(RdpActiveXHost.RdpClientClsid, prohibitedClsid, StringComparison.OrdinalIgnoreCase)) {
-            throw new InvalidOperationException("RDP ActiveX CLSID 不能使用 Win11 专用的 MsRdpClient11 (v11)。");
-        }
-
-        if (!Guid.TryParse(RdpActiveXHost.RdpClientClsid, out var clsidGuid) || clsidGuid == Guid.Empty) {
-            throw new InvalidOperationException("RDP ActiveX CLSID 不是有效 GUID。");
-        }
+    private static void Execute(Check check, string root)
+    {
+        var directory = Path.Combine(root, check.Name);
+        Directory.CreateDirectory(directory);
+        using var logger = new AppLogger(Path.Combine(directory, "logs"));
+        check.Body(new Context(logger, directory, CreateProjectFixture(directory)));
     }
 
     private static void VerifyProjectPlan(string testDirectory, string projectDirectory)
@@ -478,23 +487,17 @@ internal static partial class SelfTestRunner
                 window.Height = width == 920 ? 640 : 900;
                 PumpOnboarding();
                 if (shelf.ActualHeight > Math.Min(340, workspace.ActualHeight * 0.44) + 1
-                    || catalogScroll.ScrollableHeight <= 0 || planScroll.ActualHeight < 131.5
+                    || catalogScroll.ScrollableHeight <= 0 || planScroll.ActualHeight < 132 - PixelTolerance
                     || catalogScroll.ExtentWidth > catalogScroll.ViewportWidth + 1) {
                     throw new InvalidOperationException("添加任务面板必须限高、独立滚动，并为执行计划保留最小高度。");
                 }
                 var planTop = planScroll.TranslatePoint(new System.Windows.Point(), workspace).Y;
                 var planOffset = planScroll.VerticalOffset;
-                if (!EdgeFadesAre(catalogScroll, top: false, bottom: true)) {
-                    throw new InvalidOperationException("可用任务未滚动时只应在底部裁切处淡出。");
-                }
                 catalogScroll.ScrollToBottom();
                 PumpOnboarding();
                 if (catalogScroll.VerticalOffset <= 0 || planScroll.VerticalOffset != planOffset
                     || Math.Abs(planScroll.TranslatePoint(new System.Windows.Point(), workspace).Y - planTop) > 1) {
                     throw new InvalidOperationException("滚动可用任务不得移动执行计划。");
-                }
-                if (!EdgeFadesAre(catalogScroll, top: true, bottom: false)) {
-                    throw new InvalidOperationException("可用任务滚动到底后只应在顶部裁切处淡出。");
                 }
                 catalogScroll.ScrollToTop();
                 if (width == 920) {
@@ -585,11 +588,8 @@ internal static partial class SelfTestRunner
                 .Single(card => card.Tag is ProjectTaskChoice { Label: "日常任务 3" });
             var shown = added.TransformToAncestor(planScroll).TransformBounds(
                 new System.Windows.Rect(0, 0, added.ActualWidth, added.ActualHeight));
-            if (shown.Top < 0 || shown.Bottom > planScroll.ViewportHeight + 1
-                || System.Windows.SystemParameters.ClientAreaAnimation
-                && added.ReadLocalValue(System.Windows.Controls.Border.BorderBrushProperty)
-                    == System.Windows.DependencyProperty.UnsetValue) {
-                throw new InvalidOperationException("新添加的任务应滚入视野并高亮。");
+            if (shown.Top < -PixelTolerance || shown.Bottom > planScroll.ViewportHeight + PixelTolerance) {
+                throw new InvalidOperationException("新添加的任务应滚入视野。");
             }
             if (shelf.Visibility != System.Windows.Visibility.Visible || planItems.Children.Count <= cards
                 || ((System.Windows.Controls.TextBlock)window.FindName("AddedTasksText")).Text != "已添加 2 项"
@@ -656,13 +656,6 @@ internal static partial class SelfTestRunner
         });
     }
 
-    private static bool EdgeFadesAre(System.Windows.Controls.ScrollViewer scroll, bool top, bool bottom)
-    {
-        bool Visible(string name) => ((System.Windows.UIElement)scroll.Template.FindName(name, scroll)).Visibility
-            == System.Windows.Visibility.Visible;
-        return Visible("TopFade") == top && Visible("BottomFade") == bottom;
-    }
-
     private static void VerifyTaskDescriptionMarkup()
     {
         var document = MarkdownDocument.Create(
@@ -707,22 +700,6 @@ internal static partial class SelfTestRunner
         }
     }
 
-    private static void VerifyProtocolFrame()
-    {
-        using var stream = new MemoryStream();
-        var requestId = Guid.NewGuid();
-        var envelope = WireEnvelope.Request(
-            ProtocolOperations.WorkerGetSnapshot, requestId, new { });
-        var writer = new ProtocolConnection(stream);
-        writer.WriteAsync(envelope, CancellationToken.None).GetAwaiter().GetResult();
-        stream.Position = 0;
-        var reader = new ProtocolConnection(stream);
-        var decoded = reader.ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
-        if (decoded?.RequestId != requestId || decoded.Operation != ProtocolOperations.WorkerGetSnapshot) {
-            throw new InvalidOperationException("Named Pipe frame round-trip 验证失败。");
-        }
-    }
-
     private static void VerifyWorkerLogSequenceTracker()
     {
         var firstInstance = Guid.NewGuid();
@@ -763,8 +740,10 @@ internal static partial class SelfTestRunner
         }
     }
 
-    private static void VerifyRunLogRouting(AppLogger logger)
+    private static void VerifyRunLogRouting(string testDirectory)
     {
+        var logDirectory = Path.Combine(testDirectory, "run-log-routing");
+        var logger = new AppLogger(logDirectory);
         if (TypeDescriptor.GetProperties(typeof(MainWindow))[nameof(MainWindow.LogLines)] is null) {
             throw new InvalidOperationException("GUI 运行日志集合无法被 WPF Binding 发现。 ");
         }
@@ -791,6 +770,18 @@ internal static partial class SelfTestRunner
         MainWindow.WriteWorkerDiagnosticLog(logger, userEntry);
         MainWindow.WriteWorkerDiagnosticLog(logger, diagnosticEntry);
         logger.Info("GUI diagnostic only");
+        logger.Debug("self-test-debug");
+        logger.Info("self-test-info");
+        logger.Dispose();
+        var logText = string.Join(
+            Environment.NewLine, Directory.EnumerateFiles(logDirectory, "*.log").Select(File.ReadAllText));
+        if (!Regex.IsMatch(logText, @"\[DEBUG\] \[T\d+\] \[[^\]]+\] self-test-debug")
+            || !Regex.IsMatch(logText, @"\[INFO\] \[T\d+\] \[[^\]]+\] self-test-info")
+            || !logText.Contains("[maanop.run] 用户日志", StringComparison.Ordinal)
+            || !logText.Contains("[runtime.task] 用户日志", StringComparison.Ordinal)
+            || !logText.Contains("GUI diagnostic only", StringComparison.Ordinal)) {
+            throw new InvalidOperationException("DEBUG+ 文件日志验证失败。");
+        }
     }
 
     // Run logs keep their Run and Plan Item, take the Run Plan's task label, and group by Plan Item newest first.

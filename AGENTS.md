@@ -52,12 +52,16 @@
 | 任务配置、标签条、参数编辑、TaskShelf、引导 | `-Suite Project` | 现有 `--project-only`，也包含 Support 自检 |
 | 通知、诊断 ZIP、Debug 图片清理、设置、导航 | `-Suite Support` | 现有 `--support-only` |
 | 运行控制栏、侧栏宽度、Run 进度、运行环境接线 | `-Suite RuntimeControls` | 现有 `--runtime-controls-only` |
-| Worker | `-Suite Worker` | Worker 构建 + 全 Worker 自检 |
+| Worker、GUI 与 Worker 的连接 | `-Suite Worker` | GUI/Worker 构建 + 全 Worker 自检 + 真实 Worker 连接 |
 | GUI 与 Engine 的更新适配器 | `-Suite Updater` | 现有 .NET Updater 测试（含构建） |
 | Rust Engine | `-Suite Engine` | Cargo tests + 全 targets Clippy |
 | 跨组件、Protocol、依赖或完成工作前的完整自动验证 | `-Suite All` | GUI/Worker 增量构建 + 原 test-automated.ps1 全覆盖 |
 
-定向验证用于迭代；共享代码修改应扩大范围，完成后运行 `-Suite All`。
+定向验证用于迭代；`-Only <名称片段>` 只运行名称匹配的 GUI 或 Worker 自检。共享代码修改应扩大范围，完成后运行 `-Suite All`。
+自检逐项隔离，一项失败不影响其他项，结束时汇总全部失败；`SKIP` 表示本机条件不足、该项未验证，不能算作通过。
+输出首行的 `ENV` 记录缩放和屏幕。改动布局或布局断言时，再用 `-Dpi96` 跑一次：CI 只有 100% 缩放，开发机的缩放通常不同。
+断言必须回答“哪种用户能感知的缺陷会让它失败”。不要固定文案、颜色、像素或私有成员；几何比较用 `PixelTolerance`，等待用 `PumpUntil`，不用固定时长。
+`VerifyRealWorker` 只在 `-Suite Worker`、`-Suite All` 和发布包中运行，正式 GUI 开着时 `SKIP`；它不覆盖 Task Scheduler 和 Child Session。
 `-NoBuild` 仅用于已成功构建且源码/依赖未变时重跑测试；All 时也跳过 Updater 构建，Rust 仍由 Cargo 编译。
 不要在同一输出目录并行构建/自检；DLL 被占用时先确认正在运行的程序或自检，不要盲目重试或终止用户进程。
 临时目录权限或交互桌面条件导致失败时，应如实报告环境限制，不得跳过断言或将旧 DLL 的结果当成新代码验证。

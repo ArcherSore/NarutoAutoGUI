@@ -23,7 +23,7 @@ internal sealed class ChildSessionWorkerLauncher
         }
         _logger.Info(
             $"正在 Child Session {childSessionId} 启动 NarutoAutoWorker，instance={workerInstanceId}；启动凭据已隐藏。 ");
-        var arguments = $"--instance {workerInstanceId:D} --token {launchToken} --manifest \"{manifestPath}\"";
+        var arguments = FormatArguments(workerInstanceId, launchToken, manifestPath);
         try {
             var result = await ChildSessionProcessLauncher.LaunchElevatedVerifiedAsync(
                 childSessionId, fullPath, arguments,
@@ -41,6 +41,9 @@ internal sealed class ChildSessionWorkerLauncher
             throw;
         }
     }
+
+    internal static string FormatArguments(Guid workerInstanceId, string launchToken, string manifestPath) =>
+        $"--instance {workerInstanceId:D} --token {launchToken} --manifest \"{manifestPath}\"";
 
     private static string FormatDiagnostic(int? value) => value is int actual
         ? $"{actual} (0x{unchecked((uint)actual):X8})"

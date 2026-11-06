@@ -130,13 +130,7 @@ internal static partial class SelfTestRunner
 
     private static void VerifyPresetMenu(AppLogger logger, string testDirectory, ProjectPlanModule project)
     {
-        using var session = new ChildSession.ChildSessionManager(logger);
-        var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(testDirectory, "preset-state"),
-            "unused.exe", $"NarutoAutoGUI.Presets.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
-        var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
-            () => Task.CompletedTask, () => Task.CompletedTask, _ => Task.CompletedTask);
-        try {
-            SetOnboardingField(window, "_projectPlan", project);
+        WithPlanWindow(logger, testDirectory, project, (window, _) => {
             InvokeOnboarding(window, "RenderTaskPlan");
             var button = (Button)window.FindName("PresetConfigurationButton");
             Require(button.Visibility == Visibility.Visible, "有预设时必须展示新建入口。");
@@ -159,10 +153,6 @@ internal static partial class SelfTestRunner
             SetOnboardingField(window, "_projectPlan", ProjectPlanModule.Open(plain, plainPath));
             InvokeOnboarding(window, "RenderTaskPlan");
             Require(button.Visibility == Visibility.Collapsed, "未声明预设时必须隐藏新建入口。");
-        } finally {
-            window.AllowClose();
-            window.Close();
-            Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
-        }
+        });
     }
 }

@@ -67,6 +67,5 @@ internal static partial class SelfTestRunner
         if (result != new DebugImageCleanupResult(1, 100, 1, 100, 0) || !File.Exists(preserved[^1])) {
             throw new InvalidOperationException("最近 2 分钟内的截图必须受保护，容量阈值只能是软限制。");
         }
-        Console.WriteLine("DEBUG IMAGE CLEANUP SELF-TEST PASS: age, watermarks, protection, links and locks.");
     }
 }

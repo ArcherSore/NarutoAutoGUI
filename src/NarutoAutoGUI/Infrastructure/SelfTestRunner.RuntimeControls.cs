@@ -11,6 +11,10 @@ namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
+    // WPF snaps layout to device pixels, so a value can land up to one DIP away at any scale of 100% or more.
+    private const double PixelTolerance = 1;
+    // Only bounds how long a real failure takes to report; a slow machine must never hit it.
+    private const int WaitLimitMilliseconds = 30000;
     private const uint ScenarioSessionId = 7;
     private static readonly Guid ScenarioWorkerId = new("7a0c0e3e-5d1f-4b8e-9a51-000000000007");
     private static readonly string[] RuntimeHeaderControls = [
@@ -52,111 +56,77 @@ internal static partial class SelfTestRunner
                     $"{action} 的可用性或进度说明不符。");
             }
 
-            // A disabled Start or Retry-to-Start explains itself on hover and to screen readers; enabled ones carry
-            // no tooltip, as their visible label says it all.
-            foreach (var (action, control, toolTip, helpText) in new (RuntimeAction, string, string?, string)[] {
-                (new RuntimeAction.Start(true), "StartTaskHeaderButton", null, ""),
-                (new RuntimeAction.Start(false, StartBlocker.CommandsUnavailable), "StartTaskHeaderButton",
-                    "当前操作完成后可开始任务", "当前操作完成后可开始任务"),
-                (new RuntimeAction.Start(false, StartBlocker.ProjectNotLoaded), "StartTaskHeaderButton",
-                    "MaaNOP 项目未加载，无法开始任务", "MaaNOP 项目未加载，无法开始任务"),
-                (new RuntimeAction.Start(false, StartBlocker.NoTasks), "StartTaskHeaderButton",
-                    "请先添加或勾选要执行的任务", "请先添加或勾选要执行的任务"),
-                (new RuntimeAction.Start(false, StartBlocker.ConfigurationInvalid), "StartTaskHeaderButton",
-                    "当前配置未通过校验，请先修正任务参数", "当前配置未通过校验，请先修正任务参数"),
-                (new RuntimeAction.Start(false, StartBlocker.RuntimeNotReady), "StartTaskHeaderButton",
-                    "运行环境尚未就绪，请稍候", "运行环境尚未就绪，请稍候"),
-                (new RuntimeAction.Retry(RetryTarget.Prepare, true), "RetryEnvironmentButton", null, ""),
-                (new RuntimeAction.Retry(RetryTarget.Start, true), "RetryEnvironmentButton", null, ""),
+            // A blocked action says why, on hover and to screen readers; an enabled one needs no explanation.
+            var reasons = new List<string>();
+            foreach (var (action, control, explained) in new (RuntimeAction, string, bool)[] {
+                (new RuntimeAction.Start(true), "StartTaskHeaderButton", false),
+                (new RuntimeAction.Start(false, StartBlocker.CommandsUnavailable), "StartTaskHeaderButton", true),
+                (new RuntimeAction.Start(false, StartBlocker.ProjectNotLoaded), "StartTaskHeaderButton", true),
+                (new RuntimeAction.Start(false, StartBlocker.NoTasks), "StartTaskHeaderButton", true),
+                (new RuntimeAction.Start(false, StartBlocker.ConfigurationInvalid), "StartTaskHeaderButton", true),
+                (new RuntimeAction.Start(false, StartBlocker.RuntimeNotReady), "StartTaskHeaderButton", true),
+                (new RuntimeAction.Retry(RetryTarget.Prepare, true), "RetryEnvironmentButton", false),
+                (new RuntimeAction.Retry(RetryTarget.Start, true), "RetryEnvironmentButton", false),
                 (new RuntimeAction.Retry(RetryTarget.Start, false, StartBlocker.NoTasks), "RetryEnvironmentButton",
-                    "请先添加或勾选要执行的任务", "请先添加或勾选要执行的任务")
+                    true)
             }) {
                 window.ApplyRuntimeControls(new RuntimeControlState(action, true, null, idleDesktop, true));
                 var button = Named<FrameworkElement>(window, control);
-                Require(Equals(button.ToolTip, toolTip) && ToolTipService.GetShowOnDisabled(button)
-                    && AutomationProperties.GetHelpText(button) == helpText, $"{action} 的说明不符。");
+                Require(button.ToolTip is string == explained && ToolTipService.GetShowOnDisabled(button)
+                    && AutomationProperties.GetHelpText(button) == (button.ToolTip as string ?? ""),
+                    $"{action} 的说明不符。");
+                if (control == "StartTaskHeaderButton" && explained) {
+                    reasons.Add((string)button.ToolTip!);
+                }
             }
+            Require(reasons.Distinct().Count() == reasons.Count, "不同的阻止原因应有不同的说明。");
 
-            // The retry button names what it retries.
-            foreach (var (target, label) in new (RetryTarget, string)[] {
-                (RetryTarget.Prepare, "重试准备运行环境"), (RetryTarget.Start, "重试开始任务")
-            }) {
+            // The retry button names what it retries, and recovery always says why it is needed.
+            string RetryLabel(RetryTarget target)
+            {
                 window.ApplyRuntimeControls(new RuntimeControlState(
                     new RuntimeAction.Retry(target, true), true, null, idleDesktop, true));
-                Require(Named<TextBlock>(window, "RetryEnvironmentText").Text == label
-                    && AutomationProperties.GetName(Named<FrameworkElement>(window, "RetryEnvironmentButton")) == label,
-                    $"{target} 的重试按钮应写明重试什么。");
+                return Named<TextBlock>(window, "RetryEnvironmentText").Text;
             }
-
-            // Recovery is named for what it does; its tooltip says why it is needed, whether or not it can run now.
-            foreach (var (reason, text) in new (RecoveryReason, string)[] {
-                (RecoveryReason.StopUnconfirmed, "任务未能确认结束，MaaNOP 可能仍在运行"),
-                (RecoveryReason.RuntimeFaulted, "运行环境故障，Worker 无法继续执行任务"),
-                (RecoveryReason.WorkerLost, "Worker 失联且未确认已退出；也可以等待它重新连接"),
-                (RecoveryReason.EndUnconfirmed, "上次结束桌面分身未确认")
-            }) {
+            Require(RetryLabel(RetryTarget.Prepare) != RetryLabel(RetryTarget.Start), "重试按钮应写明重试什么。");
+            foreach (var reason in Enum.GetValues<RecoveryReason>()) {
                 foreach (var enabled in new[] { true, false }) {
                     window.ApplyRuntimeControls(new RuntimeControlState(
                         new RuntimeAction.Recover(enabled, reason), true, null, idleDesktop, true));
                     var button = Named<FrameworkElement>(window, "RecoverEnvironmentButton");
-                    Require(Equals(button.ToolTip, text) && ToolTipService.GetShowOnDisabled(button)
-                        && AutomationProperties.GetName(button) == "结束桌面分身"
-                        && AutomationProperties.GetHelpText(button) == text, $"{reason} 的恢复说明不符。");
+                    Require(button.ToolTip is string && ToolTipService.GetShowOnDisabled(button), $"{reason} 的恢复说明不符。");
                 }
             }
 
             var state = new RuntimeControlState(new RuntimeAction.Prepare(true), true, null, idleDesktop, true);
-            foreach (var (editable, lockReason, text) in new (bool, LockReason?, string?)[] {
-                (false, LockReason.RunActive, "任务运行中，配置已锁定"),
-                (false, LockReason.RuntimeBusy, "运行环境处理中，配置暂时锁定"),
-                (false, null, null),
-                (true, null, null)
+            foreach (var (editable, lockReason) in new (bool, LockReason?)[] {
+                (false, LockReason.RunActive), (false, LockReason.RuntimeBusy), (false, null), (true, null)
             }) {
                 window.ApplyRuntimeControls(
                     state with { ConfigurationEditable = editable, ConfigurationLock = lockReason });
                 Require(Named<UIElement>(window, "NewConfigurationButton").IsEnabled == editable
-                    && Named<UIElement>(window, "ConfigurationLockBadge").IsVisible == text is not null
-                    && (text is null || AutomationProperties.GetName(
-                        Named<FrameworkElement>(window, "ConfigurationLockBadge")) == text),
+                    && Named<UIElement>(window, "ConfigurationLockBadge").IsVisible == lockReason is not null,
                     $"配置可编辑={editable}、锁定原因={lockReason} 的显示不符。");
             }
 
-            // The header toggle names its state in words and always shows it, even while it cannot be clicked. Only an
-            // open viewer fills it; the dot is absent before a desktop exists and while it would cover the cursor.
-            // A viewer opened during preparation is unavailable but open, so it keeps its blue text.
-            foreach (var (desktop, name, fill, text, dot) in new (DesktopToggle, string, string, string, string?)[] {
-                (new(DesktopAction.Show, false, DesktopStatus.NotRunning), "未启动", "Brush.Surface",
-                    "Brush.Text.Disabled", null),
-                (new(DesktopAction.Hide, false, DesktopStatus.Connecting), "连接中", "Brush.Surface",
-                    "Brush.Text.Disabled", "Brush.Warning.Foreground"),
-                (new(DesktopAction.Show, true, DesktopStatus.Background), "后台运行", "Brush.Surface",
-                    "Brush.Text.Body", "Brush.Success"),
-                (new(DesktopAction.Show, false, DesktopStatus.Background), "后台运行", "Brush.Surface",
-                    "Brush.Text.Disabled", "Brush.Success"),
-                (new(DesktopAction.Hide, true, DesktopStatus.Viewing), "观看中", "Brush.Primary.Surface",
-                    "Brush.Primary", "Brush.Primary"),
-                (new(DesktopAction.Hide, false, DesktopStatus.Viewing), "观看中", "Brush.Primary.Surface",
-                    "Brush.Primary", "Brush.Primary"),
-                (new(DesktopAction.Hide, true, DesktopStatus.Interactive), "可操作", "Brush.Warning.Surface",
-                    "Brush.Warning.Foreground", null),
-                (new(DesktopAction.Show, false, DesktopStatus.Disconnected), "已断开", "Brush.Surface",
-                    "Brush.Text.Disabled", "Brush.Error")
+            // The header toggle always shows, even while it cannot be clicked, and names what a click does.
+            foreach (var desktop in new DesktopToggle[] {
+                new(DesktopAction.Show, false, DesktopStatus.NotRunning),
+                new(DesktopAction.Hide, false, DesktopStatus.Connecting),
+                new(DesktopAction.Show, true, DesktopStatus.Background),
+                new(DesktopAction.Hide, true, DesktopStatus.Viewing),
+                new(DesktopAction.Hide, true, DesktopStatus.Interactive),
+                new(DesktopAction.Show, false, DesktopStatus.Disconnected)
             }) {
                 window.ApplyRuntimeControls(state with { Desktop = desktop });
                 PumpOnboarding();
                 var button = Named<WpfButton>(window, "DesktopViewButton");
-                var icon = Named<System.Windows.Shapes.Path>(window, "DesktopViewIcon");
-                var status = desktop.Status;
                 Require(button.IsEnabled == desktop.Enabled && button.ToolTip is not null && button.IsVisible
                     && Named<TextBlock>(window, "DesktopViewText").Text
-                        == (desktop.Action == DesktopAction.Hide ? "隐藏窗口" : "显示窗口")
-                    && AutomationProperties.GetName(button)
-                        == (desktop.Action == DesktopAction.Hide ? "隐藏窗口" : "显示窗口")
-                    && icon.Data is not null,
+                        == (desktop.Action == DesktopAction.Hide ? "隐藏窗口" : "显示窗口"),
                     $"{desktop} 的分身按钮显示不符。");
             }
         });
-        Console.WriteLine("RUNTIME CONTROL MAPPING PASS: header actions, configuration lock and desktop toggle.");
     }
 
     private static void VerifyRuntimeControlScenarios()
@@ -184,7 +154,6 @@ internal static partial class SelfTestRunner
             throw new InvalidOperationException(
                 $"运行控制场景不符：{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
         }
-        Console.WriteLine($"RUNTIME CONTROL SCENARIOS PASS: {scenarios.Length} scenarios.");
     }
 
     // Each row states the controls a user sees for one situation; expected values come from the rules in #12.

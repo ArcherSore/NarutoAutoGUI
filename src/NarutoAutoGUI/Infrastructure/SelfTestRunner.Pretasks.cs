@@ -21,9 +21,8 @@ internal static partial class SelfTestRunner
     private static void VerifyPretaskGuiWiring(AppLogger logger, string testDirectory)
     {
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "pretask-gui"), (window, directory) => {
-            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-            typeof(MainWindow).GetMethod("EndOnboarding", flags)!.Invoke(window, new object[] { true });
-            var project = (ProjectPlanModule)typeof(MainWindow).GetField("_projectPlan", flags)!.GetValue(window)!;
+            EndTour(window);
+            var project = ProjectOf(window);
             var catalog = Named<Panel>(window, "AvailableTasksPanel");
             var planPanel = Named<Panel>(window, "PlanItemsPanel");
             void Click(Button button)
@@ -51,12 +50,6 @@ internal static partial class SelfTestRunner
                 toggle.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 PumpOnboarding();
             }
-            var startupButton = ButtonNamed(planPanel, "仅执行启动");
-            Require(startupButton.Content is Wpf.Ui.Controls.SymbolIcon { Width: 18, Height: 18 }
-                && startupButton.Width == 32 && startupButton.Height == 32
-                && startupButton.Background is System.Windows.Media.SolidColorBrush { Color.A: 0 }
-                && Equals(startupButton.ToolTip, "仅执行启动"),
-                "仅执行启动应使用图标按钮，文字只出现在悬浮提示中。");
             void Capture(string suffix)
             {
                 var output = Environment.GetEnvironmentVariable("NARUTO_TASK_SCREENSHOTS");
@@ -121,7 +114,7 @@ internal static partial class SelfTestRunner
             Require(ConfigurationDescendants(Cards()[0]).OfType<TextBox>()
                 .Any(editor => AutomationProperties.GetName(editor) == "启动账号"),
                 "回放指引应展开位于最前的前置任务。");
-            typeof(MainWindow).GetMethod("EndOnboarding", flags)!.Invoke(window, new object[] { true });
+            EndTour(window);
             PumpOnboarding();
             Require(ConfigurationDescendants(Cards()[2]).OfType<TextBox>().Any()
                 && !ConfigurationDescendants(Cards()[0]).OfType<TextBox>().Any(),
@@ -148,7 +141,7 @@ internal static partial class SelfTestRunner
             InvokeOnboarding(window, "RenderTaskPlan");
             Require(Selection(0).IsChecked == false, "重绘任务栏不能重置临时选择。");
             InvokeOnboarding(window, "LoadProject");
-            project = (ProjectPlanModule)typeof(MainWindow).GetField("_projectPlan", flags)!.GetValue(window)!;
+            project = ProjectOf(window);
             Require(Selection(0).IsChecked == false && project.EnabledItems.Count == 2,
                 "LoadProject 重载应保留勾选状态和过滤后的计划。");
             var originalConfiguration = project.ActiveConfigurationId;

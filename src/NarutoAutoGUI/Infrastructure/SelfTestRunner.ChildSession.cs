@@ -39,7 +39,6 @@ internal static partial class SelfTestRunner
         Require(serialized, "Windows 注销完成前不能释放操作锁或开始第二次注销。");
         Require(notificationsOnUi && manager.Snapshot.State == ChildSessionState.NotRunning,
             "注销完成状态应在 UI 线程发布，且结束后回到未运行。");
-        Console.WriteLine("CHILD SESSION END RESPONSIVENESS PASS: Dispatcher, pending state, gate, UI notification.");
     }
 
     private static void VerifyChildSessionPresence(AppLogger logger)
@@ -119,7 +118,6 @@ internal static partial class SelfTestRunner
                 "已出现新的 Child Session 时不能把注销失败当作结束成功。");
         }
 
-        Console.WriteLine("CHILD SESSION SELF-TEST PASS: none, live, stale ID, unverifiable, vanished, failed logoff.");
 
         static Exception? Terminate(ChildSessionManager manager)
         {
@@ -212,6 +210,12 @@ internal static partial class SelfTestRunner
         Require(missing is null && error != 0, "不存在的 Session 应返回不可用和 Win32 错误。");
     }
 
+    // Pinned on purpose. Windows 10 has no MsRdpClient11, while Windows 11 has both, so on a Windows 11 machine a wrong
+    // CLSID still works and only this check stops it from reaching Windows 10 users as a failure to create the control.
+    private static void VerifyRdpClientClsid() => Require(string.Equals(RdpActiveXHost.RdpClientClsid,
+        "8B918B82-7985-4C24-89DF-C33AD2BBFBCD", StringComparison.OrdinalIgnoreCase),
+        "RDP 控件必须使用 Windows 10 也支持的 MsRdpClient10。");
+
     private static void VerifyRdpLogonEvents()
     {
         const int badPassword = 0, expiredPassword = 1, otherFailure = 2, logonFailure = unchecked((int)0xC000006D);
@@ -256,8 +260,6 @@ internal static partial class SelfTestRunner
             probe.Raise("OnLogonError", badPassword);
             Require(probe.Failures.SequenceEqual([badPassword]), "未提交保存的凭据的新尝试必须按原规则处理。");
         }
-        Console.WriteLine(
-            "RDP LOGON EVENT SELF-TEST PASS: saved-credential fallback, terminal errors, unchanged default.");
     }
 
     // A connection attempt on a host whose ActiveX is never created; handlers are invoked as the event sink does.
@@ -293,8 +295,10 @@ internal static partial class SelfTestRunner
         internal Action<SimulatedWts>? DuringLogoff { get; set; }
         internal List<uint> LogoffAttempts { get; } = [];
 
-        internal ChildSessionManager CreateManager(AppLogger logger) =>
-            new(logger, () => ReportedId, Enumerate, Logoff);
+        // Never the real WTS or Windows Credential Manager: what is on this machine must not affect a check.
+        internal ChildSessionManager CreateManager(AppLogger logger, ChildSessionCredentialStore? credentials = null) =>
+            new(logger, () => ReportedId, Enumerate, Logoff,
+                credentials ?? new ChildSessionCredentialStore(logger, new MemoryCredentialVault()));
 
         private IReadOnlyCollection<uint> Enumerate() => EnumerationFails
             ? throw new Win32Exception(5, "self-test enumeration failure")

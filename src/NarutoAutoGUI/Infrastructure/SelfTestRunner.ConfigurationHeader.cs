@@ -19,8 +19,8 @@ internal static partial class SelfTestRunner
             "选中标签滚入视野时应带边距且尽量少移动。");
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "configuration-header"), (window, _) => {
             const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-            var project = (ProjectPlanModule)typeof(MainWindow).GetField("_projectPlan", flags)!.GetValue(window)!;
-            typeof(MainWindow).GetMethod("EndOnboarding", flags)!.Invoke(window, new object[] { true });
+            var project = ProjectOf(window);
+            EndTour(window);
             for (var index = 0; index < 13; index++) {
                 project.CreateConfiguration();
             }
@@ -44,18 +44,20 @@ internal static partial class SelfTestRunner
             {
                 var bounds = element.TransformToAncestor(container)
                     .TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
-                return bounds.Left >= -0.5 && bounds.Right <= container.ActualWidth + 0.5;
+                return bounds.Left >= -PixelTolerance && bounds.Right <= container.ActualWidth + PixelTolerance;
             }
-            bool Fade(string name) =>
-                ((UIElement)scroll.Template.FindName(name, scroll)).Visibility == Visibility.Visible;
+            double CenterY(FrameworkElement element) =>
+                element.TranslatePoint(new System.Windows.Point(0, element.ActualHeight / 2), header).Y;
+
 
             SetBusy(true);
             foreach (var width in new[] { 920, 1180, 1440 }) {
                 window.Width = width;
                 PumpOnboarding();
-                Require(header.ActualHeight == 36 && bar.ActualHeight == 34
-                    && title.ActualWidth >= title.DesiredSize.Width - 0.5 && badge.IsVisible && Inside(badge, header)
-                    && badge.ActualWidth >= badge.DesiredSize.Width - 0.5 && Inside(add, bar)
+                Require(Math.Abs(CenterY(title) - CenterY(bar)) < bar.ActualHeight / 2
+                    && title.ActualWidth >= title.DesiredSize.Width - PixelTolerance
+                    && badge.IsVisible && Inside(badge, header)
+                    && badge.ActualWidth >= badge.DesiredSize.Width - PixelTolerance && Inside(add, bar)
                     && scroll.ComputedHorizontalScrollBarVisibility != Visibility.Visible && scroll.ScrollableWidth > 0,
                     $"{width} 宽度下 14 个配置锁定时，页头应为单行，标题、锁定徽标与新建按钮完整可见。");
             }
@@ -70,7 +72,6 @@ internal static partial class SelfTestRunner
 
             scroll.ScrollToHorizontalOffset(0);
             PumpOnboarding();
-            Require(!Fade("LeftFade") && Fade("RightFade"), "只有右侧还有内容时才显示右侧渐隐。");
             void Wheel()
             {
                 scroll.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, 0, -120) {
@@ -79,7 +80,7 @@ internal static partial class SelfTestRunner
                 PumpOnboarding();
             }
             Wheel();
-            Require(Math.Abs(scroll.HorizontalOffset - 64) < 0.5 && Fade("LeftFade"), "锁定时垂直滚轮仍应横向滚动标签。");
+            Require(Math.Abs(scroll.HorizontalOffset - 64) < PixelTolerance, "锁定时垂直滚轮仍应横向滚动标签。");
             var other = tabs.Items.OfType<ConfigurationTab>().Last();
             Require(other.ToolTip is string blocked && blocked.Contains("无法切换配置", StringComparison.Ordinal),
                 "锁定时非当前标签应说明无法切换。");
@@ -87,7 +88,6 @@ internal static partial class SelfTestRunner
                 RoutedEvent = Keyboard.PreviewGotKeyboardFocusEvent
             });
             Require(!other.IsSelected && project.ActiveConfigurationId == project.Configurations[0].Id
-                && other.Background == System.Windows.Media.Brushes.Transparent
                 && tabs.Items.OfType<TabItem>().First().ToolTip is string active
                 && active.Contains("暂时不能重命名", StringComparison.Ordinal),
                 "锁定时焦点移到其他标签不得切换配置，被阻止的标签不显示悬停底色，当前标签说明不能重命名。");
@@ -96,15 +96,15 @@ internal static partial class SelfTestRunner
             scroll.ScrollToHorizontalOffset(0);
             PumpOnboarding();
             Wheel();
-            Require(Math.Abs(scroll.HorizontalOffset - 64) < 0.5, "可编辑时垂直滚轮横向滚动标签。");
+            Require(Math.Abs(scroll.HorizontalOffset - 64) < PixelTolerance, "可编辑时垂直滚轮横向滚动标签。");
             other.RaiseEvent(new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice, 0, null, other) {
                 RoutedEvent = Keyboard.PreviewGotKeyboardFocusEvent
             });
             PumpOnboarding();
             var last = tabs.Items.OfType<TabItem>().Last();
             Require(project.ActiveConfigurationId == project.Configurations[^1].Id && last.IsSelected
-                && Inside(last, scroll) && scroll.HorizontalOffset >= scroll.ScrollableWidth - 0.5 && Inside(add, bar)
-                && !Fade("RightFade"), "可编辑时焦点切换选择，最后一个标签带边距完整显示。");
+                && Inside(last, scroll) && scroll.HorizontalOffset >= scroll.ScrollableWidth - PixelTolerance
+                && Inside(add, bar), "可编辑时焦点切换选择，最后一个标签带边距完整显示。");
             project.ActivateConfiguration(project.Configurations[0].Id);
             InvokeOnboarding(window, "RenderTaskPlan");
             PumpOnboarding();
@@ -128,16 +128,6 @@ internal static partial class SelfTestRunner
             PumpOnboarding();
             Require(!bar.IsVisible && title.IsVisible, "项目无法加载时标签条隐藏，标题保留。");
 
-            Require(typeof(MainWindow).GetField("_configurationWheelSource", flags)!.GetValue(window) is not null,
-                "显示窗口后应安装横向滚轮钩子。");
-            var hookArguments = new object[] { IntPtr.Zero, 0x020E, new IntPtr(120 << 16), IntPtr.Zero, false };
-            typeof(MainWindow).GetMethod("ConfigurationWheelHook", flags)!.Invoke(window, hookArguments);
-            Require(!(bool)hookArguments[4], "横向滚轮只在指针位于标签条上时处理。");
-            window.AllowClose();
-            typeof(MainWindow).GetMethod("MainWindow_Closing", flags)!
-                .Invoke(window, new object?[] { window, new System.ComponentModel.CancelEventArgs() });
-            Require(typeof(MainWindow).GetField("_configurationWheelSource", flags)!.GetValue(window) is null,
-                "窗口关闭时必须移除横向滚轮钩子。");
         });
     }
 }

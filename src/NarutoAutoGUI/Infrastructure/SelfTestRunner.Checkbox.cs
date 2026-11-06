@@ -65,8 +65,8 @@ internal static partial class SelfTestRunner
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "checkbox-editor"), (window, _) => {
             const System.Reflection.BindingFlags flags =
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-            var project = (ProjectPlanModule)typeof(MainWindow).GetField("_projectPlan", flags)!.GetValue(window)!;
-            typeof(MainWindow).GetMethod("EndOnboarding", flags)!.Invoke(window, [true]);
+            var project = ProjectOf(window);
+            EndTour(window);
             SetOnboardingField(window, "_expandedTaskName", "RealTask");
             InvokeOnboarding(window, "RenderTaskPlan");
             PumpOnboarding();

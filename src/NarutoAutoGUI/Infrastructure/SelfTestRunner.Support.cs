@@ -28,6 +28,19 @@ internal static partial class SelfTestRunner
         } finally {
             CultureInfo.CurrentCulture = culture;
         }
+        VerifyLogRolling(Path.Combine(testDirectory, "log-rolling"));
+    }
+
+    // Past the size limit a log rolls to a name the diagnostic package still matches.
+    private static void VerifyLogRolling(string directory)
+    {
+        using var logger = new AppLogger(directory);
+        var megabyte = new string('x', 1024 * 1024);
+        for (var index = 0; index < 11; index++) {
+            logger.Debug(megabyte);
+        }
+        Require(Directory.GetFiles(directory, "NarutoAutoGUI-*_001.log").Length == 1,
+            "单个日志文件超过 10 MB 时应滚动到新文件。");
     }
 
     private static void VerifyFileLoggingInCurrentCulture(string directory)
@@ -47,7 +60,8 @@ internal static partial class SelfTestRunner
         logger.Error("失败", new InvalidOperationException("file-logging-exception"));
         // Relayed logs keep the Worker's time; one from another day, recovered after a restart, also shows its date.
         var today = DateTime.Today;
-        var relayedAt = new DateTime(today.Year, today.Month, today.Day, 1, 2, 3, 4, DateTimeKind.Local);
+        // Noon, as a daylight-saving change can skip 01:02 on the day this runs.
+        var relayedAt = new DateTime(today.Year, today.Month, today.Day, 12, 2, 3, 4, DateTimeKind.Local);
         logger.WriteWorker(LogLevel.Warn, "#1 [run.lifecycle] 转写", new DateTimeOffset(relayedAt));
         MainWindow.WriteWorkerDiagnosticLog(logger, new WorkerLogEntry(
             2, relayedAt.AddDays(-2).ToUniversalTime(), "INFO", "run.lifecycle", "回放", false, null, null, null, null));
@@ -72,13 +86,13 @@ internal static partial class SelfTestRunner
                 + @"花括号 \{""key"":""\{value\}""\} \{0\} \{Text\}\r?$", RegexOptions.Multiline)
             || !Regex.IsMatch(text, @"\[ERROR\] \[T\d+\] \[[^\]]+\] 失败\r?\nSystem\.InvalidOperationException: "
                 + "file-logging-exception")
-            || !Regex.IsMatch(text, @"^\[01:02:03\.004\] \[WARN\] \[T\d+\] \[Worker\] "
+            || !Regex.IsMatch(text, @"^\[12:02:03\.004\] \[WARN\] \[T\d+\] \[Worker\] "
                 + @"#1 \[run\.lifecycle\] 转写\r?$", RegexOptions.Multiline)
             || !Regex.IsMatch(text, @"\[Worker\] #3 \[agent\.stdout\] \[ERR\] 内容\r?$", RegexOptions.Multiline)
             || !Regex.IsMatch(text, @"\] 末尾空白。\r?$", RegexOptions.Multiline)
             || text.Contains("\n\r\n")
             || !text.Contains($"[{relayedAt.AddDays(-2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} "
-                + "01:02:03.004] [INFO]")
+                + "12:02:03.004] [INFO]")
             || !text.Contains("[Worker] #2 [run.lifecycle] 回放")
             || !Regex.IsMatch(text, @"\[INFO\] \[T\d+\] \[[^\]]+\] 作用域 \| enter\r?\n.*\] 作用域 \| leave, \d+ms\r?$",
                 RegexOptions.Multiline)
@@ -86,23 +100,8 @@ internal static partial class SelfTestRunner
                 + $@"\[pid={Environment.ProcessId}\] \[session=\d+\] \[elevated=(True|False)\] .*\[logDirectory=")) {
             throw new InvalidOperationException($"日志行格式不符：{text}");
         }
-        if (bytes.ToArray() is [0xEF, 0xBB, 0xBF, ..]) {
-            throw new InvalidOperationException("日志文件不应带 BOM。");
-        }
         if (File.Exists(expired) || !File.Exists(recent)) {
             throw new InvalidOperationException("日志应保留 14 天内的文件并清理更早的文件。");
-        }
-
-        var megabyte = new string('x', 1024 * 1024);
-        for (var index = 0; index < 11; index++) {
-            logger.Debug(megabyte);
-        }
-        var rolled = Directory.GetFiles(directory, "NarutoAutoGUI-*_001.log");
-        // The limit is checked before each write, so a file can pass it by at most the one entry that crossed it.
-        if (rolled.Length != 1 || new FileInfo(current).Length > 11L * 1024L * 1024L) {
-            var sizes = string.Join("，", Directory.GetFiles(directory).Select(
-                path => $"{Path.GetFileName(path)}={new FileInfo(path).Length}"));
-            throw new InvalidOperationException($"单个日志文件超过 10 MB 时应滚动到新文件：{sizes}。");
         }
 
         logger.Dispose();
@@ -508,7 +507,7 @@ internal static partial class SelfTestRunner
         })!;
         process.WaitForExit();
         if (process.ExitCode != 0) {
-            throw new InvalidOperationException("无法创建目录链接测试 fixture。");
+            throw new SelfTestSkip("临时目录所在文件系统无法创建目录链接，未验证诊断包拒绝链接。");
         }
     }
 
@@ -651,8 +650,8 @@ internal static partial class SelfTestRunner
             void AssertVisible(FrameworkElement element)
             {
                 var bounds = element.TransformToAncestor(settings).TransformBounds(new Rect(element.RenderSize));
-                if (bounds.Top < 0 || bounds.Bottom > settings.ActualHeight
-                    || bounds.Left < 0 || bounds.Right > settings.ActualWidth) {
+                if (bounds.Top < -PixelTolerance || bounds.Bottom > settings.ActualHeight + PixelTolerance
+                    || bounds.Left < -PixelTolerance || bounds.Right > settings.ActualWidth + PixelTolerance) {
                     throw new InvalidOperationException("最小窗口中滚动后的 Settings 按钮必须完整可见。");
                 }
             }

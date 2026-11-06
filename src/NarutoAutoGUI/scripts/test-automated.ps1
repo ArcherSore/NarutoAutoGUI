@@ -43,24 +43,36 @@ if (-not (Test-Path -LiteralPath $WorkerDll -PathType Leaf)) {
     throw "未找到 Worker DLL: $WorkerDll"
 }
 
-# Running the DLLs through dotnet bypasses the elevated apphost manifests. The self-tests do not
-# connect RDP or load MaaFramework native runtime. GUI tests create a local RDP control to check input locking.
-foreach ($entry in @($GuiDll, $WorkerDll)) {
-    $entryPath = (Resolve-Path -LiteralPath $entry).Path
-    Push-Location (Split-Path $entryPath)
-    try {
-        dotnet $entryPath --self-test
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    } finally { Pop-Location }
+# A failed stage must not hide the others; the first failure's exit code is kept for the caller.
+$failedStages = [System.Collections.Generic.List[string]]::new()
+$firstExitCode = 0
+function Complete-Stage
+{
+    param([string]$Name)
+    if ($LASTEXITCODE -eq 0) { return }
+    $failedStages.Add($Name)
+    if ($script:firstExitCode -eq 0) { $script:firstExitCode = $LASTEXITCODE }
 }
 
-Write-Host "自动自检通过。RDP/UAC/托盘等交互流程仍需按文档手动回归。"
+# Running the DLLs through dotnet bypasses the elevated apphost manifests. The self-tests do not connect RDP.
+# GUI tests create a local RDP control to check input locking, and start the real Worker,
+# which probes the native runtime.
+$workerExe = [IO.Path]::ChangeExtension((Resolve-Path -LiteralPath $WorkerDll).Path, '.exe')
+foreach ($entry in @(@{ Dll = $GuiDll; Extra = @('--worker-exe', $workerExe) }, @{ Dll = $WorkerDll; Extra = @() })) {
+    $entryPath = (Resolve-Path -LiteralPath $entry.Dll).Path
+    $extra = $entry.Extra
+    Push-Location (Split-Path $entryPath)
+    try {
+        dotnet $entryPath --self-test @extra
+        Complete-Stage (Split-Path $entryPath -Leaf)
+    } finally { Pop-Location }
+}
 
 $updaterArgs = @('run', '--project', (Join-Path $repositoryRoot 'src\NarutoAutoUpdater.Tests'),
     '-c', $Configuration, '-p:BuildInParallel=false')
 if ($NoBuild) { $updaterArgs += '--no-build' }
 dotnet @updaterArgs
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Complete-Stage 'Updater'
 
 $cargo = (Get-Command cargo -ErrorAction SilentlyContinue).Source
 if (-not $cargo) {
@@ -70,7 +82,13 @@ if (-not $cargo) {
 Push-Location $repositoryRoot
 try {
     & $cargo test --locked --manifest-path src/MaaNOP.UpdateEngine/Cargo.toml
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Complete-Stage 'Engine tests'
     & $cargo clippy --locked --manifest-path src/MaaNOP.UpdateEngine/Cargo.toml --all-targets -- -D warnings
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Complete-Stage 'Engine clippy'
 } finally { Pop-Location }
+
+if ($failedStages.Count -ne 0) {
+    Write-Host "自动验证失败：$($failedStages -join '、')"
+    exit $firstExitCode
+}
+Write-Host "自动验证通过。RDP/UAC/托盘等交互流程仍需按文档手动回归。"

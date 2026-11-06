@@ -286,11 +286,18 @@ fn payload_write_failure_keeps_old_isolated_and_does_not_launch()
     fs::remove_dir_all(root).unwrap();
 }
 
+// PSModulePath inherited from PowerShell 7 stops Windows PowerShell from loading its own Get-Acl and Set-Acl.
+#[cfg(windows)]
+fn windows_powershell(script: &str) -> std::process::Command {
+    let mut command = std::process::Command::new("powershell");
+    command.env_remove("PSModulePath").args(["-NoProfile", "-Command", script]);
+    command
+}
+
 #[cfg(windows)]
 #[test]
 fn writable_cache_cannot_hide_root_permission_failure_before_ready()
 {
-    use std::process::Command;
     let root = fixture("root-acl");
     let path = root.to_str().unwrap().replace('\'', "''");
     let acl = format!(
@@ -300,11 +307,11 @@ fn writable_cache_cannot_hide_root_permission_failure_before_ready()
         [System.Security.AccessControl.FileSystemRights]::CreateFiles,\
         [System.Security.AccessControl.AccessControlType]::Deny); ");
     let apply = format!("{acl} $a.AddAccessRule($r); Set-Acl -LiteralPath $p -AclObject $a");
-    assert!(Command::new("pwsh").args(["-NoProfile", "-Command", &apply]).status().unwrap().success());
+    assert!(windows_powershell(&apply).status().unwrap().success());
     let result = install(&request(&root, 123), |_| panic!("unwritable root cannot become ready"),
         |_| Ok(()), |_| panic!("cannot launch"), &mut |_| {});
     let restore = format!("{acl} $a.RemoveAccessRuleSpecific($r); Set-Acl -LiteralPath $p -AclObject $a");
-    assert!(Command::new("pwsh").args(["-NoProfile", "-Command", &restore]).status().unwrap().success());
+    assert!(windows_powershell(&restore).status().unwrap().success());
     assert_eq!(result["code"], "install_preflight");
     assert!(root.join("old-file").exists());
     fs::remove_dir_all(root).unwrap();

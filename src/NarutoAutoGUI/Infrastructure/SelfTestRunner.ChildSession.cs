@@ -210,6 +210,12 @@ internal static partial class SelfTestRunner
         Require(missing is null && error != 0, "不存在的 Session 应返回不可用和 Win32 错误。");
     }
 
+    // Pinned on purpose. Windows 10 has no MsRdpClient11, while Windows 11 has both, so on a Windows 11 machine a wrong
+    // CLSID still works and only this check stops it from reaching Windows 10 users as a failure to create the control.
+    private static void VerifyRdpClientClsid() => Require(string.Equals(RdpActiveXHost.RdpClientClsid,
+        "8B918B82-7985-4C24-89DF-C33AD2BBFBCD", StringComparison.OrdinalIgnoreCase),
+        "RDP 控件必须使用 Windows 10 也支持的 MsRdpClient10。");
+
     private static void VerifyRdpLogonEvents()
     {
         const int badPassword = 0, expiredPassword = 1, otherFailure = 2, logonFailure = unchecked((int)0xC000006D);

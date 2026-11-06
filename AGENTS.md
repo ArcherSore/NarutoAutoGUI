@@ -62,7 +62,6 @@
 输出首行的 `ENV` 记录缩放和屏幕。改动布局或布局断言时，再用 `-Dpi96` 跑一次：CI 只有 100% 缩放，开发机的缩放通常不同。
 断言必须回答“哪种用户能感知的缺陷会让它失败”。不要固定文案、颜色、像素或私有成员；几何比较用 `PixelTolerance`，等待用 `PumpUntil`，不用固定时长。
 `VerifyRealWorker` 只在 `-Suite Worker`、`-Suite All` 和发布包中运行，正式 GUI 开着时 `SKIP`；它不覆盖 Task Scheduler 和 Child Session。
-设置 `NARUTO_MAANOP_DIR` 指向 MaaNOP 目录后，`VerifyRealMaaNopProject` 才校验真实 `interface.json`；CI 不设置，改动项目解析时应在本机跑。
 `-NoBuild` 仅用于已成功构建且源码/依赖未变时重跑测试；All 时也跳过 Updater 构建，Rust 仍由 Cargo 编译。
 不要在同一输出目录并行构建/自检；DLL 被占用时先确认正在运行的程序或自检，不要盲目重试或终止用户进程。
 临时目录权限或交互桌面条件导致失败时，应如实报告环境限制，不得跳过断言或将旧 DLL 的结果当成新代码验证。

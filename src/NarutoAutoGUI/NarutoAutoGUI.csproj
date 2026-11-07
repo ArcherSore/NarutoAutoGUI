@@ -32,6 +32,7 @@
     <Resource Include="Assets\app.ico" />
     <Resource Include="Assets\app.png" />
     <EmbeddedResource Include="Assets\settings.json" />
+    <None Update="DependencySetup_依赖库安装.bat" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

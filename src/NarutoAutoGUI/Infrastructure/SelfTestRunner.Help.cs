@@ -7,6 +7,17 @@ namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
+    // A user whose Windows only allows Hello sign-in must be told so when preparing fails, and nobody else misled.
+    private static void VerifyPreparationGuidance()
+    {
+        const string prepare = "准备运行环境失败";
+        Require(MainWindow.GetRecoveryGuidance(prepare, true) != MainWindow.GetRecoveryGuidance(prepare, false),
+            "仅允许 Windows Hello 登录时，准备运行环境失败应给出对应指引。");
+        const string start = "开始任务失败";
+        Require(MainWindow.GetRecoveryGuidance(start, true) == MainWindow.GetRecoveryGuidance(start, false),
+            "Windows Hello 指引不应出现在与登录无关的操作上。");
+    }
+
     // Help sits between Update and Settings, each answer opens on its own, and the page exports diagnostics through
     // the same action as Settings.
     private static void VerifyHelpPage(AppLogger logger, string testDirectory)

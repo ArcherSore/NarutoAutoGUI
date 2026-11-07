@@ -20,7 +20,8 @@ internal static class DependencyProbe
             framework = new DependencyCheck(true, runtimeVersion, null);
         } catch (Exception exception) {
             runtimeVersion = "unavailable";
-            framework = new DependencyCheck(false, null, exception.GetBaseException().Message);
+            framework = new DependencyCheck(false, null, $"MaaFramework 无法加载（{exception.GetBaseException().Message}）。"
+                + "通常是缺少运行库，请运行安装目录中的 DependencySetup_依赖库安装.bat 后重试。");
         }
 
         var resourceErrors = manifest.Resources

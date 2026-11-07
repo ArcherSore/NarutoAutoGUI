@@ -36,7 +36,14 @@ internal sealed class HelpPageModel : SettingsObservable
                     "在锁屏界面点击「登录选项」，选择 **密码**，而不是 PIN。",
                     "用账户密码成功登录 Windows 一次。",
                     "重新打开 NarutoAutoGUI，再次尝试创建桌面分身。"),
-                new HelpTip("刚修改过微软账户密码？请先用新密码完成一次 Windows 登录，再创建桌面分身。"))
+                new HelpTip("刚修改过微软账户密码？请先用新密码完成一次 Windows 登录，再创建桌面分身。")),
+            new("提示 MaaFramework 无法加载，或程序打不开怎么办？", "运行安装目录中的依赖库安装脚本，修复运行库后再试。",
+                new HelpParagraph("程序需要 **.NET 10 桌面运行库** 和 **Visual C++ 运行库**，缺失或损坏时可以用脚本修复。"),
+                HelpSteps.Of(null,
+                    "关闭 NarutoAutoGUI。",
+                    "双击安装目录中的 **DependencySetup_依赖库安装.bat**，并允许管理员权限。",
+                    "等待窗口显示安装完成，然后重新打开 NarutoAutoGUI。",
+                    "如果仍然无法运行，请重启电脑后再试。"))
         ]),
         new("任务运行", [
             new("脚本启动后不执行任务怎么办？", "关闭 Windows 任务栏的「自动隐藏」，然后重新运行任务。",

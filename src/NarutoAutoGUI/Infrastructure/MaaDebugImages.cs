@@ -1,6 +1,6 @@
 namespace NarutoAutoGUI.Infrastructure;
 
-// MaaFramework images under <application>\debug, shared by diagnostic export and cleanup.
+// Files MaaFramework and diagnostic export leave under <application>\debug, shared by export and cleanup.
 internal static class MaaDebugImages
 {
     private static readonly string[] Folders = ["vision", "on_error", "screencap"];
@@ -10,31 +10,52 @@ internal static class MaaDebugImages
     {
         var debug = Path.Combine(applicationDirectory, "debug");
         if (!TryList(applicationDirectory, debug, onSkip, out _)) {
-            yield break;
+            return [];
         }
-        foreach (var folder in Folders) {
-            var directories = new Stack<string>([Path.Combine(debug, folder)]);
-            while (directories.TryPop(out var directory)) {
-                if (!TryList(applicationDirectory, directory, onSkip, out var entries)) {
-                    continue;
-                }
-                foreach (var entry in entries) {
-                    if (entry is DirectoryInfo child) {
-                        directories.Push(child.FullName);
-                    } else if (IsImage(folder, entry.Extension)) {
-                        if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) {
-                            onSkip(RelativePath(applicationDirectory, entry.FullName), new IOException("不跟随文件链接。"));
-                        } else {
-                            yield return (FileInfo)entry;
-                        }
+        return Folders.SelectMany(folder => Walk(applicationDirectory, Path.Combine(debug, folder),
+            file => IsImage(folder, file.Extension), onSkip));
+    }
+
+    // Logs, exports and images in one walk, so an unreadable folder is listed and reported once.
+    internal static IEnumerable<FileInfo> EnumerateRemovable(
+        string applicationDirectory, Action<string, Exception> onSkip)
+    {
+        var debug = Path.Combine(applicationDirectory, "debug");
+        return Walk(applicationDirectory, debug, file => {
+            var folder = Path.GetRelativePath(debug, file.FullName).Split(Path.DirectorySeparatorChar)[0]
+                .ToLowerInvariant();
+            return folder == "exports" || file.Extension.Equals(".log", StringComparison.OrdinalIgnoreCase)
+                || (Folders.Contains(folder) && IsImage(folder, file.Extension));
+        }, onSkip);
+    }
+
+    internal static string ExportsDirectory(string applicationDirectory) =>
+        Path.Combine(applicationDirectory, "debug", "exports");
+
+    internal static string RelativePath(string applicationDirectory, string path) =>
+        Path.GetRelativePath(applicationDirectory, path).Replace('\\', '/');
+
+    private static IEnumerable<FileInfo> Walk(string applicationDirectory, string root,
+        Func<FileSystemInfo, bool> include, Action<string, Exception> onSkip)
+    {
+        var directories = new Stack<string>([root]);
+        while (directories.TryPop(out var directory)) {
+            if (!TryList(applicationDirectory, directory, onSkip, out var entries)) {
+                continue;
+            }
+            foreach (var entry in entries) {
+                if (entry is DirectoryInfo child) {
+                    directories.Push(child.FullName);
+                } else if (include(entry)) {
+                    if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) {
+                        onSkip(RelativePath(applicationDirectory, entry.FullName), new IOException("不跟随文件链接。"));
+                    } else {
+                        yield return (FileInfo)entry;
                     }
                 }
             }
         }
     }
-
-    internal static string RelativePath(string applicationDirectory, string path) =>
-        Path.GetRelativePath(applicationDirectory, path).Replace('\\', '/');
 
     private static bool IsImage(string folder, string extension)
     {
@@ -47,7 +68,7 @@ internal static class MaaDebugImages
     }
 
     // Missing directories are expected (debug options may never have produced them) and are not reported.
-    private static bool TryList(string applicationDirectory, string directory, Action<string, Exception> onSkip,
+    internal static bool TryList(string applicationDirectory, string directory, Action<string, Exception> onSkip,
         out FileSystemInfo[] entries)
     {
         entries = [];

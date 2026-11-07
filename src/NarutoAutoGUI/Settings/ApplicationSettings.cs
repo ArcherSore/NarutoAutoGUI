@@ -11,7 +11,7 @@ internal sealed class ApplicationSettings
 
     internal ApplicationSettings(string applicationDirectory, AppLogger logger,
         Func<Task> checkUpdate, Func<Task> exportDiagnostics, Action replayOnboarding, Func<Task> openAfdian,
-        Func<Task> manageChildSessionCredentials)
+        Func<Task> manageChildSessionCredentials, Func<Task> clearDebugFiles)
     {
         _updatePreferencePath = Path.Combine(applicationDirectory, "config", "update-check.txt");
         _closePreferencePath = Path.Combine(applicationDirectory, "config", "close-to-tray.txt");
@@ -26,10 +26,18 @@ internal sealed class ApplicationSettings
         }
         CheckOnStartup = new SettingsToggle(SaveUpdatePreference);
         SaveOnError = CreateFrameworkToggle(applicationDirectory, "framework.saveOnError", "save-on-error", true);
-        SaveDraw = CreateFrameworkToggle(applicationDirectory, "framework.saveDraw", "save-draw", true);
+        // Annotated images fill a disk quickly and nothing caps them, so each launch starts with them off.
+        SaveDraw = new SettingsToggle(value => {
+            LogToggleChanged("framework.saveDraw", value);
+            FrameworkOptionsChanged?.Invoke(SaveDraw!);
+        });
+        SaveDraw.Initialize(false);
         DebugMode = CreateFrameworkToggle(applicationDirectory, "framework.debugMode", "debug-mode", false);
+        ClearOnStartup = CreatePersistedToggle(Path.Combine(applicationDirectory, "config", "clear-on-startup.txt"),
+            "diagnostics.clearOnStartup", "启动时自动清理", false, null);
         CheckUpdate = new SettingsAction(checkUpdate);
         ExportDiagnostics = new SettingsAction(exportDiagnostics);
+        ClearDebugFiles = new SettingsAction(clearDebugFiles);
         ReplayOnboarding = new SettingsAction(() => { replayOnboarding(); return Task.CompletedTask; });
         OpenAfdian = new SettingsAction(openAfdian) { ToolTip = "在默认浏览器中打开爱发电赞助页面" };
         ChildSessionCredentials = new SettingsAction(manageChildSessionCredentials);
@@ -38,8 +46,10 @@ internal sealed class ApplicationSettings
         Registry.Toggles.Add("framework.saveOnError", SaveOnError);
         Registry.Toggles.Add("framework.saveDraw", SaveDraw);
         Registry.Toggles.Add("framework.debugMode", DebugMode);
+        Registry.Toggles.Add("diagnostics.clearOnStartup", ClearOnStartup);
         Registry.Actions.Add("update.check", CheckUpdate);
         Registry.Actions.Add("diagnostics.export", ExportDiagnostics);
+        Registry.Actions.Add("diagnostics.clear", ClearDebugFiles);
         Registry.Actions.Add("onboarding.replay", ReplayOnboarding);
         Registry.Actions.Add("support.openAfdian", OpenAfdian);
         Registry.Actions.Add("childSession.credentials", ChildSessionCredentials);
@@ -59,12 +69,16 @@ internal sealed class ApplicationSettings
     internal SettingsToggle SaveOnError { get; }
     internal SettingsToggle SaveDraw { get; }
     internal SettingsToggle DebugMode { get; }
+    internal SettingsToggle ClearOnStartup { get; }
     internal SettingsAction CheckUpdate { get; }
     internal SettingsAction ExportDiagnostics { get; }
+    internal SettingsAction ClearDebugFiles { get; }
     internal SettingsAction ReplayOnboarding { get; }
     internal SettingsAction OpenAfdian { get; }
     internal SettingsAction ChildSessionCredentials { get; }
     internal SettingsValue CurrentVersion { get; } = new() { Text = "—" };
+
+    internal event Action<SettingsToggle>? FrameworkOptionsChanged;
 
     internal MaaFrameworkOptions CreateFrameworkOptions() => new(SaveOnError.Value, SaveDraw.Value, DebugMode.Value);
 
@@ -72,9 +86,13 @@ internal sealed class ApplicationSettings
         $"设置已更改{AppLogger.Field("key", key)}{AppLogger.Field("value", value ? "true" : "false")}");
 
     private SettingsToggle CreateFrameworkToggle(
-        string applicationDirectory, string key, string name, bool defaultValue)
+        string applicationDirectory, string key, string name, bool defaultValue) => CreatePersistedToggle(
+            Path.Combine(applicationDirectory, "config", $"maa-{name}.txt"), key, $"MaaFramework {name}", defaultValue,
+            toggle => FrameworkOptionsChanged?.Invoke(toggle));
+
+    private SettingsToggle CreatePersistedToggle(
+        string path, string key, string label, bool defaultValue, Action<SettingsToggle>? changed)
     {
-        var path = Path.Combine(applicationDirectory, "config", $"maa-{name}.txt");
         SettingsToggle toggle = null!;
         toggle = new SettingsToggle(value => {
             try {
@@ -82,10 +100,11 @@ internal sealed class ApplicationSettings
                 File.WriteAllText(path, value ? "true" : "false");
                 toggle.Status = string.Empty;
                 LogToggleChanged(key, value);
+                changed?.Invoke(toggle);
             } catch (Exception exception) {
                 toggle.Initialize(!value);
                 toggle.Status = "无法保存设置，已恢复原选择，请重试。";
-                _logger.Warn($"保存 MaaFramework {name} 设置失败。", exception);
+                _logger.Warn($"保存 {label} 设置失败。", exception);
             }
         });
         toggle.Initialize(defaultValue);
@@ -98,7 +117,7 @@ internal sealed class ApplicationSettings
             }
         } catch (Exception exception) {
             toggle.Status = "无法读取设置，已使用默认值。";
-            _logger.Warn($"读取 MaaFramework {name} 设置失败。", exception);
+            _logger.Warn($"读取 {label} 设置失败。", exception);
         }
         return toggle;
     }

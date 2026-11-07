@@ -15,7 +15,6 @@ namespace NarutoAutoGUI;
 public partial class App : System.Windows.Application
 {
     private readonly RunTerminalNotificationTracker _terminalNotifications = new();
-    private readonly CancellationTokenSource _debugImageCleanup = new();
     private AppLogger? _logger;
     private ChildSessionManager? _sessionManager;
     private WorkerCoordinator? _workerCoordinator;
@@ -46,7 +45,6 @@ public partial class App : System.Windows.Application
         _logger = new AppLogger();
         RegisterGlobalExceptionHandlers(_logger);
         LogStartup(_logger);
-        _ = new DebugImageCleaner(AppContext.BaseDirectory, _logger).RunAsync(_debugImageCleanup.Token);
 
         _sessionManager = new ChildSessionManager(_logger);
         _workerCoordinator = new WorkerCoordinator(
@@ -100,7 +98,6 @@ public partial class App : System.Windows.Application
                 }
 
                 _logger.Info("NarutoAutoGUI 正常退出。");
-                _debugImageCleanup.Cancel();
                 _trayIcon?.Dispose();
                 _trayIcon = null;
                 _sessionManager.Dispose();

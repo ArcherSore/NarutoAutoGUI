@@ -85,6 +85,7 @@ internal sealed class SettingsRegistry
         SettingsItemKind.Action => new(item, Action: Resolve(Actions, item.ActionId!, item.Id)),
         SettingsItemKind.Info => new(item,
             Value: item.ValueKey is null ? null : Resolve(Values, item.ValueKey, item.Id)),
+        SettingsItemKind.About => new(item),
         _ => throw new InvalidDataException($"未知 Settings item type：{item.Type}。")
     };
 
@@ -95,7 +96,20 @@ internal sealed class SettingsRegistry
 
 internal sealed record SettingsPageModel(SettingsDefinition Definition, IReadOnlyList<SettingsSectionModel> Sections);
 internal sealed record SettingsSectionModel(
-    SettingsSectionDefinition Definition, IReadOnlyList<SettingsItemModel> Items);
+    SettingsSectionDefinition Definition, IReadOnlyList<SettingsItemModel> Items)
+{
+    public IReadOnlyList<IReadOnlyList<SettingsItemModel>> Cards { get; } = GroupCards(Items);
+
+    private static List<List<SettingsItemModel>> GroupCards(IReadOnlyList<SettingsItemModel> items)
+    {
+        var cards = new List<List<SettingsItemModel>>();
+        foreach (var item in items) {
+            if (!item.Definition.JoinPrevious) { cards.Add([]); }
+            cards[^1].Add(item);
+        }
+        return cards;
+    }
+}
 
 internal sealed record SettingsItemModel(SettingsItemDefinition Definition,
     SettingsToggle? Toggle = null, SettingsAction? Action = null, SettingsValue? Value = null);

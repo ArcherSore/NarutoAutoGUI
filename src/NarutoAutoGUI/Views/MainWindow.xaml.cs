@@ -143,13 +143,18 @@ public partial class MainWindow : FluentWindow
         _prepareUpdate = prepareUpdate ?? PrepareWithEngineAsync;
         _settings = new ApplicationSettings(_applicationDirectory, logger,
             CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding, OpenAfdianAsync,
-            ManageChildSessionCredentialsAsync);
+            ManageChildSessionCredentialsAsync, ClearDebugFilesAsync);
         SettingsView.DataContext = _settings.Page;
         HelpView.DataContext = _help = new HelpPageModel(
             _settings.ExportDiagnostics, new SettingsAction(OpenIssuesAsync), ReportCopyFailure);
         _savedRuntimeSidebarWidth = _preferredRuntimeSidebarWidth = LoadRuntimeSidebarWidth();
         _sessionManager = sessionManager;
         _workerCoordinator = workerCoordinator;
+        _workerCoordinator.FrameworkOptions = _settings.CreateFrameworkOptions;
+        _settings.FrameworkOptionsChanged += OnFrameworkOptionsChanged;
+        // A surviving Worker may have connected before the choice above was available.
+        OnFrameworkOptionsChanged(_settings.SaveDraw);
+        ClearDebugFilesOnStartup();
         _environment = environment;
         _prepareEnvironment = prepareEnvironment ?? environment.PrepareAsync;
         _requestExitAsync = requestExitAsync;
@@ -312,6 +317,7 @@ public partial class MainWindow : FluentWindow
         HelpView.Visibility = section == MainSection.Help ? Visibility.Visible : Visibility.Collapsed;
         if (section == MainSection.Settings) {
             RefreshChildSessionCredentialStatus();
+            RefreshDebugFileUsage();
         }
 
         HomeNavigationItem.IsActive = section == MainSection.Home;

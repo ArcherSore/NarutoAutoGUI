@@ -14,9 +14,10 @@ namespace NarutoAutoGUI.Infrastructure;
 internal sealed class AppLogger : IDisposable
 {
     private const long MaximumFileBytes = 10L * 1024L * 1024L;
+    private const int RetainedFiles = 14;
     private const string OutputTemplate = "[{Time:l}] [{LevelName:l}] [T{ThreadId}] [{Source:l}] {Message:l}{NewLine}";
-    private static readonly TimeSpan Retention = TimeSpan.FromDays(14);
-    private static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    internal static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    private static readonly Regex? UserProfilePattern = CreateProfilePattern(UserProfile);
     // Agent output relayed by the Worker carries terminal colours.
     private static readonly Regex AnsiCode = new(@"\x1B\[[0-9;]*[A-Za-z]", RegexOptions.CultureInvariant);
     private readonly object _sync = new();
@@ -36,7 +37,7 @@ internal sealed class AppLogger : IDisposable
             .WriteTo.File(
                 Path.Combine(logDirectory, "NarutoAutoGUI-.log"), outputTemplate: OutputTemplate,
                 rollingInterval: RollingInterval.Day, fileSizeLimitBytes: MaximumFileBytes, rollOnFileSizeLimit: true,
-                retainedFileCountLimit: null, retainedFileTimeLimit: Retention, shared: true)
+                retainedFileCountLimit: RetainedFiles, shared: true)
             .CreateLogger();
         if (fallbackMessage is not null) {
             Warn(fallbackMessage);
@@ -91,15 +92,21 @@ internal sealed class AppLogger : IDisposable
 
     // A profile folder is usually named after the Windows account, which stays out of the logs. JSON doubles the
     // backslashes in a path, and a longer sibling such as C:\Users\name2 is a different folder.
-    internal static string MaskUserProfile(string text, string profile)
+    internal static string MaskUserProfile(string text) => Mask(text, UserProfilePattern);
+
+    internal static string MaskUserProfile(string text, string profile) => Mask(text, CreateProfilePattern(profile));
+
+    private static string Mask(string text, Regex? pattern) => pattern?.Replace(text, "%USERPROFILE%") ?? text;
+
+    private static Regex? CreateProfilePattern(string profile)
     {
         if (profile.Length == 0) {
-            return text;
+            return null;
         }
 
         var segments = profile.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries).Select(Regex.Escape);
-        var pattern = string.Join(@"[\\/]+", segments) + @"(?![\p{L}\p{N}_-]|\.[\p{L}\p{N}])";
-        return Regex.Replace(text, pattern, "%USERPROFILE%", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return new Regex(string.Join(@"[\\/]+", segments) + @"(?![\p{L}\p{N}_-]|\.[\p{L}\p{N}])",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
     public void Dispose()
@@ -118,11 +125,11 @@ internal sealed class AppLogger : IDisposable
         LogLevel level, string source, string message, Exception? exception, DateTimeOffset? timestamp = null)
     {
         // Relayed output ends in its own line break, which would leave a blank line in the file.
-        var text = MaskUserProfile(message.TrimEnd(), UserProfile);
+        var text = MaskUserProfile(message.TrimEnd());
         var entry = new LogEntry(timestamp ?? DateTimeOffset.Now, level, text);
         // Serilog would render an exception after this point, where its paths could no longer be masked.
         var rendered = exception is null
-            ? text : $"{text}{Environment.NewLine}{MaskUserProfile(exception.ToString(), UserProfile)}";
+            ? text : $"{text}{Environment.NewLine}{MaskUserProfile(exception.ToString())}";
         lock (_sync) {
             if (_disposed) {
                 return;

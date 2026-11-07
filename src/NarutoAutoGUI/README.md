@@ -30,11 +30,14 @@ Windows x64 / .NET 10 WPF 程序。需要管理员权限和交互式桌面。
 
 - MaaNOP 用户配置：`<程序目录>\config\maanop-config.json`
 - 滚动日志：`<程序目录>\logs\NarutoAutoGUI-yyyyMMdd[.序号].log`
+- Worker 启动失败日志：`<程序目录>\logs\NarutoAutoWorker.bootstrap.log`，只在 Worker 启动失败或异常退出时写入
 - 框架日志与图片：`<程序目录>\debug`，失败截图位于 `on_error`，识别可视化图片位于 `vision`
-- 框架偏好：`<程序目录>\config\maa-{save-on-error,save-draw,debug-mode}.txt`
+- 诊断包：`<程序目录>\debug\exports`，每卷约 24.5 MB，保留最近 10 次导出
+- 框架偏好：`<程序目录>\config\maa-{save-on-error,debug-mode}.txt`
 
-设置页提供三个独立开关：SaveOnError 默认开启，SaveDraw 和 DebugMode 默认关闭。
-更改后结束桌面分身并重新准备运行环境生效；Worker 在创建控制器和任务前应用配置。
+设置页提供三个独立开关：SaveOnError 默认开启，SaveDraw 和 DebugMode 默认关闭。SaveDraw 不保存，程序重启后恢复关闭。
+更改后从下一次识别开始生效，无需结束桌面分身；GUI 在切换开关和 Worker 连接时同步当前选择。
+框架日志和图片没有容量上限，由 MaaFramework 在设置 LogDir 时删除 7 天前的文件；设置页可手动清理。
 
 验证打包后的原生 runtime 图片保存（不启动游戏或 RDP）：
 
@@ -42,7 +45,7 @@ Windows x64 / .NET 10 WPF 程序。需要管理员权限和交互式桌面。
 .\src\NarutoAutoGUI\scripts\test-framework-diagnostics.ps1 -PackageDirectory artifacts\NarutoAutoGUI\win-x64
 ```
 
-MaaNOP 项目根目录固定为应用程序目录，`interface.json` 直接从 `NarutoAutoGUI.exe` 同级目录读取。日志按天和 10 MB 滚动，保留 14 天，可从主窗口直接打开当前日志目录。若程序目录不可写，日志会回退到 LocalAppData 或临时目录并记录 WARN。
+MaaNOP 项目根目录固定为应用程序目录，`interface.json` 直接从 `NarutoAutoGUI.exe` 同级目录读取。日志按天和 10 MiB 滚动，保留 14 个文件，可从主窗口直接打开当前日志目录。若程序目录不可写，日志会回退到 LocalAppData 或临时目录并记录 WARN。
 
 游戏可在分身中手动启动，也可由当前任务配置选中的 Project Interface pretask 启动。GUI 不固定游戏启动器路径或参数；启动、登录等游戏行为由 MaaNOP 项目声明的程序和资源实现。
 

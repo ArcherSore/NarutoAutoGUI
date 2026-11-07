@@ -24,6 +24,8 @@ internal static class FrameworkDiagnosticsSelfTest
                 "draw-only" => new MaaFrameworkOptions(false, true, false),
                 "debug-only" => new MaaFrameworkOptions(false, false, true),
                 "all" => new MaaFrameworkOptions(true, true, true),
+                "hot-toggle" => new MaaFrameworkOptions(false, false, false),
+                "keep-running" => new MaaFrameworkOptions(false, true, false),
                 _ => throw new ArgumentException($"未知测试场景：{scenario}")
             };
             WorkerFrameworkOptions.Apply(root, options, (level, source, message) => {
@@ -62,11 +64,12 @@ internal static class FrameworkDiagnosticsSelfTest
             if (!tasker.IsInitialized) {
                 throw new InvalidOperationException("原生测试 Tasker 未初始化。");
             }
-            var job = tasker.AppendTask("Recognize");
-            var completion = Task.Run(job.Wait);
-            if (!completion.Wait(TimeSpan.FromSeconds(15)) || completion.Result != MaaJobStatus.Failed) {
-                throw new InvalidOperationException("测试任务必须通过真实识别后在 NeverMatch 超时失败。");
+            if (scenario == "keep-running") {
+                KeepRunning(tasker, Path.Combine(root, "stop"));
+                return 0;
             }
+            var job = tasker.AppendTask("Recognize");
+            WaitForRecognition(job.Wait, "测试任务必须通过真实识别后在 NeverMatch 超时失败。");
             if (!tasker.GetTaskDetail(job.Id, out _, out var nodes, out _) || nodes.Length == 0
                 || !tasker.GetNodeDetail(nodes[0], out var name, out var recognitionId, out _, out _)
                 || name != "Recognize") {
@@ -81,6 +84,13 @@ internal static class FrameworkDiagnosticsSelfTest
             }
             var errors = VerifyImages(root, "on_error", ".png", options.SaveOnError);
             var visions = VerifyImages(root, "vision", ".jpg", options.SaveDraw);
+            if (scenario == "hot-toggle") {
+                // The same process, Tasker and log: only the switch changes, as it does for a running Worker.
+                WorkerFrameworkOptions.ApplySwitches(new MaaFrameworkOptions(false, true, false),
+                    (level, source, message) => Console.WriteLine($"{level} {source} {message}"));
+                WaitForRecognition(tasker.AppendTask("Recognize").Wait, "开启标注图后的第二次识别未按预期完成。");
+                visions = VerifyImages(root, "vision", ".jpg", expected: true);
+            }
             if (!File.Exists(Path.Combine(root, "debug", "maafw.log"))) {
                 throw new InvalidOperationException("显式 LogDir 未产生框架日志。");
             }
@@ -97,6 +107,27 @@ internal static class FrameworkDiagnosticsSelfTest
         } catch (Exception exception) {
             Console.Error.WriteLine($"NATIVE FRAMEWORK TEST FAIL: {scenario}: {exception}");
             return 1;
+        }
+    }
+
+    // Recognises until the stop file appears, so another process can act on the files of a task in progress.
+    private static void KeepRunning(MaaTasker tasker, string stopFile)
+    {
+        var started = Stopwatch.GetTimestamp();
+        while (!File.Exists(stopFile)) {
+            if (Stopwatch.GetElapsedTime(started) > TimeSpan.FromSeconds(75)) {
+                throw new TimeoutException("测试进程一直没有等到停止信号。");
+            }
+            WaitForRecognition(tasker.AppendTask("Recognize").Wait, "运行中的任务没有按预期完成识别。");
+        }
+    }
+
+    // The fixture's NeverMatch node times out, so a task that really recognised ends as Failed.
+    private static void WaitForRecognition(Func<MaaJobStatus> wait, string failure)
+    {
+        var completion = Task.Run(wait);
+        if (!completion.Wait(TimeSpan.FromSeconds(15)) || completion.Result != MaaJobStatus.Failed) {
+            throw new InvalidOperationException(failure);
         }
     }
 

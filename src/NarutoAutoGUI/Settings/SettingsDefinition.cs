@@ -1,17 +1,16 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Wpf.Ui.Controls;
 
 namespace NarutoAutoGUI.Settings;
 
 internal enum SettingsItemKind
 {
-    Toggle, Action, Info
+    Toggle, Action, Info, About
 }
 
 internal sealed record SettingsDefinition
 {
-    public required string Title { get; init; }
-    public string? Description { get; init; }
     public required SettingsSectionDefinition[] Sections { get; init; }
 
     internal static SettingsDefinition Load()
@@ -30,9 +29,9 @@ internal sealed record SettingsDefinition
             UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
         };
         options.Converters.Add(new JsonStringEnumConverter<SettingsItemKind>(JsonNamingPolicy.CamelCase, false));
+        options.Converters.Add(new JsonStringEnumConverter<SymbolRegular>(allowIntegerValues: false));
         var definition = JsonSerializer.Deserialize<SettingsDefinition>(json, options)
             ?? throw new InvalidDataException("Settings Definition 不能为空。");
-        Require(definition.Title, "title");
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var section in definition.Sections
             ?? throw new InvalidDataException("Settings Definition 缺少 sections。")) {
@@ -59,6 +58,12 @@ internal sealed record SettingsDefinition
                             throw new InvalidDataException($"Settings info {item.Id} 缺少展示内容。");
                         }
                         break;
+                    case SettingsItemKind.About:
+                        Require(item.Title, $"{item.Id}.title");
+                        break;
+                }
+                if (item.Type != SettingsItemKind.About && item.Icon is null) {
+                    throw new InvalidDataException($"Settings Definition 缺少 {item.Id}.icon。");
                 }
                 if (item.Type != SettingsItemKind.Toggle && item.SettingKey is not null
                     || item.Type != SettingsItemKind.Action
@@ -66,6 +71,9 @@ internal sealed record SettingsDefinition
                     || item.Type != SettingsItemKind.Info && item.ValueKey is not null) {
                     throw new InvalidDataException($"Settings item {item.Id} 包含不属于 {item.Type} 的绑定字段。");
                 }
+            }
+            if (section.Items.FirstOrDefault()?.JoinPrevious == true) {
+                throw new InvalidDataException($"Settings section {section.Id} 的首项没有可合并的卡片。");
             }
         }
         return definition;
@@ -91,6 +99,7 @@ internal sealed record SettingsSectionDefinition
 {
     public required string Id { get; init; }
     public required string Title { get; init; }
+    public required SymbolRegular Icon { get; init; }
     public string? Description { get; init; }
     public required SettingsItemDefinition[] Items { get; init; }
 }
@@ -99,6 +108,8 @@ internal sealed record SettingsItemDefinition
 {
     public required string Id { get; init; }
     public required SettingsItemKind Type { get; init; }
+    public SymbolRegular? Icon { get; init; }
+    public bool JoinPrevious { get; init; }
     public string? Title { get; init; }
     public string? Description { get; init; }
     public string? SettingKey { get; init; }

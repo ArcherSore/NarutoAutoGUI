@@ -1,71 +1,71 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
+
 namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
-    private static void VerifyDebugImageCleanup(AppLogger logger, string testDirectory)
+    private static void VerifyDebugFileCleanup(AppLogger logger, string testDirectory)
     {
-        var now = DateTime.UtcNow;
-        var application = Path.Combine(testDirectory, "debug-image-cleanup");
-        var debug = Path.Combine(application, "debug");
-        string Create(string relative, TimeSpan age, int length = 100)
-        {
-            var path = Path.Combine(debug, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllBytes(path, new byte[length]);
-            File.SetLastWriteTimeUtc(path, now - age);
-            return path;
-        }
-        var expired = TimeSpan.FromHours(25);
-        string[] expiredImages = [
-            Create("vision/old.jpg", expired), Create("on_error/old.png", expired),
-            Create("screencap/nested/old.jpeg", expired)
+        var application = Path.Combine(testDirectory, "debug-file-cleanup");
+        var logs = Path.Combine(application, "logs");
+        string Create(string relative, int ageHours = 0) =>
+            WriteFixture(application, relative, new byte[100], ageHours * 60);
+        string[] removed = [
+            Create("logs/NarutoAutoGUI-old.log", ageHours: 2), Create("logs/updater.log", ageHours: 3),
+            Create("debug/maafw.bak.old.log"), Create("debug/nested/custom.log"), Create("debug/vision/draw.jpg"),
+            Create("debug/on_error/error.png"), Create("debug/screencap/nested/frame.jpeg"),
+            Create("debug/exports/MaaNOP-logs-20260101-000000/part01.zip")
         ];
+        var activeLog = Create("logs/NarutoAutoGUI-active.log", ageHours: 0);
         string[] preserved = [
-            Create("vision/other.png", expired), Create("on_error/other.jpg", expired), Create("maafw.log", expired),
-            Create("diagnostics.zip", expired), Create("vision/recent.jpg", TimeSpan.FromMinutes(1))
+            activeLog, Create("config/maanop-config.json"), Create("resource/image.png"), Create("debug/notes.txt"),
+            Create("debug/vision/other.png"), Create("debug/on_error/other.jpg")
         ];
-        var outside = Path.Combine(testDirectory, "debug-image-outside");
+        var outside = Path.Combine(testDirectory, "debug-file-outside");
         var linked = Path.Combine(outside, "linked.jpg");
         Directory.CreateDirectory(outside);
         File.WriteAllBytes(linked, new byte[100]);
-        File.SetLastWriteTimeUtc(linked, now - expired);
-        CreateJunction(Path.Combine(debug, "vision", "link"), outside);
-        var cleaner = new DebugImageCleaner(application, logger);
-        var summaries = new List<string>();
-        void CaptureSummary(object? sender, Models.LogEntry entry)
-        {
-            if (entry.Message.StartsWith("调试截图清理：", StringComparison.Ordinal)) {
-                summaries.Add(entry.Message);
-            }
-        }
-        logger.EntryWritten += CaptureSummary;
-        var result = cleaner.Clean(now);
-        if (result != new DebugImageCleanupResult(3, 300, 1, 100, 0) || expiredImages.Any(File.Exists)
-            || !preserved.All(File.Exists) || !File.Exists(linked)) {
-            throw new InvalidOperationException("调试截图只能按年龄清理白名单图片，不得跟随链接或删除日志、ZIP 与近期截图。");
-        }
-        Require(summaries.Count == 1 && summaries[0].StartsWith("调试截图清理：删除 3 个", StringComparison.Ordinal),
-            $"有删除时应写汇总：{string.Join(" | ", summaries)}");
-        summaries.Clear();
+        CreateJunction(Path.Combine(application, "debug", "vision", "link"), outside);
 
-        // 100-byte files stand in for the fixed watermarks: trim the oldest from 500 to 250 bytes or below.
-        var images = Enumerable.Range(1, 4)
-            .Select(hours => Create($"screencap/size-{hours}.png", TimeSpan.FromHours(5 - hours))).ToArray();
-        if (cleaner.Clean(now, highWatermark: 500, lowWatermark: 250) != new DebugImageCleanupResult(0, 0, 5, 500, 0)) {
-            throw new InvalidOperationException("未超过高水位时不得按容量清理。");
+        var cleaner = new DebugFileCleaner(application, logs, logger);
+        var bytes = cleaner.MeasureBytes();
+        Require(bytes == removed.Length * 100L, $"占用应只统计将被清理的文件：{bytes}");
+        var locked = Create("debug/maafw.log");
+        var result = default(DebugFileCleanupResult);
+        using (new FileStream(locked, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+            result = cleaner.Clean();
         }
-        logger.EntryWritten -= CaptureSummary;
-        Require(summaries.Count == 0, $"没有删除也没有失败时不应写日志：{string.Join(" | ", summaries)}");
-        using (new FileStream(images[0], FileMode.Open, FileAccess.Read, FileShare.Read)) {
-            result = cleaner.Clean(now, highWatermark: 350, lowWatermark: 250);
-        }
-        if (result != new DebugImageCleanupResult(3, 300, 2, 200, 1) || !File.Exists(images[0])
-            || images[1..].Any(File.Exists) || !preserved.All(File.Exists)) {
-            throw new InvalidOperationException("容量清理必须从最旧开始、跳过无法删除的文件，并在低水位停止。");
-        }
-        result = cleaner.Clean(now, highWatermark: 0, lowWatermark: 0);
-        if (result != new DebugImageCleanupResult(1, 100, 1, 100, 0) || !File.Exists(preserved[^1])) {
-            throw new InvalidOperationException("最近 2 分钟内的截图必须受保护，容量阈值只能是软限制。");
+        Require(File.Exists(locked), "被占用的日志应跳过而不是中断清理。");
+        Require(result == new DebugFileCleanupResult(removed.Length, removed.Length * 100L),
+            $"释放的空间只应计入实际删除的文件：{result}");
+        Require(!removed.Any(File.Exists), "约定范围内的文件都应被清理。");
+        Require(preserved.All(File.Exists), "正在写入的日志、配置、资源和白名单以外的文件不得删除。");
+        Require(File.Exists(linked), "清理不得跟随目录链接。");
+        Require(!Directory.Exists(Path.GetDirectoryName(removed[^1])!), "清空后的诊断包目录应一并删除。");
+
+        // With the GUI log elsewhere, nothing in the application's logs folder is that active file.
+        var fallback = Path.Combine(testDirectory, "debug-file-fallback-logs");
+        Directory.CreateDirectory(fallback);
+        File.WriteAllBytes(Path.Combine(fallback, "NarutoAutoGUI-active.log"), new byte[100]);
+        new DebugFileCleaner(application, fallback, logger).Clean();
+        Require(File.Exists(Path.Combine(fallback, "NarutoAutoGUI-active.log")) && !File.Exists(activeLog),
+            "日志回退到其他目录时，应保留实际目录中正在写入的日志。");
+
+        var deniedFolder = new DirectoryInfo(logs);
+        var denied = new FileSystemAccessRule(WindowsIdentity.GetCurrent().User!, FileSystemRights.ListDirectory,
+            AccessControlType.Deny);
+        var security = deniedFolder.GetAccessControl();
+        security.AddAccessRule(denied);
+        deniedFolder.SetAccessControl(security);
+        try {
+            var image = Create("debug/vision/after.jpg");
+            Require(cleaner.MeasureBytes() >= 100, "logs 无法读取时，仍应统计其他可清理的文件。");
+            cleaner.Clean();
+            Require(!File.Exists(image), "logs 无法读取时，应跳过它并继续清理其他文件。");
+        } finally {
+            security.RemoveAccessRule(denied);
+            deniedFolder.SetAccessControl(security);
         }
     }
 }

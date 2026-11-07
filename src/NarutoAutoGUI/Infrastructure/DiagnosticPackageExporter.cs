@@ -44,7 +44,10 @@ internal sealed class DiagnosticPackageExporter(AppLogger logger)
                     metadata.GeneratedAtUtc,
                     metadata.NarutoAutoGuiVersion,
                     Project = new { Name = metadata.ProjectName, Version = metadata.ProjectVersion },
-                    System = new { metadata.OsVersion, metadata.ProcessArchitecture },
+                    System = new {
+                        metadata.OsVersion, metadata.ProcessArchitecture,
+                        DotNet = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription
+                    },
                     Runtime = new {
                         metadata.ChildSessionState, metadata.WorkerObservation, metadata.SnapshotFresh,
                         metadata.WorkerState, metadata.WorkerVersion, metadata.ProtocolVersion

@@ -114,14 +114,20 @@ Assert-PackageFile -Name 'NarutoAutoGUI.deps.json' -Path (Join-Path $PackageDire
 Assert-PackageFile `
     -Name 'NarutoAutoGUI.runtimeconfig.json' `
     -Path (Join-Path $PackageDirectory 'NarutoAutoGUI.runtimeconfig.json')
-Assert-PackageFile -Name 'hostfxr.dll' -Path (Join-Path $PackageDirectory 'hostfxr.dll')
-Assert-PackageFile -Name 'hostpolicy.dll' -Path (Join-Path $PackageDirectory 'hostpolicy.dll')
+if (-not (Get-ChildItem -LiteralPath $PackageDirectory -Filter 'DependencySetup_*.bat')) {
+    throw 'Package validation failed: dependency setup script not found at package root.'
+}
+
+# .NET comes from the machine; a bundled runtime or Android agents would quietly bring the size back.
+foreach ($bundled in @('hostfxr.dll', 'libs\coreclr.dll', 'worker\coreclr.dll', 'worker\MaaAgentBinary')) {
+    if (Test-Path -LiteralPath (Join-Path $PackageDirectory $bundled)) {
+        throw "Package validation failed: $bundled must not be bundled."
+    }
+}
 
 # GUI relocated dependencies under libs/.
 $libsDir = Join-Path $PackageDirectory 'libs'
 Assert-PackageDirectory -Name 'libs' -Path $libsDir
-Assert-PackageFile -Name 'libs/coreclr.dll' -Path (Join-Path $libsDir 'coreclr.dll')
-Assert-PackageFile -Name 'libs/PresentationFramework.dll' -Path (Join-Path $libsDir 'PresentationFramework.dll')
 Assert-PackageFile -Name 'libs/Wpf.Ui.dll' -Path (Join-Path $libsDir 'Wpf.Ui.dll')
 Assert-PackageFile -Name 'libs/NarutoAutoGUI.Updates.dll' -Path (Join-Path $libsDir 'NarutoAutoGUI.Updates.dll')
 # Worker under worker/.

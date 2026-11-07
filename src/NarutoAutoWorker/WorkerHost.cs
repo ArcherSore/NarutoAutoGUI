@@ -37,7 +37,8 @@ internal sealed class WorkerHost
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
         var initialization = InitializeAsync(linked.Token);
-        Log("INFO", "worker.lifecycle", $"NarutoAutoWorker 启动，instance={_manifest.WorkerInstanceId}。 ");
+        Log("INFO", "worker.lifecycle", $"NarutoAutoWorker 启动，instance={_manifest.WorkerInstanceId}，"
+            + $"runtime={System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}。 ");
 
         while (!linked.IsCancellationRequested) {
             try {

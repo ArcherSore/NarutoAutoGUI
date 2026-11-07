@@ -532,12 +532,14 @@ internal static partial class SelfTestRunner
             || json.GetProperty("project").GetProperty("name").GetString() != "MaaNOP"
             || json.GetProperty("project").GetProperty("version").GetString() != "2.4.0"
             || json.GetProperty("system").GetProperty("processArchitecture").GetString() != "X64"
+            || string.IsNullOrEmpty(json.GetProperty("system").GetProperty("dotNet").GetString())
             || !json.GetProperty("runtime").GetProperty("snapshotFresh").GetBoolean()
             || json.GetProperty("runtime").GetProperty("protocolVersion").GetInt32() != 2) {
             throw new InvalidOperationException("诊断元信息或文件清单不正确。");
         }
         string[] allowed = ["generatedAtUtc", "narutoAutoGuiVersion", "project", "name", "version", "system",
-            "osVersion", "processArchitecture", "runtime", "childSessionState", "workerObservation", "snapshotFresh",
+            "osVersion", "processArchitecture", "dotNet", "runtime", "childSessionState", "workerObservation",
+            "snapshotFresh",
             "workerState", "workerVersion", "protocolVersion", "includedFiles", "missingOptionalFiles", "skippedFiles"];
         AssertMetadataWhitelist(json);
 

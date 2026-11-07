@@ -1,6 +1,6 @@
 # NarutoAutoGUI 用户使用手册
 
-使用带游戏资源的 MaaNOP 完整包，运行其中的 `NarutoAutoGUI.exe`，按提示允许管理员权限。
+使用带游戏资源的 MaaNOP 完整包。首次使用前，运行其中的 `DependencySetup_依赖库安装.bat`，安装 .NET 10 桌面运行库和 Visual C++ 运行库（只需一次）。然后运行 `NarutoAutoGUI.exe`，按提示允许管理员权限。
 首次完成下面的配置后，日常只需选择配置、准备运行环境、开始任务。
 
 ## 账户和密码填在哪里

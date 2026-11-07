@@ -86,6 +86,7 @@ internal static class DependencyProbe
             RedirectStandardError = true,
             CreateNoWindow = true
         };
+        UseWorkerFramework(startInfo);
         startInfo.ArgumentList.Add("-c");
         startInfo.ArgumentList.Add(script);
         using var process = Process.Start(startInfo)
@@ -109,6 +110,11 @@ internal static class DependencyProbe
         return JsonSerializer.Deserialize<ProbePayload>(stdout.Trim(), ProtocolJson.Options)
                ?? throw new InvalidDataException("Python Agent Probe 未返回 JSON。 ");
     }
+
+    // The packaged Python has no MaaFramework of its own; the Agent loads the runtime this Worker ships with.
+    internal static void UseWorkerFramework(ProcessStartInfo startInfo) =>
+        startInfo.Environment["MAAFW_BINARY_PATH"] =
+            Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native");
 
     internal static string ResolveAgentExecutablePath(AgentDefinition agent) =>
         Path.GetFullPath(

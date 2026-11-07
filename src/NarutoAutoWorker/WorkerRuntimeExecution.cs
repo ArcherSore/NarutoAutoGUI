@@ -299,6 +299,7 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
             RedirectStandardError = true,
             CreateNoWindow = true
         };
+        DependencyProbe.UseWorkerFramework(startInfo);
         foreach (var argument in _manifest.Agent.ChildArgs) {
             startInfo.ArgumentList.Add(argument);
         }

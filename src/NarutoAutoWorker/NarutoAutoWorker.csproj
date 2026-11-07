@@ -24,4 +24,11 @@
     <Compile Include="..\NarutoAutoGUI\Infrastructure\SelfTestSuite.cs" Link="SelfTestSuite.cs" />
   </ItemGroup>
 
+  <!-- Maa.AgentBinary only holds Android agents; the Worker controls Win32 windows. -->
+  <Target Name="ExcludeMaaAgentBinary" AfterTargets="CopyMaaAgentBinaryFilesToOutput">
+    <ItemGroup>
+      <Content Remove="@(_MaaAgentBinaryItems)" />
+    </ItemGroup>
+  </Target>
+
 </Project>

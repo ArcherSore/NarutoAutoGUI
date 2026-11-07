@@ -14,6 +14,7 @@ internal static class WorkerSelfTestRunner
         (nameof(VerifyLogResponseBudget), VerifyLogResponseBudget),
         (nameof(VerifyTransportWriteBeforeSendGuard), VerifyTransportWriteBeforeSendGuard),
         (nameof(VerifyAgentExecutableResolution), VerifyAgentExecutableResolution),
+        (nameof(VerifyAgentUsesWorkerFramework), VerifyAgentUsesWorkerFramework),
         (nameof(VerifyStopCleanupRaceAsync), () => VerifyStopCleanupRaceAsync().GetAwaiter().GetResult()),
         (nameof(VerifyTaskerTaskCallbackCompletion), VerifyTaskerTaskCallbackCompletion),
         (nameof(NativeTaskCleanupSelfTests), () => NativeTaskCleanupSelfTests.RunAsync().GetAwaiter().GetResult()),
@@ -208,6 +209,19 @@ internal static class WorkerSelfTestRunner
         } finally {
             if (Directory.Exists(tempDirectory)) {
                 Directory.Delete(tempDirectory, recursive: true);
+            }
+        }
+    }
+
+    // The packaged Python ships no MaaFramework, so a wrong path here leaves the Agent unable to start.
+    private static void VerifyAgentUsesWorkerFramework()
+    {
+        var startInfo = new System.Diagnostics.ProcessStartInfo();
+        DependencyProbe.UseWorkerFramework(startInfo);
+        var directory = startInfo.Environment["MAAFW_BINARY_PATH"]!;
+        foreach (var file in new[] { "MaaFramework.dll", "MaaAgentServer.dll", "MaaToolkit.dll" }) {
+            if (!File.Exists(Path.Combine(directory, file))) {
+                throw new InvalidOperationException($"Agent 使用的 MaaFramework 目录缺少 {file}：{directory}。 ");
             }
         }
     }

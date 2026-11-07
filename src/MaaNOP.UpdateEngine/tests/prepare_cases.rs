@@ -98,21 +98,26 @@ fn package(extra: &[&str]) -> Vec<u8>
 
 fn package_without(extra: &[&str], omitted: &str) -> Vec<u8>
 {
+    package_with_config(extra, omitted, r#"{"runtimeOptions":{"includedFrameworks":[]}}"#)
+}
+
+// The fixture carries no .NET runtime files: their presence is the package's choice, not an Engine rule.
+fn package_with_config(extra: &[&str], omitted: &str, runtimeconfig: &str) -> Vec<u8>
+{
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let files = ["NarutoAutoGUI.exe", "NarutoAutoGUI.dll", "maanop-update-engine.exe",
         "NarutoAutoGUI.deps.json", "NarutoAutoGUI.runtimeconfig.json",
-        "hostfxr.dll", "hostpolicy.dll", "libs/coreclr.dll", "libs/System.Private.CoreLib.dll",
-        "libs/PresentationFramework.dll", "libs/Wpf.Ui.dll", "libs/NarutoAutoGUI.Updates.dll",
+        "libs/Wpf.Ui.dll", "libs/NarutoAutoGUI.Updates.dll",
         "worker/NarutoAutoWorker.exe", "worker/NarutoAutoWorker.dll",
         "worker/NarutoAutoWorker.deps.json", "worker/NarutoAutoWorker.runtimeconfig.json",
-        "worker/hostfxr.dll", "worker/hostpolicy.dll", "worker/coreclr.dll", "worker/System.Private.CoreLib.dll",
         "worker/runtimes/win-x64/native/MaaFramework.dll",
         "worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll", "python/python.exe",
         "resource/a", "agent/a", "config/default"];
     for file in files {
         if file == omitted { continue; }
         zip.start_file(file, zip::write::SimpleFileOptions::default()).unwrap();
-        zip.write_all(b"new").unwrap();
+        let body = if file == "NarutoAutoGUI.runtimeconfig.json" { runtimeconfig.as_bytes() } else { b"new" };
+        zip.write_all(body).unwrap();
     }
     zip.start_file("interface.json", zip::write::SimpleFileOptions::default()).unwrap();
     zip.write_all(br#"{"name":"MaaNOP","version":"2.0.0","github":"https://github.com/test/product"}"#).unwrap();
@@ -131,9 +136,8 @@ fn prepare_rejects_missing_gui_and_worker_startup_dependencies()
     std::fs::write(root.join("interface.json"),
         r#"{"name":"MaaNOP","version":"1.0.0","github":"https://github.com/test/product"}"#).unwrap();
     for omitted in ["NarutoAutoGUI.deps.json", "NarutoAutoGUI.runtimeconfig.json",
-        "libs/PresentationFramework.dll", "libs/Wpf.Ui.dll", "libs/NarutoAutoGUI.Updates.dll",
-        "worker/NarutoAutoWorker.deps.json", "worker/NarutoAutoWorker.runtimeconfig.json",
-        "worker/hostfxr.dll", "worker/hostpolicy.dll", "worker/coreclr.dll", "worker/System.Private.CoreLib.dll"] {
+        "libs/Wpf.Ui.dll", "libs/NarutoAutoGUI.Updates.dll",
+        "worker/NarutoAutoWorker.deps.json", "worker/NarutoAutoWorker.runtimeconfig.json"] {
         let bytes = package_without(&[], omitted);
         let request = prepare_request(&root, &bytes);
         let result = prepare(&request, |_| Ok(Box::new(Cursor::new(bytes))),
@@ -142,6 +146,23 @@ fn prepare_rejects_missing_gui_and_worker_startup_dependencies()
         assert!(result["message"].as_str().unwrap().contains(omitted), "{result}");
         assert!(!root.join("cache/updater/prepared").exists());
     }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn prepare_refuses_a_package_this_machine_cannot_start_and_keeps_the_download()
+{
+    let root = installation("runtime-missing");
+    let bytes = package_with_config(&[], "", r#"{"runtimeOptions":{"frameworks":[
+        {"name":"Microsoft.WindowsDesktop.App","version":"99.0.0"}]}}"#);
+    let request = prepare_request(&root, &bytes);
+    let result = prepare(&request, |_| Ok(Box::new(Cursor::new(bytes))), &AtomicBool::new(false), &mut |_| Ok(()));
+    assert_eq!(result["type"], "error", "{result}");
+    assert!(result["message"].as_str().unwrap().contains("DependencySetup"), "{result}");
+    assert!(!root.join("cache/updater/prepared").exists());
+    assert!(!root.join("cache/updater/payload").exists());
+    // After installing the runtime, retrying must not download the package again.
+    assert!(root.join("cache/updater/download/package.part").exists());
     std::fs::remove_dir_all(root).unwrap();
 }
 

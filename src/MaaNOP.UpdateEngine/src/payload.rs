@@ -230,12 +230,10 @@ fn extract(zip: &Path, payload: &Path, cancelled: &AtomicBool) -> Result<(), Str
 fn validate(payload: &Path, tag: &str) -> Result<(), String>
 {
     for file in ["NarutoAutoGUI.exe", "NarutoAutoGUI.dll", "maanop-update-engine.exe",
-        "NarutoAutoGUI.deps.json", "NarutoAutoGUI.runtimeconfig.json", "hostfxr.dll", "hostpolicy.dll",
-        "libs/coreclr.dll", "libs/System.Private.CoreLib.dll", "libs/PresentationFramework.dll",
+        "NarutoAutoGUI.deps.json", "NarutoAutoGUI.runtimeconfig.json",
         "libs/Wpf.Ui.dll", "libs/NarutoAutoGUI.Updates.dll", "worker/NarutoAutoWorker.exe",
         "worker/NarutoAutoWorker.dll",
         "worker/NarutoAutoWorker.deps.json", "worker/NarutoAutoWorker.runtimeconfig.json",
-        "worker/hostfxr.dll", "worker/hostpolicy.dll", "worker/coreclr.dll", "worker/System.Private.CoreLib.dll",
         "worker/runtimes/win-x64/native/MaaFramework.dll",
         "worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll", "python/python.exe"] {
         if !payload.join(file).is_file() { return Err(format!("完整包缺少必需文件：{file}")); }
@@ -249,5 +247,53 @@ fn validate(payload: &Path, tag: &str) -> Result<(), String>
         || Version::parse(&project.version) != Version::parse(tag) {
         return Err("完整包产品名或版本与候选不一致。".into());
     }
+    let config = fs::read_to_string(payload.join("NarutoAutoGUI.runtimeconfig.json")).map_err(|e| e.to_string())?;
+    let program_files = std::env::var_os("ProgramFiles").unwrap_or_else(|| "C:\\Program Files".into());
+    require_frameworks(&config, &Path::new(&program_files).join("dotnet"))
+}
+
+// Installing cannot be undone, so a package this machine could not start is refused while the old version still
+// works. Only framework-dependent packages list frameworks; a failure here keeps the download for the next attempt.
+fn require_frameworks(runtimeconfig: &str, dotnet: &Path) -> Result<(), String>
+{
+    let config: Value = serde_json::from_str(runtimeconfig.trim_start_matches('\u{feff}')).map_err(|e| e.to_string())?;
+    let Some(frameworks) = config["runtimeOptions"]["frameworks"].as_array() else { return Ok(()); };
+    for framework in frameworks {
+        let name = framework["name"].as_str().ok_or("完整包运行配置无效。")?;
+        let version = framework["version"].as_str().ok_or("完整包运行配置无效。")?;
+        let wanted = Version::parse(version).ok_or("完整包运行配置无效。")?;
+        let major = version.split('.').next().unwrap_or_default();
+        // The host rolls forward within a major version and does not pick a prerelease for a stable request.
+        let installed = fs::read_dir(dotnet.join("shared").join(name)).into_iter().flatten().flatten().any(|entry| {
+            let candidate = entry.file_name().to_string_lossy().into_owned();
+            candidate.split('.').next() == Some(major) && Version::parse(&candidate).is_some_and(|v| v >= wanted)
+        });
+        if !installed {
+            return Err(format!("新版本需要 .NET {major} 运行库（{name} {version}），这台电脑尚未安装。\
+                请运行安装目录中的 DependencySetup_依赖库安装.bat，完成后重新下载更新，不会重复下载。"));
+        }
+    }
     Ok(())
+}
+
+#[cfg(test)]
+#[test]
+fn require_frameworks_follows_host_roll_forward()
+{
+    let dotnet = std::env::temp_dir().join(format!("maanop-frameworks-{}", std::process::id()));
+    let config = |version: &str| json!({"runtimeOptions":{"frameworks":[
+        {"name":"Microsoft.WindowsDesktop.App","version":version}]}}).to_string();
+    assert!(require_frameworks(&config("10.0.0"), &dotnet).is_err(), "nothing installed");
+    let shared = dotnet.join("shared/Microsoft.WindowsDesktop.App");
+    fs::create_dir_all(shared.join("8.0.28")).unwrap();
+    fs::create_dir_all(shared.join("10.0.0-rc.2.25502.107")).unwrap();
+    assert!(require_frameworks(&config("10.0.0"), &dotnet).is_err(), "other major and prerelease do not count");
+    fs::create_dir_all(shared.join("10.0.11")).unwrap();
+    assert!(require_frameworks(&config("10.0.0"), &dotnet).is_ok());
+    assert!(require_frameworks(&config("10.0.11"), &dotnet).is_ok());
+    assert!(require_frameworks(&config("10.0.12"), &dotnet).is_err(), "older patch does not satisfy");
+    assert!(require_frameworks(&config("11.0.0"), &dotnet).is_err());
+    assert!(require_frameworks(r#"{"runtimeOptions":{"includedFrameworks":[]}}"#, &dotnet).is_ok(), "self-contained");
+    assert!(require_frameworks("not json", &dotnet).is_err());
+    fs::remove_dir_all(dotnet).unwrap();
 }

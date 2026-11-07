@@ -114,6 +114,9 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
 
     internal WorkerCoordinatorSnapshot Snapshot { get; private set; }
 
+    // The user's current choice, which a Worker connected earlier may no longer hold.
+    internal Func<MaaFrameworkOptions>? FrameworkOptions { get; set; }
+
     internal int? TrackedWorkerPid
     {
         get
@@ -389,6 +392,20 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             cancellationToken);
     }
 
+    // Without a connection there is nothing to update: every new connection synchronises the current choice.
+    internal async Task ApplyFrameworkOptionsAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_gate) {
+            if (_connection is null) {
+                return;
+            }
+        }
+        if (FrameworkOptions is { } current) {
+            await SendRequestAsync<MaaFrameworkOptions, FrameworkSetOptionsResponse>(
+                ProtocolOperations.FrameworkSetOptions, current(), cancellationToken);
+        }
+    }
+
     internal void ChildSessionEnded()
     {
         WorkerAdmissionRecord? record;
@@ -491,6 +508,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             var response = await SendRequestAsync<object, GetSnapshotResponse>(
                 ProtocolOperations.WorkerGetSnapshot, new { }, connectionLifetime.Token);
             ApplyFreshSnapshot(response.Snapshot, admission);
+            _ = SynchroniseFrameworkOptionsAsync(connectionLifetime.Token);
             await EnsureLogRecoveryAsync(
                 admission.WorkerInstanceId, logRecoveryGeneration,
                 response.Snapshot.LastLogSequence, connectionLifetime.Token);
@@ -514,6 +532,17 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             if (detached is not null && !cancellationToken.IsCancellationRequested) {
                 MarkDisconnected(detached);
             }
+        }
+    }
+
+    // A Worker that outlived the GUI still holds the options of its launch. This runs beside log recovery, and its
+    // failure ends nothing: debug records are not worth a connection, and SendRequestAsync has logged it.
+    private async Task SynchroniseFrameworkOptionsAsync(CancellationToken cancellationToken)
+    {
+        try {
+            await ApplyFrameworkOptionsAsync(cancellationToken);
+        } catch (Exception) {
+            // Nothing observes this task; the next connection or switch change tries again.
         }
     }
 

@@ -1,12 +1,10 @@
 using System.Diagnostics;
+using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoWorker;
 
 internal static class Program
 {
-    private static readonly string BootstrapLogPath =
-        Path.Combine(Path.GetTempPath(), "NarutoAutoWorker.bootstrap.log");
-
     private static async Task<int> Main(string[] args)
     {
         try {
@@ -45,11 +43,23 @@ internal static class Program
         } catch (Exception exception) {
             var text = $"[{DateTime.UtcNow:O}] {exception}{Environment.NewLine}";
             Console.Error.Write(text);
+            WriteBootstrapLog(text, AppContext.BaseDirectory);
+            return 1;
+        }
+    }
+
+    // A Worker that exits before reaching the GUI has only this file to explain why. It runs from <application>\worker
+    // and the GUI's diagnostic package collects <application>\logs.
+    internal static void WriteBootstrapLog(string text, string workerDirectory)
+    {
+        var logs = Path.GetFullPath(Path.Combine(workerDirectory, "..", "logs"));
+        foreach (var directory in new[] { logs, Path.GetTempPath() }) {
             try {
-                File.AppendAllText(BootstrapLogPath, text);
+                Directory.CreateDirectory(directory);
+                File.AppendAllText(Path.Combine(directory, ProtocolConstants.WorkerBootstrapLogFileName), text);
+                return;
             } catch {
             }
-            return 1;
         }
     }
 }

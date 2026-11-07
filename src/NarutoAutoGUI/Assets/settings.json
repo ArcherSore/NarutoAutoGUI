@@ -64,7 +64,7 @@
       "id": "debug",
       "title": "调试",
       "icon": "Bug20",
-      "description": "下列开关在结束桌面分身并重新准备运行环境后生效，文件保存在程序目录的 debug 文件夹。",
+      "description": "更改后从下一次识别开始生效，无需结束桌面分身。文件保存在程序目录的 debug 文件夹，超过 7 天的文件会在下次准备运行环境时清理。",
       "items": [
         {
           "id": "framework-save-on-error",
@@ -80,7 +80,7 @@
           "icon": "ScanText20",
           "joinPrevious": true,
           "title": "保存识别标注图",
-          "description": "每次识别都把标注图保存到 debug\\vision，占用磁盘较多，建议排查时开启。",
+          "description": "每次识别都保存一张标出识别结果的图片（debug\\vision）。占用磁盘较多，程序重启后会自动关闭。",
           "settingKey": "framework.saveDraw"
         },
         {
@@ -97,9 +97,27 @@
           "type": "action",
           "icon": "Archive20",
           "title": "问题诊断",
-          "description": "打包日志、调试图片和版本信息，用于反馈问题。",
+          "description": "打包日志、配置和调试图片，保存到程序目录的 debug\\exports 并定位到文件。可直接上传到 GitHub Issue。",
           "buttonText": "导出诊断包",
           "actionId": "diagnostics.export"
+        },
+        {
+          "id": "clear-debug-files",
+          "type": "action",
+          "icon": "Broom20",
+          "title": "清理日志和调试文件",
+          "description": "删除旧日志、失败截图、标注图和已导出的诊断包。正在写入的日志会保留。",
+          "buttonText": "清理",
+          "actionId": "diagnostics.clear"
+        },
+        {
+          "id": "clear-on-startup",
+          "type": "toggle",
+          "icon": "Power20",
+          "joinPrevious": true,
+          "title": "启动时自动清理",
+          "description": "每次打开程序时执行上面的清理。上次运行的日志和截图也会被删除，反馈问题前请勿开启。",
+          "settingKey": "diagnostics.clearOnStartup"
         }
       ]
     },

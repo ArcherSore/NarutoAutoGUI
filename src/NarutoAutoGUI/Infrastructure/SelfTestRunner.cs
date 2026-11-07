@@ -30,7 +30,7 @@ internal static partial class SelfTestRunner
         new(Group.Support, nameof(VerifyWorkerStateLog), c => VerifyWorkerStateLog(c.Directory)),
         new(Group.Support, nameof(VerifyChildSessionLog), c => VerifyChildSessionLog(c.Directory)),
         new(Group.Support, nameof(VerifyDiagnosticPackage), c => VerifyDiagnosticPackage(c.Logger, c.Directory)),
-        new(Group.Support, nameof(VerifyDebugImageCleanup), c => VerifyDebugImageCleanup(c.Logger, c.Directory)),
+        new(Group.Support, nameof(VerifyDebugFileCleanup), c => VerifyDebugFileCleanup(c.Logger, c.Directory)),
         new(Group.Support, nameof(VerifyDeclarativeSettings), c => VerifyDeclarativeSettings(c.Logger, c.Directory)),
         new(Group.Support, nameof(VerifyUpdateLog), c => VerifyUpdateLog(c.Directory)),
         new(Group.Support, nameof(VerifySettingsLog), c => VerifySettingsLog(c.Directory)),

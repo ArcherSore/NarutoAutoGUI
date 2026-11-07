@@ -29,7 +29,7 @@ function Invoke-WorkerSelfTest([string]$Name, [string[]]$Arguments, [string]$Pas
 }
 
 try {
-    foreach ($scenario in @('defaults', 'disabled', 'draw-only', 'debug-only', 'all')) {
+    foreach ($scenario in @('defaults', 'disabled', 'draw-only', 'debug-only', 'all', 'hot-toggle')) {
         $scenarioRoot = Join-Path $output "框架 图片 $scenario"
         Invoke-WorkerSelfTest $scenario @('--framework-diagnostics-self-test', "`"$scenarioRoot`"", $scenario) `
             '^NATIVE FRAMEWORK TEST PASS:'

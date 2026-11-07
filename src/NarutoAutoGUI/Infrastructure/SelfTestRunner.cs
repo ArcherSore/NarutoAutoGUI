@@ -37,6 +37,7 @@ internal static partial class SelfTestRunner
         new(Group.Support, nameof(VerifyChildSessionCredentials),
             c => VerifyChildSessionCredentials(c.Logger, c.Directory)),
         new(Group.Support, nameof(VerifyDiagnosticSettings), c => VerifyDiagnosticSettings(c.Logger, c.Directory)),
+        new(Group.Support, nameof(VerifySettingsNavigation), c => VerifySettingsNavigation(c.Logger, c.Directory)),
         new(Group.Support, nameof(VerifyNavigationRail), c => VerifyNavigationRail(c.Logger, c.Directory)),
         new(Group.Support, nameof(VerifyHelpPage), c => VerifyHelpPage(c.Logger, c.Directory)),
 

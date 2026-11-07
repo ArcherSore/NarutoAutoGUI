@@ -121,16 +121,21 @@ internal static partial class SelfTestRunner
         }
 
         const string valid = """
-            {"title":"Settings","sections":[{"id":"s","title":"Section","description":"Description","items":[
-              {"id":"t","type":"toggle","title":"Toggle","settingKey":"update.checkOnStartup"},
-              {"id":"a","type":"action","title":"Action","buttonText":"Go","actionId":"update.check"},
-              {"id":"i","type":"info","title":"Info","description":"Static"}
+            {"sections":[{"id":"s","title":"Section","icon":"Info20","description":"Description",
+             "items":[
+              {"id":"t","type":"toggle","icon":"Info20","title":"Toggle","settingKey":"update.checkOnStartup"},
+              {"id":"a","type":"action","icon":"Key20","title":"Action","buttonText":"Go","actionId":"update.check"},
+              {"id":"i","type":"info","icon":"Tag20","joinPrevious":true,"title":"Info","description":"Static"},
+              {"id":"h","type":"about","title":"About"}
             ]}]}
             """;
         var sample = settings.Registry.Bind(SettingsDefinition.Parse(valid));
         if (sample.Sections[0].Definition.Description != "Description"
             || sample.Sections[0].Items[2].Definition.Description != "Static") {
             throw new InvalidOperationException("Section 和静态 info 的说明必须保留。");
+        }
+        if (!sample.Sections[0].Cards.Select(card => card.Count).SequenceEqual([1, 2, 1])) {
+            throw new InvalidOperationException("joinPrevious 的设置项必须与上一项合并到同一张卡片。");
         }
         ExpectInvalid(valid.Replace("\"toggle\"", "\"expression\""));
         ExpectInvalid(valid.Replace("\"settingKey\"", "\"expression\""));
@@ -139,6 +144,11 @@ internal static partial class SelfTestRunner
         ExpectInvalid(valid.Replace("\"title\":\"Toggle\",", ""));
         ExpectInvalid(valid.Replace("\"id\":\"i\"", "\"id\":\"t\""));
         ExpectInvalid(valid.Replace("\"description\":\"Static\"", "\"valueKey\":\"unknown.value\""));
+        ExpectInvalid(valid.Replace("{\"sections\"", "{\"title\":\"Settings\",\"sections\""));
+        ExpectInvalid(valid.Replace("\"Key20\"", "\"NoSuchIcon\""));
+        ExpectInvalid(valid.Replace("\"icon\":\"Key20\",", ""));
+        ExpectInvalid(valid.Replace("\"icon\":\"Info20\",\"description\"", "\"description\""));
+        ExpectInvalid(valid.Replace("\"type\":\"toggle\",", "\"type\":\"toggle\",\"joinPrevious\":true,"));
         VerifySettingsUpdateIntegration(logger, testDirectory);
         VerifyClosePreference(logger, testDirectory);
         VerifyFrameworkPreferences(logger, testDirectory);
@@ -250,6 +260,49 @@ internal static partial class SelfTestRunner
                 throw new InvalidOperationException("Settings 操作不能影响 Home、MaaNOP 配置、PI 或 RunPlan。");
             }
         }, checkForUpdate: _ => { checks++; return check.Task; });
+    }
+
+    // The list must lead to every section, and scrolling must move the highlight back with the content.
+    private static void VerifySettingsNavigation(AppLogger logger, string testDirectory)
+    {
+        RunOnboardingScenario(logger, Path.Combine(testDirectory, "settings-navigation"), (window, _) => {
+            window.Width = window.MinWidth;
+            window.Height = window.MinHeight;
+            ClickOnboarding(window, "SettingsNavigationItem");
+            var view = (SettingsView)window.FindName("SettingsView");
+            var list = SettingsVisualDescendants(view).OfType<System.Windows.Controls.ListBox>().Single();
+            var scroller = SettingsVisualDescendants(view).OfType<ScrollViewer>().Single();
+            var sections = SettingsPageFor(window).Sections;
+            Require(list.SelectedIndex == 0, "进入设置时目录应选中第一个分类。");
+
+            double HeadingTop(int index) => SettingsVisualDescendants(scroller).OfType<TextBlock>()
+                .First(text => text.Text == sections[index].Definition.Title)
+                .TranslatePoint(default, scroller).Y;
+            foreach (var index in Enumerable.Range(0, sections.Count).Reverse()) {
+                list.SelectedIndex = index;
+                PumpUntil(() => HeadingTop(index) is >= 0 and <= 60,
+                    $"点击目录“{sections[index].Definition.Title}”应滚动到该分类。");
+                Require(list.SelectedIndex == index, "目录跳转后不能被滚动跟随改回其他分类。");
+            }
+            scroller.ScrollToEnd();
+            PumpUntil(() => list.SelectedIndex == sections.Count - 1, "滚动到底部时目录应选中最后一个分类。");
+            scroller.ScrollToTop();
+            PumpUntil(() => list.SelectedIndex == 0, "滚动回顶部时目录应选中第一个分类。");
+            var first = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(0);
+            first.Focus();
+            first.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,
+                PresentationSource.FromVisual(first), 0, System.Windows.Input.Key.Down) {
+                RoutedEvent = System.Windows.Input.Keyboard.KeyDownEvent
+            });
+            PumpUntil(() => list.SelectedIndex == 1 && HeadingTop(1) is >= 0 and <= 60, "方向键应能切换目录并滚动到该分类。");
+            if (Environment.GetEnvironmentVariable("NARUTO_SUPPORT_QA_DIR") is { Length: > 0 } output) {
+                window.Width = 1180;
+                window.Height = 760;
+                PumpOnboarding();
+                Directory.CreateDirectory(output);
+                SaveScreenshot(window, Path.Combine(output, "settings-default.png"));
+            }
+        });
     }
 
     // Failure details reach the log but never the status the user reads.

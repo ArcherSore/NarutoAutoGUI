@@ -4,19 +4,22 @@
 
 ## 格式
 
-根对象包含必填 title、sections 和可选 description；数组顺序决定展示顺序。section 包含 id、title、items 和可选 description，且不嵌套。section 与 item 的 id 在整个定义中唯一。
+根对象只包含必填 sections；数组顺序决定展示顺序。section 包含 id、title、icon、items 和可选 description，且不嵌套。section 与 item 的 id 在整个定义中唯一。icon 是 WPF-UI 的 SymbolRegular 名称。
 
 | item type | 必填字段（除 id/type） | 可选字段 |
 | --- | --- | --- |
-| toggle | title、settingKey | description |
-| action | title、buttonText、actionId | description |
-| info | title / description / valueKey 至少一个非空 | 其余展示字段 |
+| toggle | icon、title、settingKey | description、joinPrevious |
+| action | icon、title、buttonText、actionId | description、joinPrevious |
+| info | icon；title / description / valueKey 至少一个非空 | 其余展示字段、joinPrevious |
+| about | title | description |
 
-解析拒绝未知字段和类型、缺少必填内容、重复 id 与不属于该类型的绑定字段。绑定只接受显式注册的 key；错误包含 item id 和资源位置。不提供表达式、布局配置、handler 自动发现或静默回退。
+每项默认独占一张卡片；joinPrevious 为 true 时并入上一项的卡片，section 的首项不能使用。
+
+解析拒绝未知字段、类型和图标名，缺少必填内容、重复 id 与不属于该类型的绑定字段。绑定只接受显式注册的 key；错误包含 item id 和资源位置。除 joinPrevious 外不提供布局配置，也不提供表达式、handler 自动发现或静默回退。
 
 ## 绑定边界
 
-SettingsDefinition 负责页面定义，SettingsRegistry 将 toggle、action、value key 显式绑定到业务对象，SettingsView 按三种行类型展示。ApplicationSettings 负责应用偏好及行为入口，不持有 MaaNOP Config 或 Run Plan。新增同类设置行只需修改定义；新增行为或动态值还需注册代码。
+SettingsDefinition 负责页面定义，SettingsRegistry 将 toggle、action、value key 显式绑定到业务对象，SettingsView 按四种行类型展示，并用左侧目录在连续滚动的分类间跳转和跟随。ApplicationSettings 负责应用偏好及行为入口，不持有 MaaNOP Config 或 Run Plan。新增同类设置行只需修改定义；新增行为或动态值还需注册代码。
 
 | 类型 | 当前 key | 含义 |
 | --- | --- | --- |

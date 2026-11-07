@@ -34,29 +34,21 @@ internal sealed class DebugFileCleaner(string applicationDirectory, string logDi
     private IEnumerable<FileInfo> Candidates()
     {
         void Skip(string entry, Exception exception) => logger.Warn($"调试文件清理跳过：{entry}。", exception);
-        var logs = Logs(logDirectory);
+        var logs = Logs(logDirectory, Skip);
         // The GUI log being written stays, so it is not counted as cleanable. The newest file is that log.
         var active = logs.Where(file => file.Name.StartsWith("NarutoAutoGUI-", StringComparison.OrdinalIgnoreCase))
             .MaxBy(file => file.LastWriteTimeUtc);
-        return logs.Concat(Logs(Path.Combine(applicationDirectory, "logs")))
+        return logs.Concat(Logs(Path.Combine(applicationDirectory, "logs"), Skip))
             .DistinctBy(file => file.FullName, StringComparer.OrdinalIgnoreCase)
             .Where(file => file.FullName != active?.FullName)
             .Concat(MaaDebugImages.EnumerateRemovable(applicationDirectory, Skip));
     }
 
-    private FileInfo[] Logs(string directory)
-    {
-        try {
-            return Directory.Exists(directory)
-                ? new DirectoryInfo(directory).GetFiles("*.log")
-                    .Where(file => !file.Attributes.HasFlag(FileAttributes.ReparsePoint)).ToArray()
-                : [];
-        } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
-            logger.Debug($"日志目录未清理{AppLogger.Field("directory", directory)}"
-                + AppLogger.Field("error", exception.Message));
-            return [];
-        }
-    }
+    private FileInfo[] Logs(string directory, Action<string, Exception> skip) =>
+        MaaDebugImages.TryList(applicationDirectory, directory, skip, out var entries)
+            ? entries.OfType<FileInfo>().Where(file => file.Extension.Equals(".log", StringComparison.OrdinalIgnoreCase)
+                && !file.Attributes.HasFlag(FileAttributes.ReparsePoint)).ToArray()
+            : [];
 
     private void RemoveEmptyExports()
     {

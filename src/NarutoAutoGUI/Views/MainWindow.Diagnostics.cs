@@ -13,7 +13,7 @@ public partial class MainWindow
     private async Task ExportDiagnosticsAsync(Action<string> reveal)
     {
         var action = _settings.ExportDiagnostics;
-        action.IsEnabled = false;
+        SetDebugFileActionsEnabled(false);
         action.Status = "正在导出…";
         try {
             var observation = _workerCoordinator.Snapshot;
@@ -32,13 +32,20 @@ public partial class MainWindow
                 _applicationDirectory, _logger.LogDirectory, project, version, DateTime.Now));
             action.Status = result.Volumes == 1 ? "诊断包已导出。" : $"诊断包已导出，共 {result.Volumes} 卷。";
             reveal(result.FirstVolume);
-            RefreshDebugFileUsage();
         } catch (Exception exception) {
             _logger.Error("导出诊断包失败。", exception);
             action.Status = $"导出失败：{exception.GetBaseException().Message}";
         } finally {
-            action.IsEnabled = true;
+            SetDebugFileActionsEnabled(true);
         }
+        RefreshDebugFileUsage();
+    }
+
+    // A clean during a multi-volume export would delete the finished volumes of a package reported as complete.
+    private void SetDebugFileActionsEnabled(bool enabled)
+    {
+        _settings.ExportDiagnostics.IsEnabled = enabled;
+        _settings.ClearDebugFiles.IsEnabled = enabled;
     }
 
     private void RevealInExplorer(string file)
@@ -55,7 +62,7 @@ public partial class MainWindow
     private async Task ClearDebugFilesAsync()
     {
         var action = _settings.ClearDebugFiles;
-        action.IsEnabled = false;
+        SetDebugFileActionsEnabled(false);
         action.Status = "正在清理…";
         try {
             var result = await Task.Run(DebugFiles.Clean);
@@ -64,7 +71,7 @@ public partial class MainWindow
             _logger.Error("清理日志和调试文件失败。", exception);
             action.Status = $"清理失败：{exception.GetBaseException().Message}";
         } finally {
-            action.IsEnabled = true;
+            SetDebugFileActionsEnabled(true);
         }
     }
 
@@ -87,18 +94,10 @@ public partial class MainWindow
     // A Worker that survived the last GUI may still be writing evidence of the Run in progress.
     private void ClearDebugFilesOnStartup()
     {
-        if (!_settings.ClearOnStartup.Value
-            || _workerCoordinator.Snapshot.Observation != Worker.WorkerObservation.WorkerNotStarted) {
-            return;
+        if (_settings.ClearOnStartup.Value
+            && _workerCoordinator.Snapshot.Observation == Worker.WorkerObservation.WorkerNotStarted) {
+            _ = ClearDebugFilesAsync();
         }
-        var cleaner = DebugFiles;
-        _ = Task.Run(() => {
-            try {
-                cleaner.Clean();
-            } catch (Exception exception) {
-                _logger.Warn("启动时清理日志和调试文件失败。", exception);
-            }
-        });
     }
 
     private async void OnFrameworkOptionsChanged(SettingsToggle toggle)

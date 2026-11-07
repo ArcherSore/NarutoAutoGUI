@@ -652,17 +652,22 @@ internal static partial class SelfTestRunner
             Action<string> reveal = file => revealed = file;
             var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
             var method = typeof(Views.MainWindow).GetMethod("ExportDiagnosticsAsync", flags)!;
+            var clear = SettingsActionFor(window, "diagnostics.clear");
+            clear.Status = "";
             var task = (Task)method.Invoke(window, [reveal])!;
             if (button.IsEnabled || string.IsNullOrEmpty(action.Status)) {
                 throw new InvalidOperationException("导出在后台执行期间须禁用按钮并显示状态。");
             }
+            // A clean during a multi-volume export would delete the finished volumes of a package reported as complete.
+            Require(!clear.IsEnabled, "导出期间不能开始清理。");
             void Await(Task pending)
             {
                 PumpUntil(() => pending.IsCompleted, "后台任务应完成，Dispatcher 可继续处理消息。");
                 pending.GetAwaiter().GetResult();
             }
             Await(task);
-            Require(button.IsEnabled, "导出完成后应恢复按钮。");
+            Require(button.IsEnabled && clear.IsEnabled, "导出完成后应恢复按钮。");
+            PumpUntil(() => !string.IsNullOrEmpty(clear.Status), "导出后应刷新可清理的大小。");
             Require(revealed is not null && revealed.StartsWith(
                 Path.Combine(directory, "debug", "exports"), StringComparison.OrdinalIgnoreCase),
                 "一键导出应写到 debug\\exports，并定位到第一卷。");
@@ -670,16 +675,18 @@ internal static partial class SelfTestRunner
                 Require(archive.Entries.Count > 0, "Settings 导出结果必须是有效诊断 ZIP。");
             }
 
-            var clear = SettingsActionFor(window, "diagnostics.clear");
             var clearMethod = typeof(Views.MainWindow).GetMethod("ClearDebugFilesAsync", flags)!;
             // Whether to clear during a Run is the user's decision.
             var coordinator = typeof(Views.MainWindow).GetField("_workerCoordinator", flags)!.GetValue(window)!;
             var coordinatorSnapshot = coordinator.GetType().GetProperty("Snapshot", flags)!;
             var observed = coordinatorSnapshot.GetValue(coordinator);
             coordinatorSnapshot.SetValue(coordinator, CreateNotificationSnapshot(RunState.Running));
-            Await((Task)clearMethod.Invoke(window, [])!);
+            var clearing = (Task)clearMethod.Invoke(window, [])!;
+            Require(!action.IsEnabled, "清理期间不能开始导出。");
+            Await(clearing);
             coordinatorSnapshot.SetValue(coordinator, observed);
-            Require(!File.Exists(revealed) && clear.IsEnabled, "任务运行中点击也应直接清理文件并恢复按钮。");
+            Require(!File.Exists(revealed) && clear.IsEnabled && action.IsEnabled,
+                "任务运行中点击也应直接清理文件并恢复按钮。");
             var updateAction = SettingsActionFor(window, "update.check");
             updateAction.Status = string.Join("\n", Enumerable.Repeat("更新检查失败，请稍后重试。", 12));
             PumpOnboarding();

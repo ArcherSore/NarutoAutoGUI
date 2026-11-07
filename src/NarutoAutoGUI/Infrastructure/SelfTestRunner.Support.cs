@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.IO.Compression;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
@@ -396,14 +395,8 @@ internal static partial class SelfTestRunner
         var now = new DateTime(2026, 11, 7, 12, 0, 0);
         var exporter = new DiagnosticPackageExporter(logger);
         Directory.CreateDirectory(actualLogs);
-        string Create(string relative, string? text = null, int ageMinutes = 0, string? under = null)
-        {
-            var path = Path.Combine(under ?? application, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, text ?? relative);
-            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-ageMinutes));
-            return path;
-        }
+        string Create(string relative, string? text = null, int ageMinutes = 0, string? under = null) => WriteFixture(
+            under ?? application, relative, System.Text.Encoding.UTF8.GetBytes(text ?? relative), ageMinutes);
 
         Create("NarutoAutoGUI-recent.log", "actual log", under: actualLogs);
         Create("logs/NarutoAutoGUI-wrong.log", "wrong directory");
@@ -473,6 +466,15 @@ internal static partial class SelfTestRunner
         }
     }
 
+    private static string WriteFixture(string root, string relative, byte[] content, int ageMinutes = 0)
+    {
+        var path = Path.Combine(root, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, content);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-ageMinutes));
+        return path;
+    }
+
     private static string[] VolumeEntries(string volume)
     {
         using var archive = ZipFile.OpenRead(volume);
@@ -491,12 +493,9 @@ internal static partial class SelfTestRunner
         var random = new Random(1);
         void Image(string relative, int minutes)
         {
-            var path = Path.Combine(root, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var bytes = new byte[3000];
             random.NextBytes(bytes);
-            File.WriteAllBytes(path, bytes);
-            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-minutes));
+            WriteFixture(root, relative, bytes, minutes);
         }
         for (var minutes = 1; minutes <= 6; minutes++) {
             Image($"debug/on_error/error-{minutes}.png", minutes);
@@ -530,18 +529,12 @@ internal static partial class SelfTestRunner
     {
         var logs = Path.Combine(root, "logs");
         Directory.CreateDirectory(logs);
-        void Write(string relative, int length, int minutes)
-        {
-            var path = Path.Combine(root, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllBytes(path, new byte[length]);
-            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-minutes));
-        }
-        Write("debug/maafw.log", 100, 0);
+        void Write(string relative, int minutes) => WriteFixture(root, relative, new byte[100], minutes);
+        Write("debug/maafw.log", 0);
         for (var minutes = 1; minutes <= 4; minutes++) {
-            Write($"debug/maafw.bak.2026.09.0{minutes}-09.35.00.1.log", 100, minutes);
-            Write($"debug/vision/draw-{minutes}.jpg", 100, minutes);
-            Write($"debug/on_error/error-{minutes}.png", 100, minutes);
+            Write($"debug/maafw.bak.2026.09.0{minutes}-09.35.00.1.log", minutes);
+            Write($"debug/vision/draw-{minutes}.jpg", minutes);
+            Write($"debug/on_error/error-{minutes}.png", minutes);
         }
         var result = exporter.Export(root, logs, null, null, now,
             new DiagnosticExportLimits(FrameworkLogBytes: 300, DrawImageBytes: 200));
@@ -619,13 +612,7 @@ internal static partial class SelfTestRunner
         Directory.CreateDirectory(Path.Combine(root, "debug"));
         // A file where the exports directory belongs makes the export itself impossible.
         File.WriteAllText(Path.Combine(root, "debug", "exports"), "blocks the exports directory");
-        var failed = false;
-        try {
-            exporter.Export(root, logs, null, null, now);
-        } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
-            failed = true;
-        }
-        Require(failed, "无法创建导出目录时必须报告失败。");
+        Require(Throws<IOException>(() => exporter.Export(root, logs, null, null, now)), "无法创建导出目录时必须报告失败。");
         File.Delete(Path.Combine(root, "debug", "exports"));
 
         // The second export of the same second replaces the first, and an open target must not lose earlier work.
@@ -634,13 +621,8 @@ internal static partial class SelfTestRunner
         Require(retry.FirstVolume == result.FirstVolume && File.Exists(retry.FirstVolume), "重复导出应得到完整结果。");
         var finished = retry.FirstVolume;
         using var locked = new FileStream(finished, FileMode.Open, FileAccess.Read, FileShare.Read);
-        failed = false;
-        try {
-            exporter.Export(root, logs, null, null, now);
-        } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
-            failed = true;
-        }
-        Require(failed && File.Exists(finished), "目标被占用时必须报告失败，且不能损坏已有的包。");
+        Require(Throws<IOException>(() => exporter.Export(root, logs, null, null, now)) && File.Exists(finished),
+            "目标被占用时必须报告失败，且不能损坏已有的包。");
     }
     private static void VerifyDiagnosticSettings(AppLogger logger, string testDirectory)
     {

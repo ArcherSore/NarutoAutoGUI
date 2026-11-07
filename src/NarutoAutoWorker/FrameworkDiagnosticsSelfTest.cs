@@ -69,10 +69,7 @@ internal static class FrameworkDiagnosticsSelfTest
                 return 0;
             }
             var job = tasker.AppendTask("Recognize");
-            var completion = Task.Run(job.Wait);
-            if (!completion.Wait(TimeSpan.FromSeconds(15)) || completion.Result != MaaJobStatus.Failed) {
-                throw new InvalidOperationException("测试任务必须通过真实识别后在 NeverMatch 超时失败。");
-            }
+            WaitForRecognition(job.Wait, "测试任务必须通过真实识别后在 NeverMatch 超时失败。");
             if (!tasker.GetTaskDetail(job.Id, out _, out var nodes, out _) || nodes.Length == 0
                 || !tasker.GetNodeDetail(nodes[0], out var name, out var recognitionId, out _, out _)
                 || name != "Recognize") {
@@ -91,10 +88,7 @@ internal static class FrameworkDiagnosticsSelfTest
                 // The same process, Tasker and log: only the switch changes, as it does for a running Worker.
                 WorkerFrameworkOptions.ApplySwitches(new MaaFrameworkOptions(false, true, false),
                     (level, source, message) => Console.WriteLine($"{level} {source} {message}"));
-                var next = Task.Run(tasker.AppendTask("Recognize").Wait);
-                if (!next.Wait(TimeSpan.FromSeconds(15)) || next.Result != MaaJobStatus.Failed) {
-                    throw new InvalidOperationException("开启标注图后的第二次识别未按预期完成。");
-                }
+                WaitForRecognition(tasker.AppendTask("Recognize").Wait, "开启标注图后的第二次识别未按预期完成。");
                 visions = VerifyImages(root, "vision", ".jpg", expected: true);
             }
             if (!File.Exists(Path.Combine(root, "debug", "maafw.log"))) {
@@ -124,10 +118,16 @@ internal static class FrameworkDiagnosticsSelfTest
             if (Stopwatch.GetElapsedTime(started) > TimeSpan.FromSeconds(75)) {
                 throw new TimeoutException("测试进程一直没有等到停止信号。");
             }
-            var next = Task.Run(tasker.AppendTask("Recognize").Wait);
-            if (!next.Wait(TimeSpan.FromSeconds(15)) || next.Result != MaaJobStatus.Failed) {
-                throw new InvalidOperationException("运行中的任务没有按预期完成识别。");
-            }
+            WaitForRecognition(tasker.AppendTask("Recognize").Wait, "运行中的任务没有按预期完成识别。");
+        }
+    }
+
+    // The fixture's NeverMatch node times out, so a task that really recognised ends as Failed.
+    private static void WaitForRecognition(Func<MaaJobStatus> wait, string failure)
+    {
+        var completion = Task.Run(wait);
+        if (!completion.Wait(TimeSpan.FromSeconds(15)) || completion.Result != MaaJobStatus.Failed) {
+            throw new InvalidOperationException(failure);
         }
     }
 

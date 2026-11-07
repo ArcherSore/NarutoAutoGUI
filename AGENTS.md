@@ -50,7 +50,7 @@
 | --- | --- | --- |
 | 一般 GUI、共享布局或不确定影响范围 | 默认（`-Suite Gui`） | GUI 构建 + 全 GUI 自检 |
 | 任务配置、标签条、参数编辑、TaskShelf、引导 | `-Suite Project` | 现有 `--project-only`，也包含 Support 自检 |
-| 通知、诊断 ZIP、Debug 图片清理、设置、导航 | `-Suite Support` | 现有 `--support-only` |
+| 通知、诊断 ZIP、调试文件清理、设置、导航 | `-Suite Support` | 现有 `--support-only` |
 | 运行控制栏、侧栏宽度、Run 进度、运行环境接线 | `-Suite RuntimeControls` | 现有 `--runtime-controls-only` |
 | Worker、GUI 与 Worker 的连接 | `-Suite Worker` | GUI/Worker 构建 + 全 Worker 自检 + 真实 Worker 连接 |
 | GUI 与 Engine 的更新适配器 | `-Suite Updater` | 现有 .NET Updater 测试（含构建） |

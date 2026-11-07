@@ -535,8 +535,6 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         }
     }
 
-    // Returns null after rejecting the client. Any local process can open the pipe, so a rejection ends only this
-    // connection and leaves the Admission and the observed state untouched.
     // A Worker that outlived the GUI still holds the options of its launch. This runs beside log recovery, and its
     // failure ends nothing: debug records are not worth a connection, and SendRequestAsync has logged it.
     private async Task SynchroniseFrameworkOptionsAsync(CancellationToken cancellationToken)
@@ -548,6 +546,8 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         }
     }
 
+    // Returns null after rejecting the client. Any local process can open the pipe, so a rejection ends only this
+    // connection and leaves the Admission and the observed state untouched.
     private async Task<(WorkerAdmissionRecord Admission, int LogRecoveryGeneration)?> AdmitConnectionAsync(
         NamedPipeServerStream server, ProtocolConnection connection, CancellationToken cancellationToken)
     {

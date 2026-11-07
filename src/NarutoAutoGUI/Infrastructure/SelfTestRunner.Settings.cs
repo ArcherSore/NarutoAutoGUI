@@ -20,7 +20,8 @@ internal static partial class SelfTestRunner
         ApplicationSettings Create()
         {
             return new ApplicationSettings(directory, logger, () => Task.CompletedTask,
-                () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask);
+                () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask,
+                () => Task.CompletedTask);
         }
         var settings = Create();
         if (!settings.CloseToTray.Value || File.Exists(path)) {
@@ -102,7 +103,8 @@ internal static partial class SelfTestRunner
         }
         settings.CheckOnStartup.Value = false;
         var reopened = new ApplicationSettings(directory, logger, () => Task.CompletedTask,
-            () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask);
+            () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask,
+            () => Task.CompletedTask);
         reopened.LoadUpdatePreference();
         if (File.ReadAllText(preference) != "false" || reopened.CheckOnStartup.Value) {
             throw new InvalidOperationException("Toggle 必须以原有格式持久化，并在重新加载后保留选择。");

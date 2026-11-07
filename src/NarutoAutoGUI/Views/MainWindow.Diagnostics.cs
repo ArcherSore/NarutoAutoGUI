@@ -6,14 +6,13 @@ namespace NarutoAutoGUI.Views;
 
 public partial class MainWindow
 {
+    private DebugFileCleaner DebugFiles => new(_applicationDirectory, _logger.LogDirectory, _logger);
+
     private Task ExportDiagnosticsFromSettingsAsync() => ExportDiagnosticsAsync(RevealInExplorer);
 
     private async Task ExportDiagnosticsAsync(Action<string> reveal)
     {
         var action = _settings.ExportDiagnostics;
-        if (!action.IsEnabled) {
-            return;
-        }
         action.IsEnabled = false;
         action.Status = "正在导出…";
         try {
@@ -56,14 +55,10 @@ public partial class MainWindow
     private async Task ClearDebugFilesAsync()
     {
         var action = _settings.ClearDebugFiles;
-        if (!action.IsEnabled) {
-            return;
-        }
         action.IsEnabled = false;
         action.Status = "正在清理…";
         try {
-            var cleaner = new DebugFileCleaner(_applicationDirectory, _logger.LogDirectory, _logger);
-            var result = await Task.Run(cleaner.Clean);
+            var result = await Task.Run(DebugFiles.Clean);
             action.Status = $"已释放 {DebugFileCleaner.FormatBytes(result.ReclaimedBytes)}。";
         } catch (Exception exception) {
             _logger.Error("清理日志和调试文件失败。", exception);
@@ -80,18 +75,14 @@ public partial class MainWindow
             return;
         }
         try {
-            var cleaner = new DebugFileCleaner(_applicationDirectory, _logger.LogDirectory, _logger);
-            var usage = await Task.Run(cleaner.MeasureUsage);
+            var bytes = await Task.Run(DebugFiles.MeasureBytes);
             if (action.IsEnabled) {
-                action.Status = FormatDebugFileUsage(usage);
+                action.Status = $"当前可清理 {DebugFileCleaner.FormatBytes(bytes)}。";
             }
         } catch (Exception exception) {
             _logger.Warn("统计日志和调试文件占用失败。", exception);
         }
     }
-
-    private static string FormatDebugFileUsage(DebugFileUsage usage) =>
-        $"当前可清理 {DebugFileCleaner.FormatBytes(usage.Bytes)}。";
 
     // A Worker that survived the last GUI may still be writing evidence of the Run in progress.
     private void ClearDebugFilesOnStartup()
@@ -100,7 +91,7 @@ public partial class MainWindow
             || _workerCoordinator.Snapshot.Observation != Worker.WorkerObservation.WorkerNotStarted) {
             return;
         }
-        var cleaner = new DebugFileCleaner(_applicationDirectory, _logger.LogDirectory, _logger);
+        var cleaner = DebugFiles;
         _ = Task.Run(() => {
             try {
                 cleaner.Clean();

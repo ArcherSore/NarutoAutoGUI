@@ -284,9 +284,8 @@ internal static partial class WorkerCoordinatorSelfTest
             // The GUI synchronises the debug switches whenever it likes; no scenario here is about that ordering.
             if (request is { Operation: ProtocolOperations.FrameworkSetOptions, RequestId: { } optionsId }
                 && operation != ProtocolOperations.FrameworkSetOptions) {
-                var options = ProtocolJson.Deserialize<MaaFrameworkOptions>(request.Data);
                 await connection.WriteAsync(WireEnvelope.Response(request.Operation, optionsId,
-                    new FrameworkSetOptionsResponse(options)), cancellationToken);
+                    new FrameworkSetOptionsResponse()), cancellationToken);
                 continue;
             }
             if (request.MessageType != ProtocolMessageTypes.Request || request.Operation != operation

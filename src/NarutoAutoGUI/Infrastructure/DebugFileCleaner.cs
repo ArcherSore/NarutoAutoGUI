@@ -1,17 +1,11 @@
 namespace NarutoAutoGUI.Infrastructure;
 
-internal sealed record DebugFileUsage(int Files, long Bytes);
-
 internal sealed record DebugFileCleanupResult(int Deleted, long ReclaimedBytes);
 
 // Deletes on the user's request only; automatic retention belongs to Serilog and MaaFramework's LogDir cleanup.
 internal sealed class DebugFileCleaner(string applicationDirectory, string logDirectory, AppLogger logger)
 {
-    internal DebugFileUsage MeasureUsage()
-    {
-        var files = Candidates().ToArray();
-        return new DebugFileUsage(files.Length, files.Sum(file => file.Length));
-    }
+    internal long MeasureBytes() => Candidates().Sum(file => file.Length);
 
     internal DebugFileCleanupResult Clean()
     {
@@ -40,32 +34,29 @@ internal sealed class DebugFileCleaner(string applicationDirectory, string logDi
     private IEnumerable<FileInfo> Candidates()
     {
         void Skip(string entry, Exception exception) => logger.Warn($"调试文件清理跳过：{entry}。", exception);
-        var applicationLogs = Path.Combine(applicationDirectory, "logs");
-        return Logs(logDirectory, keepNewest: true)
-            .Concat(PathsEqual(applicationLogs, logDirectory) ? [] : Logs(applicationLogs, keepNewest: false))
-            .Concat(MaaDebugImages.EnumerateLogs(applicationDirectory, Skip))
-            .Concat(MaaDebugImages.Enumerate(applicationDirectory, Skip))
-            .Concat(MaaDebugImages.EnumerateExports(applicationDirectory, Skip));
+        var logs = Logs(logDirectory);
+        // The GUI log being written stays, so it is not counted as cleanable. The newest file is that log.
+        var active = logs.Where(file => file.Name.StartsWith("NarutoAutoGUI-", StringComparison.OrdinalIgnoreCase))
+            .MaxBy(file => file.LastWriteTimeUtc);
+        return logs.Concat(Logs(Path.Combine(applicationDirectory, "logs")))
+            .DistinctBy(file => file.FullName, StringComparer.OrdinalIgnoreCase)
+            .Where(file => file.FullName != active?.FullName)
+            .Concat(MaaDebugImages.EnumerateRemovable(applicationDirectory, Skip));
     }
 
-    // Deleting the GUI log the logger still writes would lose everything written after it. The newest file is that log.
-    private static IEnumerable<FileInfo> Logs(string directory, bool keepNewest)
+    private FileInfo[] Logs(string directory)
     {
-        if (!Directory.Exists(directory)) {
+        try {
+            return Directory.Exists(directory)
+                ? new DirectoryInfo(directory).GetFiles("*.log")
+                    .Where(file => !file.Attributes.HasFlag(FileAttributes.ReparsePoint)).ToArray()
+                : [];
+        } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+            logger.Debug($"日志目录未清理{AppLogger.Field("directory", directory)}"
+                + AppLogger.Field("error", exception.Message));
             return [];
         }
-        var files = new DirectoryInfo(directory).GetFiles("*.log")
-            .Where(file => !file.Attributes.HasFlag(FileAttributes.ReparsePoint)).ToArray();
-        var active = keepNewest
-            ? files.Where(file => file.Name.StartsWith("NarutoAutoGUI-", StringComparison.OrdinalIgnoreCase))
-                .MaxBy(file => file.LastWriteTimeUtc)
-            : null;
-        return files.Where(file => file.FullName != active?.FullName);
     }
-
-    private static bool PathsEqual(string left, string right) => string.Equals(
-        Path.TrimEndingDirectorySeparator(Path.GetFullPath(left)),
-        Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)), StringComparison.OrdinalIgnoreCase);
 
     private void RemoveEmptyExports()
     {

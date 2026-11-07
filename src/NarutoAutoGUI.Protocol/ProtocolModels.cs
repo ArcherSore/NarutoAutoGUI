@@ -16,6 +16,7 @@ public static class ProtocolConstants
     public const int MaximumLogMessageBytes = 64 * 1024;
     public const int MaximumLogGetSinceResponseBytes = 1024 * 1024;
     public const string MaaNopRunLogSource = "maanop.run";
+    public const string WorkerBootstrapLogFileName = "NarutoAutoWorker.bootstrap.log";
 }
 
 public static class ProtocolOperations
@@ -125,7 +126,7 @@ public sealed record AgentDefinition(string ChildExec, IReadOnlyList<string> Chi
 
 public sealed record MaaFrameworkOptions(bool SaveOnError = true, bool SaveDraw = false, bool DebugMode = false);
 
-public sealed record FrameworkSetOptionsResponse(MaaFrameworkOptions Options);
+public sealed record FrameworkSetOptionsResponse;
 
 public sealed record LaunchManifest(
     int LaunchContextVersion, Guid WorkerInstanceId, string RuntimeProfileDigest,

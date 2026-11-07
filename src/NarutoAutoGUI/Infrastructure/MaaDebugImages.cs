@@ -16,14 +16,18 @@ internal static class MaaDebugImages
             file => IsImage(folder, file.Extension), onSkip));
     }
 
-    internal static IEnumerable<FileInfo> EnumerateLogs(
-        string applicationDirectory, Action<string, Exception> onSkip) =>
-        Walk(applicationDirectory, Path.Combine(applicationDirectory, "debug"),
-            file => file.Extension.Equals(".log", StringComparison.OrdinalIgnoreCase), onSkip);
-
-    internal static IEnumerable<FileInfo> EnumerateExports(
-        string applicationDirectory, Action<string, Exception> onSkip) =>
-        Walk(applicationDirectory, ExportsDirectory(applicationDirectory), _ => true, onSkip);
+    // Logs, exports and images in one walk, so an unreadable folder is listed and reported once.
+    internal static IEnumerable<FileInfo> EnumerateRemovable(
+        string applicationDirectory, Action<string, Exception> onSkip)
+    {
+        var debug = Path.Combine(applicationDirectory, "debug");
+        return Walk(applicationDirectory, debug, file => {
+            var folder = Path.GetRelativePath(debug, file.FullName).Split(Path.DirectorySeparatorChar)[0]
+                .ToLowerInvariant();
+            return folder == "exports" || file.Extension.Equals(".log", StringComparison.OrdinalIgnoreCase)
+                || (Folders.Contains(folder) && IsImage(folder, file.Extension));
+        }, onSkip);
+    }
 
     internal static string ExportsDirectory(string applicationDirectory) =>
         Path.Combine(applicationDirectory, "debug", "exports");
@@ -64,7 +68,7 @@ internal static class MaaDebugImages
     }
 
     // Missing directories are expected (debug options may never have produced them) and are not reported.
-    private static bool TryList(string applicationDirectory, string directory, Action<string, Exception> onSkip,
+    internal static bool TryList(string applicationDirectory, string directory, Action<string, Exception> onSkip,
         out FileSystemInfo[] entries)
     {
         entries = [];

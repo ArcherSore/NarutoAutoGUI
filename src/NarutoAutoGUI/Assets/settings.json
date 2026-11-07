@@ -48,7 +48,7 @@
           "id": "export-diagnostics",
           "type": "action",
           "title": "问题诊断",
-          "description": "打包日志、配置和调试图片，保存到程序目录的 debug\\exports 并定位到文件。每卷不超过 24.5 MB，可直接上传到 GitHub Issue。",
+          "description": "打包日志、配置和调试图片，保存到程序目录的 debug\\exports 并定位到文件。可直接上传到 GitHub Issue。",
           "buttonText": "导出诊断包",
           "actionId": "diagnostics.export"
         },
@@ -99,7 +99,7 @@
           "id": "clear-debug-files",
           "type": "action",
           "title": "清理日志和调试文件",
-          "description": "删除旧日志、失败截图、标注图和已导出的诊断包。正在写入的日志会保留，任务运行中不可用。",
+          "description": "删除旧日志、失败截图、标注图和已导出的诊断包。正在写入的日志会保留。",
           "buttonText": "清理",
           "actionId": "diagnostics.clear"
         },

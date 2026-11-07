@@ -12,11 +12,8 @@ internal static class FrameworkOptionsSelfTests
         var root = Path.Combine(Path.GetTempPath(), $"NarutoFrameworkOptions-{Guid.NewGuid():N}");
         try {
             var defaults = JsonSerializer.Deserialize<MaaFrameworkOptions>("{}", ProtocolJson.Options)!;
-            if (defaults != new MaaFrameworkOptions()) {
-                throw new InvalidOperationException("省略框架选项必须保留 true/false/false 默认值。");
-            }
-            if (defaults.SaveDraw || !defaults.SaveOnError || defaults.DebugMode) {
-                throw new InvalidOperationException("标注图默认关闭，失败截图默认开启，调试模式默认关闭。");
+            if (defaults != new MaaFrameworkOptions(SaveOnError: true, SaveDraw: false, DebugMode: false)) {
+                throw new InvalidOperationException("省略框架选项时，失败截图默认开启，标注图和调试模式默认关闭。");
             }
             VerifyRuntimeSwitches();
             VerifyRuntimeRequest().GetAwaiter().GetResult();

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoWorker;
 
@@ -55,7 +56,7 @@ internal static class Program
         foreach (var directory in new[] { logs, Path.GetTempPath() }) {
             try {
                 Directory.CreateDirectory(directory);
-                File.AppendAllText(Path.Combine(directory, "NarutoAutoWorker.bootstrap.log"), text);
+                File.AppendAllText(Path.Combine(directory, ProtocolConstants.WorkerBootstrapLogFileName), text);
                 return;
             } catch {
             }

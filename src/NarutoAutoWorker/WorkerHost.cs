@@ -201,7 +201,7 @@ internal sealed class WorkerHost
     private FrameworkSetOptionsResponse SetFrameworkOptions(MaaFrameworkOptions options)
     {
         _applyFrameworkOptions(options);
-        return new FrameworkSetOptionsResponse(options);
+        return new FrameworkSetOptionsResponse();
     }
 
     private async Task BeginStopAsync(

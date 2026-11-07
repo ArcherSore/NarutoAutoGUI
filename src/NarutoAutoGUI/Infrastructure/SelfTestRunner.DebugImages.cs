@@ -1,3 +1,6 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
+
 namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
@@ -6,14 +9,8 @@ internal static partial class SelfTestRunner
     {
         var application = Path.Combine(testDirectory, "debug-file-cleanup");
         var logs = Path.Combine(application, "logs");
-        string Create(string relative, int length = 100, int ageHours = 0)
-        {
-            var path = Path.Combine(application, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllBytes(path, new byte[length]);
-            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddHours(-ageHours));
-            return path;
-        }
+        string Create(string relative, int ageHours = 0) =>
+            WriteFixture(application, relative, new byte[100], ageHours * 60);
         string[] removed = [
             Create("logs/NarutoAutoGUI-old.log", ageHours: 2), Create("logs/updater.log", ageHours: 3),
             Create("debug/maafw.bak.old.log"), Create("debug/nested/custom.log"), Create("debug/vision/draw.jpg"),
@@ -32,9 +29,8 @@ internal static partial class SelfTestRunner
         CreateJunction(Path.Combine(application, "debug", "vision", "link"), outside);
 
         var cleaner = new DebugFileCleaner(application, logs, logger);
-        var usage = cleaner.MeasureUsage();
-        Require(usage == new DebugFileUsage(removed.Length, removed.Length * 100L),
-            $"占用应只统计将被清理的文件：{usage}");
+        var bytes = cleaner.MeasureBytes();
+        Require(bytes == removed.Length * 100L, $"占用应只统计将被清理的文件：{bytes}");
         var locked = Create("debug/maafw.log");
         var result = default(DebugFileCleanupResult);
         using (new FileStream(locked, FileMode.Open, FileAccess.Read, FileShare.Read)) {
@@ -55,5 +51,21 @@ internal static partial class SelfTestRunner
         new DebugFileCleaner(application, fallback, logger).Clean();
         Require(File.Exists(Path.Combine(fallback, "NarutoAutoGUI-active.log")) && !File.Exists(activeLog),
             "日志回退到其他目录时，应保留实际目录中正在写入的日志。");
+
+        var deniedFolder = new DirectoryInfo(logs);
+        var denied = new FileSystemAccessRule(WindowsIdentity.GetCurrent().User!, FileSystemRights.ListDirectory,
+            AccessControlType.Deny);
+        var security = deniedFolder.GetAccessControl();
+        security.AddAccessRule(denied);
+        deniedFolder.SetAccessControl(security);
+        try {
+            var image = Create("debug/vision/after.jpg");
+            Require(cleaner.MeasureBytes() >= 100, "logs 无法读取时，仍应统计其他可清理的文件。");
+            cleaner.Clean();
+            Require(!File.Exists(image), "logs 无法读取时，应跳过它并继续清理其他文件。");
+        } finally {
+            security.RemoveAccessRule(denied);
+            deniedFolder.SetAccessControl(security);
+        }
     }
 }

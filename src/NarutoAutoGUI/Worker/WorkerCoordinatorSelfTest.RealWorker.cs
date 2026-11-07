@@ -37,14 +37,9 @@ internal static partial class WorkerCoordinatorSelfTest
             workerPath, pipeName, usePipeAcl: true,
             launchWorker: (sessionId, instanceId, launchToken, manifestPath, _) =>
             {
-                worker = Process.Start(new ProcessStartInfo(workerPath,
-                    ChildSessionWorkerLauncher.FormatArguments(instanceId, launchToken, manifestPath)) {
-                    UseShellExecute = false, CreateNoWindow = true,
-                    RedirectStandardOutput = true, RedirectStandardError = true, StandardErrorEncoding = errorEncoding
-                }) ?? throw new InvalidOperationException("无法启动 Worker。");
-                // Its console logging is drained and dropped; the same entries are asserted over the pipe.
-                worker.BeginOutputReadLine();
-                workerErrors = worker.StandardError.ReadToEndAsync(token);
+                (worker, workerErrors) = StartRealWorker(workerPath,
+                    ChildSessionWorkerLauncher.FormatArguments(instanceId, launchToken, manifestPath),
+                    errorEncoding, token);
                 return Task.FromResult(new VerifiedChildSessionProcessLaunch((uint)worker.Id, sessionId, null, null));
             });
         coordinator.LogReceived += (_, entry) => logs.Enqueue(entry);
@@ -96,13 +91,9 @@ internal static partial class WorkerCoordinatorSelfTest
         var vision = Path.Combine(root, "debug", "vision");
         var frameworkLog = Path.Combine(root, "debug", "maafw.log");
         string[] Images() => Directory.Exists(vision) ? Directory.GetFiles(vision, "*.jpg") : [];
-        using var worker = Process.Start(new ProcessStartInfo(workerPath,
-            $"--framework-diagnostics-self-test \"{root}\" keep-running") {
-            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
-            StandardErrorEncoding = Encoding.UTF8
-        }) ?? throw new InvalidOperationException("无法启动 Worker。");
-        worker.BeginOutputReadLine();
-        var errors = worker.StandardError.ReadToEndAsync(token);
+        var (process, errors) = StartRealWorker(workerPath,
+            $"--framework-diagnostics-self-test \"{root}\" keep-running", Encoding.UTF8, token);
+        using var worker = process;
         async Task WaitFor(Func<bool> condition)
         {
             while (!condition()) {
@@ -137,6 +128,18 @@ internal static partial class WorkerCoordinatorSelfTest
                 worker.Kill();
             }
         }
+    }
+
+    // Console logging is drained and dropped: what a test asserts arrives over the pipe or on disk.
+    private static (Process Worker, Task<string> Errors) StartRealWorker(string path, string arguments,
+        Encoding errorEncoding, CancellationToken token)
+    {
+        var worker = Process.Start(new ProcessStartInfo(path, arguments) {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardErrorEncoding = errorEncoding
+        }) ?? throw new InvalidOperationException("无法启动 Worker。");
+        worker.BeginOutputReadLine();
+        return (worker, worker.StandardError.ReadToEndAsync(token));
     }
 
     // An explicit path that is wrong must fail; only a build without a Worker beside it is a skip.

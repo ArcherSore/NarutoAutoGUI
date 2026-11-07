@@ -11,7 +11,7 @@ internal sealed class ApplicationSettings
 
     internal ApplicationSettings(string applicationDirectory, AppLogger logger,
         Func<Task> checkUpdate, Func<Task> exportDiagnostics, Action replayOnboarding, Func<Task> openAfdian,
-        Func<Task> manageChildSessionCredentials, Func<Task>? clearDebugFiles = null)
+        Func<Task> manageChildSessionCredentials, Func<Task> clearDebugFiles)
     {
         _updatePreferencePath = Path.Combine(applicationDirectory, "config", "update-check.txt");
         _closePreferencePath = Path.Combine(applicationDirectory, "config", "close-to-tray.txt");
@@ -37,7 +37,7 @@ internal sealed class ApplicationSettings
             "diagnostics.clearOnStartup", "启动时自动清理", false, null);
         CheckUpdate = new SettingsAction(checkUpdate);
         ExportDiagnostics = new SettingsAction(exportDiagnostics);
-        ClearDebugFiles = new SettingsAction(clearDebugFiles ?? (() => Task.CompletedTask));
+        ClearDebugFiles = new SettingsAction(clearDebugFiles);
         ReplayOnboarding = new SettingsAction(() => { replayOnboarding(); return Task.CompletedTask; });
         OpenAfdian = new SettingsAction(openAfdian) { ToolTip = "在默认浏览器中打开爱发电赞助页面" };
         ChildSessionCredentials = new SettingsAction(manageChildSessionCredentials);

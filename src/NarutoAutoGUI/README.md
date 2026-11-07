@@ -32,7 +32,7 @@ Windows x64 / .NET 10 WPF 程序。需要管理员权限和交互式桌面。
 - 滚动日志：`<程序目录>\logs\NarutoAutoGUI-yyyyMMdd[.序号].log`
 - Worker 启动失败日志：`<程序目录>\logs\NarutoAutoWorker.bootstrap.log`，只在 Worker 启动失败或异常退出时写入
 - 框架日志与图片：`<程序目录>\debug`，失败截图位于 `on_error`，识别可视化图片位于 `vision`
-- 诊断包：`<程序目录>\debug\exports`，每卷不超过 24.5 MB，保留最近 10 次导出
+- 诊断包：`<程序目录>\debug\exports`，每卷约 24.5 MB，保留最近 10 次导出
 - 框架偏好：`<程序目录>\config\maa-{save-on-error,debug-mode}.txt`
 
 设置页提供三个独立开关：SaveOnError 默认开启，SaveDraw 和 DebugMode 默认关闭。SaveDraw 不保存，程序重启后恢复关闭。

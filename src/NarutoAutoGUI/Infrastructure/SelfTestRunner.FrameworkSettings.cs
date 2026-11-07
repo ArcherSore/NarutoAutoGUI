@@ -11,7 +11,8 @@ internal static partial class SelfTestRunner
         ApplicationSettings Create()
         {
             return new ApplicationSettings(directory, logger, () => Task.CompletedTask,
-                () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask);
+                () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask,
+                () => Task.CompletedTask);
         }
         var settings = Create();
         if (settings.CreateFrameworkOptions() != new MaaFrameworkOptions() || Directory.Exists(directory)) {
@@ -77,7 +78,8 @@ internal static partial class SelfTestRunner
         var written = new List<string>();
         logger.EntryWritten += (_, entry) => written.Add(entry.Message);
         var settings = new ApplicationSettings(directory, logger, () => Task.CompletedTask,
-            () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask);
+            () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask,
+            () => Task.CompletedTask);
         foreach (var (key, toggle) in settings.Registry.Toggles) {
             written.Clear();
             var value = !toggle.Value;

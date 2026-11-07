@@ -45,8 +45,6 @@ internal sealed class RunSupervisor
             "starting",
             unavailable,
             unavailable,
-            unavailable,
-            unavailable,
             unavailable);
     }
 

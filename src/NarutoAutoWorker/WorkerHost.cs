@@ -20,7 +20,7 @@ internal sealed class WorkerHost
     private readonly Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>> _checkReadiness;
 
     // The execution factory and readiness check default to MaaFramework and the dependency probe; self-tests replace
-    // them so Run rules can be exercised without native runtime, a game window or Python.
+    // them so Run rules can be exercised without native runtime, a game window or an Agent.
     internal WorkerHost(
         WorkerArguments arguments, LaunchManifest manifest,
         Func<Guid, RunPlanItem, Action, IPlanItemExecution>? createExecution = null,
@@ -68,15 +68,16 @@ internal sealed class WorkerHost
                 "INFO",
                 "worker.readiness",
                 $"Dependency Readiness=Ready；Binding={status.MaaFrameworkBindingVersion}；" +
-                $"Runtime={status.MaaFrameworkRuntimeVersion}；Python={status.Python.Value}。 ");
+                $"Runtime={status.MaaFrameworkRuntimeVersion}；Agent={status.AgentExecutable.Value}。 ");
         } else {
             Log("ERROR", "worker.readiness", $"Dependency Readiness=NotReady：{reason.Code} - {reason.Message}");
         }
     }
 
-    private async Task<(DependencyStatus Status, StructuredReason? Reason)> CheckReadinessAsync(
+    private Task<(DependencyStatus Status, StructuredReason? Reason)> CheckReadinessAsync(
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         // Apply process-wide options before Ready admits task execution.
         StructuredReason? optionsFailure = null;
         try {
@@ -85,9 +86,9 @@ internal sealed class WorkerHost
         } catch (Exception exception) {
             optionsFailure = new StructuredReason("FrameworkOptionsFailed", exception.GetBaseException().Message);
         }
-        return optionsFailure is null
-            ? await DependencyProbe.RunAsync(_manifest, cancellationToken)
-            : (_supervisor.GetSnapshot().DependencyStatus, optionsFailure);
+        return Task.FromResult(optionsFailure is null
+            ? DependencyProbe.Run(_manifest)
+            : (_supervisor.GetSnapshot().DependencyStatus, optionsFailure));
     }
 
     private async Task ConnectAndServeAsync(CancellationToken cancellationToken)

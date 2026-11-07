@@ -5,8 +5,8 @@ namespace NarutoAutoGUI.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int ProtocolVersion = 5;
-    public const int SnapshotVersion = 2;
+    public const int ProtocolVersion = 6;
+    public const int SnapshotVersion = 3;
     public const int LaunchContextVersion = 1;
     public const int PlanVersion = 2;
     public const int MaximumFramePayloadBytes = 4 * 1024 * 1024;
@@ -161,8 +161,7 @@ public sealed record DependencyCheck(bool Success, string? Value, string? Error)
 
 public sealed record DependencyStatus(
     DateTime CheckedAtUtc, string MaaFrameworkBindingVersion, string MaaFrameworkRuntimeVersion,
-    DependencyCheck Python, DependencyCheck MaaImport, DependencyCheck AgentServerImport,
-    DependencyCheck ToolkitImport, DependencyCheck AgentEntry);
+    DependencyCheck Framework, DependencyCheck Resources, DependencyCheck AgentExecutable);
 
 public sealed record WorkerSnapshot(
     int SnapshotVersion, DateTime CapturedAtUtc, long StateRevision, Guid WorkerInstanceId,

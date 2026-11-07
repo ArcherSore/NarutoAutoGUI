@@ -14,7 +14,7 @@ internal static class WorkerSelfTestRunner
         (nameof(VerifyLogResponseBudget), VerifyLogResponseBudget),
         (nameof(VerifyTransportWriteBeforeSendGuard), VerifyTransportWriteBeforeSendGuard),
         (nameof(VerifyAgentExecutableResolution), VerifyAgentExecutableResolution),
-        (nameof(VerifyAgentUsesWorkerFramework), VerifyAgentUsesWorkerFramework),
+        (nameof(VerifyLanguageIndependentReadiness), VerifyLanguageIndependentReadiness),
         (nameof(VerifyStopCleanupRaceAsync), () => VerifyStopCleanupRaceAsync().GetAwaiter().GetResult()),
         (nameof(VerifyTaskerTaskCallbackCompletion), VerifyTaskerTaskCallbackCompletion),
         (nameof(NativeTaskCleanupSelfTests), () => NativeTaskCleanupSelfTests.RunAsync().GetAwaiter().GetResult()),
@@ -213,16 +213,34 @@ internal static class WorkerSelfTestRunner
         }
     }
 
-    // The packaged Python ships no MaaFramework, so a wrong path here leaves the Agent unable to start.
-    private static void VerifyAgentUsesWorkerFramework()
+    private static void VerifyLanguageIndependentReadiness()
     {
-        var startInfo = new System.Diagnostics.ProcessStartInfo();
-        DependencyProbe.UseWorkerFramework(startInfo);
-        var directory = startInfo.Environment["MAAFW_BINARY_PATH"]!;
-        foreach (var file in new[] { "MaaFramework.dll", "MaaAgentServer.dll", "MaaToolkit.dll" }) {
-            if (!File.Exists(Path.Combine(directory, file))) {
-                throw new InvalidOperationException($"Agent 使用的 MaaFramework 目录缺少 {file}：{directory}。 ");
+        var directory = Path.Combine(Path.GetTempPath(), $"WorkerReadiness_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try {
+            // Deliberately not executable: readiness must not run an Agent with invented Python arguments.
+            var executable = Path.Combine(directory, "native-agent.exe");
+            File.WriteAllText(executable, "readiness does not launch this file");
+            var manifest = new LaunchManifest(ProtocolConstants.LaunchContextVersion, Guid.NewGuid(), "test",
+                directory, RunHarness.Project, null!, [], new AgentDefinition(executable, [], directory));
+            var (status, reason) = DependencyProbe.Run(manifest);
+            if (reason is not null || !status.Framework.Success || !status.AgentExecutable.Success) {
+                throw new InvalidOperationException($"无 Python 入口的 Agent 应通过语言无关检查：{reason?.Message}");
             }
+            var missingResource = manifest with {
+                Resources = [new ResourceDefinition("test", [executable + ".missing"])]
+            };
+            var resourceResult = DependencyProbe.Run(missingResource);
+            if (resourceResult.Status.Resources.Success || resourceResult.Reason?.Code != "ResourceInvalid") {
+                throw new InvalidOperationException("缺失资源目录必须保持 NotReady。");
+            }
+            File.Delete(executable);
+            (status, reason) = DependencyProbe.Run(manifest);
+            if (status.AgentExecutable.Success || reason?.Code != "AgentExecutableMissing") {
+                throw new InvalidOperationException("缺失 Agent 程序必须保持 NotReady。");
+            }
+        } finally {
+            Directory.Delete(directory, true);
         }
     }
 

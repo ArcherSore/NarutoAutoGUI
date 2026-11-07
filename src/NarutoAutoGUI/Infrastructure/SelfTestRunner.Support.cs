@@ -691,7 +691,7 @@ internal static partial class SelfTestRunner
         var run = new RunSnapshot(Guid.NewGuid(), "fixture", state, now, now, null, null,
             item.PlanItemId, 0, plan, [], null, null);
         var check = new DependencyCheck(true, null, null);
-        var dependencies = new DependencyStatus(now, "fixture", "fixture", check, check, check, check, check);
+        var dependencies = new DependencyStatus(now, "fixture", "fixture", check, check, check);
         var snapshot = new WorkerSnapshot(1, now, 1, Guid.NewGuid(), 1, 1, "1.7.1", 2, "fixture", project,
             WorkerState.Ready, null, dependencies, state, run, null, 0, 0);
         return new WorkerCoordinatorSnapshot(WorkerObservation.Connected, true, snapshot, "fixture");

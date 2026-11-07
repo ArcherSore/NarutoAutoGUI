@@ -4,7 +4,7 @@
 
 ## 控制通道
 
-协议版本为 5，Run Plan 与 Snapshot 版本均为 2；Worker Launch Context 保持版本 1。GUI 是本机 Named Pipe 服务端，Worker 是客户端。每条消息以 4 字节 little-endian 无符号长度开头，后接 UTF-8 JSON；payload 上限 4 MiB。Envelope 包含 protocolVersion、messageType、operation、data；请求与响应由 requestId 配对，响应包含 success 或结构化 error。版本或帧非法时拒绝连接，不做降级协商。
+协议版本为 6，Run Plan 版本为 2，Snapshot 版本为 3；Worker Launch Context 保持版本 1。GUI 是本机 Named Pipe 服务端，Worker 是客户端。每条消息以 4 字节 little-endian 无符号长度开头，后接 UTF-8 JSON；payload 上限 4 MiB。Envelope 包含 protocolVersion、messageType、operation、data；请求与响应由 requestId 配对，响应包含 success 或结构化 error。版本或帧非法时拒绝连接，不做降级协商。
 
 | 操作 | 用途 |
 | --- | --- |

@@ -15,6 +15,9 @@ NarutoAutoGUI 是面向 MaaNOP 的 Windows x64 前端。主桌面负责配置与
 
 GUI 不加载 MaaFramework 执行任务。Worker 不读取或修改用户任务配置，也不重新解释 Project Interface 的选项。MFAAvalonia 仅用于人工对照，不参与正式运行链路。
 
+Worker 就绪检查只覆盖自身 MaaFramework、资源目录和 Agent 可执行程序，不探测项目实现语言或解释 Agent 参数。
+MaaNOP 自行打包和初始化语言运行时及共享库路径；Worker 按声明启动 Agent，通过实际连接和退出结果判断启动是否成功。
+
 ## 运行环境生命周期
 
 GUI 启动时检查已有 Child Session，必要时恢复 RDP 预览宿主。创建或恢复后，程序在独立 Windows Session 中运行。隐藏桌面分身只隐藏宿主窗口，保留 RDP 连接及其中程序。

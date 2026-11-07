@@ -81,12 +81,15 @@ New-Item -ItemType Directory -Force -Path $guiPublishDir | Out-Null
 New-Item -ItemType Directory -Force -Path $workerPublishDir | Out-Null
 New-Item -ItemType Directory -Force -Path $packageStagingDir | Out-Null
 
+# .NET comes from the machine. Global ignores DOTNET_ROOT, which an elevated GUI must not take from the environment.
+$runtimeArgs = @('--self-contained', 'false', '-p:AppHostDotNetSearch=Global')
+
 try {
     dotnet publish $projectPath `
         -c $Configuration `
         -p:Platform=x64 `
         -r $Runtime `
-        --self-contained true `
+        @runtimeArgs `
         -o $guiPublishDir `
         --no-restore `
         @versionArgs
@@ -96,7 +99,7 @@ try {
         -c $Configuration `
         -p:Platform=x64 `
         -r $Runtime `
-        --self-contained true `
+        @runtimeArgs `
         -o $workerPublishDir `
         --no-restore `
         @versionArgs
@@ -123,4 +126,4 @@ try {
     }
 }
 
-Write-Host "发布完成: $OutputDirectory (GUI + libs/ + fixed Worker runtime)"
+Write-Host "发布完成: $OutputDirectory (GUI + libs/ + Worker，.NET 由系统提供)"

@@ -1,6 +1,6 @@
 # 当前架构
 
-NarutoAutoGUI 是面向 MaaNOP 的 Windows x64 前端。主桌面负责配置与观察；游戏、自动化框架和 Worker 在 Child Session 中运行。发布包包含 GUI、Worker、固定 MaaFramework runtime 和 Update Engine；MaaNOP 项目内容由完整包提供。
+NarutoAutoGUI 是面向 MaaNOP 的 Windows x64 前端。主桌面负责配置与观察；游戏、自动化框架和 Worker 在 Child Session 中运行。发布包包含 GUI、Worker、固定 MaaFramework runtime、Update Engine 和依赖安装脚本；MaaNOP 项目内容由完整包提供。.NET 10 桌面运行库和 Visual C++ 运行库由系统提供。
 
 ## 组件与边界
 

@@ -72,7 +72,8 @@ internal static partial class SelfTestRunner
         var calls = new List<string>();
         var settings = new ApplicationSettings(directory, logger,
             () => Called("update.check"), () => Called("diagnostics.export"), () => calls.Add("onboarding.replay"),
-            () => Called("support.openAfdian"), () => Called("childSession.credentials"));
+            () => Called("support.openAfdian"), () => Called("childSession.credentials"),
+            () => Called("diagnostics.clear"));
         var page = settings.Page;
         var items = page.Sections.SelectMany(section => section.Items).ToArray();
         if (items.Single(item => item.Definition.SettingKey == "update.checkOnStartup").Toggle
@@ -84,13 +85,13 @@ internal static partial class SelfTestRunner
         foreach (var item in items.Where(item => item.Action is not null)) {
             item.Action!.ExecuteAsync().GetAwaiter().GetResult();
         }
-        if (!calls.Order().SequenceEqual(["childSession.credentials", "diagnostics.export", "onboarding.replay",
-                "support.openAfdian", "update.check"])) {
+        if (!calls.Order().SequenceEqual(["childSession.credentials", "diagnostics.clear", "diagnostics.export",
+                "onboarding.replay", "support.openAfdian", "update.check"])) {
             throw new InvalidOperationException("Settings action 必须只调用对应的已注册业务入口。");
         }
         settings.CheckUpdate.IsEnabled = false;
         settings.CheckUpdate.ExecuteAsync().GetAwaiter().GetResult();
-        if (calls.Count != 5 || settings.CheckUpdate.CanExecute(null)) {
+        if (calls.Count != 6 || settings.CheckUpdate.CanExecute(null)) {
             throw new InvalidOperationException("禁用的 Settings action 不能执行。");
         }
 

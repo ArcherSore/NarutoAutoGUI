@@ -18,17 +18,21 @@ internal sealed class WorkerHost
     private WorkerEventSender? _events;
     private readonly RunSupervisor _supervisor;
     private readonly Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>> _checkReadiness;
+    private readonly Action<MaaFrameworkOptions> _applyFrameworkOptions;
 
     // The execution factory and readiness check default to MaaFramework and the dependency probe; self-tests replace
     // them so Run rules can be exercised without native runtime, a game window or Python.
     internal WorkerHost(
         WorkerArguments arguments, LaunchManifest manifest,
         Func<Guid, RunPlanItem, Action, IPlanItemExecution>? createExecution = null,
-        Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>>? checkReadiness = null)
+        Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>>? checkReadiness = null,
+        Action<MaaFrameworkOptions>? applyFrameworkOptions = null)
     {
         _arguments = arguments;
         _manifest = manifest;
         _checkReadiness = checkReadiness ?? CheckReadinessAsync;
+        _applyFrameworkOptions = applyFrameworkOptions ?? (options => WorkerFrameworkOptions.ApplySwitches(
+            options, (level, source, message) => Log(level, source, message)));
         _supervisor = new RunSupervisor(manifest, _logs, createExecution ?? CreateRuntimeExecution,
             (level, source, message, runId) => Log(level, source, message, runId), PublishState, _shutdown.Token);
     }
@@ -175,6 +179,9 @@ internal sealed class WorkerHost
                 ProtocolOperations.LogGetSince => WireEnvelope.Response(
                     request.Operation, requestId,
                     GetLogs(ProtocolJson.Deserialize<LogGetSinceRequest>(request.Data))),
+                ProtocolOperations.FrameworkSetOptions => WireEnvelope.Response(
+                    request.Operation, requestId,
+                    SetFrameworkOptions(ProtocolJson.Deserialize<MaaFrameworkOptions>(request.Data))),
                 _ => throw new WorkerRequestException("invalid_request", $"未知 operation：{request.Operation}。 ")
             };
         } catch (WorkerRequestException exception) {
@@ -189,6 +196,12 @@ internal sealed class WorkerHost
                 request.Operation, requestId, "internal_error",
                 exception.GetBaseException().Message);
         }
+    }
+
+    private FrameworkSetOptionsResponse SetFrameworkOptions(MaaFrameworkOptions options)
+    {
+        _applyFrameworkOptions(options);
+        return new FrameworkSetOptionsResponse(options);
     }
 
     private async Task BeginStopAsync(

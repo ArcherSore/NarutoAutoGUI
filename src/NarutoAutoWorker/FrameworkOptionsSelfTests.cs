@@ -13,8 +13,13 @@ internal static class FrameworkOptionsSelfTests
         try {
             var defaults = JsonSerializer.Deserialize<MaaFrameworkOptions>("{}", ProtocolJson.Options)!;
             if (defaults != new MaaFrameworkOptions()) {
-                throw new InvalidOperationException("省略框架选项必须保留 true/true/false 默认值。");
+                throw new InvalidOperationException("省略框架选项必须保留 true/false/false 默认值。");
             }
+            if (defaults.SaveDraw || !defaults.SaveOnError || defaults.DebugMode) {
+                throw new InvalidOperationException("标注图默认关闭，失败截图默认开启，调试模式默认关闭。");
+            }
+            VerifyRuntimeSwitches();
+            VerifyRuntimeRequest().GetAwaiter().GetResult();
             var log = new List<(string Level, string Message)>();
             var options = new MaaFrameworkOptions(false, true, true);
             var framework = new FakeOptions();
@@ -47,6 +52,33 @@ internal static class FrameworkOptionsSelfTests
             if (Directory.Exists(root)) {
                 Directory.Delete(root, recursive: true);
             }
+        }
+    }
+
+    // Setting LogDir on a running Worker would reopen its log and start MaaFramework's cleanup.
+    private static void VerifyRuntimeSwitches()
+    {
+        var framework = new FakeOptions();
+        WorkerFrameworkOptions.ApplySwitches(new MaaFrameworkOptions(false, true, true), (_, _, _) => { }, framework);
+        if (!framework.Values.SequenceEqual(new (GlobalOption, object?)[] {
+            (GlobalOption.SaveOnError, false), (GlobalOption.SaveDraw, true), (GlobalOption.DebugMode, true)
+        })) {
+            throw new InvalidOperationException("运行中更新只能设置三个开关，不能重设 LogDir。");
+        }
+    }
+
+    private static async Task VerifyRuntimeRequest()
+    {
+        await using var harness = await RunHarness.CreateAsync();
+        var options = new MaaFrameworkOptions(false, true, true);
+        var response = await harness.RequestAsync(ProtocolOperations.FrameworkSetOptions, options);
+        if (response.Success != true || harness.AppliedFrameworkOptions.SingleOrDefault() != options) {
+            throw new InvalidOperationException("framework.setOptions 必须把选项应用到正在运行的 Worker。");
+        }
+        harness.FrameworkOptionsFailure = new InvalidOperationException("SetOption=false");
+        response = await harness.RequestAsync(ProtocolOperations.FrameworkSetOptions, options);
+        if (response.Success != false) {
+            throw new InvalidOperationException("选项设置失败时不能向 GUI 报告成功。");
         }
     }
 

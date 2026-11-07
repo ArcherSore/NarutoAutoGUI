@@ -18,8 +18,26 @@ internal static class WorkerSelfTestRunner
         (nameof(VerifyTaskerTaskCallbackCompletion), VerifyTaskerTaskCallbackCompletion),
         (nameof(NativeTaskCleanupSelfTests), () => NativeTaskCleanupSelfTests.RunAsync().GetAwaiter().GetResult()),
         (nameof(FrameworkOptionsSelfTests), FrameworkOptionsSelfTests.Run),
+        (nameof(VerifyBootstrapLog), VerifyBootstrapLog),
         .. PretaskSelfTests.Checks
     ], args);
+
+    // A startup failure written anywhere else never reaches the diagnostic package.
+    private static void VerifyBootstrapLog()
+    {
+        var application = Path.Combine(Path.GetTempPath(), "WorkerBootstrap_" + Guid.NewGuid().ToString("N"));
+        try {
+            Program.WriteBootstrapLog("startup failure", Path.Combine(application, "worker"));
+            var log = Path.Combine(application, "logs", "NarutoAutoWorker.bootstrap.log");
+            if (!File.Exists(log) || File.ReadAllText(log) != "startup failure") {
+                throw new InvalidOperationException("启动失败必须写入诊断包收集的 logs 目录。");
+            }
+        } finally {
+            if (Directory.Exists(application)) {
+                Directory.Delete(application, recursive: true);
+            }
+        }
+    }
 
     private static void VerifyFocusProjection()
     {

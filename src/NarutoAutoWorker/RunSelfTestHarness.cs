@@ -32,9 +32,19 @@ internal sealed class RunHarness : IAsyncDisposable
             [], new AgentDefinition("python.exe", [], "C:\\dummy"));
         Host = new WorkerHost(new WorkerArguments(workerId, "test", "C:\\dummy"), manifest,
             Executions.Create,
-            _ => Task.FromResult((Dependencies, ReadinessFailure)));
+            _ => Task.FromResult((Dependencies, ReadinessFailure)),
+            options => {
+                if (FrameworkOptionsFailure is not null) {
+                    throw FrameworkOptionsFailure;
+                }
+                AppliedFrameworkOptions.Add(options);
+            });
         Executions.Probe = Host.GetSnapshot;
     }
+
+    internal List<MaaFrameworkOptions> AppliedFrameworkOptions { get; } = [];
+
+    internal Exception? FrameworkOptionsFailure { get; set; }
 
     internal WorkerHost Host { get; }
 

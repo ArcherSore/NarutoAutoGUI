@@ -48,7 +48,10 @@ internal static partial class WorkerCoordinatorSelfTest
                 return Task.FromResult(new VerifiedChildSessionProcessLaunch((uint)worker.Id, sessionId, null, null));
             });
         coordinator.LogReceived += (_, entry) => logs.Enqueue(entry);
+        // The manifest holds the defaults, so SaveDraw can only turn on through the update after connecting.
+        coordinator.FrameworkOptions = () => new MaaFrameworkOptions(SaveDraw: true);
         try {
+            await coordinator.ApplyFrameworkOptionsAsync(token);
             var prepare = coordinator.PrepareWorkerAsync(session, project, token);
             while (!prepare.IsCompleted) {
                 // Waiting out the admission timeout would only hide why the process ended.
@@ -67,6 +70,9 @@ internal static partial class WorkerCoordinatorSelfTest
                 await Task.Delay(20, token);
             }
             Require(coordinator.Snapshot.WorkerSnapshot!.WorkerState != WorkerState.Faulted, "Worker 初始化进入 Faulted。");
+            while (!logs.Any(entry => entry.Source == "runtime.options" && entry.Message.Contains("SaveDraw=True"))) {
+                await Task.Delay(20, token);
+            }
 
             worker.Kill();
             await worker.WaitForExitAsync(token);
@@ -76,6 +82,60 @@ internal static partial class WorkerCoordinatorSelfTest
                 worker.Kill();
             }
             worker?.Dispose();
+        }
+    }
+
+    // Real MaaFramework keeps recognising in its own process while the real cleaner deletes what it has written so far.
+    private static async Task VerifyRealWorkerCleanWhileRunningAsync(AppLogger logger, string testDirectory)
+    {
+        var workerPath = FindRealWorker()
+            ?? throw new SelfTestSkip("未提供 --worker-exe；verify.ps1 -Suite Worker 或 All 构建 Worker 后才会运行。");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        var token = timeout.Token;
+        var root = Path.Combine(testDirectory, "clean while running");
+        var vision = Path.Combine(root, "debug", "vision");
+        var frameworkLog = Path.Combine(root, "debug", "maafw.log");
+        string[] Images() => Directory.Exists(vision) ? Directory.GetFiles(vision, "*.jpg") : [];
+        using var worker = Process.Start(new ProcessStartInfo(workerPath,
+            $"--framework-diagnostics-self-test \"{root}\" keep-running") {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardErrorEncoding = Encoding.UTF8
+        }) ?? throw new InvalidOperationException("无法启动 Worker。");
+        worker.BeginOutputReadLine();
+        var errors = worker.StandardError.ReadToEndAsync(token);
+        async Task WaitFor(Func<bool> condition)
+        {
+            while (!condition()) {
+                if (worker.HasExited) {
+                    throw new InvalidOperationException($"任务进程提前退出，exit={worker.ExitCode}：{await errors}");
+                }
+                await Task.Delay(20, token);
+            }
+        }
+
+        try {
+            await WaitFor(() => Images().Length > 0 && File.Exists(frameworkLog));
+            var cleaner = new DebugFileCleaner(root, Path.Combine(root, "logs"), logger);
+            var written = new FileInfo(frameworkLog).Length;
+            var result = cleaner.Clean();
+            Require(result.Deleted > 0, "运行中清理应删除已写入的图片。");
+            Require(File.Exists(frameworkLog), "正在写入的 MaaFramework 日志不应被删除。");
+
+            // Anything left was written during the clean; only a name not yet seen proves writing went on after it.
+            var seen = Images().ToHashSet(StringComparer.OrdinalIgnoreCase);
+            await WaitFor(() => Images().Any(image => !seen.Contains(image))
+                && new FileInfo(frameworkLog).Length > written);
+
+            await File.WriteAllTextAsync(Path.Combine(root, "stop"), "", token);
+            await worker.WaitForExitAsync(token);
+            Require(worker.ExitCode == 0, $"清理后任务应继续正常运行，exit={worker.ExitCode}：{await errors}");
+
+            cleaner.Clean();
+            Require(!File.Exists(frameworkLog), "进程退出后，MaaFramework 日志应能被清理。");
+        } finally {
+            if (!worker.HasExited) {
+                worker.Kill();
+            }
         }
     }
 

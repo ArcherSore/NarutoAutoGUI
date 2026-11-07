@@ -5,7 +5,7 @@ namespace NarutoAutoGUI.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int ProtocolVersion = 5;
+    public const int ProtocolVersion = 6;
     public const int SnapshotVersion = 2;
     public const int LaunchContextVersion = 1;
     public const int PlanVersion = 2;
@@ -25,6 +25,7 @@ public static class ProtocolOperations
     public const string RunStart = "run.start";
     public const string RunStop = "run.stop";
     public const string LogGetSince = "log.getSince";
+    public const string FrameworkSetOptions = "framework.setOptions";
     public const string WorkerStateChanged = "worker.stateChanged";
     public const string RunStateChanged = "run.stateChanged";
     public const string LogEntry = "log.entry";
@@ -122,7 +123,9 @@ public sealed record ResourceDefinition(string Name, IReadOnlyList<string> Paths
 
 public sealed record AgentDefinition(string ChildExec, IReadOnlyList<string> ChildArgs, string WorkingDirectory);
 
-public sealed record MaaFrameworkOptions(bool SaveOnError = true, bool SaveDraw = true, bool DebugMode = false);
+public sealed record MaaFrameworkOptions(bool SaveOnError = true, bool SaveDraw = false, bool DebugMode = false);
+
+public sealed record FrameworkSetOptionsResponse(MaaFrameworkOptions Options);
 
 public sealed record LaunchManifest(
     int LaunchContextVersion, Guid WorkerInstanceId, string RuntimeProfileDigest,

@@ -22,8 +22,13 @@ SettingsDefinition 负责页面定义，SettingsRegistry 将 toggle、action、v
 | --- | --- | --- |
 | setting | update.checkOnStartup | 启动时检查更新 |
 | setting | application.closeToTray | 关闭窗口时隐藏到托盘 |
+| setting | framework.saveOnError | 保存失败截图 |
+| setting | framework.saveDraw | 保存识别标注图，不持久化 |
+| setting | framework.debugMode | 框架调试模式 |
+| setting | diagnostics.clearOnStartup | 启动时自动清理日志和调试文件 |
 | action | update.check | 检查完整包更新 |
 | action | diagnostics.export | 导出诊断包 |
+| action | diagnostics.clear | 清理日志和调试文件 |
 | action | onboarding.replay | 重看新手指引 |
 | action | support.openAfdian | 打开支持项目页面 |
 | value | update.currentVersion | 展示当前版本 |

@@ -31,7 +31,9 @@ internal static partial class WorkerCoordinatorSelfTest
         (nameof(VerifyWorkerPipeEofAsync), (logger, directory, project) => VerifyWorkerPipeEofAsync(
             logger, directory, WorkerPath, CurrentSession, OpenProject(project, directory))),
         (nameof(VerifyRealWorkerAsync), (logger, directory, project) => VerifyRealWorkerAsync(
-            logger, directory, OpenProject(project, directory)))
+            logger, directory, OpenProject(project, directory))),
+        (nameof(VerifyRealWorkerCleanWhileRunningAsync),
+            (logger, directory, _) => VerifyRealWorkerCleanWhileRunningAsync(logger, directory))
     ];
 
     private static async Task VerifyConnectionLifecycleAsync(AppLogger logger, string testDirectory)
@@ -276,13 +278,23 @@ internal static partial class WorkerCoordinatorSelfTest
     internal static async Task<WireEnvelope> ReadRequestAsync(
         ProtocolConnection connection, string operation, CancellationToken cancellationToken)
     {
-        var request = await connection.ReadAsync(cancellationToken)
-                      ?? throw new EndOfStreamException($"等待 {operation} 时 Pipe 已关闭。 ");
-        if (request.MessageType != ProtocolMessageTypes.Request || request.Operation != operation
-            || request.RequestId is null) {
-            throw new InvalidOperationException($"预期 request={operation}，实际为 {request.Operation}。 ");
+        while (true) {
+            var request = await connection.ReadAsync(cancellationToken)
+                          ?? throw new EndOfStreamException($"等待 {operation} 时 Pipe 已关闭。 ");
+            // The GUI synchronises the debug switches whenever it likes; no scenario here is about that ordering.
+            if (request is { Operation: ProtocolOperations.FrameworkSetOptions, RequestId: { } optionsId }
+                && operation != ProtocolOperations.FrameworkSetOptions) {
+                var options = ProtocolJson.Deserialize<MaaFrameworkOptions>(request.Data);
+                await connection.WriteAsync(WireEnvelope.Response(request.Operation, optionsId,
+                    new FrameworkSetOptionsResponse(options)), cancellationToken);
+                continue;
+            }
+            if (request.MessageType != ProtocolMessageTypes.Request || request.Operation != operation
+                || request.RequestId is null) {
+                throw new InvalidOperationException($"预期 request={operation}，实际为 {request.Operation}。 ");
+            }
+            return request;
         }
-        return request;
     }
 
     private static Task WriteLogPageAsync(

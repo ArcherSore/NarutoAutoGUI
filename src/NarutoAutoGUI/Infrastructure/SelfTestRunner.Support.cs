@@ -48,10 +48,11 @@ internal static partial class SelfTestRunner
         Directory.CreateDirectory(directory);
         string LogPath(int daysAgo) => Path.Combine(directory, "NarutoAutoGUI-"
             + DateTime.Now.AddDays(-daysAgo).ToString("yyyyMMdd", CultureInfo.InvariantCulture) + ".log");
-        var expired = LogPath(20);
-        var recent = LogPath(3);
-        File.WriteAllText(expired, "expired");
-        File.WriteAllText(recent, "recent");
+        // Thirteen older files and today's make the fourteen that stay, however old those thirteen are.
+        var previous = Enumerable.Range(1, 15).Select(daysAgo => LogPath(daysAgo * 30)).ToArray();
+        foreach (var path in previous) {
+            File.WriteAllText(path, "previous");
+        }
 
         var logger = new AppLogger(directory);
         var written = new List<LogEntry>();
@@ -72,8 +73,7 @@ internal static partial class SelfTestRunner
         App.LogStartup(logger);
         using (logger.Scope("作用域")) {
         }
-        var current = Directory.GetFiles(directory, "NarutoAutoGUI-*.log")
-            .Single(path => path != expired && path != recent);
+        var current = Directory.GetFiles(directory, "NarutoAutoGUI-*.log").Except(previous).Single();
         // The diagnostic package reads a log the running logger still holds open.
         var bytes = new MemoryStream();
         using (var source = new FileStream(
@@ -100,8 +100,9 @@ internal static partial class SelfTestRunner
                 + $@"\[pid={Environment.ProcessId}\] \[session=\d+\] \[elevated=(True|False)\] .*\[logDirectory=")) {
             throw new InvalidOperationException($"日志行格式不符：{text}");
         }
-        if (File.Exists(expired) || !File.Exists(recent)) {
-            throw new InvalidOperationException("日志应保留 14 天内的文件并清理更早的文件。");
+        if (Directory.GetFiles(directory, "NarutoAutoGUI-*.log").Length != 14
+            || !previous.Take(13).All(File.Exists) || previous.Skip(13).Any(File.Exists)) {
+            throw new InvalidOperationException("日志应保留最新的 14 个文件，不论它们有多旧。");
         }
 
         logger.Dispose();
@@ -392,112 +393,212 @@ internal static partial class SelfTestRunner
         var root = Path.Combine(testDirectory, "diagnostics");
         var application = Path.Combine(root, "application");
         var actualLogs = Path.Combine(root, "fallback-logs");
-        Directory.CreateDirectory(actualLogs);
-        Directory.CreateDirectory(Path.Combine(application, "logs"));
-        File.WriteAllText(Path.Combine(actualLogs, "NarutoAutoGUI-recent.log"), "actual log");
-        File.WriteAllText(Path.Combine(application, "logs", "NarutoAutoGUI-wrong.log"), "wrong directory");
-        var destination = Path.Combine(root, "package.zip");
-        var metadata = new DiagnosticMetadata(DateTime.UtcNow, "1.7.1", "MaaNOP", "2.4.0",
-            "Windows", "X64", "ConnectedHidden", "Connected", true, "Ready", "1.7.1", 2);
-        new DiagnosticPackageExporter(logger).Export(destination, application, actualLogs, metadata);
-        using var archive = ZipFile.OpenRead(destination);
-        if (archive.GetEntry("logs/NarutoAutoGUI-recent.log") is null
-            || archive.GetEntry("logs/NarutoAutoGUI-wrong.log") is not null
-            || archive.GetEntry("diagnostics.json") is null) {
-            throw new InvalidOperationException("诊断包必须使用实际日志目录。");
-        }
-        archive.Dispose();
-        VerifyDiagnosticEntries(destination, ["logs/NarutoAutoGUI-recent.log"],
-            ["logs/updater.log", "debug/maafw.log"], []);
-        File.Delete(Path.Combine(actualLogs, "NarutoAutoGUI-recent.log"));
-        for (var index = 0; index < 7; index++) {
-            var path = Path.Combine(actualLogs, $"NarutoAutoGUI-{index}.log");
-            File.WriteAllText(path, $"GUI log {index}");
-            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddHours(-index));
-        }
-        string[] rotations = [
-            .. Enumerable.Range(1, 7).Select(day => $"debug/maafw.bak.2026.09.{day:D2}-09.35.00.1.log"),
-            "debug/maafw.bak.2026.09.21-09.35.00.12.log", "debug/maafw.bak.2026.09.21-09.35.00.123.log"
-        ];
-        string[] images = ["debug/vision/recognition.jpg", "debug/on_error/task.png",
-            "debug/screencap/task.png", "debug/screencap/task.jpg", "debug/screencap/task.jpeg",
-            "debug/screencap/nested/task.png"];
-        string[] optional = ["logs/updater.log", "debug/maafw.log", .. rotations, .. images];
-        string[] excluded = ["config/maanop-config.json", "cache/foo", "state/foo", "debug/screenshot.png",
-            "resource/foo", "interface.json", "agent/foo", "python/foo", "debug/maafw.bak.notes.log",
-            "debug/maafw.bak.2026.09.21-09.35.00.123.log.png", "debug/other.log", "debug/vision/config.json",
-            "debug/vision/not-a-draw.png", "debug/on_error/not-an-error.jpg", "debug/screencap/not-supported.bmp",
-            "debug/unknown/task.png", "debug/crash.dmp"];
-        foreach (var name in optional.Concat(excluded)) {
-            var path = Path.Combine(application, name);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, name);
-        }
+        var now = new DateTime(2026, 11, 7, 12, 0, 0);
         var exporter = new DiagnosticPackageExporter(logger);
-        exporter.Export(destination, application, actualLogs, metadata);
-        string[] expected = ["logs/NarutoAutoGUI-0.log", "logs/NarutoAutoGUI-1.log", "logs/NarutoAutoGUI-2.log",
-            "logs/NarutoAutoGUI-3.log", "logs/NarutoAutoGUI-4.log", .. optional];
-        VerifyDiagnosticEntries(destination, expected, [], []);
-        using (var packed = ZipFile.OpenRead(destination)) {
-            foreach (var image in images) {
-                using var reader = new StreamReader(packed.GetEntry(image)!.Open());
-                if (reader.ReadToEnd() != image) {
-                    throw new InvalidOperationException("诊断图片必须按原始内容导出。");
-                }
-            }
+        Directory.CreateDirectory(actualLogs);
+        string Create(string relative, string? text = null, int ageMinutes = 0, string? under = null)
+        {
+            var path = Path.Combine(under ?? application, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, text ?? relative);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-ageMinutes));
+            return path;
         }
-        File.Delete(Path.Combine(application, "logs", "updater.log"));
-        using (var locked = new FileStream(Path.Combine(application, "debug", "maafw.log"), FileMode.Open,
-                   FileAccess.ReadWrite, FileShare.None)) {
-            exporter.Export(destination, application, actualLogs, metadata);
-            VerifyDiagnosticEntries(destination, expected.Except(["logs/updater.log", "debug/maafw.log"]).ToArray(),
-                ["logs/updater.log"], ["debug/maafw.log"]);
+
+        Create("NarutoAutoGUI-recent.log", "actual log", under: actualLogs);
+        Create("logs/NarutoAutoGUI-wrong.log", "wrong directory");
+        var first = exporter.Export(application, actualLogs, "MaaNOP", "2.4.0", now);
+        var entries = VolumeEntries(first.FirstVolume);
+        Require(entries.Contains("logs/NarutoAutoGUI-recent.log") && !entries.Contains("logs/NarutoAutoGUI-wrong.log"),
+            "诊断包必须使用实际日志目录。");
+        Require(!entries.Contains("diagnostics.json"), "诊断包不再生成清单。");
+        Require(first.Volumes == 1 && first.Files == entries.Length, "导出结果应如实报告卷数和文件数。");
+        Require(Path.GetFileName(first.FirstVolume)
+            .StartsWith("MaaNOP-logs-2.4.0-20261107-120000", StringComparison.Ordinal),
+            "目录应带项目、版本和时间，便于反馈时识别。");
+
+        string[] included = [
+            Create("logs/NarutoAutoWorker.bootstrap.log"),
+            Create("logs/updater.log"), Create("debug/maafw.log"), Create("config/maanop-config.json"),
+            Create("config/maa-save-on-error.txt"), Create("debug/on_error/new.png", ageMinutes: 1),
+            Create("debug/on_error/old.png", ageMinutes: 90), Create("debug/vision/draw.jpg"),
+            Create("debug/screencap/frame.jpg"), Create("debug/maafw.bak.2026.09.21-09.35.00.123.log")
+        ];
+        string[] excluded = [
+            Create("config/other.json"), Create("config/clear-on-startup.txt"), Create("cache/foo"),
+            Create("state/foo"), Create("resource/foo"), Create("interface.json"), Create("debug/screenshot.png"),
+            Create("debug/other.log"),
+            Create("debug/maafw.bak.notes.log"), Create("debug/vision/not-a-draw.png"),
+            Create("debug/on_error/not-an-error.jpg"), Create("debug/unknown/task.png"), Create("debug/crash.dmp")
+        ];
+        var relative = (string path) => MaaDebugImages.RelativePath(application, path);
+        var complete = exporter.Export(application, actualLogs, "MaaNOP", null, now.AddSeconds(1));
+        entries = VolumeEntries(complete.FirstVolume);
+        foreach (var path in included) {
+            Require(entries.Contains(relative(path)), $"诊断包应包含：{relative(path)}");
         }
+        Require(entries[0] == "logs/NarutoAutoWorker.bootstrap.log", "启动失败日志不能被大量旧日志挤到后面的分卷。");
+        foreach (var path in excluded) {
+            Require(!entries.Contains(relative(path)), $"诊断包不应包含：{relative(path)}");
+        }
+        using (var archive = ZipFile.OpenRead(complete.FirstVolume)) {
+            using var reader = new StreamReader(archive.GetEntry("debug/on_error/new.png")!.Open());
+            Require(reader.ReadToEnd() == "debug/on_error/new.png", "诊断图片必须按原始内容导出。");
+            Require(archive.GetEntry("debug/on_error/new.png")!.CompressedLength
+                == archive.GetEntry("debug/on_error/new.png")!.Length, "图片已压缩过，不应再压缩一次。");
+        }
+
+        VerifyDiagnosticVolumes(exporter, Path.Combine(root, "volumes"), now);
+        VerifyDiagnosticBudgets(exporter, Path.Combine(root, "budgets"), now);
+        VerifyDiagnosticMasking(exporter, Path.Combine(root, "masking"), now);
+        VerifyDiagnosticRetention(exporter, Path.Combine(root, "retention"), now);
+        VerifyDiagnosticFailures(exporter, Path.Combine(root, "failures"), now);
+
         // A live writer stays open and can append after export; no logger shutdown is needed.
-        using (var liveLog = new FileStream(Path.Combine(actualLogs, "NarutoAutoGUI-0.log"), FileMode.Append,
+        using (var liveLog = new FileStream(Path.Combine(actualLogs, "NarutoAutoGUI-recent.log"), FileMode.Append,
                    FileAccess.Write, FileShare.ReadWrite)) {
-            exporter.Export(destination, application, actualLogs, metadata);
+            exporter.Export(application, actualLogs, "MaaNOP", null, now.AddSeconds(2));
             liveLog.WriteByte(10);
         }
-        exporter.Export(destination, application, Path.Combine(application, "logs"), metadata);
-        VerifyDiagnosticEntries(destination,
-            ["logs/NarutoAutoGUI-wrong.log", "debug/maafw.log", .. rotations, .. images], ["logs/updater.log"], []);
-        foreach (var name in new[] { rotations[0], images[0] }) {
-            using var locked = new FileStream(Path.Combine(application, name), FileMode.Open,
-                FileAccess.ReadWrite, FileShare.None);
-            exporter.Export(destination, application, actualLogs, metadata);
-            VerifyDiagnosticEntries(destination, expected.Except(["logs/updater.log", name]).ToArray(),
-                ["logs/updater.log"], [name]);
+        foreach (var name in new[] { "debug/maafw.log", "debug/vision/draw.jpg" }) {
+            using var locked = new FileStream(Path.Combine(application, name), FileMode.Open, FileAccess.ReadWrite,
+                FileShare.None);
+            var result = exporter.Export(application, actualLogs, "MaaNOP", null, now.AddSeconds(3));
+            entries = VolumeEntries(result.FirstVolume);
+            Require(result.Skipped == 1 && !entries.Contains(name) && entries.Contains("logs/updater.log"),
+                "无法读取的文件应跳过并计数，其余文件照常导出。");
         }
-        VerifyDiagnosticFailures(exporter, root, application, actualLogs, metadata);
         foreach (var link in new[] { "debug", "debug/vision", "debug/vision/nested" }) {
-            VerifyDiagnosticLinks(exporter, root, actualLogs, metadata, link);
+            VerifyDiagnosticLinks(exporter, root, actualLogs, now, link);
         }
     }
 
-    private static void VerifyDiagnosticLinks(DiagnosticPackageExporter exporter, string root,
-        string actualLogs, DiagnosticMetadata metadata, string relativeLink)
+    private static string[] VolumeEntries(string volume)
+    {
+        using var archive = ZipFile.OpenRead(volume);
+        return archive.Entries.Select(entry => entry.FullName).ToArray();
+    }
+
+    private static string[] ExportVolumes(string firstVolume) =>
+        Directory.GetFiles(Path.GetDirectoryName(firstVolume)!, "*.zip").Order(StringComparer.Ordinal).ToArray();
+
+    // Each volume must stay under the limit and open alone, with the newest failure in the one people send first.
+    private static void VerifyDiagnosticVolumes(DiagnosticPackageExporter exporter, string root, DateTime now)
+    {
+        var logs = Path.Combine(root, "logs");
+        Directory.CreateDirectory(logs);
+        File.WriteAllText(Path.Combine(logs, "NarutoAutoGUI-current.log"), "current log");
+        var random = new Random(1);
+        void Image(string relative, int minutes)
+        {
+            var path = Path.Combine(root, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var bytes = new byte[3000];
+            random.NextBytes(bytes);
+            File.WriteAllBytes(path, bytes);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-minutes));
+        }
+        for (var minutes = 1; minutes <= 6; minutes++) {
+            Image($"debug/on_error/error-{minutes}.png", minutes);
+            Image($"debug/vision/draw-{minutes}.jpg", minutes);
+        }
+        var limits = new DiagnosticExportLimits(VolumeBytes: 10_000);
+        var result = exporter.Export(root, logs, null, null, now, limits);
+        var volumes = ExportVolumes(result.FirstVolume);
+        Require(result.Volumes == volumes.Length && volumes.Length > 1, "超过单卷上限时应分卷。");
+        Require(volumes[0] == result.FirstVolume, "定位的应是第一卷。");
+        Require(volumes.All(volume => new FileInfo(volume).Length <= limits.VolumeBytes), "每卷都不能超过上限。");
+        var all = volumes.SelectMany(VolumeEntries).ToArray();
+        Require(all.Length == 13 && all.Distinct().Count() == 13, "所有文件都应进入分卷，且不能重复。");
+        var firstEntries = VolumeEntries(volumes[0]);
+        Require(firstEntries.Contains("logs/NarutoAutoGUI-current.log")
+            && firstEntries.Contains("debug/on_error/error-1.png"), "第一卷应包含当前日志和最新的失败截图。");
+        var order = all.ToList();
+        Require(order.FindLastIndex(entry => entry.Contains("on_error"))
+            < order.FindIndex(entry => entry.Contains("vision")), "失败截图应排在标注图之前。");
+
+        var oversized = Path.Combine(root, "debug", "on_error", "oversized.png");
+        var bytes = new byte[30_000];
+        random.NextBytes(bytes);
+        File.WriteAllBytes(oversized, bytes);
+        result = exporter.Export(root, logs, null, null, now.AddSeconds(1), limits);
+        Require(ExportVolumes(result.FirstVolume).SelectMany(VolumeEntries).Contains("debug/on_error/oversized.png"),
+            "超过单卷上限的文件也要导出，独占一卷。");
+    }
+
+    private static void VerifyDiagnosticBudgets(DiagnosticPackageExporter exporter, string root, DateTime now)
+    {
+        var logs = Path.Combine(root, "logs");
+        Directory.CreateDirectory(logs);
+        void Write(string relative, int length, int minutes)
+        {
+            var path = Path.Combine(root, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, new byte[length]);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-minutes));
+        }
+        Write("debug/maafw.log", 100, 0);
+        for (var minutes = 1; minutes <= 4; minutes++) {
+            Write($"debug/maafw.bak.2026.09.0{minutes}-09.35.00.1.log", 100, minutes);
+            Write($"debug/vision/draw-{minutes}.jpg", 100, minutes);
+            Write($"debug/on_error/error-{minutes}.png", 100, minutes);
+        }
+        var result = exporter.Export(root, logs, null, null, now,
+            new DiagnosticExportLimits(FrameworkLogBytes: 300, DrawImageBytes: 200));
+        var entries = ExportVolumes(result.FirstVolume).SelectMany(VolumeEntries).ToArray();
+        Require(entries.Count(entry => entry.Contains("maafw.bak")) == 2
+            && entries.Contains("debug/maafw.bak.2026.09.01-09.35.00.1.log")
+            && entries.Contains("debug/maafw.bak.2026.09.02-09.35.00.1.log"), "框架日志应从新到旧取，不超过预算。");
+        Require(entries.Count(entry => entry.Contains("/vision/")) == 2 && entries.Contains("debug/vision/draw-1.jpg")
+            && entries.Contains("debug/vision/draw-2.jpg"), "标注图应从新到旧取，不超过预算。");
+        Require(entries.Count(entry => entry.Contains("/on_error/")) == 4, "失败截图不受标注图预算限制。");
+    }
+
+    // Native logs do not pass through AppLogger, so the export is the last chance to keep the account name out.
+    private static void VerifyDiagnosticMasking(DiagnosticPackageExporter exporter, string root, DateTime now)
+    {
+        var logs = Path.Combine(root, "logs");
+        Directory.CreateDirectory(logs);
+        var path = Path.Combine(root, "debug", "maafw.log");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, $"Working {AppLogger.UserProfile}\\game\nnext line\n");
+        var result = exporter.Export(root, logs, null, null, now);
+        using var archive = ZipFile.OpenRead(result.FirstVolume);
+        using var reader = new StreamReader(archive.GetEntry("debug/maafw.log")!.Open());
+        var text = reader.ReadToEnd();
+        Require(text.Contains("%USERPROFILE%\\game") && text.Contains("next line")
+            && !text.Contains(AppLogger.UserProfile, StringComparison.OrdinalIgnoreCase), "文本日志应掩码用户目录。");
+    }
+
+    private static void VerifyDiagnosticRetention(DiagnosticPackageExporter exporter, string root, DateTime now)
+    {
+        var logs = Path.Combine(root, "logs");
+        Directory.CreateDirectory(logs);
+        var unrelated = Path.Combine(root, "debug", "exports", "keep-me");
+        Directory.CreateDirectory(unrelated);
+        var results = Enumerable.Range(0, 12)
+            .Select(index => exporter.Export(root, logs, null, null, now.AddMinutes(index))).ToArray();
+        var kept = Directory.GetDirectories(Path.Combine(root, "debug", "exports")).Except([unrelated]).ToArray();
+        Require(kept.Length == 10, $"应保留最近 10 次导出：{kept.Length}");
+        Require(results.TakeLast(10).All(result => File.Exists(result.FirstVolume))
+            && results.Take(2).All(result => !File.Exists(result.FirstVolume)), "清理的应是最旧的导出。");
+        Require(Directory.Exists(unrelated), "不是导出目录的文件夹不得删除。");
+    }
+
+    private static void VerifyDiagnosticLinks(DiagnosticPackageExporter exporter, string root, string actualLogs,
+        DateTime now, string relativeLink)
     {
         var application = Path.Combine(root, "linked-application", relativeLink.Replace('/', '-'));
-        var outside = Path.Combine(root, "outside-debug");
+        var outside = Path.Combine(root, "outside-debug", relativeLink.Replace('/', '-'));
         Directory.CreateDirectory(Path.Combine(outside, "vision"));
         File.WriteAllText(Path.Combine(outside, "maafw.log"), "outside log");
         File.WriteAllText(Path.Combine(outside, "outside.jpg"), "outside image");
         File.WriteAllText(Path.Combine(outside, "vision", "outside.jpg"), "outside image");
         CreateJunction(Path.Combine(application, relativeLink), outside);
-        var destination = Path.Combine(root, "linked.zip");
-        exporter.Export(destination, application, actualLogs, metadata);
-        using var archive = ZipFile.OpenRead(destination);
-        if (archive.Entries.Any(entry => entry.FullName.StartsWith("debug/", StringComparison.Ordinal))) {
-            throw new InvalidOperationException("诊断导出不能通过 debug 目录链接读取范围外文件。");
-        }
-        using var json = JsonDocument.Parse(archive.GetEntry("diagnostics.json")!.Open());
-        if (!json.RootElement.GetProperty("skippedFiles").EnumerateArray()
-                .Any(item => item.GetString() == relativeLink)) {
-            throw new InvalidOperationException("跳过的 debug 目录链接必须记录到 metadata。");
-        }
+        var result = exporter.Export(application, actualLogs, null, null, now);
+        Require(result.Skipped > 0 && !VolumeEntries(result.FirstVolume).Any(entry =>
+            entry.StartsWith("debug/", StringComparison.Ordinal)), "诊断导出不能通过目录链接读取范围外文件。");
     }
-
     private static void CreateJunction(string link, string target)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(link)!);
@@ -511,83 +612,36 @@ internal static partial class SelfTestRunner
         }
     }
 
-    private static void VerifyDiagnosticEntries(string path, string[] included, string[] missing, string[] skipped)
+    private static void VerifyDiagnosticFailures(DiagnosticPackageExporter exporter, string root, DateTime now)
     {
-        using var archive = ZipFile.OpenRead(path);
-        var entries = archive.Entries.Select(entry => entry.FullName).ToArray();
-        if (!entries.Order().SequenceEqual(included.Append("diagnostics.json").Order())) {
-            throw new InvalidOperationException("诊断包必须只包含最新五份 GUI 日志和白名单文件，且不得重复。");
+        var logs = Path.Combine(root, "logs");
+        Directory.CreateDirectory(logs);
+        Directory.CreateDirectory(Path.Combine(root, "debug"));
+        // A file where the exports directory belongs makes the export itself impossible.
+        File.WriteAllText(Path.Combine(root, "debug", "exports"), "blocks the exports directory");
+        var failed = false;
+        try {
+            exporter.Export(root, logs, null, null, now);
+        } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+            failed = true;
         }
-        using var stream = archive.GetEntry("diagnostics.json")!.Open();
-        using var document = JsonDocument.Parse(stream);
-        var json = document.RootElement;
-        if (!json.GetProperty("includedFiles").EnumerateArray().Select(item => item.GetString())
-                .Order().SequenceEqual(included.Order())
-            || !json.GetProperty("missingOptionalFiles").EnumerateArray().Select(item => item.GetString())
-                .Order().SequenceEqual(missing.Order())
-            || !json.GetProperty("skippedFiles").EnumerateArray().Select(item => item.GetString())
-                .Order().SequenceEqual(skipped.Order())
-            || json.GetProperty("narutoAutoGuiVersion").GetString() != "1.7.1"
-            || json.GetProperty("generatedAtUtc").GetDateTime().Kind != DateTimeKind.Utc
-            || json.GetProperty("project").GetProperty("name").GetString() != "MaaNOP"
-            || json.GetProperty("project").GetProperty("version").GetString() != "2.4.0"
-            || json.GetProperty("system").GetProperty("processArchitecture").GetString() != "X64"
-            || !json.GetProperty("runtime").GetProperty("snapshotFresh").GetBoolean()
-            || json.GetProperty("runtime").GetProperty("protocolVersion").GetInt32() != 2) {
-            throw new InvalidOperationException("诊断元信息或文件清单不正确。");
-        }
-        string[] allowed = ["generatedAtUtc", "narutoAutoGuiVersion", "project", "name", "version", "system",
-            "osVersion", "processArchitecture", "runtime", "childSessionState", "workerObservation", "snapshotFresh",
-            "workerState", "workerVersion", "protocolVersion", "includedFiles", "missingOptionalFiles", "skippedFiles"];
-        AssertMetadataWhitelist(json);
+        Require(failed, "无法创建导出目录时必须报告失败。");
+        File.Delete(Path.Combine(root, "debug", "exports"));
 
-        void AssertMetadataWhitelist(JsonElement element)
-        {
-            foreach (var property in element.EnumerateObject()) {
-                if (!allowed.Contains(property.Name)) {
-                    throw new InvalidOperationException($"诊断元信息出现非白名单字段：{property.Name}");
-                }
-                if (property.Value.ValueKind == JsonValueKind.Object) {
-                    AssertMetadataWhitelist(property.Value);
-                }
-            }
+        // The second export of the same second replaces the first, and an open target must not lose earlier work.
+        var result = exporter.Export(root, logs, null, null, now);
+        var retry = exporter.Export(root, logs, null, null, now);
+        Require(retry.FirstVolume == result.FirstVolume && File.Exists(retry.FirstVolume), "重复导出应得到完整结果。");
+        var finished = retry.FirstVolume;
+        using var locked = new FileStream(finished, FileMode.Open, FileAccess.Read, FileShare.Read);
+        failed = false;
+        try {
+            exporter.Export(root, logs, null, null, now);
+        } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+            failed = true;
         }
+        Require(failed && File.Exists(finished), "目标被占用时必须报告失败，且不能损坏已有的包。");
     }
-
-    private static void VerifyDiagnosticFailures(DiagnosticPackageExporter exporter, string root,
-        string application, string actualLogs, DiagnosticMetadata metadata)
-    {
-        var blocked = Path.Combine(root, "blocked.zip");
-        Directory.CreateDirectory(blocked);
-        foreach (var destination in new[] { Path.Combine(root, "missing", "package.zip"), blocked }) {
-            var failed = false;
-            try {
-                exporter.Export(destination, application, actualLogs, metadata);
-            } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
-                failed = true;
-            }
-            if (!failed || File.Exists(destination)
-                || Directory.GetFiles(root, ".NarutoAutoGUI-diagnostics-*").Length != 0) {
-                throw new InvalidOperationException("创建或提交失败必须报告失败，且不遗留最终 ZIP 或临时文件。");
-            }
-        }
-        var existing = Path.Combine(root, "existing.zip");
-        File.WriteAllText(existing, "keep existing destination");
-        using (var locked = new FileStream(existing, FileMode.Open, FileAccess.Read, FileShare.Read)) {
-            try {
-                exporter.Export(existing, application, actualLogs, metadata);
-                throw new InvalidOperationException("无法替换目标文件时不能报告导出成功。");
-            } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
-                if (Directory.GetFiles(root, ".NarutoAutoGUI-diagnostics-*").Length != 0) {
-                    throw new InvalidOperationException("目标文件被占用时须清理临时文件。");
-                }
-            }
-        }
-        if (File.ReadAllText(existing) != "keep existing destination") {
-            throw new InvalidOperationException("提交失败不能损坏已有目标文件。");
-        }
-    }
-
     private static void VerifyDiagnosticSettings(AppLogger logger, string testDirectory)
     {
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "diagnostic-settings"), (window, directory) => {
@@ -612,26 +666,38 @@ internal static partial class SelfTestRunner
             button.BringIntoView();
             PumpOnboarding();
             AssertVisible(button);
-            var path = Path.Combine(directory, "diagnostics.zip");
-            var method = typeof(Views.MainWindow).GetMethod("ExportDiagnosticsAsync",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-            var task = (Task)method.Invoke(window, [path])!;
-            if (button.IsEnabled || action.Status != "正在导出…") {
+            string? revealed = null;
+            Action<string> reveal = file => revealed = file;
+            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            var method = typeof(Views.MainWindow).GetMethod("ExportDiagnosticsAsync", flags)!;
+            var task = (Task)method.Invoke(window, [reveal])!;
+            if (button.IsEnabled || string.IsNullOrEmpty(action.Status)) {
                 throw new InvalidOperationException("导出在后台执行期间须禁用按钮并显示状态。");
             }
-            var deadline = DateTime.UtcNow.AddSeconds(10);
-            while (!task.IsCompleted && DateTime.UtcNow < deadline) {
-                PumpOnboarding();
+            void Await(Task pending)
+            {
+                PumpUntil(() => pending.IsCompleted, "后台任务应完成，Dispatcher 可继续处理消息。");
+                pending.GetAwaiter().GetResult();
             }
-            if (!task.IsCompleted || !button.IsEnabled || action.Status != "诊断包已导出") {
-                throw new InvalidOperationException("后台导出应完成并恢复按钮，Dispatcher 可继续处理消息。");
+            Await(task);
+            Require(button.IsEnabled, "导出完成后应恢复按钮。");
+            Require(revealed is not null && revealed.StartsWith(
+                Path.Combine(directory, "debug", "exports"), StringComparison.OrdinalIgnoreCase),
+                "一键导出应写到 debug\\exports，并定位到第一卷。");
+            using (var archive = ZipFile.OpenRead(revealed)) {
+                Require(archive.Entries.Count > 0, "Settings 导出结果必须是有效诊断 ZIP。");
             }
-            task.GetAwaiter().GetResult();
-            using (var archive = ZipFile.OpenRead(path)) {
-                if (archive.GetEntry("diagnostics.json") is null) {
-                    throw new InvalidOperationException("Settings 导出结果必须是有效诊断 ZIP。");
-                }
-            }
+
+            var clear = SettingsActionFor(window, "diagnostics.clear");
+            var clearMethod = typeof(Views.MainWindow).GetMethod("ClearDebugFilesAsync", flags)!;
+            // Whether to clear during a Run is the user's decision.
+            var coordinator = typeof(Views.MainWindow).GetField("_workerCoordinator", flags)!.GetValue(window)!;
+            var coordinatorSnapshot = coordinator.GetType().GetProperty("Snapshot", flags)!;
+            var observed = coordinatorSnapshot.GetValue(coordinator);
+            coordinatorSnapshot.SetValue(coordinator, CreateNotificationSnapshot(RunState.Running));
+            Await((Task)clearMethod.Invoke(window, [])!);
+            coordinatorSnapshot.SetValue(coordinator, observed);
+            Require(!File.Exists(revealed) && clear.IsEnabled, "任务运行中点击也应直接清理文件并恢复按钮。");
             var updateAction = SettingsActionFor(window, "update.check");
             updateAction.Status = string.Join("\n", Enumerable.Repeat("更新检查失败，请稍后重试。", 12));
             PumpOnboarding();
@@ -641,7 +707,12 @@ internal static partial class SelfTestRunner
                 throw new InvalidOperationException("最小窗口中较长的 Settings 状态必须可以向下滚动。");
             }
             AssertVisible(SettingsButtonFor(window, "support.openAfdian"));
-            AssertVisible(SettingsButtonFor(window, "onboarding.replay"));
+            var replay = SettingsButtonFor(window, "onboarding.replay");
+            replay.BringIntoView();
+            PumpOnboarding();
+            AssertVisible(replay);
+            settings.ScrollToEnd();
+            PumpOnboarding();
             if (settings.ExtentWidth > settings.ViewportWidth + 1) {
                 throw new InvalidOperationException("最小窗口的 Settings 不能横向溢出。");
             }

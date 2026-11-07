@@ -17,19 +17,29 @@ internal static class WorkerFrameworkOptions
             FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose)) { }
 
         framework ??= MaaGlobal.Shared;
-        SetOption(GlobalOption.LogDir, logDirectory);
-        SetOption(GlobalOption.SaveOnError, options.SaveOnError);
-        SetOption(GlobalOption.SaveDraw, options.SaveDraw);
-        SetOption(GlobalOption.DebugMode, options.DebugMode);
+        SetOption(framework, GlobalOption.LogDir, logDirectory, log);
+        ApplySwitches(options, log, framework);
+    }
 
-        void SetOption<T>(GlobalOption option, T value)
-        {
-            var success = framework.SetOption(option, value);
-            log(success ? "INFO" : "ERROR", "runtime.options",
-                $"MaaFramework {option}={value}；SetOption={success}；PID={Environment.ProcessId}。");
-            if (!success) {
-                throw new InvalidOperationException($"MaaFramework {option} 设置失败（SetOption=false）。");
-            }
+    // MaaFramework reads these per recognition, so they also apply to a running Worker. Setting LogDir again would
+    // reopen the log and start its cleanup, which is why a change at runtime stops here.
+    internal static void ApplySwitches(MaaFrameworkOptions options, Action<string, string, string> log,
+        IMaaOption<GlobalOption>? framework = null)
+    {
+        framework ??= MaaGlobal.Shared;
+        SetOption(framework, GlobalOption.SaveOnError, options.SaveOnError, log);
+        SetOption(framework, GlobalOption.SaveDraw, options.SaveDraw, log);
+        SetOption(framework, GlobalOption.DebugMode, options.DebugMode, log);
+    }
+
+    private static void SetOption<T>(IMaaOption<GlobalOption> framework, GlobalOption option, T value,
+        Action<string, string, string> log)
+    {
+        var success = framework.SetOption(option, value);
+        log(success ? "INFO" : "ERROR", "runtime.options",
+            $"MaaFramework {option}={value}；SetOption={success}；PID={Environment.ProcessId}。");
+        if (!success) {
+            throw new InvalidOperationException($"MaaFramework {option} 设置失败（SetOption=false）。");
         }
     }
 }

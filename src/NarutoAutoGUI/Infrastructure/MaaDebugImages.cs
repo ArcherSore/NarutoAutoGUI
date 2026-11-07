@@ -1,6 +1,6 @@
 namespace NarutoAutoGUI.Infrastructure;
 
-// MaaFramework images under <application>\debug, shared by diagnostic export and cleanup.
+// Files MaaFramework and diagnostic export leave under <application>\debug, shared by export and cleanup.
 internal static class MaaDebugImages
 {
     private static readonly string[] Folders = ["vision", "on_error", "screencap"];
@@ -10,31 +10,48 @@ internal static class MaaDebugImages
     {
         var debug = Path.Combine(applicationDirectory, "debug");
         if (!TryList(applicationDirectory, debug, onSkip, out _)) {
-            yield break;
+            return [];
         }
-        foreach (var folder in Folders) {
-            var directories = new Stack<string>([Path.Combine(debug, folder)]);
-            while (directories.TryPop(out var directory)) {
-                if (!TryList(applicationDirectory, directory, onSkip, out var entries)) {
-                    continue;
-                }
-                foreach (var entry in entries) {
-                    if (entry is DirectoryInfo child) {
-                        directories.Push(child.FullName);
-                    } else if (IsImage(folder, entry.Extension)) {
-                        if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) {
-                            onSkip(RelativePath(applicationDirectory, entry.FullName), new IOException("不跟随文件链接。"));
-                        } else {
-                            yield return (FileInfo)entry;
-                        }
+        return Folders.SelectMany(folder => Walk(applicationDirectory, Path.Combine(debug, folder),
+            file => IsImage(folder, file.Extension), onSkip));
+    }
+
+    internal static IEnumerable<FileInfo> EnumerateLogs(
+        string applicationDirectory, Action<string, Exception> onSkip) =>
+        Walk(applicationDirectory, Path.Combine(applicationDirectory, "debug"),
+            file => file.Extension.Equals(".log", StringComparison.OrdinalIgnoreCase), onSkip);
+
+    internal static IEnumerable<FileInfo> EnumerateExports(
+        string applicationDirectory, Action<string, Exception> onSkip) =>
+        Walk(applicationDirectory, ExportsDirectory(applicationDirectory), _ => true, onSkip);
+
+    internal static string ExportsDirectory(string applicationDirectory) =>
+        Path.Combine(applicationDirectory, "debug", "exports");
+
+    internal static string RelativePath(string applicationDirectory, string path) =>
+        Path.GetRelativePath(applicationDirectory, path).Replace('\\', '/');
+
+    private static IEnumerable<FileInfo> Walk(string applicationDirectory, string root,
+        Func<FileSystemInfo, bool> include, Action<string, Exception> onSkip)
+    {
+        var directories = new Stack<string>([root]);
+        while (directories.TryPop(out var directory)) {
+            if (!TryList(applicationDirectory, directory, onSkip, out var entries)) {
+                continue;
+            }
+            foreach (var entry in entries) {
+                if (entry is DirectoryInfo child) {
+                    directories.Push(child.FullName);
+                } else if (include(entry)) {
+                    if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) {
+                        onSkip(RelativePath(applicationDirectory, entry.FullName), new IOException("不跟随文件链接。"));
+                    } else {
+                        yield return (FileInfo)entry;
                     }
                 }
             }
         }
     }
-
-    internal static string RelativePath(string applicationDirectory, string path) =>
-        Path.GetRelativePath(applicationDirectory, path).Replace('\\', '/');
 
     private static bool IsImage(string folder, string extension)
     {

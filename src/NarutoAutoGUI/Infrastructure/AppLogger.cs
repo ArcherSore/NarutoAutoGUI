@@ -14,9 +14,9 @@ namespace NarutoAutoGUI.Infrastructure;
 internal sealed class AppLogger : IDisposable
 {
     private const long MaximumFileBytes = 10L * 1024L * 1024L;
+    private const int RetainedFiles = 14;
     private const string OutputTemplate = "[{Time:l}] [{LevelName:l}] [T{ThreadId}] [{Source:l}] {Message:l}{NewLine}";
-    private static readonly TimeSpan Retention = TimeSpan.FromDays(14);
-    private static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    internal static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     // Agent output relayed by the Worker carries terminal colours.
     private static readonly Regex AnsiCode = new(@"\x1B\[[0-9;]*[A-Za-z]", RegexOptions.CultureInvariant);
     private readonly object _sync = new();
@@ -36,7 +36,7 @@ internal sealed class AppLogger : IDisposable
             .WriteTo.File(
                 Path.Combine(logDirectory, "NarutoAutoGUI-.log"), outputTemplate: OutputTemplate,
                 rollingInterval: RollingInterval.Day, fileSizeLimitBytes: MaximumFileBytes, rollOnFileSizeLimit: true,
-                retainedFileCountLimit: null, retainedFileTimeLimit: Retention, shared: true)
+                retainedFileCountLimit: RetainedFiles, shared: true)
             .CreateLogger();
         if (fallbackMessage is not null) {
             Warn(fallbackMessage);

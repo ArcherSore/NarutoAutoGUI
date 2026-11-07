@@ -376,7 +376,7 @@ internal static partial class SelfTestRunner
         return new WorkerSnapshot(ProtocolConstants.SnapshotVersion, DateTime.UnixEpoch, 1, ScenarioWorkerId,
             Environment.ProcessId, childSessionId, "scenario", ProtocolConstants.ProtocolVersion, digest,
             plan.Project, state, null, new DependencyStatus(DateTime.UnixEpoch, "scenario", "scenario",
-                available, available, available, available, available),
+                available, available, available),
             active ?? RunState.Idle, Run(active, activeItem), Run(last, lastItem), 0, 0);
 
         RunSnapshot? Run(RunState? runState, PlanItemState itemState) => runState is not { } value ? null

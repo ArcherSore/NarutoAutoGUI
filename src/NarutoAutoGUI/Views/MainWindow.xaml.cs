@@ -1888,11 +1888,18 @@ public partial class MainWindow : FluentWindow
         ShowActionableError(operation, exception, GetRecoveryGuidance(operation), offerLogDirectory: true);
     }
 
-    private static string GetRecoveryGuidance(string operation)
+    private static string GetRecoveryGuidance(string operation) =>
+        GetRecoveryGuidance(operation, ChildSessionEnvironment.RequiresWindowsHelloSignIn());
+
+    internal static string GetRecoveryGuidance(string operation, bool windowsHelloOnly)
     {
         if (operation.Contains("桌面分身", StringComparison.Ordinal)
             || operation.Contains("子桌面", StringComparison.Ordinal)) {
             return "请确认程序以管理员权限运行，并检查桌面分身状态后重试。";
+        }
+        if (windowsHelloOnly && operation.Contains("运行环境", StringComparison.Ordinal)) {
+            return "检测到已开启「仅允许对此设备上的 Microsoft 帐户使用 Windows Hello 登录」，桌面分身可能无法登录。"
+                + "请在 Windows「设置 → 账户 → 登录选项」中关闭它，用密码登录一次 Windows 后重试。";
         }
 
         return "请检查当前配置和系统状态后重试。";

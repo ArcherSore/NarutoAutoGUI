@@ -40,6 +40,7 @@ internal static partial class SelfTestRunner
         new(Group.Support, nameof(VerifySettingsNavigation), c => VerifySettingsNavigation(c.Logger, c.Directory)),
         new(Group.Support, nameof(VerifyNavigationRail), c => VerifyNavigationRail(c.Logger, c.Directory)),
         new(Group.Support, nameof(VerifyHelpPage), c => VerifyHelpPage(c.Logger, c.Directory)),
+        new(Group.Support, nameof(VerifyPreparationGuidance), _ => VerifyPreparationGuidance()),
 
         new(Group.Project, nameof(VerifyPretaskModel), c => VerifyPretaskModel(c.Directory)),
         new(Group.Project, nameof(VerifyPretaskGuiWiring), c => VerifyPretaskGuiWiring(c.Logger, c.Directory)),

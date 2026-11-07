@@ -359,7 +359,8 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             } else if (worker.WorkerState == WorkerState.Ready) {
                 ready.TrySetResult();
             } else if (worker.WorkerState != WorkerState.Starting) {
-                ready.TrySetException(new InvalidOperationException($"Worker 未能就绪：{worker.WorkerState}。"));
+                ready.TrySetException(new InvalidOperationException(
+                    $"Worker 未能就绪：{worker.WorkerReason?.Message ?? worker.WorkerState.ToString()}"));
             }
         }
         StateChanged += Check;

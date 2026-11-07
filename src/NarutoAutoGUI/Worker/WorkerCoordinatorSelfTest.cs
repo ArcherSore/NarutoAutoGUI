@@ -238,7 +238,7 @@ internal static partial class WorkerCoordinatorSelfTest
             ProtocolConstants.ProtocolVersion, record.RuntimeProfileDigest,
             new ProjectProvenance("self-test", "1", 1, "self-test"),
             WorkerState.Ready, null,
-            new DependencyStatus(DateTime.UtcNow, "self-test", "self-test", available, available, available, available, available),
+            new DependencyStatus(DateTime.UtcNow, "self-test", "self-test", available, available, available),
             activeRun?.State ?? RunState.Idle, activeRun, null, 1, lastLogSequence);
     }
 

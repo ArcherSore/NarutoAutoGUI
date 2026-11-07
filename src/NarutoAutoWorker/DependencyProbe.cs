@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Text.Json;
 using MaaFramework.Binding;
 using NarutoAutoGUI.Protocol;
 
@@ -7,10 +5,7 @@ namespace NarutoAutoWorker;
 
 internal static class DependencyProbe
 {
-    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(15);
-
-    internal static async Task<(DependencyStatus Status, StructuredReason? Reason)> RunAsync(
-        LaunchManifest manifest, CancellationToken cancellationToken)
+    internal static (DependencyStatus Status, StructuredReason? Reason) Run(LaunchManifest manifest)
     {
         DependencyCheck framework;
         var bindingVersion = typeof(MaaGlobal).Assembly.GetName().Version?.ToString() ?? "unknown";
@@ -20,128 +15,37 @@ internal static class DependencyProbe
             framework = new DependencyCheck(true, runtimeVersion, null);
         } catch (Exception exception) {
             runtimeVersion = "unavailable";
-            framework = new DependencyCheck(false, null, exception.GetBaseException().Message);
+            framework = new DependencyCheck(false, null, $"MaaFramework 无法加载（{exception.GetBaseException().Message}）。"
+                + "通常是缺少运行库，请运行安装目录中的 DependencySetup_依赖库安装.bat 后重试。");
         }
 
-        var resourceErrors = manifest.Resources
-            .SelectMany(resource => resource.Paths)
-            .Where(path => !Directory.Exists(path))
-            .ToArray();
-        if (resourceErrors.Length > 0) {
-            var reason = new StructuredReason("ResourceInvalid", $"Resource 目录不存在：{string.Join(", ", resourceErrors)}");
-            return (CreateUnavailableStatus(bindingVersion, runtimeVersion, reason.Message), reason);
-        }
-
-        var entryPath = ResolveAgentEntryPath(manifest.Agent);
-        var entryCheck = File.Exists(entryPath)
-            ? new DependencyCheck(true, entryPath, null)
-            : new DependencyCheck(false, entryPath, "Agent 入口不存在。 ");
-
-        ProbePayload? payload = null;
-        string? probeError = null;
+        var missingResources = manifest.Resources.SelectMany(resource => resource.Paths)
+            .Where(path => !Directory.Exists(path)).ToArray();
+        var resources = missingResources.Length == 0
+            ? new DependencyCheck(true, null, null)
+            : new DependencyCheck(false, null, $"Resource 目录不存在：{string.Join(", ", missingResources)}");
+        DependencyCheck executable;
         try {
-            payload = await RunPythonProbeAsync(manifest.Agent, entryPath, cancellationToken);
-        } catch (Exception exception) {
-            probeError = exception.GetBaseException().Message;
+            var path = ResolveAgentExecutablePath(manifest.Agent);
+            executable = File.Exists(path)
+                ? new DependencyCheck(true, path, null)
+                : new DependencyCheck(false, path, $"Agent 可执行程序不存在：{path}");
+        } catch (Exception exception) when (exception is IOException or ArgumentException
+            or UnauthorizedAccessException) {
+            executable = new DependencyCheck(false, manifest.Agent.ChildExec, exception.Message);
         }
 
-        var python = payload is null
-            ? new DependencyCheck(false, null, probeError)
-            : new DependencyCheck(true, $"{payload.Executable} | {payload.Version}", null);
-        var maa = ImportCheck(payload?.Maa, probeError);
-        var agentServer = ImportCheck(payload?.AgentServer, probeError);
-        var toolkit = ImportCheck(payload?.Toolkit, probeError);
-        var status = new DependencyStatus(
-            DateTime.UtcNow, bindingVersion, runtimeVersion, python,
-            maa, agentServer, toolkit, entryCheck);
-
-        var failures = new[]
-            {
-                ("MaaFrameworkUnavailable", framework), ("PythonMissing", python),
-                ("AgentModuleMissing", maa), ("AgentServerMissing", agentServer),
-                ("ToolkitMissing", toolkit), ("AgentEntryInvalid", entryCheck)
-            }
-            .Where(item => !item.Item2.Success)
-            .ToArray();
-        var reasonResult = failures.Length == 0
-            ? null
-            : new StructuredReason(
-                failures[0].Item1,
-                string.Join("；", failures.Select(item => item.Item2.Error ?? item.Item1)));
-        return (status, reasonResult);
-    }
-
-    private static async Task<ProbePayload> RunPythonProbeAsync(AgentDefinition agent, string entryPath, CancellationToken cancellationToken)
-    {
-        const string script = "import json,sys; result={'executable':sys.executable,'version':sys.version," +
-                              "'maa':False,'agentServer':False,'toolkit':False}; import maa; result['maa']=True; " +
-                              "from maa.agent.agent_server import AgentServer; result['agentServer']=True; " +
-                              "from maa.toolkit import Toolkit; result['toolkit']=True; " +
-                              "print(json.dumps(result,ensure_ascii=False))";
-        var startInfo = new ProcessStartInfo {
-            FileName = ResolveAgentExecutablePath(agent),
-            WorkingDirectory = agent.WorkingDirectory,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
-        startInfo.ArgumentList.Add("-c");
-        startInfo.ArgumentList.Add(script);
-        using var process = Process.Start(startInfo)
-                            ?? throw new InvalidOperationException("无法启动 Python Agent Probe。 ");
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(ProbeTimeout);
-        try {
-            await process.WaitForExitAsync(timeout.Token);
-        } catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
-            process.Kill(entireProcessTree: true);
-            throw new TimeoutException($"Python Agent Probe 超过 {ProbeTimeout.TotalSeconds:0} 秒。 ");
-        }
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
-        if (process.ExitCode != 0) {
-            throw new InvalidOperationException(
-                $"Python Agent Probe 退出码 {process.ExitCode}：{stderr.Trim()}。 ");
-        }
-        return JsonSerializer.Deserialize<ProbePayload>(stdout.Trim(), ProtocolJson.Options)
-               ?? throw new InvalidDataException("Python Agent Probe 未返回 JSON。 ");
+        var status = new DependencyStatus(DateTime.UtcNow, bindingVersion, runtimeVersion,
+            framework, resources, executable);
+        var failures = new[] {
+            ("MaaFrameworkUnavailable", framework), ("ResourceInvalid", resources),
+            ("AgentExecutableMissing", executable)
+        }.Where(item => !item.Item2.Success).ToArray();
+        var reason = failures.Length == 0 ? null : new StructuredReason(failures[0].Item1,
+            string.Join("；", failures.Select(item => item.Item2.Error ?? item.Item1)));
+        return (status, reason);
     }
 
     internal static string ResolveAgentExecutablePath(AgentDefinition agent) =>
-        Path.GetFullPath(
-            Path.IsPathFullyQualified(agent.ChildExec)
-                ? agent.ChildExec
-                : Path.Combine(agent.WorkingDirectory, agent.ChildExec));
-
-    private static string ResolveAgentEntryPath(AgentDefinition agent)
-    {
-        var candidate = agent.ChildArgs.FirstOrDefault(argument =>
-            !argument.StartsWith("-", StringComparison.Ordinal)
-            && argument.EndsWith(".py", StringComparison.OrdinalIgnoreCase));
-        if (candidate is null) {
-            throw new InvalidDataException("Agent child_args 中没有 Python 入口脚本。 ");
-        }
-        return Path.GetFullPath(
-            Path.IsPathFullyQualified(candidate)
-                ? candidate
-                : Path.Combine(agent.WorkingDirectory, candidate));
-    }
-
-    private static DependencyCheck ImportCheck(bool? success, string? error) =>
-        success == true
-            ? new DependencyCheck(true, "import ok", null)
-            : new DependencyCheck(false, null, error ?? "import failed");
-
-    private static DependencyStatus CreateUnavailableStatus(string bindingVersion, string runtimeVersion, string error)
-    {
-        var failed = new DependencyCheck(false, null, error);
-        return new DependencyStatus(
-            DateTime.UtcNow, bindingVersion, runtimeVersion, failed,
-            failed, failed, failed, failed);
-    }
-
-    private sealed record ProbePayload(string Executable, string Version, bool Maa, bool AgentServer, bool Toolkit);
+        PretaskProcess.ResolveExecutable(agent.ChildExec, agent.WorkingDirectory);
 }

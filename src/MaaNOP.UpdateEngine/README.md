@@ -41,6 +41,7 @@ prepare 清理 cache/updater 的废弃准备内容，保留 download/ 下的候�
 libcurl 通过 Rust curl 绑定执行 HTTPS 下载、重定向和按文件长度续传；服务器忽略 Range、返回 416 或范围不符时停止并清除下载缓存，下次准备从头下载。
 网络失败、取消、进程退出后保留已写入文件；缓存长度达到目标后仍须校验整个文件的 SHA256。
 下载后校验长度/SHA256、全部 ZIP 路径与完整包布局，再形成 Payload；成功准备或哈希不符时清理下载缓存。
+候选包的 runtimeconfig 声明 frameworks 时，要求系统 .NET 目录已安装满足版本的框架；未安装时拒绝准备并保留下载缓存，安装后重试不重新下载。
 cache/updater.lock 的操作系统文件锁防止多个 prepare 同时写缓存，进程退出释放锁。
 check 与下载均使用静态链接 libcurl 与 Windows Schannel，无需用户安装 curl，也不依赖外部 curl.exe；重定向只允许 HTTPS。
 吊销信息无法获取时继续（revoke best effort），证书链与主机名校验不变；下载的 TLS 握手失败按暂时性错误重试。

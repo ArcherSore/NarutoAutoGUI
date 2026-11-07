@@ -61,7 +61,7 @@ internal sealed class RunHarness : IAsyncDisposable
         get
         {
             var ok = new DependencyCheck(true, "test", null);
-            return new DependencyStatus(DateTime.UtcNow, "test", "test", ok, ok, ok, ok, ok);
+            return new DependencyStatus(DateTime.UtcNow, "test", "test", ok, ok, ok);
         }
     }
 

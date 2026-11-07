@@ -116,7 +116,7 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
             if (!linked || !_agentClient.IsConnected) {
                 throw new InvalidOperationException("MaaAgentClient LinkStart 未建立连接。 ");
             }
-            _log("INFO", "runtime.agent", $"Python Agent 已连接，identifier={_agentClient.Id}。 ");
+            _log("INFO", "runtime.agent", $"Agent 已连接，identifier={_agentClient.Id}。 ");
 
             var job = _tasker.AppendTask(_item.Entry, _item.PipelineOverride.GetRawText());
             _nativeTaskCompletion = Task.Run(job.Wait);
@@ -318,12 +318,12 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
         };
         if (!process.Start()) {
             process.Dispose();
-            throw new InvalidOperationException("无法启动 Python Agent。 ");
+            throw new InvalidOperationException("无法启动 Agent。 ");
         }
         _agentProcess = process;
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
-        _log("INFO", "runtime.agent", $"已启动 Python Agent PID={process.Id}。 ");
+        _log("INFO", "runtime.agent", $"已启动 Agent PID={process.Id}。 ");
         return process;
     }
 

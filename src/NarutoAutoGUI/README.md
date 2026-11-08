@@ -72,8 +72,16 @@ MaaNOP 项目根目录固定为应用程序目录，`interface.json` 直接从 `
 
 沿用现有配置的共享选项模型：不同任务对同名选项指定的值必须一致，input 的不同字段可合并；
 发生冲突时拒绝创建，不覆盖原配置。未知任务或前置任务、非法选项值及重复任务也会拒绝。
-本功能不扩展现有 Project Interface 支持范围：`import`、hotkey、国际化和 Markdown/图标渲染仍未支持，
+本功能不扩展现有 Project Interface 支持范围：`import`、hotkey、国际化和图标渲染仍未支持，
 展示字符串沿用现有任务的处理方式。
+
+## 项目资料
+
+设置 → 关于展示同一次 Project Interface 加载中的顶层 `description`、`contact`、`github` 和 `license`。
+简介、联系方式和许可证按 welcome 的规则识别内联 Markdown 与项目目录内的文件（包括 `LICENSE`），
+另外保留 HTTP(S) 链接，只在点击时打开浏览器，不自动下载正文。明确的文件引用读取失败时只在对应位置提示。
+仓库地址沿用 Update Engine 的 GitHub 仓库校验规则；许可证正文通过“查看许可证”在欢迎信息同款弹窗中阅读。
+缺失或空白的资料隐藏，重新加载项目时刷新。
 
 ## 前置任务
 

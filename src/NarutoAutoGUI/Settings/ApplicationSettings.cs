@@ -1,4 +1,5 @@
 using NarutoAutoGUI.Infrastructure;
+using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoGUI.Settings;
@@ -11,7 +12,8 @@ internal sealed class ApplicationSettings
 
     internal ApplicationSettings(string applicationDirectory, AppLogger logger,
         Func<Task> checkUpdate, Func<Task> exportDiagnostics, Action replayOnboarding, Func<Task> openAfdian,
-        Func<Task> manageChildSessionCredentials, Func<Task> clearDebugFiles, Action viewWelcome)
+        Func<Task> manageChildSessionCredentials, Func<Task> clearDebugFiles, Action viewWelcome,
+        Action<Uri> openLink, Action<string> readLicense)
     {
         _updatePreferencePath = Path.Combine(applicationDirectory, "config", "update-check.txt");
         _closePreferencePath = Path.Combine(applicationDirectory, "config", "close-to-tray.txt");
@@ -42,6 +44,19 @@ internal sealed class ApplicationSettings
         ViewWelcome = new SettingsAction(() => { viewWelcome(); return Task.CompletedTask; }) { IsVisible = false };
         OpenAfdian = new SettingsAction(openAfdian) { ToolTip = "在默认浏览器中打开爱发电赞助页面" };
         ChildSessionCredentials = new SettingsAction(manageChildSessionCredentials);
+        Registry.About.OpenLink = openLink;
+        OpenRepository = new SettingsAction(() => {
+            if (Registry.About.Content?.Github is { } url) { Registry.About.OpenLink(url); }
+            return Task.CompletedTask;
+        }) { IsVisible = false };
+        ViewLicense = new SettingsAction(() => {
+            if (Registry.About.Content?.License is { Url: { } url }) {
+                Registry.About.OpenLink(url);
+            } else if (Registry.About.Content?.License?.Markdown is { } license) {
+                readLicense(license);
+            }
+            return Task.CompletedTask;
+        }) { IsVisible = false };
         Registry.Toggles.Add("update.checkOnStartup", CheckOnStartup);
         Registry.Toggles.Add("application.closeToTray", CloseToTray);
         Registry.Toggles.Add("framework.saveOnError", SaveOnError);
@@ -54,6 +69,8 @@ internal sealed class ApplicationSettings
         Registry.Actions.Add("onboarding.replay", ReplayOnboarding);
         Registry.Actions.Add("welcome.view", ViewWelcome);
         Registry.Actions.Add("support.openAfdian", OpenAfdian);
+        Registry.Actions.Add("project.openRepository", OpenRepository);
+        Registry.Actions.Add("project.viewLicense", ViewLicense);
         Registry.Actions.Add("childSession.credentials", ChildSessionCredentials);
         Registry.Values.Add("update.currentVersion", CurrentVersion);
         try {
@@ -79,9 +96,22 @@ internal sealed class ApplicationSettings
     internal SettingsAction ViewWelcome { get; }
     internal SettingsAction OpenAfdian { get; }
     internal SettingsAction ChildSessionCredentials { get; }
+    internal SettingsAction OpenRepository { get; }
+    internal SettingsAction ViewLicense { get; }
     internal SettingsValue CurrentVersion { get; } = new() { Text = "—" };
 
     internal event Action<SettingsToggle>? FrameworkOptionsChanged;
+
+    internal void ShowProjectAbout(ProjectAbout? about)
+    {
+        Registry.About.Content = about;
+        OpenRepository.IsVisible = about?.Github is not null;
+        OpenRepository.ToolTip = about?.Github?.AbsoluteUri;
+        ViewLicense.IsVisible = about?.License is not null;
+        ViewLicense.IsEnabled = about?.License?.Error is null;
+        ViewLicense.Status = about?.License?.Error ?? "";
+        ViewLicense.ToolTip = about?.License?.Url?.AbsoluteUri;
+    }
 
     internal MaaFrameworkOptions CreateFrameworkOptions() => new(SaveOnError.Value, SaveDraw.Value, DebugMode.Value);
 

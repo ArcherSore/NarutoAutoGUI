@@ -8,7 +8,7 @@ internal static partial class ProjectInterfaceLoader
 {
     private static readonly HashSet<string> AllowedTopLevelProperties = new(StringComparer.Ordinal)
     {
-        "interface_version", "name", "label", "version", "description", "icon", "github",
+        "interface_version", "name", "label", "version", "description", "icon", "github", "contact", "license",
         "controller", "resource", "agent", "global_option", "task", "option", "group", "pretask", "preset", "welcome"
     };
 
@@ -135,7 +135,9 @@ internal static partial class ProjectInterfaceLoader
         return new ProjectDefinition(
             projectRoot, provenance, controller, resources, agent, runtimeProfileDigest,
             globalOptions, tasks, options, groups, pretasks, ParsePresets(root),
-            ReadOptionalDescription(root, "label"), ReadWelcome(root));
+            ReadOptionalDescription(root, "label"), ReadWelcome(root), ProjectAboutResolver.Read(projectRoot,
+                ReadOptionalDescription(root, "description"), ReadOptionalDescription(root, "contact"),
+                ReadOptionalDescription(root, "license"), ReadOptionalDescription(root, "github")));
     }
 
     private static IReadOnlyList<string> ReadWelcome(JsonElement root)

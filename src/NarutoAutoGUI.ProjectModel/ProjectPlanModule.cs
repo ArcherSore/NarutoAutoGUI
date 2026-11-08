@@ -49,6 +49,7 @@ public sealed partial class ProjectPlanModule
     public string RuntimeProfileDigest => _project.RuntimeProfileDigest;
     public string SourceInterfaceDigest => _project.Provenance.SourceInterfaceDigest;
     public bool HasWelcome => _project.Welcome.Count > 0;
+    public ProjectAbout About => _project.About;
     public ProjectWelcome? ResolveWelcome(Action<string> warn) => ProjectWelcomeResolver.Resolve(_project, warn);
     public IReadOnlyList<ProjectTaskChoice> Tasks { get; }
     public IReadOnlyList<ProjectTaskChoice> Pretasks { get; }

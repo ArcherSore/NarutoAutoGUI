@@ -25,10 +25,11 @@ public partial class SettingsView : System.Windows.Controls.UserControl
 
     private void SectionScroller_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
+        if (!ReferenceEquals(e.OriginalSource, SectionScroller)) { return; }
         var count = SectionList.Items.Count;
         if (SectionAt(count - 1) is not { } last) { return; }
         // The last section stays tall enough to reach the top, so every list entry has a place to land.
-        last.MinHeight = e.ViewportHeight - SectionTopGap - ContentBottomMargin;
+        last.MinHeight = Math.Max(0, e.ViewportHeight - SectionTopGap - ContentBottomMargin);
         _followingScroll = true;
         SectionNavigation.SelectedIndex = Enumerable.Range(0, count)
             .LastOrDefault(index => SectionAt(index) is { } section && TopOf(section) <= CurrentSectionLine);

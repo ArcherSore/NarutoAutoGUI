@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
 using NarutoAutoGUI.ProjectModel;
+using WpfSymbol = Wpf.Ui.Controls.SymbolRegular;
 
 namespace NarutoAutoGUI.Views;
 
@@ -21,7 +22,7 @@ public partial class MainWindow
     private void ShowWelcomeIfChanged()
     {
         if (ResolveWelcome() is { } welcome && welcome.Hash != ReadWelcomeHash()) {
-            OpenWelcome(welcome, welcome.Hash);
+            OpenReader(welcome.Title, WpfSymbol.Sparkle24, welcome.Contents, welcome.Hash);
         }
     }
 
@@ -29,19 +30,23 @@ public partial class MainWindow
     private void ViewWelcome()
     {
         if (ResolveWelcome() is { } welcome) {
-            OpenWelcome(welcome, null);
+            OpenReader(welcome.Title, WpfSymbol.Sparkle24, welcome.Contents, null);
         }
     }
 
-    private void OpenWelcome(ProjectWelcome welcome, string? hashToRecord)
+    private void ReadLicense(string license) => OpenReader("许可证", WpfSymbol.Document24, [license], null);
+
+    // The welcome dialog doubles as the reader for any long project text.
+    private void OpenReader(string title, WpfSymbol icon, IReadOnlyList<string> contents, string? hashToRecord)
     {
         if (IsGlobalModalOpen || _exitInProgress || _onboardingActive) {
             return;
         }
         _welcomeHashToRecord = hashToRecord;
         _welcomePreviousFocus = Keyboard.FocusedElement;
-        WelcomeTitle.Text = welcome.Title;
-        var document = MarkdownDocument.Create(welcome.Contents, OpenTaskDescriptionLink, WelcomeStyle);
+        WelcomeTitle.Text = title;
+        WelcomeIcon.Symbol = icon;
+        var document = MarkdownDocument.Create(contents, OpenTaskDescriptionLink, WelcomeStyle);
         document.PagePadding = new Thickness(0, 0, 12, 0);
         WelcomeViewer.Document = document;
         WelcomeOverlay.Visibility = Visibility.Visible;

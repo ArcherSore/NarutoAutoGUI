@@ -129,8 +129,7 @@
         {
           "id": "about-app",
           "type": "about",
-          "title": "NarutoAutoGUI",
-          "description": "面向 MaaNOP 的 Windows 图形界面 · Powered by MaaFramework"
+          "title": "MaaNOP"
         },
         {
           "id": "view-welcome",
@@ -141,6 +140,26 @@
           "description": "查看 MaaNOP 的欢迎信息和公告。",
           "buttonText": "查看欢迎信息",
           "actionId": "welcome.view"
+        },
+        {
+          "id": "project-repository",
+          "type": "action",
+          "joinPrevious": true,
+          "icon": "Code20",
+          "title": "项目仓库",
+          "description": "在 GitHub 查看 MaaNOP 的源代码。",
+          "buttonText": "前往 GitHub ↗",
+          "actionId": "project.openRepository"
+        },
+        {
+          "id": "project-license",
+          "type": "action",
+          "joinPrevious": true,
+          "icon": "Document20",
+          "title": "许可证",
+          "description": "MaaNOP 的开源许可证。",
+          "buttonText": "查看许可证",
+          "actionId": "project.viewLicense"
         },
         {
           "id": "replay-onboarding",

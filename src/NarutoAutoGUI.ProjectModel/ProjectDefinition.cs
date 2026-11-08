@@ -24,7 +24,7 @@ internal sealed record ProjectDefinition(
     IReadOnlyList<string> GlobalOptions, IReadOnlyList<TaskDefinition> Tasks,
     IReadOnlyDictionary<string, OptionDefinition> Options, IReadOnlyList<ProjectTaskGroup> Groups,
     IReadOnlyList<PretaskDefinition> Pretasks, IReadOnlyList<PresetDefinition> Presets, string? Label,
-    IReadOnlyList<string> Welcome);
+    IReadOnlyList<string> Welcome, ProjectAbout About);
 
 internal sealed record PresetDefinition(
     string Name, string Label, string Description, IReadOnlyList<PresetItem> Tasks,

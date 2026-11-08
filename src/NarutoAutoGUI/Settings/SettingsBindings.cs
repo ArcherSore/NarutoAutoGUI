@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using NarutoAutoGUI.ProjectModel;
 
 namespace NarutoAutoGUI.Settings;
 
@@ -71,8 +72,17 @@ internal sealed class SettingsValue : SettingsObservable
     public string Text { get => _text; set => Set(ref _text, value); }
 }
 
+internal sealed class ProjectAboutSettings : SettingsObservable
+{
+    private ProjectAbout? _content;
+    private Action<Uri> _openLink = _ => { };
+    public ProjectAbout? Content { get => _content; set => Set(ref _content, value); }
+    public Action<Uri> OpenLink { get => _openLink; set => Set(ref _openLink, value); }
+}
+
 internal sealed class SettingsRegistry
 {
+    internal ProjectAboutSettings About { get; } = new();
     internal Dictionary<string, SettingsToggle> Toggles { get; } = new(StringComparer.Ordinal);
     internal Dictionary<string, SettingsAction> Actions { get; } = new(StringComparer.Ordinal);
     internal Dictionary<string, SettingsValue> Values { get; } = new(StringComparer.Ordinal);
@@ -88,7 +98,7 @@ internal sealed class SettingsRegistry
         SettingsItemKind.Action => new(item, Action: Resolve(Actions, item.ActionId!, item.Id)),
         SettingsItemKind.Info => new(item,
             Value: item.ValueKey is null ? null : Resolve(Values, item.ValueKey, item.Id)),
-        SettingsItemKind.About => new(item),
+        SettingsItemKind.About => new(item, About: About),
         _ => throw new InvalidDataException($"未知 Settings item type：{item.Type}。")
     };
 
@@ -115,4 +125,5 @@ internal sealed record SettingsSectionModel(
 }
 
 internal sealed record SettingsItemModel(SettingsItemDefinition Definition,
-    SettingsToggle? Toggle = null, SettingsAction? Action = null, SettingsValue? Value = null);
+    SettingsToggle? Toggle = null, SettingsAction? Action = null, SettingsValue? Value = null,
+    ProjectAboutSettings? About = null);

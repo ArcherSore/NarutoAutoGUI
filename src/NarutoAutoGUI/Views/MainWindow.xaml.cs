@@ -143,7 +143,8 @@ public partial class MainWindow : FluentWindow
         _prepareUpdate = prepareUpdate ?? PrepareWithEngineAsync;
         _settings = new ApplicationSettings(_applicationDirectory, logger,
             CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding, OpenAfdianAsync,
-            ManageChildSessionCredentialsAsync, ClearDebugFilesAsync, ViewWelcome);
+            ManageChildSessionCredentialsAsync, ClearDebugFilesAsync, ViewWelcome, OpenTaskDescriptionLink,
+            ReadLicense);
         SettingsView.DataContext = _settings.Page;
         HelpView.DataContext = _help = new HelpPageModel(
             _settings.ExportDiagnostics, new SettingsAction(OpenIssuesAsync), ReportCopyFailure);
@@ -1923,6 +1924,7 @@ public partial class MainWindow : FluentWindow
             message => _logger.Info(message));
         _projectPlan = project;
         _settings.ViewWelcome.IsVisible = project.HasWelcome;
+        _settings.ShowProjectAbout(project.About);
         // Preparing the environment reloads the project; an unfixed invalid draft must survive it and keep blocking
         // Start. Drafts for inputs the reloaded PI no longer has are never rendered or matched.
         _pendingStartAttempt = null;
@@ -1957,6 +1959,7 @@ public partial class MainWindow : FluentWindow
     {
         _projectPlan = null;
         _settings.ViewWelcome.IsVisible = false;
+        _settings.ShowProjectAbout(null);
         _invalidInputDrafts.Clear();
         _pendingStartAttempt = null;
         _projectConfigurationValid = false;

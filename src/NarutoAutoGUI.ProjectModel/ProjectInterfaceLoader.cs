@@ -9,7 +9,7 @@ internal static partial class ProjectInterfaceLoader
     private static readonly HashSet<string> AllowedTopLevelProperties = new(StringComparer.Ordinal)
     {
         "interface_version", "name", "label", "version", "description", "icon", "github",
-        "controller", "resource", "agent", "global_option", "task", "option", "group", "pretask", "preset"
+        "controller", "resource", "agent", "global_option", "task", "option", "group", "pretask", "preset", "welcome"
     };
 
     private static readonly HashSet<string> AllowedControllerProperties = new(StringComparer.Ordinal)
@@ -134,7 +134,23 @@ internal static partial class ProjectInterfaceLoader
             projectRoot, controller, resources, agent);
         return new ProjectDefinition(
             projectRoot, provenance, controller, resources, agent, runtimeProfileDigest,
-            globalOptions, tasks, options, groups, pretasks, ParsePresets(root));
+            globalOptions, tasks, options, groups, pretasks, ParsePresets(root),
+            ReadOptionalDescription(root, "label"), ReadWelcome(root));
+    }
+
+    private static IReadOnlyList<string> ReadWelcome(JsonElement root)
+    {
+        if (!root.TryGetProperty("welcome", out var value) || value.ValueKind == JsonValueKind.Null) {
+            return [];
+        }
+        if (value.ValueKind == JsonValueKind.String) {
+            return value.GetString() is { Length: > 0 } text ? [text] : [];
+        }
+        if (value.ValueKind == JsonValueKind.Array
+            && value.EnumerateArray().All(item => item.ValueKind == JsonValueKind.String)) {
+            return value.EnumerateArray().Select(item => item.GetString()!).Where(text => text.Length > 0).ToArray();
+        }
+        throw new InvalidDataException("$.welcome 必须是 string 或 string 数组。");
     }
 
     private static IReadOnlyList<PretaskDefinition> ParsePretasks(

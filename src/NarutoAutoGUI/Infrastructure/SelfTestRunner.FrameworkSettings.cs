@@ -8,12 +8,7 @@ internal static partial class SelfTestRunner
     private static void VerifyFrameworkPreferences(AppLogger logger, string testDirectory)
     {
         var directory = Path.Combine(testDirectory, "framework-preferences");
-        ApplicationSettings Create()
-        {
-            return new ApplicationSettings(directory, logger, () => Task.CompletedTask,
-                () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask,
-                () => Task.CompletedTask);
-        }
+        ApplicationSettings Create() => CreateIdleSettings(directory, logger);
         var settings = Create();
         if (settings.CreateFrameworkOptions() != new MaaFrameworkOptions() || Directory.Exists(directory)) {
             throw new InvalidOperationException("框架开关默认值必须为 true/false/false，读取不得写配置。");
@@ -77,9 +72,7 @@ internal static partial class SelfTestRunner
         using var logger = new AppLogger(Path.Combine(directory, "logs"));
         var written = new List<string>();
         logger.EntryWritten += (_, entry) => written.Add(entry.Message);
-        var settings = new ApplicationSettings(directory, logger, () => Task.CompletedTask,
-            () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask,
-            () => Task.CompletedTask);
+        var settings = CreateIdleSettings(directory, logger);
         foreach (var (key, toggle) in settings.Registry.Toggles) {
             written.Clear();
             var value = !toggle.Value;

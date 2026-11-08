@@ -143,7 +143,7 @@ public partial class MainWindow : FluentWindow
         _prepareUpdate = prepareUpdate ?? PrepareWithEngineAsync;
         _settings = new ApplicationSettings(_applicationDirectory, logger,
             CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding, OpenAfdianAsync,
-            ManageChildSessionCredentialsAsync, ClearDebugFilesAsync);
+            ManageChildSessionCredentialsAsync, ClearDebugFilesAsync, ViewWelcome);
         SettingsView.DataContext = _settings.Page;
         HelpView.DataContext = _help = new HelpPageModel(
             _settings.ExportDiagnostics, new SettingsAction(OpenIssuesAsync), ReportCopyFailure);
@@ -236,6 +236,7 @@ public partial class MainWindow : FluentWindow
             ShowProjectValidationError(exception);
             RefreshRuntimeControls();
         }
+        ShowWelcomeIfChanged();
         InitializeUpdates();
         try {
             await restoreExistingSession();
@@ -845,6 +846,11 @@ public partial class MainWindow : FluentWindow
         }
         if (e.Key == Key.Escape && UpdateOverlay.Visibility == Visibility.Visible) {
             CloseUpdate_Click(sender, e);
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == Key.Escape && WelcomeOverlay.Visibility == Visibility.Visible) {
+            CloseWelcome();
             e.Handled = true;
             return;
         }
@@ -1916,6 +1922,7 @@ public partial class MainWindow : FluentWindow
         var project = ProjectPlanModule.Open(_applicationDirectory, configPath, previous,
             message => _logger.Info(message));
         _projectPlan = project;
+        _settings.ViewWelcome.IsVisible = project.HasWelcome;
         // Preparing the environment reloads the project; an unfixed invalid draft must survive it and keep blocking
         // Start. Drafts for inputs the reloaded PI no longer has are never rendered or matched.
         _pendingStartAttempt = null;
@@ -1949,6 +1956,7 @@ public partial class MainWindow : FluentWindow
         string emptyStateDetail)
     {
         _projectPlan = null;
+        _settings.ViewWelcome.IsVisible = false;
         _invalidInputDrafts.Clear();
         _pendingStartAttempt = null;
         _projectConfigurationValid = false;
@@ -2036,7 +2044,8 @@ public partial class MainWindow : FluentWindow
 
     private void MainWindow_StateChanged(object? sender, EventArgs e) => ReevaluateOnboarding();
 
-    private bool IsGlobalModalOpen => UpdateOverlay.Visibility == Visibility.Visible;
+    private bool IsGlobalModalOpen => UpdateOverlay.Visibility == Visibility.Visible
+        || WelcomeOverlay.Visibility == Visibility.Visible;
 
     private void EnsureModalWindowHook()
     {

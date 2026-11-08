@@ -11,7 +11,7 @@ internal sealed class ApplicationSettings
 
     internal ApplicationSettings(string applicationDirectory, AppLogger logger,
         Func<Task> checkUpdate, Func<Task> exportDiagnostics, Action replayOnboarding, Func<Task> openAfdian,
-        Func<Task> manageChildSessionCredentials, Func<Task> clearDebugFiles)
+        Func<Task> manageChildSessionCredentials, Func<Task> clearDebugFiles, Action viewWelcome)
     {
         _updatePreferencePath = Path.Combine(applicationDirectory, "config", "update-check.txt");
         _closePreferencePath = Path.Combine(applicationDirectory, "config", "close-to-tray.txt");
@@ -39,6 +39,7 @@ internal sealed class ApplicationSettings
         ExportDiagnostics = new SettingsAction(exportDiagnostics);
         ClearDebugFiles = new SettingsAction(clearDebugFiles);
         ReplayOnboarding = new SettingsAction(() => { replayOnboarding(); return Task.CompletedTask; });
+        ViewWelcome = new SettingsAction(() => { viewWelcome(); return Task.CompletedTask; }) { IsVisible = false };
         OpenAfdian = new SettingsAction(openAfdian) { ToolTip = "在默认浏览器中打开爱发电赞助页面" };
         ChildSessionCredentials = new SettingsAction(manageChildSessionCredentials);
         Registry.Toggles.Add("update.checkOnStartup", CheckOnStartup);
@@ -51,6 +52,7 @@ internal sealed class ApplicationSettings
         Registry.Actions.Add("diagnostics.export", ExportDiagnostics);
         Registry.Actions.Add("diagnostics.clear", ClearDebugFiles);
         Registry.Actions.Add("onboarding.replay", ReplayOnboarding);
+        Registry.Actions.Add("welcome.view", ViewWelcome);
         Registry.Actions.Add("support.openAfdian", OpenAfdian);
         Registry.Actions.Add("childSession.credentials", ChildSessionCredentials);
         Registry.Values.Add("update.currentVersion", CurrentVersion);
@@ -74,6 +76,7 @@ internal sealed class ApplicationSettings
     internal SettingsAction ExportDiagnostics { get; }
     internal SettingsAction ClearDebugFiles { get; }
     internal SettingsAction ReplayOnboarding { get; }
+    internal SettingsAction ViewWelcome { get; }
     internal SettingsAction OpenAfdian { get; }
     internal SettingsAction ChildSessionCredentials { get; }
     internal SettingsValue CurrentVersion { get; } = new() { Text = "—" };

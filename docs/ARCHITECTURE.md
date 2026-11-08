@@ -58,4 +58,4 @@ GUI 负责更新界面、用户确认和运行环境关闭；Rust Update Engine 
 
 支持按顺序执行不重复的顶层 MaaNOP task、Project Interface pretask、多份独立配置、桌面分身只读观看与手动操作和完整包更新。当前不支持同一 task 的多实例独立参数、依赖图、条件或并行调度，也不内置 QQ 登录或游戏登录资源、托管启动入口、录制或可调 Child Session 分辨率/DPI。
 
-设计取舍见 [ADR](adr/)；领域术语见 [CONTEXT](../CONTEXT.md)。
+设计取舍见 [ADR](adr/)；领域术语见 [GLOSSARY](../GLOSSARY.md)。

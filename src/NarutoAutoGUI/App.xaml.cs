@@ -56,6 +56,7 @@ public partial class App : System.Windows.Application
             _logger, _sessionManager, _workerCoordinator, _environment, RequestExitAsync, EndEnvironmentAsync,
             InstallUpdateAsync);
         _mainWindow.HiddenToTray += MainWindow_HiddenToTray;
+        _mainWindow.ProjectIdentityChanged += MainWindow_ProjectIdentityChanged;
         MainWindow = _mainWindow;
         CreateTrayIcon();
         _mainWindow.Show();
@@ -222,6 +223,42 @@ public partial class App : System.Windows.Application
 
         return System.Drawing.SystemIcons.Application;
     }
+
+    private void MainWindow_ProjectIdentityChanged(object? sender, ProjectIdentity identity)
+    {
+        if (_trayIcon is null) {
+            return;
+        }
+        var previous = _trayIcon.Icon;
+        _trayIcon.Icon = (identity.IconPath is { } path ? LoadProjectTrayIcon(path) : null) ?? LoadTrayIcon();
+        _trayIcon.Text = identity.Name.Length > 127 ? identity.Name[..127] : identity.Name;
+        if (previous != System.Drawing.SystemIcons.Application) {
+            previous?.Dispose();
+        }
+    }
+
+    private System.Drawing.Icon? LoadProjectTrayIcon(string path)
+    {
+        try {
+            if (Path.GetExtension(path).Equals(".ico", StringComparison.OrdinalIgnoreCase)) {
+                return new System.Drawing.Icon(path, 32, 32);
+            }
+            using var source = new System.Drawing.Bitmap(path);
+            using var scaled = new System.Drawing.Bitmap(source, 32, 32);
+            var handle = scaled.GetHicon();
+            try {
+                return (System.Drawing.Icon)System.Drawing.Icon.FromHandle(handle).Clone();
+            } finally {
+                DestroyIcon(handle);
+            }
+        } catch (Exception exception) {
+            _logger?.Warn($"加载项目托盘图标失败，已使用默认图标。path={path}", exception);
+            return null;
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool DestroyIcon(IntPtr handle);
 
     private void MainWindow_HiddenToTray(object? sender, EventArgs e)
     {

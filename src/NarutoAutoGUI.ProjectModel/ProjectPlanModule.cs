@@ -50,6 +50,10 @@ public sealed partial class ProjectPlanModule
     public string SourceInterfaceDigest => _project.Provenance.SourceInterfaceDigest;
     public bool HasWelcome => _project.Welcome.Count > 0;
     public ProjectAbout About => _project.About;
+    public string Title => _project.Title;
+    // Throws when the icon lies outside the project directory; whether it is an image is known only when shown.
+    public string? ResolveIconPath() =>
+        _project.Icon is { } icon ? ProjectContent.ResolvePath(_project.ProjectRoot, icon) : null;
     public ProjectWelcome? ResolveWelcome(Action<string> warn) => ProjectWelcomeResolver.Resolve(_project, warn);
     public IReadOnlyList<ProjectTaskChoice> Tasks { get; }
     public IReadOnlyList<ProjectTaskChoice> Pretasks { get; }

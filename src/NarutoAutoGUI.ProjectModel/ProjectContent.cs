@@ -9,6 +9,10 @@ internal static partial class ProjectContent
 {
     internal static string StripKeyMarker(string text) => text.StartsWith('$') ? text[1..] : text;
 
+    // A `$` translation key shows as its name; blank counts as absent.
+    internal static string? KeyText(string? value) =>
+        StripKeyMarker(value?.Trim() ?? "") is { Length: > 0 } text ? text : null;
+
     // A bare upper-case word such as LICENSE may name a file, or may just be text such as MIT.
     internal static FileReference Classify(string text)
     {
@@ -27,11 +31,14 @@ internal static partial class ProjectContent
             : UpperCaseName().IsMatch(text) ? FileReference.Possible : FileReference.None;
     }
 
-    internal static string ReadFile(string projectRoot, string relativePath)
+    internal static string ReadFile(string projectRoot, string relativePath) =>
+        File.ReadAllText(ResolvePath(projectRoot, relativePath));
+
+    internal static string ResolvePath(string projectRoot, string relativePath)
     {
         var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(projectRoot)) + Path.DirectorySeparatorChar;
         var path = Path.GetFullPath(Path.Combine(root, relativePath));
-        return path.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? File.ReadAllText(path)
+        return path.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? path
             : throw new IOException("路径超出项目目录。");
     }
 

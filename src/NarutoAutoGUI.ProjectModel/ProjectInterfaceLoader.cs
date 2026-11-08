@@ -8,7 +8,8 @@ internal static partial class ProjectInterfaceLoader
 {
     private static readonly HashSet<string> AllowedTopLevelProperties = new(StringComparer.Ordinal)
     {
-        "interface_version", "name", "label", "version", "description", "icon", "github", "contact", "license",
+        "interface_version", "name", "label", "title", "version", "description", "icon", "github", "contact",
+        "license",
         "controller", "resource", "agent", "global_option", "task", "option", "group", "pretask", "preset", "welcome"
     };
 
@@ -135,10 +136,16 @@ internal static partial class ProjectInterfaceLoader
         return new ProjectDefinition(
             projectRoot, provenance, controller, resources, agent, runtimeProfileDigest,
             globalOptions, tasks, options, groups, pretasks, ParsePresets(root),
-            ReadOptionalDescription(root, "label"), ReadWelcome(root), ProjectAboutResolver.Read(projectRoot,
+            ReadWelcome(root), ProjectAboutResolver.Read(projectRoot, ReadKeyText(root, "label") ?? provenance.Name,
                 ReadOptionalDescription(root, "description"), ReadOptionalDescription(root, "contact"),
-                ReadOptionalDescription(root, "license"), ReadOptionalDescription(root, "github")));
+                ReadOptionalDescription(root, "license"), ReadOptionalDescription(root, "github")),
+            // The protocol defaults title to name and version, not to label.
+            ReadKeyText(root, "title") ?? $"{provenance.Name} {provenance.Version}".TrimEnd(),
+            ReadKeyText(root, "icon"));
     }
+
+    private static string? ReadKeyText(JsonElement root, string name) =>
+        ProjectContent.KeyText(ReadOptionalDescription(root, name));
 
     private static IReadOnlyList<string> ReadWelcome(JsonElement root)
     {

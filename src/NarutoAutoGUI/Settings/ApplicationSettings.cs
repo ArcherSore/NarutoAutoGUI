@@ -1,3 +1,4 @@
+using System.Windows.Media;
 using NarutoAutoGUI.Infrastructure;
 using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
@@ -102,9 +103,10 @@ internal sealed class ApplicationSettings
 
     internal event Action<SettingsToggle>? FrameworkOptionsChanged;
 
-    internal void ShowProjectAbout(ProjectAbout? about)
+    internal void ShowProjectAbout(ProjectAbout? about, ImageSource? icon)
     {
         Registry.About.Content = about;
+        Registry.About.Icon = icon;
         OpenRepository.IsVisible = about?.Github is not null;
         OpenRepository.ToolTip = about?.Github?.AbsoluteUri;
         ViewLicense.IsVisible = about?.License is not null;

@@ -154,10 +154,13 @@
         <DataTemplate x:Key="AboutRow">
             <StackPanel>
                 <StackPanel Margin="0,10,0,0" HorizontalAlignment="Center">
-                    <Image Source="pack://application:,,,/Assets/app.png" Width="72" Height="72"
+                    <Image x:Name="ProjectAboutIcon" Width="72" Height="72"
+                           Source="{Binding About.Icon, TargetNullValue='pack://application:,,,/Assets/app.png'}"
                            RenderOptions.BitmapScalingMode="HighQuality" />
-                    <TextBlock Text="{Binding Definition.Title}" Margin="0,12,0,0" FontSize="18" FontWeight="Bold"
-                               Foreground="{StaticResource Brush.Text.Primary}" TextAlignment="Center" />
+                    <TextBlock x:Name="ProjectAboutName"
+                               Text="{Binding About.Content.Name, FallbackValue=NarutoAutoGUI}" Margin="0,12,0,0"
+                               FontSize="18" FontWeight="Bold" Foreground="{StaticResource Brush.Text.Primary}"
+                               TextAlignment="Center" />
                 </StackPanel>
                 <views:ProjectAboutView Project="{Binding About.Content}" OpenLink="{Binding About.OpenLink}" />
             </StackPanel>

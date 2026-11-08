@@ -91,10 +91,7 @@ internal static partial class SelfTestRunner
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "about-view"), (window, directory) => {
             window.Width = window.MinWidth;
             window.Height = window.MinHeight;
-            ClickOnboarding(window, "SettingsNavigationItem");
-            var settings = Named<SettingsView>(window, "SettingsView");
-            var navigation = Named<System.Windows.Controls.ListBox>(settings, "SectionNavigation");
-            navigation.SelectedIndex = navigation.Items.Count - 1;
+            var settings = OpenAboutSection(window);
             PumpUntil(() => SettingsVisualDescendants(settings).OfType<ProjectAboutView>().Any(),
                 "关于页必须显示项目资料。");
             var view = SettingsVisualDescendants(settings).OfType<ProjectAboutView>().Single();
@@ -157,6 +154,15 @@ internal static partial class SelfTestRunner
                 && !SettingsButtonFor(window, "project.viewLicense").IsVisible, "重载为空后必须隐藏所有对应内容及入口。");
         }, beforeLoad: directory => SetAbout(directory, "项目简介 [说明](https://example.com/info)",
             "联系作者", longLicense, "https://github.com/owner/repo"));
+    }
+
+    private static SettingsView OpenAboutSection(MainWindow window)
+    {
+        ClickOnboarding(window, "SettingsNavigationItem");
+        var settings = Named<SettingsView>(window, "SettingsView");
+        var navigation = Named<System.Windows.Controls.ListBox>(settings, "SectionNavigation");
+        navigation.SelectedIndex = navigation.Items.Count - 1;
+        return settings;
     }
 
     private static string TextOf(FlowDocument document) =>

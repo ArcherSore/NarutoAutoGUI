@@ -19,8 +19,7 @@ internal static class ProjectWelcomeResolver
         if (contents.Length == 0) {
             return null;
         }
-        var title = ProjectContent.StripKeyMarker(project.Label ?? string.Empty);
-        return new ProjectWelcome(title.Length > 0 ? title : project.Provenance.Name, contents, ComputeHash(entries));
+        return new ProjectWelcome(project.About.Name, contents, ComputeHash(entries));
     }
 
     // A single announcement is keyed by its content alone, so renaming its file does not prompt again.

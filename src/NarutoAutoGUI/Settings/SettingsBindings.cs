@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using System.Windows.Media;
 using NarutoAutoGUI.ProjectModel;
 
 namespace NarutoAutoGUI.Settings;
@@ -75,8 +76,11 @@ internal sealed class SettingsValue : SettingsObservable
 internal sealed class ProjectAboutSettings : SettingsObservable
 {
     private ProjectAbout? _content;
+    private ImageSource? _icon;
     private Action<Uri> _openLink = _ => { };
     public ProjectAbout? Content { get => _content; set => Set(ref _content, value); }
+    // Null shows the application's own icon.
+    public ImageSource? Icon { get => _icon; set => Set(ref _icon, value); }
     public Action<Uri> OpenLink { get => _openLink; set => Set(ref _openLink, value); }
 }
 

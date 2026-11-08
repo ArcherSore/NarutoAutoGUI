@@ -77,11 +77,16 @@ MaaNOP 项目根目录固定为应用程序目录，`interface.json` 直接从 `
 
 ## 项目资料
 
-设置 → 关于展示同一次 Project Interface 加载中的顶层 `description`、`contact`、`github` 和 `license`。
+设置 → 关于顶部按 MXU 显示项目 `label`（未声明时为 `name`）和 `icon`，没有可用图标时显示应用图标；
+下方展示同一次 Project Interface 加载中的顶层 `description`、`contact`、`github` 和 `license`。
 简介、联系方式和许可证按 welcome 的规则识别内联 Markdown 与项目目录内的文件（包括 `LICENSE`），
 另外保留 HTTP(S) 链接，只在点击时打开浏览器，不自动下载正文。明确的文件引用读取失败时只在对应位置提示。
 仓库地址沿用 Update Engine 的 GitHub 仓库校验规则；许可证正文通过“查看许可证”在欢迎信息同款弹窗中阅读。
 缺失或空白的资料隐藏，重新加载项目时刷新。
+
+主窗口标题栏和任务栏使用顶层 `title`，未声明时按协议为 `name version`（不取 `label`）。
+`icon` 是相对项目目录的图片路径，用于窗口、标题栏、托盘和关于页，托盘提示显示项目 `name`；
+未声明、越界或无法加载时使用 NarutoAutoGUI 默认图标。`$` 开头的翻译键按键名显示，重新加载项目时刷新。
 
 ## 前置任务
 

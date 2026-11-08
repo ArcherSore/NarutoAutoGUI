@@ -128,8 +128,7 @@
       "items": [
         {
           "id": "about-app",
-          "type": "about",
-          "title": "MaaNOP"
+          "type": "about"
         },
         {
           "id": "view-welcome",

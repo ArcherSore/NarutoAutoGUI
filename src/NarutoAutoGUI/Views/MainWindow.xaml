@@ -863,12 +863,12 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar
+        <ui:TitleBar x:Name="AppTitleBar"
                      Grid.Row="0"
                      Title="NarutoAutoGUI"
                      Background="{StaticResource Brush.Canvas}">
             <ui:TitleBar.Icon>
-                <ui:ImageIcon Source="pack://application:,,,/Assets/app.png" />
+                <ui:ImageIcon x:Name="AppTitleBarIcon" Source="pack://application:,,,/Assets/app.png" />
             </ui:TitleBar.Icon>
         </ui:TitleBar>
 

@@ -4,19 +4,19 @@ namespace NarutoAutoGUI.ProjectModel;
 
 public sealed record ProjectText(string? Markdown = null, Uri? Url = null, string? Error = null);
 
-public sealed record ProjectAbout(ProjectText? Description, ProjectText? Contact, ProjectText? License, Uri? Github);
+public sealed record ProjectAbout(
+    string Name, ProjectText? Description, ProjectText? Contact, ProjectText? License, Uri? Github);
 
 // Resolves like welcome, except a URL stays a link and an explicit file that cannot be read reports so.
 internal static partial class ProjectAboutResolver
 {
-    internal static ProjectAbout Read(string projectRoot, string? description, string? contact, string? license,
-        string? github) => new(ReadText(projectRoot, description), ReadText(projectRoot, contact),
-        ReadText(projectRoot, license), Repository(github));
+    internal static ProjectAbout Read(string projectRoot, string name, string? description, string? contact,
+        string? license, string? github) => new(name, ReadText(projectRoot, description),
+        ReadText(projectRoot, contact), ReadText(projectRoot, license), Repository(github));
 
     private static ProjectText? ReadText(string projectRoot, string? source)
     {
-        var text = ProjectContent.StripKeyMarker(source?.Trim() ?? "");
-        if (text.Length == 0) { return null; }
+        if (ProjectContent.KeyText(source) is not { } text) { return null; }
         if (Uri.TryCreate(text, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https") {
             return new(Url: uri);
         }

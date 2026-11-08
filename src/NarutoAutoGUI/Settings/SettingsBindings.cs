@@ -41,8 +41,11 @@ internal sealed class SettingsToggle(Action<bool> save) : SettingsObservable
 internal sealed class SettingsAction(Func<Task> execute) : SettingsObservable, ICommand
 {
     private bool _isEnabled = true;
+    private bool _isVisible = true;
     private string _status = "";
     private string? _toolTip;
+
+    public bool IsVisible { get => _isVisible; set => Set(ref _isVisible, value); }
 
     public bool IsEnabled
     {

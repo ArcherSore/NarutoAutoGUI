@@ -691,6 +691,30 @@
             <TextBlock Text="{Binding}" FontWeight="SemiBold"
                        Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
         </DataTemplate>
+        <ControlTemplate x:Key="Welcome.ButtonTemplate" TargetType="Button">
+            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{StaticResource Radius.Section}"
+                    SnapsToDevicePixels="True">
+                <ContentPresenter Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"
+                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+            </Border>
+        </ControlTemplate>
+        <Style x:Key="Welcome.CloseButton" TargetType="Button" BasedOn="{StaticResource Preview.IconButton}">
+            <Setter Property="Width" Value="36" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="8" />
+            <Setter Property="Template" Value="{StaticResource Welcome.ButtonTemplate}" />
+        </Style>
+        <DataTemplate x:Key="Welcome.DismissLabel">
+            <TextBlock Text="{Binding}" FontSize="{StaticResource FontSize.SectionTitle}" FontWeight="Medium"
+                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+        </DataTemplate>
+        <Style x:Key="Welcome.DismissButton" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
+            <Setter Property="Height" Value="44" />
+            <Setter Property="ContentTemplate" Value="{StaticResource Welcome.DismissLabel}" />
+            <Setter Property="Template" Value="{StaticResource Welcome.ButtonTemplate}" />
+        </Style>
         <Style x:Key="Update.PrimaryButton" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
             <Setter Property="ContentTemplate" Value="{StaticResource Update.ButtonLabel}" />
         </Style>
@@ -816,6 +840,14 @@
             <Style TargetType="{x:Type Grid}">
                 <Style.Triggers>
                     <DataTrigger Binding="{Binding Visibility, ElementName=UpdateOverlay}" Value="Visible">
+                        <Setter Property="IsEnabled" Value="False" />
+                        <Setter Property="Effect">
+                            <Setter.Value>
+                                <BlurEffect Radius="8" KernelType="Gaussian" RenderingBias="Performance" />
+                            </Setter.Value>
+                        </Setter>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Visibility, ElementName=WelcomeOverlay}" Value="Visible">
                         <Setter Property="IsEnabled" Value="False" />
                         <Setter Property="Effect">
                             <Setter.Value>
@@ -1919,6 +1951,61 @@
                 </Grid>
             </Border>
         </Grid>
+        <Grid x:Name="WelcomeOverlay" Panel.ZIndex="210" Visibility="Collapsed" Focusable="True"
+              KeyboardNavigation.TabNavigation="Cycle" KeyboardNavigation.ControlTabNavigation="Cycle"
+              SizeChanged="WelcomeOverlay_SizeChanged" AutomationProperties.Name="欢迎信息">
+            <Button x:Name="WelcomeScrim" Background="{StaticResource Brush.Overlay.Modal}" BorderThickness="0"
+                    Focusable="False" IsTabStop="False" Click="CloseWelcome_Click"
+                    AutomationProperties.Name="关闭欢迎信息遮罩">
+                <Button.Template>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border Background="{TemplateBinding Background}" />
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+            <Grid x:Name="WelcomeDialog" Width="512" HorizontalAlignment="Center" VerticalAlignment="Center"
+                  RenderTransformOrigin="0.5,0.5">
+                <Grid.RenderTransform>
+                    <ScaleTransform x:Name="WelcomeDialogScale" />
+                </Grid.RenderTransform>
+                <!-- The shadow sits on its own layer so the effect does not soften the text above it. -->
+                <Border Background="{StaticResource Brush.Surface}" CornerRadius="16">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="50" ShadowDepth="25" Direction="270" Opacity="0.25" />
+                    </Border.Effect>
+                </Border>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Border Padding="24,16" BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1">
+                        <DockPanel>
+                            <Button x:Name="WelcomeCloseButton" DockPanel.Dock="Right" Click="CloseWelcome_Click"
+                                    Style="{StaticResource Welcome.CloseButton}" ToolTip="关闭（Esc）"
+                                    AutomationProperties.Name="关闭欢迎信息">
+                                <ui:SymbolIcon Symbol="Dismiss24" FontSize="20" />
+                            </Button>
+                            <ui:SymbolIcon Symbol="Sparkle24" FontSize="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                           Foreground="{StaticResource Brush.Primary}" />
+                            <TextBlock x:Name="WelcomeTitle" FontSize="18" FontWeight="SemiBold" LineHeight="28"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                       Foreground="{StaticResource Brush.Text.Primary}" />
+                        </DockPanel>
+                    </Border>
+                    <FlowDocumentScrollViewer x:Name="WelcomeViewer" Grid.Row="1" Margin="24,16,12,16" Zoom="100"
+                                              VerticalScrollBarVisibility="Auto" IsToolBarVisible="False"
+                                              HorizontalScrollBarVisibility="Disabled" />
+                    <Border Grid.Row="2" Padding="24,16" BorderBrush="{StaticResource Brush.Border}"
+                            BorderThickness="0,1,0,0">
+                        <Button x:Name="WelcomeDismissButton" Content="我知道了" Click="CloseWelcome_Click"
+                                Style="{StaticResource Welcome.DismissButton}" />
+                    </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+
         <Grid x:Name="OnboardingOverlay" Panel.ZIndex="220" Visibility="Collapsed" Background="Transparent"
               Focusable="True" KeyboardNavigation.TabNavigation="Cycle"
               KeyboardNavigation.ControlTabNavigation="Cycle" AllowDrop="True"

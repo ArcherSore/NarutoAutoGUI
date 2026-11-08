@@ -12,27 +12,47 @@ using WpfInline = System.Windows.Documents.Inline;
 
 namespace NarutoAutoGUI.Views;
 
+// StrongBrushKey colours headings and bold text; without it they keep the body colour.
+internal sealed record MarkdownStyle(
+    double FontSize, double LineHeight, double Heading1Size, double HeadingLineHeight, string BrushKey,
+    string? StrongBrushKey = null);
+
 // Render Markdown as native document elements: no HTML, scripts or remote image loading.
 internal static class MarkdownDocument
 {
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UseAutoLinks().UsePipeTables().UseTaskLists().UseEmphasisExtras().DisableHtml().Build();
+    private static readonly MarkdownStyle DefaultStyle = new(13, 20, 18, 20, "Brush.Text.Body");
 
-    public static FlowDocument Create(string markdown, Action<Uri> openLink)
+    public static FlowDocument Create(string markdown, Action<Uri> openLink) =>
+        Create([markdown], openLink, DefaultStyle);
+
+    // Each section is parsed alone, so an unclosed construct in one cannot affect the next.
+    public static FlowDocument Create(IReadOnlyList<string> sections, Action<Uri> openLink, MarkdownStyle style)
     {
         var document = new FlowDocument {
-            PagePadding = new Thickness(0, 0, 12, 8), FontSize = 13, ColumnWidth = 10000,
+            PagePadding = new Thickness(0, 0, 12, 8), FontSize = style.FontSize, ColumnWidth = 10000,
             TextAlignment = TextAlignment.Left
         };
-        document.SetResourceReference(FlowDocument.ForegroundProperty, "Brush.Text.Body");
+        document.SetResourceReference(FlowDocument.ForegroundProperty, style.BrushKey);
         document.SetResourceReference(FlowDocument.FontFamilyProperty, "FontFamily.Ui");
-        foreach (var block in Markdown.Parse(markdown, Pipeline)) {
-            document.Blocks.Add(RenderBlock(block, openLink));
+        for (var index = 0; index < sections.Count; index++) {
+            if (index > 0) {
+                var separator = new Paragraph {
+                    Margin = new Thickness(0, 16, 0, 16), FontSize = 1, LineHeight = 1,
+                    BorderThickness = new Thickness(0, 0, 0, 1)
+                };
+                separator.SetResourceReference(Paragraph.BorderBrushProperty, "Brush.Border");
+                document.Blocks.Add(separator);
+            }
+            foreach (var block in Markdown.Parse(sections[index], Pipeline)) {
+                document.Blocks.Add(RenderBlock(block, openLink, style));
+            }
         }
         return document;
     }
 
-    private static WpfBlock RenderBlock(Markdig.Syntax.Block block, Action<Uri> openLink)
+    private static WpfBlock RenderBlock(Markdig.Syntax.Block block, Action<Uri> openLink, MarkdownStyle style)
     {
         if (block is ListBlock list) {
             var result = new System.Windows.Documents.List {
@@ -45,7 +65,7 @@ internal static class MarkdownDocument
             foreach (var item in list.OfType<ListItemBlock>()) {
                 var entry = new ListItem { Margin = new Thickness(0, 0, 0, 3) };
                 foreach (var child in item) {
-                    entry.Blocks.Add(RenderBlock(child, openLink));
+                    entry.Blocks.Add(RenderBlock(child, openLink, style));
                 }
                 result.ListItems.Add(entry);
             }
@@ -61,7 +81,7 @@ internal static class MarkdownDocument
                     var outputCell = new TableCell { Padding = new Thickness(6), BorderThickness = new Thickness(0.5) };
                     outputCell.SetResourceReference(TableCell.BorderBrushProperty, "Brush.Border.Subtle");
                     foreach (var child in cell) {
-                        outputCell.Blocks.Add(RenderBlock(child, openLink));
+                        outputCell.Blocks.Add(RenderBlock(child, openLink, style));
                     }
                     output.Cells.Add(outputCell);
                 }
@@ -78,11 +98,11 @@ internal static class MarkdownDocument
                 section.SetResourceReference(Section.ForegroundProperty, "Brush.Text.Secondary");
             }
             foreach (var child in container) {
-                section.Blocks.Add(RenderBlock(child, openLink));
+                section.Blocks.Add(RenderBlock(child, openLink, style));
             }
             return section;
         }
-        var paragraph = new Paragraph { Margin = new Thickness(0, 0, 0, 8), LineHeight = 20 };
+        var paragraph = new Paragraph { Margin = new Thickness(0, 0, 0, 8), LineHeight = style.LineHeight };
         if (block is CodeBlock code) {
             paragraph.Inlines.Add(new Run(code.Lines.ToString()));
             paragraph.FontSize = 12;
@@ -94,20 +114,25 @@ internal static class MarkdownDocument
             paragraph.SetResourceReference(Paragraph.BorderBrushProperty, "Brush.Border.Subtle");
         } else if (block is LeafBlock leaf) {
             if (leaf.Inline is not null) {
-                AddInlines(paragraph.Inlines, leaf.Inline, openLink);
+                AddInlines(paragraph.Inlines, leaf.Inline, openLink, style);
             } else {
                 paragraph.Inlines.Add(new Run(leaf.Lines.ToString()));
             }
             if (block is HeadingBlock heading) {
-                paragraph.FontSize = heading.Level switch { 1 => 18, 2 => 16, _ => 14 };
+                paragraph.FontSize = heading.Level switch { 1 => style.Heading1Size, 2 => 16, _ => 14 };
+                paragraph.LineHeight = style.HeadingLineHeight;
                 paragraph.FontWeight = FontWeights.SemiBold;
                 paragraph.Margin = new Thickness(0, 6, 0, 8);
+                if (style.StrongBrushKey is { } strong) {
+                    paragraph.SetResourceReference(Paragraph.ForegroundProperty, strong);
+                }
             }
         }
         return paragraph;
     }
 
-    private static void AddInlines(InlineCollection target, ContainerInline source, Action<Uri> openLink)
+    private static void AddInlines(
+        InlineCollection target, ContainerInline source, Action<Uri> openLink, MarkdownStyle style)
     {
         foreach (var inline in source) {
             WpfInline rendered;
@@ -131,16 +156,19 @@ internal static class MarkdownDocument
                     break;
                 case LinkInline link:
                     var label = new Span();
-                    AddInlines(label.Inlines, link, openLink);
+                    AddInlines(label.Inlines, link, openLink, style);
                     rendered = Link(link.Url, label, openLink);
                     break;
                 case EmphasisInline emphasis:
                     var styled = new Span();
-                    AddInlines(styled.Inlines, emphasis, openLink);
+                    AddInlines(styled.Inlines, emphasis, openLink, style);
                     if (emphasis.DelimiterChar == '~') {
                         styled.TextDecorations = TextDecorations.Strikethrough;
                     } else if (emphasis.DelimiterCount == 2) {
                         styled.FontWeight = FontWeights.Bold;
+                        if (style.StrongBrushKey is { } strong) {
+                            styled.SetResourceReference(TextElement.ForegroundProperty, strong);
+                        }
                     } else {
                         styled.FontStyle = FontStyles.Italic;
                     }
@@ -148,7 +176,7 @@ internal static class MarkdownDocument
                     break;
                 case ContainerInline children:
                     var span = new Span();
-                    AddInlines(span.Inlines, children, openLink);
+                    AddInlines(span.Inlines, children, openLink, style);
                     rendered = span;
                     break;
                 default:

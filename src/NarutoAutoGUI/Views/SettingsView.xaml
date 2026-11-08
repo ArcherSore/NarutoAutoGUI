@@ -190,6 +190,9 @@
                     RelativeSource={RelativeSource AncestorType=ContentPresenter}}">
                     <Setter Property="BorderThickness" Value="0" />
                 </DataTrigger>
+                <DataTrigger Binding="{Binding Action.IsVisible}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
             </Style.Triggers>
         </Style>
     </UserControl.Resources>

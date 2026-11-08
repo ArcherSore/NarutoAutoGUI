@@ -13,16 +13,16 @@ namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
+    // Settings whose actions do nothing, for tests that only check toggles and persisted values.
+    private static ApplicationSettings CreateIdleSettings(string directory, AppLogger logger) =>
+        new(directory, logger, () => Task.CompletedTask, () => Task.CompletedTask, () => { },
+            () => Task.CompletedTask, () => Task.CompletedTask, () => Task.CompletedTask, () => { });
+
     private static void VerifyClosePreference(AppLogger logger, string testDirectory)
     {
         var directory = Path.Combine(testDirectory, "close-preference");
         var path = Path.Combine(directory, "config", "close-to-tray.txt");
-        ApplicationSettings Create()
-        {
-            return new ApplicationSettings(directory, logger, () => Task.CompletedTask,
-                () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask,
-                () => Task.CompletedTask);
-        }
+        ApplicationSettings Create() => CreateIdleSettings(directory, logger);
         var settings = Create();
         if (!settings.CloseToTray.Value || File.Exists(path)) {
             throw new InvalidOperationException("关闭偏好默认隐藏到托盘，读取不得创建文件。");
@@ -74,7 +74,7 @@ internal static partial class SelfTestRunner
         var settings = new ApplicationSettings(directory, logger,
             () => Called("update.check"), () => Called("diagnostics.export"), () => calls.Add("onboarding.replay"),
             () => Called("support.openAfdian"), () => Called("childSession.credentials"),
-            () => Called("diagnostics.clear"));
+            () => Called("diagnostics.clear"), () => calls.Add("welcome.view"));
         var page = settings.Page;
         var items = page.Sections.SelectMany(section => section.Items).ToArray();
         if (items.Single(item => item.Definition.SettingKey == "update.checkOnStartup").Toggle
@@ -87,12 +87,12 @@ internal static partial class SelfTestRunner
             item.Action!.ExecuteAsync().GetAwaiter().GetResult();
         }
         if (!calls.Order().SequenceEqual(["childSession.credentials", "diagnostics.clear", "diagnostics.export",
-                "onboarding.replay", "support.openAfdian", "update.check"])) {
+                "onboarding.replay", "support.openAfdian", "update.check", "welcome.view"])) {
             throw new InvalidOperationException("Settings action 必须只调用对应的已注册业务入口。");
         }
         settings.CheckUpdate.IsEnabled = false;
         settings.CheckUpdate.ExecuteAsync().GetAwaiter().GetResult();
-        if (calls.Count != 6 || settings.CheckUpdate.CanExecute(null)) {
+        if (calls.Count != 7 || settings.CheckUpdate.CanExecute(null)) {
             throw new InvalidOperationException("禁用的 Settings action 不能执行。");
         }
 
@@ -102,9 +102,7 @@ internal static partial class SelfTestRunner
             throw new InvalidOperationException("缺少更新偏好时应默认开启，加载/绑定不得写文件。");
         }
         settings.CheckOnStartup.Value = false;
-        var reopened = new ApplicationSettings(directory, logger, () => Task.CompletedTask,
-            () => Task.CompletedTask, () => { }, () => Task.CompletedTask, () => Task.CompletedTask,
-            () => Task.CompletedTask);
+        var reopened = CreateIdleSettings(directory, logger);
         reopened.LoadUpdatePreference();
         if (File.ReadAllText(preference) != "false" || reopened.CheckOnStartup.Value) {
             throw new InvalidOperationException("Toggle 必须以原有格式持久化，并在重新加载后保留选择。");

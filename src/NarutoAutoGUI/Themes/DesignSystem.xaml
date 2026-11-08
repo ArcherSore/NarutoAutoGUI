@@ -43,6 +43,7 @@
     <SolidColorBrush x:Key="Brush.Border.Subtle" Color="{StaticResource Color.Neutral.150}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Border.Strong" Color="#7B899B" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Overlay.Dim" Color="#20000000" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Overlay.Modal" Color="#80000000" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Text.Primary" Color="{StaticResource Color.Neutral.900}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Text.Body" Color="{StaticResource Color.Neutral.800}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Text.Secondary" Color="{StaticResource Color.Neutral.600}" po:Freeze="True" />

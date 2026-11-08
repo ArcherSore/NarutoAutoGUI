@@ -143,7 +143,7 @@ public partial class MainWindow
 
     private void OpenUpdateDialog()
     {
-        if (UpdateOverlay.Visibility == Visibility.Visible || _exitInProgress || _onboardingActive) {
+        if (IsGlobalModalOpen || _exitInProgress || _onboardingActive) {
             return;
         }
         _updatePreviousFocus = Keyboard.FocusedElement;

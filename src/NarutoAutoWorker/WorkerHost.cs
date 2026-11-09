@@ -182,7 +182,7 @@ internal sealed class WorkerHost
                     GetLogs(ProtocolJson.Deserialize<LogGetSinceRequest>(request.Data))),
                 ProtocolOperations.FrameworkSetOptions => WireEnvelope.Response(
                     request.Operation, requestId,
-                    SetFrameworkOptions(ProtocolJson.Deserialize<MaaFrameworkOptions>(request.Data))),
+                    SetFrameworkOptions(ProtocolJson.Deserialize<FrameworkSetOptionsRequest>(request.Data))),
                 _ => throw new WorkerRequestException("invalid_request", $"未知 operation：{request.Operation}。 ")
             };
         } catch (WorkerRequestException exception) {
@@ -199,9 +199,9 @@ internal sealed class WorkerHost
         }
     }
 
-    private FrameworkSetOptionsResponse SetFrameworkOptions(MaaFrameworkOptions options)
+    private FrameworkSetOptionsResponse SetFrameworkOptions(FrameworkSetOptionsRequest request)
     {
-        _applyFrameworkOptions(options);
+        _applyFrameworkOptions(request.Framework);
         return new FrameworkSetOptionsResponse();
     }
 

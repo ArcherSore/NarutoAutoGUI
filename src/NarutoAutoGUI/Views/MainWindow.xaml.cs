@@ -152,6 +152,9 @@ public partial class MainWindow : FluentWindow
         _sessionManager = sessionManager;
         _workerCoordinator = workerCoordinator;
         _workerCoordinator.FrameworkOptions = _settings.CreateFrameworkOptions;
+        _workerCoordinator.TelemetryEnabled = () => _settings.HelpImprove.Value;
+        _workerCoordinator.TelemetryOptions = project => TelemetryGate.CreateOptions(TelemetryBuild.Current,
+            project.Telemetry, project.ProjectName, project.ProjectVersion, _settings.HelpImprove.Value);
         _settings.FrameworkOptionsChanged += OnFrameworkOptionsChanged;
         // A surviving Worker may have connected before the choice above was available.
         OnFrameworkOptionsChanged(_settings.SaveDraw);

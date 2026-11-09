@@ -117,6 +117,11 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
     // The user's current choice, which a Worker connected earlier may no longer hold.
     internal Func<MaaFrameworkOptions>? FrameworkOptions { get; set; }
 
+    // The user's telemetry choice travels with the framework switches; the options a new Worker starts with have
+    // already passed the release gate.
+    internal Func<bool>? TelemetryEnabled { get; set; }
+    internal Func<ProjectPlanModule, TelemetryOptions?>? TelemetryOptions { get; set; }
+
     internal int? TrackedWorkerPid
     {
         get
@@ -167,7 +172,8 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         var instanceId = Guid.NewGuid();
         var launchToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
         var manifest = project.CreateLaunchManifest(instanceId) with {
-            FrameworkOptions = frameworkOptions ?? new MaaFrameworkOptions()
+            FrameworkOptions = frameworkOptions ?? new MaaFrameworkOptions(),
+            Telemetry = TelemetryOptions?.Invoke(project)
         };
         var manifestPath = _store.GetManifestPath(instanceId);
         var admission = new WorkerAdmissionRecord(
@@ -381,7 +387,9 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
         EnsureStartAllowed(attempt.Plan.RuntimeProfileDigest);
         return await SendRequestAsync<RunStartRequest, RunStartResponse>(
             ProtocolOperations.RunStart,
-            new RunStartRequest(attempt.RunId, attempt.PlanDigest, attempt.Plan),
+            new RunStartRequest(attempt.RunId, attempt.PlanDigest, attempt.Plan) {
+                RedactionValues = attempt.RedactionValues
+            },
             cancellationToken);
     }
 
@@ -402,8 +410,9 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             }
         }
         if (FrameworkOptions is { } current) {
-            await SendRequestAsync<MaaFrameworkOptions, FrameworkSetOptionsResponse>(
-                ProtocolOperations.FrameworkSetOptions, current(), cancellationToken);
+            await SendRequestAsync<FrameworkSetOptionsRequest, FrameworkSetOptionsResponse>(
+                ProtocolOperations.FrameworkSetOptions,
+                new FrameworkSetOptionsRequest(current(), TelemetryEnabled?.Invoke() ?? false), cancellationToken);
         }
     }
 

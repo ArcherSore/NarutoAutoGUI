@@ -1,5 +1,6 @@
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using NarutoAutoGUI.Infrastructure;
 using NarutoAutoGUI.ProjectModel;
 
 namespace NarutoAutoGUI.Views;
@@ -32,6 +33,8 @@ public partial class MainWindow
         Icon = icon ?? _defaultIcons.Value.Window;
         AppTitleBarIcon.Source = icon ?? _defaultIcons.Value.TitleBar;
         _settings.ShowProjectAbout(project?.About, icon);
+        _settings.ShowTelemetryAvailability(project is not null
+            && TelemetryGate.IsAvailable(TelemetryBuild.Current, project.Telemetry, project.ProjectVersion));
         ProjectIdentityChanged?.Invoke(this, new ProjectIdentity(project?.ProjectName ?? ApplicationName, path));
     }
 }

@@ -162,6 +162,8 @@ internal static partial class WorkerCoordinatorSelfTest
     private static async Task VerifyLaunchFailureAfterAdmissionAsync(AdmissionContext context)
     {
         var options = new MaaFrameworkOptions(SaveOnError: false, SaveDraw: true, DebugMode: true);
+        var telemetry = new TelemetryOptions("https://public@o1.ingest.sentry.io/1", "NarutoAutoGUI@1.0.0+P@1.0.0",
+            "production", true, 1, 1) { Enabled = true };
         Exception[] launchFailures = [
             new InvalidOperationException("scripted launch failure"), new TimeoutException("scripted launch timeout")
         ];
@@ -174,11 +176,14 @@ internal static partial class WorkerCoordinatorSelfTest
                 (_, instanceId, _, manifestPath, _) => {
                     var manifest = System.Text.Json.JsonSerializer.Deserialize<LaunchManifest>(
                         File.ReadAllBytes(manifestPath), ProtocolJson.Options)!;
-                    Require(manifest.WorkerInstanceId == instanceId && manifest.FrameworkOptions == options,
-                        "GUI 设置未写入实际启动 Worker 所用的 Launch Manifest。");
+                    Require(manifest.WorkerInstanceId == instanceId && manifest.FrameworkOptions == options
+                        && manifest.Telemetry == telemetry && manifest.RuntimeProfileDigest
+                            == context.Project.RuntimeProfileDigest,
+                        "GUI 设置与遥测配置未写入实际启动 Worker 所用的 Launch Manifest，或改变了 Runtime Profile Digest。");
                     launches++;
                     throw launchFailure;
                 })) {
+                coordinator.TelemetryOptions = project => ReferenceEquals(project, context.Project) ? telemetry : null;
                 var failure = await ExpectAsync<Exception>(() => coordinator.PrepareWorkerAsync(
                     context.Session, context.Project, context.Token, options), "注入的启动失败没有传播。");
                 Require(ReferenceEquals(failure, launchFailure), "启动失败异常必须原样传播。");

@@ -437,8 +437,8 @@ internal static partial class SelfTestRunner
     private static string[] ShownHeaderControls(MainWindow window) =>
         RuntimeHeaderControls.Where(name => Named<UIElement>(window, name).IsVisible).ToArray();
 
-    private static T Named<T>(MainWindow window, string name) where T : class =>
-        window.FindName(name) as T ?? throw new InvalidOperationException($"MainWindow 缺少控件 {name}。");
+    private static T Named<T>(FrameworkElement owner, string name) where T : class =>
+        owner.FindName(name) as T ?? throw new InvalidOperationException($"{owner.GetType().Name} 缺少控件 {name}。");
 
     private static void Require(bool condition, string failure)
     {

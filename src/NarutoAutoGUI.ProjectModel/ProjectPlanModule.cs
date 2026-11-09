@@ -49,6 +49,11 @@ public sealed partial class ProjectPlanModule
     public string RuntimeProfileDigest => _project.RuntimeProfileDigest;
     public string SourceInterfaceDigest => _project.Provenance.SourceInterfaceDigest;
     public bool HasWelcome => _project.Welcome.Count > 0;
+    public ProjectAbout About => _project.About;
+    public string Title => _project.Title;
+    // Throws when the icon lies outside the project directory; whether it is an image is known only when shown.
+    public string? ResolveIconPath() =>
+        _project.Icon is { } icon ? ProjectContent.ResolvePath(_project.ProjectRoot, icon) : null;
     public ProjectWelcome? ResolveWelcome(Action<string> warn) => ProjectWelcomeResolver.Resolve(_project, warn);
     public IReadOnlyList<ProjectTaskChoice> Tasks { get; }
     public IReadOnlyList<ProjectTaskChoice> Pretasks { get; }
@@ -285,7 +290,7 @@ public sealed partial class ProjectPlanModule
         var values = ExplicitOptionIntent.ReadInputs(option, config)
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         values[inputName] = value;
-        var updated = ReplaceExplicit(config, optionName, ExplicitOptionIntent.CreateInputs(values));
+        var updated = ReplaceExplicit(config, optionName, ExplicitOptionIntent.CreateInputs(option, values));
         ValidateActiveConfiguration(updated);
         SaveConfiguration(updated);
         return BuildConfiguration(updated);
@@ -361,10 +366,10 @@ public sealed partial class ProjectPlanModule
         }).ToArray();
         var createdAtUtc = DateTime.UtcNow;
         var pretaskItems = SelectedPretaskDefinitions(config).Select(item => {
-            var values = ProjectOptionResolver.ResolvePretask(_project, item, config);
+            var (values, argument) = ProjectOptionResolver.ResolvePretask(_project, item, config);
             var arguments = item.Arguments.ToList();
             if (item.Options.Count != 0) {
-                arguments.Add(JsonSerializer.Serialize(values, ProtocolJson.Options));
+                arguments.Add(JsonSerializer.Serialize(argument, ProtocolJson.Options));
             }
             return new RunPlanItem(Guid.NewGuid(), item.Name, item.Label, string.Empty,
                 values, ProtocolJson.ToElement(Array.Empty<object>())) {
@@ -509,7 +514,8 @@ public sealed partial class ProjectPlanModule
                 explicitInputs.ContainsKey(input.Name), input.Verify, input.PatternMessage) {
                 // Saved values passed verify when they were set; only an untouched default can still fail it.
                 Error = explicitInputs.ContainsKey(input.Name) || ProjectInputValue.Matches(input, input.Default,
-                    $"option {optionName} input {input.Name}") ? null : input.PatternMessage ?? "未通过校验"
+                    $"option {optionName} input {input.Name}") ? null : input.PatternMessage ?? "未通过校验",
+                InputType = input.InputType
             }).ToArray();
             return new ProjectOptionEditor(
                 option.Name, option.Label, option.Description, ProjectOptionKind.Input,

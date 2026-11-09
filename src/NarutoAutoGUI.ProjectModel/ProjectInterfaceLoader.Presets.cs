@@ -38,6 +38,23 @@ internal static partial class ProjectInterfaceLoader
         return result;
     }
 
+    // interface.json ships with the resource, so a preset must not carry a password.
+    private static void RejectPresetPasswords(
+        IReadOnlyList<PresetDefinition> presets, IReadOnlyDictionary<string, OptionDefinition> options)
+    {
+        foreach (var preset in presets) {
+            var values = preset.Tasks.Concat(preset.Pretasks).SelectMany(item => item.Options.EnumerateObject());
+            foreach (var option in values.Where(option => option.Value.ValueKind == JsonValueKind.Object)) {
+                var definition = options.GetValueOrDefault(option.Name);
+                foreach (var field in option.Value.EnumerateObject()) {
+                    if (definition?.IsPassword(field.Name) == true) {
+                        throw new InvalidDataException($"预设 {preset.Name} 不能填写密码字段 {option.Name}.{field.Name}。");
+                    }
+                }
+            }
+        }
+    }
+
     private static IReadOnlyList<PresetItem> ParsePresetItems(JsonElement array, string path)
     {
         RequireArrayValue(array, path);

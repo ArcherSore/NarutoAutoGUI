@@ -2,7 +2,7 @@
 
 ## 开始任务
 
-先阅读 README.md 和 CONTEXT.md，再阅读与当前工作有关的 docs/ARCHITECTURE.md、docs/adr/ 中的决策、GitHub Issue / Spec 及源码。涉及 Child Session 时阅读 src/NarutoAutoGUI/ChildSession/ 的相关实现。不要把整套历史文档当成必读材料。
+先阅读 README.md 和 GLOSSARY.md，再阅读与当前工作有关的 docs/ARCHITECTURE.md、docs/adr/ 中的决策、GitHub Issue / Spec 及源码。涉及 Child Session 时阅读 src/NarutoAutoGUI/ChildSession/ 的相关实现。不要把整套历史文档当成必读材料。
 
 ## 开发原则
 
@@ -16,7 +16,7 @@
 
 ## 文档边界
 
-- CONTEXT.md 只定义项目特有的重要术语；仅在领域语言实际变化时修改。用一两句话定义概念，不写实现、协议、流程或历史。
+- GLOSSARY.md 只定义项目特有的重要术语；仅在领域语言实际变化时修改。用一两句话定义概念，不写实现、协议、流程或历史。
 - ADR 仅记录同时难以逆转、脱离背景会显得意外、且存在真实取舍的决策。普通实现选择、局部协议、状态机和测试约束留在代码、测试或必要的 reference 中。
 - docs/ARCHITECTURE.md 只描述当前系统的组件、边界、主要流转和不变量。稳定协议才保留独立 reference。
 - 当前状态、后续工作、验收条件、跨会话 spec 和 tickets 放在 GitHub Issues；完成后关闭。只有跨多次会话的工作才需要 spec 或 tickets。
@@ -82,4 +82,4 @@ GitHub Issues 是唯一工作跟踪器，含 spec、tickets、状态与验收条
 
 ### Domain docs
 
-本仓库是单上下文布局：根目录 CONTEXT.md 与 docs/adr/。消费规则见 docs/agents/domain.md。
+本仓库是单上下文布局：根目录 GLOSSARY.md 与 docs/adr/。消费规则见 docs/agents/domain.md。

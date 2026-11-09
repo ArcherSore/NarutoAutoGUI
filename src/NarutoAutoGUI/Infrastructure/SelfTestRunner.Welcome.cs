@@ -12,16 +12,21 @@ namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
-    private static void SetWelcome(string directory, JsonNode? welcome, string? label = null)
+    private static void EditInterface(string directory, Action<JsonObject> edit)
     {
         var path = Path.Combine(directory, "interface.json");
         var root = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
-        root["welcome"] = welcome;
-        if (label is not null) {
-            root["label"] = label;
-        }
+        edit(root);
         File.WriteAllText(path, root.ToJsonString());
     }
+
+    private static void SetWelcome(string directory, JsonNode? welcome, string? label = null) =>
+        EditInterface(directory, root => {
+            root["welcome"] = welcome;
+            if (label is not null) {
+                root["label"] = label;
+            }
+        });
 
     private static ProjectWelcome? ResolveFixtureWelcome(string directory, List<string>? warnings = null) =>
         ProjectPlanModule.Open(directory, Path.Combine(directory, "welcome-config.json"))

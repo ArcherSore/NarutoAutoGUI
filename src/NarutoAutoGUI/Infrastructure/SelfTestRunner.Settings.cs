@@ -16,7 +16,8 @@ internal static partial class SelfTestRunner
     // Settings whose actions do nothing, for tests that only check toggles and persisted values.
     private static ApplicationSettings CreateIdleSettings(string directory, AppLogger logger) =>
         new(directory, logger, () => Task.CompletedTask, () => Task.CompletedTask, () => { },
-            () => Task.CompletedTask, () => Task.CompletedTask, () => Task.CompletedTask, () => { });
+            () => Task.CompletedTask, () => Task.CompletedTask, () => Task.CompletedTask, () => { },
+            _ => { }, _ => { });
 
     private static void VerifyClosePreference(AppLogger logger, string testDirectory)
     {
@@ -74,7 +75,7 @@ internal static partial class SelfTestRunner
         var settings = new ApplicationSettings(directory, logger,
             () => Called("update.check"), () => Called("diagnostics.export"), () => calls.Add("onboarding.replay"),
             () => Called("support.openAfdian"), () => Called("childSession.credentials"),
-            () => Called("diagnostics.clear"), () => calls.Add("welcome.view"));
+            () => Called("diagnostics.clear"), () => calls.Add("welcome.view"), _ => { }, _ => { });
         var page = settings.Page;
         var items = page.Sections.SelectMany(section => section.Items).ToArray();
         if (items.Single(item => item.Definition.SettingKey == "update.checkOnStartup").Toggle

@@ -425,34 +425,35 @@ public partial class MainWindow
 
     private bool CommitOptionInput(WpfTextBox textBox)
     {
+        var text = GetInputText(textBox);
         if (_updatingOptionEditors || _committingConfigurationInput || !CurrentControls.ConfigurationEditable
-            || textBox.Tag is not OptionInputTag tag || tag.Submitted && textBox.Text == tag.Value) {
+            || textBox.Tag is not OptionInputTag tag || tag.Submitted && text == tag.Value) {
             return true;
         }
-        if (_invalidInputDrafts.TryGetValue(tag.Key, out var draft) && draft.Text == textBox.Text) {
+        if (_invalidInputDrafts.TryGetValue(tag.Key, out var draft) && draft.Text == text) {
             return false;
         }
         _committingConfigurationInput = true;
         try {
-            if (_projectPlan!.CheckInputValue(tag.OptionName, tag.InputName, textBox.Text) is { } problem) {
+            if (_projectPlan!.CheckInputValue(tag.OptionName, tag.InputName, text) is { } problem) {
                 // A rejected value is a typo, not a failure: keep the text and explain it under the field.
                 // The saved value is unchanged; the draft survives re-rendering until it is fixed or Esc restores it.
                 var message = tag.PatternMessage ?? problem;
-                _invalidInputDrafts[tag.Key] = new InputDraft(textBox.Text, message);
+                _invalidInputDrafts[tag.Key] = new InputDraft(text, message);
                 ShowOptionInputError(textBox, message);
                 RefreshParameterDisplays();
                 _logger.Info($"MaaNOP input 未通过校验，未保存：option={tag.OptionName}，input={tag.InputName}。 ");
                 return false;
             }
-            _projectPlan.SetInputValue(tag.ConfigurationId, tag.OptionName, tag.InputName, textBox.Text);
+            _projectPlan.SetInputValue(tag.ConfigurationId, tag.OptionName, tag.InputName, text);
             _invalidInputDrafts.Remove(tag.Key);
-            textBox.Tag = tag with { Value = textBox.Text, Submitted = true };
+            textBox.Tag = tag with { Value = text, Submitted = true };
             _pendingStartAttempt = null;
             ShowOptionInputError(textBox, null);
             RefreshAfterOptionSaved(rebuildCards: false);
             return true;
         } catch (Exception exception) {
-            textBox.Text = tag.Value;
+            SetInputText(textBox, tag.Value);
             textBox.Tag = tag with { Submitted = true };
             HandleOperationError("保存 MaaNOP input option 失败", exception);
             ShowProjectValidationError(exception);

@@ -58,9 +58,6 @@ internal sealed record SettingsDefinition
                             throw new InvalidDataException($"Settings info {item.Id} 缺少展示内容。");
                         }
                         break;
-                    case SettingsItemKind.About:
-                        Require(item.Title, $"{item.Id}.title");
-                        break;
                 }
                 if (item.Type != SettingsItemKind.About && item.Icon is null) {
                     throw new InvalidDataException($"Settings Definition 缺少 {item.Id}.icon。");

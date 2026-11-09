@@ -8,7 +8,8 @@ internal static partial class ProjectInterfaceLoader
 {
     private static readonly HashSet<string> AllowedTopLevelProperties = new(StringComparer.Ordinal)
     {
-        "interface_version", "name", "label", "version", "description", "icon", "github",
+        "interface_version", "name", "label", "title", "version", "description", "icon", "github", "contact",
+        "license",
         "controller", "resource", "agent", "global_option", "task", "option", "group", "pretask", "preset", "welcome"
     };
 
@@ -68,7 +69,8 @@ internal static partial class ProjectInterfaceLoader
 
     private static readonly HashSet<string> AllowedInputProperties = new(StringComparer.Ordinal)
     {
-        "name", "label", "description", "icon", "default", "pipeline_type", "verify", "pattern_msg"
+        "name", "label", "description", "icon", "default", "pipeline_type", "verify", "pattern_msg", "input_type",
+        "password"
     };
 
     private static readonly HashSet<string> AllowedCaseProperties = new(StringComparer.Ordinal)
@@ -125,6 +127,8 @@ internal static partial class ProjectInterfaceLoader
             options));
         ValidateOptionDefinitions(options, pretaskOptions);
         ValidateOptionGraph(options);
+        var presets = ParsePresets(root);
+        RejectPresetPasswords(presets, options);
 
         var provenance = new ProjectProvenance(
             RequireString(root, "name", "$"),
@@ -134,9 +138,17 @@ internal static partial class ProjectInterfaceLoader
             projectRoot, controller, resources, agent);
         return new ProjectDefinition(
             projectRoot, provenance, controller, resources, agent, runtimeProfileDigest,
-            globalOptions, tasks, options, groups, pretasks, ParsePresets(root),
-            ReadOptionalDescription(root, "label"), ReadWelcome(root));
+            globalOptions, tasks, options, groups, pretasks, presets,
+            ReadWelcome(root), ProjectAboutResolver.Read(projectRoot, ReadKeyText(root, "label") ?? provenance.Name,
+                ReadOptionalDescription(root, "description"), ReadOptionalDescription(root, "contact"),
+                ReadOptionalDescription(root, "license"), ReadOptionalDescription(root, "github")),
+            // The protocol defaults title to name and version, not to label.
+            ReadKeyText(root, "title") ?? $"{provenance.Name} {provenance.Version}".TrimEnd(),
+            ReadKeyText(root, "icon"));
     }
+
+    private static string? ReadKeyText(JsonElement root, string name) =>
+        ProjectContent.KeyText(ReadOptionalDescription(root, name));
 
     private static IReadOnlyList<string> ReadWelcome(JsonElement root)
     {
@@ -351,15 +363,27 @@ internal static partial class ProjectInterfaceLoader
             if (!names.Add(name)) {
                 throw new InvalidDataException($"重复 input name：{name}（{inputPath}）。 ");
             }
-            if (!input.TryGetProperty("default", out var defaultValue)
-                || defaultValue.ValueKind != JsonValueKind.String) {
+            // interface.json ships with the resource, so a password never has a default; it starts empty.
+            var password = OptionalBoolean(input, "password", inputPath, fallback: false);
+            var hasDefault = input.TryGetProperty("default", out var defaultValue);
+            if (password && hasDefault) {
+                throw new InvalidDataException($"{inputPath} 是 password，不能声明 default。 ");
+            }
+            if (!password && (!hasDefault || defaultValue.ValueKind != JsonValueKind.String)) {
                 throw new InvalidDataException($"default-only slice 要求 {inputPath}.default 为 string。 ");
             }
             var pipelineKind = ParsePipelineKind(OptionalString(input, "pipeline_type") ?? "string", inputPath);
+            var inputType = OptionalString(input, "input_type") switch {
+                null or "text" => ProjectInputType.Text,
+                "file" => ProjectInputType.File,
+                "directory" => ProjectInputType.Directory,
+                var value => throw new InvalidDataException($"不支持 input_type={value}（{inputPath}）。 ")
+            };
             result.Add(new InputDefinition(
                 name, ReadDisplayString(input, "label") ?? name,
-                ReadDisplayString(input, "description") ?? string.Empty, defaultValue.GetString()!,
-                pipelineKind, OptionalString(input, "verify"), ReadDisplayString(input, "pattern_msg")));
+                ReadDisplayString(input, "description") ?? string.Empty,
+                password ? string.Empty : defaultValue.GetString()!, pipelineKind, OptionalString(input, "verify"),
+                ReadDisplayString(input, "pattern_msg"), password ? ProjectInputType.Password : inputType));
         }
         return result;
     }

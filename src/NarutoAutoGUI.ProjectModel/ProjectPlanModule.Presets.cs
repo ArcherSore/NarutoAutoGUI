@@ -36,10 +36,10 @@ public sealed partial class ProjectPlanModule
             }
         }
         var options = values.GroupBy(pair => pair.Key.Option).ToDictionary(group => group.Key, group =>
-            _project.Options[group.Key].Kind switch {
-                OptionDefinitionKind.Input => ExplicitOptionIntent.CreateInputs(
+            _project.Options[group.Key] switch {
+                { Kind: OptionDefinitionKind.Input } option => ExplicitOptionIntent.CreateInputs(option,
                     group.ToDictionary(pair => pair.Key.Field!, pair => pair.Value)),
-                OptionDefinitionKind.Checkbox => ExplicitOptionIntent.CreateSelectedCases(
+                { Kind: OptionDefinitionKind.Checkbox } => ExplicitOptionIntent.CreateSelectedCases(
                     JsonSerializer.Deserialize<string[]>(group.Single().Value)!),
                 _ => ExplicitOptionIntent.CreateSelectedCase(group.Single().Value)
             }, StringComparer.Ordinal);

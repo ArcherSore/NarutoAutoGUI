@@ -143,7 +143,8 @@ public partial class MainWindow : FluentWindow
         _prepareUpdate = prepareUpdate ?? PrepareWithEngineAsync;
         _settings = new ApplicationSettings(_applicationDirectory, logger,
             CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding, OpenAfdianAsync,
-            ManageChildSessionCredentialsAsync, ClearDebugFilesAsync, ViewWelcome);
+            ManageChildSessionCredentialsAsync, ClearDebugFilesAsync, ViewWelcome, OpenTaskDescriptionLink,
+            ReadLicense);
         SettingsView.DataContext = _settings.Page;
         HelpView.DataContext = _help = new HelpPageModel(
             _settings.ExportDiagnostics, new SettingsAction(OpenIssuesAsync), ReportCopyFailure);
@@ -908,11 +909,11 @@ public partial class MainWindow : FluentWindow
             return;
         }
         if (e.Key != Key.Escape || sender is not WpfTextBox { Tag: OptionInputTag tag } editor
-            || editor.Text == tag.Value && !_invalidInputDrafts.ContainsKey(tag.Key)) {
+            || GetInputText(editor) == tag.Value && !_invalidInputDrafts.ContainsKey(tag.Key)) {
             return;
         }
         _invalidInputDrafts.Remove(tag.Key);
-        editor.Text = tag.Value;
+        SetInputText(editor, tag.Value);
         editor.SelectAll();
         ShowOptionInputError(editor, null);
         RefreshParameterDisplays();
@@ -1432,7 +1433,8 @@ public partial class MainWindow : FluentWindow
         summary.Inlines.Clear();
         foreach (var row in DeriveInspectorRows(taskName, configuration, shared: false, kind)) {
             var parts = row.Kind == ProjectOptionKind.Input
-                ? row.Inputs.Select(input => (input.Label, Value: input.DisplayValue, Invalid: input.Error is not null))
+                ? row.Inputs.Select(input =>
+                    (input.Label, Value: input.Show(input.DisplayValue), Invalid: input.Error is not null))
                 : [(row.Label, Value: row.Kind == ProjectOptionKind.Checkbox ? ParameterInspector.ShowCases(row.Option)
                     : row.SelectedCase?.Label ?? string.Empty, Invalid: row.IsInvalid)];
             foreach (var (label, value, invalid) in parts) {
@@ -1561,16 +1563,18 @@ public partial class MainWindow : FluentWindow
         return panel;
     }
 
-    private Wpf.Ui.Controls.TextBox CreateInputEditor(InspectorRow row, InspectorInput input)
+    // A password is masked and cannot be revealed; a file or folder path can be typed or picked.
+    private FrameworkElement CreateInputEditor(InspectorRow row, InspectorInput input)
     {
         var tag = new OptionInputTag(_projectPlan!.ActiveConfigurationId, row.Option.Name, input.Input.Name,
             input.SavedValue, input.Input.PatternMessage);
-        var editor = new Wpf.Ui.Controls.TextBox {
-            Style = (Style)FindResource("Option.TextBox"),
-            Text = input.DisplayValue,
-            Tag = tag,
-            ToolTip = input.Input.PatternMessage
-        };
+        var editor = input.Input.IsPassword
+            ? new Wpf.Ui.Controls.PasswordBox { PasswordChar = '●', RevealButtonEnabled = false }
+            : new Wpf.Ui.Controls.TextBox();
+        editor.Style = (Style)FindResource("Option.TextBox");
+        editor.Tag = tag;
+        editor.ToolTip = input.Input.PatternMessage;
+        SetInputText(editor, input.DisplayValue);
         AutomationProperties.SetName(editor, input.AccessibleName);
         if (!string.IsNullOrWhiteSpace(input.HelpText)) {
             AutomationProperties.SetHelpText(editor, input.HelpText);
@@ -1579,7 +1583,50 @@ public partial class MainWindow : FluentWindow
         editor.PreviewKeyDown += OptionInputTextBox_PreviewKeyDown;
         BindConfigurationEditable(editor);
         _optionInputEditors[tag.Key] = editor;
-        return editor;
+        if (input.Input.InputType is ProjectInputType.Text or ProjectInputType.Password) {
+            return editor;
+        }
+
+        var folder = input.Input.InputType == ProjectInputType.Directory;
+        var title = folder ? "选择文件夹" : "选择文件";
+        var browse = CreateIconButton(WpfSymbolRegular.FolderOpen24, $"{title}：{input.AccessibleName}", title);
+        browse.Margin = new Thickness(4, 0, 0, 0);
+        Grid.SetColumn(browse, 1);
+        BindConfigurationEditable(browse);
+        browse.Click += (_, _) => {
+            if (PickPath(folder) is { } path) {
+                editor.Text = path;
+                _ = CommitOptionInput(editor);
+            }
+        };
+        return new Grid {
+            ColumnDefinitions = { new ColumnDefinition(), new ColumnDefinition { Width = GridLength.Auto } },
+            Children = { editor, browse }
+        };
+    }
+
+    // The PI defines no extension filter, so any file can be picked.
+    private string? PickPath(bool folder)
+    {
+        if (folder) {
+            var folderDialog = new Microsoft.Win32.OpenFolderDialog();
+            return folderDialog.ShowDialog(this) == true ? folderDialog.FolderName : null;
+        }
+        var fileDialog = new Microsoft.Win32.OpenFileDialog();
+        return fileDialog.ShowDialog(this) == true ? fileDialog.FileName : null;
+    }
+
+    // A password box keeps the real text in Password; its Text holds only mask characters.
+    private static string GetInputText(WpfTextBox editor) =>
+        editor is Wpf.Ui.Controls.PasswordBox password ? password.Password : editor.Text;
+
+    private static void SetInputText(WpfTextBox editor, string value)
+    {
+        if (editor is Wpf.Ui.Controls.PasswordBox password) {
+            password.Password = value;
+        } else {
+            editor.Text = value;
+        }
     }
 
     private FrameworkElement CreateCaseSelector(InspectorRow row)
@@ -1675,7 +1722,7 @@ public partial class MainWindow : FluentWindow
                 notes.Children.Add(CreateInspectorNote(error, "Inspector.Error"));
             }
             if (input.Draft is not null) {
-                var saved = ParameterInspector.ShowValue(input.SavedValue);
+                var saved = ParameterInspector.ShowValue(input.Show(input.SavedValue));
                 notes.Children.Add(CreateInspectorNote($"未保存，仍使用「{saved}」· Esc 还原", "Inspector.DraftNote"));
             }
         }
@@ -1923,6 +1970,7 @@ public partial class MainWindow : FluentWindow
             message => _logger.Info(message));
         _projectPlan = project;
         _settings.ViewWelcome.IsVisible = project.HasWelcome;
+        ShowProjectIdentity(project);
         // Preparing the environment reloads the project; an unfixed invalid draft must survive it and keep blocking
         // Start. Drafts for inputs the reloaded PI no longer has are never rendered or matched.
         _pendingStartAttempt = null;
@@ -1957,6 +2005,7 @@ public partial class MainWindow : FluentWindow
     {
         _projectPlan = null;
         _settings.ViewWelcome.IsVisible = false;
+        ShowProjectIdentity(null);
         _invalidInputDrafts.Clear();
         _pendingStartAttempt = null;
         _projectConfigurationValid = false;

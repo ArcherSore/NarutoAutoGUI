@@ -863,12 +863,12 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar
+        <ui:TitleBar x:Name="AppTitleBar"
                      Grid.Row="0"
                      Title="NarutoAutoGUI"
                      Background="{StaticResource Brush.Canvas}">
             <ui:TitleBar.Icon>
-                <ui:ImageIcon Source="pack://application:,,,/Assets/app.png" />
+                <ui:ImageIcon x:Name="AppTitleBarIcon" Source="pack://application:,,,/Assets/app.png" />
             </ui:TitleBar.Icon>
         </ui:TitleBar>
 
@@ -1987,7 +1987,8 @@
                                     AutomationProperties.Name="关闭欢迎信息">
                                 <ui:SymbolIcon Symbol="Dismiss24" FontSize="20" />
                             </Button>
-                            <ui:SymbolIcon Symbol="Sparkle24" FontSize="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                            <ui:SymbolIcon x:Name="WelcomeIcon" Symbol="Sparkle24" FontSize="20" Margin="0,0,8,0"
+                                           VerticalAlignment="Center"
                                            Foreground="{StaticResource Brush.Primary}" />
                             <TextBlock x:Name="WelcomeTitle" FontSize="18" FontWeight="SemiBold" LineHeight="28"
                                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"

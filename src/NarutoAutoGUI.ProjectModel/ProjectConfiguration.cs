@@ -73,9 +73,11 @@ internal static class ExplicitOptionIntent
                     $"ExplicitOptions.{option.Name}.Inputs.{property.Name} 必须是 string。 ");
             }
             var value = property.Value.GetString()!;
-            result.Add(property.Name, definition.Password ? Unprotect(value) : value);
+            if ((definition.Password ? Unprotect(value) : value) is { } read) {
+                result.Add(property.Name, read);
+            }
         }
-        if (result.Count == 0) {
+        if (!inputs.EnumerateObject().Any()) {
             throw new InvalidDataException(
                 $"ExplicitOptions.{option.Name}.Inputs 不能为空；跟随默认时应删除该 option intent。 ");
         }
@@ -136,17 +138,17 @@ internal static class ExplicitOptionIntent
 
     // Passwords stay DPAPI-encrypted for the current Windows user in the configuration, also in memory, and are
     // decrypted only when read. A value that cannot be decrypted, e.g. a configuration copied from another user, reads
-    // as empty so the user enters it again.
+    // as never entered: a required password then blocks Start like an unfilled field, but every input stays editable.
     private static string Protect(string value) => value.Length == 0 ? value : Convert.ToBase64String(
         ProtectedData.Protect(Encoding.UTF8.GetBytes(value), null, DataProtectionScope.CurrentUser));
 
-    private static string Unprotect(string value)
+    private static string? Unprotect(string value)
     {
         try {
             return value.Length == 0 ? value : Encoding.UTF8.GetString(
                 ProtectedData.Unprotect(Convert.FromBase64String(value), null, DataProtectionScope.CurrentUser));
         } catch (Exception exception) when (exception is FormatException or CryptographicException) {
-            return string.Empty;
+            return null;
         }
     }
 

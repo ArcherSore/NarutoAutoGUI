@@ -51,14 +51,7 @@ internal static partial class SelfTestRunner
                 StringComparison.Ordinal)),
             "Run 计划日志不得包含密码原文。");
 
-        // A configuration copied from another Windows user cannot be decrypted: it still opens, the password empty.
-        var config = JsonNode.Parse(File.ReadAllText(configPath))!;
-        config["Configurations"]![0]!["ExplicitOptions"]!["Login"]!["Inputs"]!["password"] = "bm90LWRwYXBp";
-        File.WriteAllText(configPath, config.ToJsonString());
-        Require(ProjectPlanModule.Open(directory, configPath).GetConfiguration("RealTask").TaskOptions
-                .Single(option => option.Name == "Login").Inputs.Single().Value.Length == 0,
-            "无法解密的密码应读作空值，配置仍可打开。");
-
+        VerifyUndecryptablePasswords(testDirectory);
         var source = File.ReadAllText(Path.Combine(directory, "interface.json"));
         VerifyRejectedProjectInterface(testDirectory, source, "password-default", "不能声明 default",
             root => root["option"]!["Login"]!["inputs"]![0]!["default"] = "leaked");
@@ -68,6 +61,43 @@ internal static partial class SelfTestRunner
                 """));
         VerifyRejectedProjectInterface(testDirectory, source, "unknown-input-type", "不支持 input_type",
             root => root["option"]!["Paths"]!["inputs"]![0]!["input_type"] = "image");
+    }
+
+    // A configuration copied from another Windows user cannot be decrypted. Its required passwords read as unfilled:
+    // Start is blocked, yet each can be entered again while the others are still missing.
+    private static void VerifyUndecryptablePasswords(string testDirectory)
+    {
+        var directory = CreateProjectFixture(Path.Combine(testDirectory, "password-recovery"));
+        AddSecretAndPathInputs(directory);
+        var interfacePath = Path.Combine(directory, "interface.json");
+        var json = JsonNode.Parse(File.ReadAllText(interfacePath))!;
+        json["option"]!["Login"] = JsonNode.Parse("""
+            {"type": "input", "label": "Login", "inputs": [
+              {"name": "first", "password": true, "verify": ".+", "pattern_msg": "Required"},
+              {"name": "second", "password": true, "verify": ".+", "pattern_msg": "Required"}],
+             "pipeline_override": {"Login": {"first": "{first}", "second": "{second}"}}}
+            """);
+        File.WriteAllText(interfacePath, json.ToJsonString());
+        var configPath = Path.Combine(directory, "config.json");
+        var project = ProjectPlanModule.Open(directory, configPath);
+        project.SetInputValue("Login", "first", SecretInputValue);
+        project.SetInputValue("Login", "second", SecretInputValue);
+
+        var config = JsonNode.Parse(File.ReadAllText(configPath))!;
+        var inputs = config["Configurations"]![0]!["ExplicitOptions"]!["Login"]!["Inputs"]!;
+        inputs["first"] = "bm90LWRwYXBp";
+        inputs["second"] = "bm90LWRwYXBp";
+        File.WriteAllText(configPath, config.ToJsonString());
+        var reopened = ProjectPlanModule.Open(directory, configPath);
+        var login = reopened.GetConfiguration("RealTask").TaskOptions.Single(option => option.Name == "Login");
+        Require(login.Inputs.All(input => input.Value.Length == 0 && input.Error is not null)
+            && Throws<InvalidOperationException>(() => reopened.CreateRunStartAttempt()),
+            "无法解密的必填密码应显示为未填写，并阻止开始运行。");
+        reopened.SetInputValue("Login", "first", "renewed");
+        reopened.SetInputValue("Login", "second", "renewed");
+        Require(reopened.CreateRunStartAttempt().Plan.Items.Single().PipelineOverride.GetRawText()
+                .Contains("renewed", StringComparison.Ordinal),
+            "无法解密的密码必须能逐个重新填写，填完后可以开始运行。");
     }
 
     // A password is masked in its editor and in the folded summary; a path input can be typed or picked, except a

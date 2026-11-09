@@ -66,10 +66,33 @@ internal static class WorkerSelfTestRunner
             throw new InvalidOperationException("字符串 focus 或占位符投影验证失败。 ");
         }
 
+        // PI v2.3 object form: content renders like the string form; every display channel lands in the run log.
         buffer = new WorkerLogBuffer();
         adapter = new MaaRunLogAdapter((level, source, message) => buffer.Add(level, source, message));
         adapter.Handle("Node.Action.Starting", details);
+        adapter.Handle("evt", """{"name":"N","focus":{"evt":{"content":"{name} 开始","display":["toast","modal"]}}}""");
+        adapter.Handle("evt", """{"focus":{"evt":{"content":"仅 toast","display":"toast","trace":false}}}""");
+        entries = buffer.GetSince(0, 500).Entries;
+        if (entries.Count != 3 || entries[0].Message != "unsupported" || entries[1].Message != "N 开始"
+            || entries[2].Message != "仅 toast"
+            || entries.Any(entry => entry.Source != ProtocolConstants.MaaNopRunLogSource)) {
+            throw new InvalidOperationException("对象写法 focus 的 content 应写入运行日志。 ");
+        }
+
+        // Telemetry reads the explicit trace from the same parse; an undeclared or non-boolean trace stays unset.
+        if (adapter.Handle("evt", """{"focus":{"evt":{"trace":true}}}""").Trace != true
+            || adapter.Handle("evt", """{"focus":{"evt":{"content":"x","trace":false}}}""").Trace != false
+            || adapter.Handle("evt", """{"focus":{"evt":{"trace":"yes"}}}""").Trace is not null
+            || adapter.Handle("evt", """{"focus":{"evt":"x"}}""").Trace is not null
+            || adapter.Handle("evt", "{}").Trace is not null) {
+            throw new InvalidOperationException("focus 对象的显式 trace 应随同一次解析返回。 ");
+        }
+
+        buffer = new WorkerLogBuffer();
+        adapter = new MaaRunLogAdapter((level, source, message) => buffer.Add(level, source, message));
         adapter.Handle("Node.Action.Failed", details);
+        adapter.Handle("evt", "{\"focus\":{\"evt\":{\"trace\":true}}}");
+        adapter.Handle("evt", "{\"focus\":{\"evt\":{\"content\":42}}}");
         adapter.Handle("evt", "{}");
         adapter.Handle("evt", "{\"focus\":null}");
         adapter.Handle("evt", "{\"focus\":42}");
@@ -77,7 +100,7 @@ internal static class WorkerSelfTestRunner
         adapter.Handle("evt", "{\"focus\":[]}");
         adapter.Handle("evt", "{\"focus\":{\"evt\":\" \"}}");
         if (buffer.GetSince(0, 500).Entries.Count != 0) {
-            throw new InvalidOperationException("非字符串、未匹配或空 focus 不应产生运行日志。 ");
+            throw new InvalidOperationException("无 content、未匹配或空 focus 不应产生运行日志。 ");
         }
 
         buffer = new WorkerLogBuffer();

@@ -290,7 +290,7 @@ public sealed partial class ProjectPlanModule
         var values = ExplicitOptionIntent.ReadInputs(option, config)
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         values[inputName] = value;
-        var updated = ReplaceExplicit(config, optionName, ExplicitOptionIntent.CreateInputs(values));
+        var updated = ReplaceExplicit(config, optionName, ExplicitOptionIntent.CreateInputs(option, values));
         ValidateActiveConfiguration(updated);
         SaveConfiguration(updated);
         return BuildConfiguration(updated);
@@ -366,10 +366,10 @@ public sealed partial class ProjectPlanModule
         }).ToArray();
         var createdAtUtc = DateTime.UtcNow;
         var pretaskItems = SelectedPretaskDefinitions(config).Select(item => {
-            var values = ProjectOptionResolver.ResolvePretask(_project, item, config);
+            var (values, argument) = ProjectOptionResolver.ResolvePretask(_project, item, config);
             var arguments = item.Arguments.ToList();
             if (item.Options.Count != 0) {
-                arguments.Add(JsonSerializer.Serialize(values, ProtocolJson.Options));
+                arguments.Add(JsonSerializer.Serialize(argument, ProtocolJson.Options));
             }
             return new RunPlanItem(Guid.NewGuid(), item.Name, item.Label, string.Empty,
                 values, ProtocolJson.ToElement(Array.Empty<object>())) {
@@ -514,7 +514,8 @@ public sealed partial class ProjectPlanModule
                 explicitInputs.ContainsKey(input.Name), input.Verify, input.PatternMessage) {
                 // Saved values passed verify when they were set; only an untouched default can still fail it.
                 Error = explicitInputs.ContainsKey(input.Name) || ProjectInputValue.Matches(input, input.Default,
-                    $"option {optionName} input {input.Name}") ? null : input.PatternMessage ?? "未通过校验"
+                    $"option {optionName} input {input.Name}") ? null : input.PatternMessage ?? "未通过校验",
+                InputType = input.InputType
             }).ToArray();
             return new ProjectOptionEditor(
                 option.Name, option.Label, option.Description, ProjectOptionKind.Input,

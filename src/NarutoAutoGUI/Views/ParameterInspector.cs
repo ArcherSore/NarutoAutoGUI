@@ -13,6 +13,8 @@ internal sealed record InspectorInput(
     internal string DisplayValue => Draft?.Text ?? Input.Value;
     // An unsaved draft's problem, otherwise a saved default that still fails verify.
     internal string? Error => Draft?.Message ?? Input.Error;
+    // A password is never shown as text, only whether it is set.
+    internal string Show(string value) => Input.IsPassword && value.Length != 0 ? ProjectInputEditor.PasswordMask : value;
 }
 
 // One inspector row per option: a select, switch or checkbox, or an input option with all of its inputs side by side.

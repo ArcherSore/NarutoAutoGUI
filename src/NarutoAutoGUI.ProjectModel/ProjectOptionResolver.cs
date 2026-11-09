@@ -15,16 +15,35 @@ internal static class ProjectOptionResolver
         var taskValues = new JsonObject();
         ResolveScope(project, project.GlobalOptions, config, globalValues, pipelineOverrides, "global_option");
         ResolveScope(project, task.Options, config, taskValues, pipelineOverrides, $"task.{task.Name}.option");
-        return new ResolvedProjectOptions(ToElement(globalValues), ToElement(taskValues), ToElement(pipelineOverrides));
+        return new ResolvedProjectOptions(ToElement(MaskPasswords(project, globalValues)),
+            ToElement(MaskPasswords(project, taskValues)), ToElement(pipelineOverrides));
     }
 
     // Pretask options only become program arguments: without pipeline overrides, every input stays a string.
-    internal static JsonElement ResolvePretask(
+    // The argument carries passwords as entered; the resolved values are a record that reaches logs, so masked.
+    internal static (JsonElement Values, JsonElement Argument) ResolvePretask(
         ProjectDefinition project, PretaskDefinition pretask, TaskConfiguration config)
     {
         var values = new JsonObject();
         ResolveScope(project, pretask.Options, config, values, null, $"pretask.{pretask.Name}.option");
-        return ToElement(values);
+        var argument = ToElement(values);
+        return (ToElement(MaskPasswords(project, values)), argument);
+    }
+
+    // Resolved values are keyed by option name, so every filled password input can be found by its definition.
+    private static JsonObject MaskPasswords(ProjectDefinition project, JsonObject resolvedValues)
+    {
+        foreach (var (optionName, node) in resolvedValues.ToArray()) {
+            if (node is not JsonObject inputs) {
+                continue;
+            }
+            foreach (var input in project.Options[optionName].Inputs.Where(input => input.Password)) {
+                if (inputs[input.Name]?.GetValue<string>() is { Length: > 0 }) {
+                    inputs[input.Name] = ProjectInputEditor.PasswordMask;
+                }
+            }
+        }
+        return resolvedValues;
     }
 
     internal static void ValidateScope(

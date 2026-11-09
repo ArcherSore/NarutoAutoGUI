@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -5,12 +7,20 @@ namespace NarutoAutoGUI.ProjectModel;
 
 public enum ProjectOptionKind { Input, Select, Switch, Checkbox }
 
+// The editor an input asks for; the value is a plain string either way. A password is never a file or folder.
+public enum ProjectInputType { Text, Password, File, Directory }
+
 public sealed record ProjectInputEditor(
     string Name, string Label, string Description, string DefaultValue, string Value,
     bool IsExplicit, string? Verify, string? PatternMessage)
 {
+    // Shown in place of a filled password, in the GUI and in logs alike.
+    public const string PasswordMask = "••••••";
+
     // Set when the value still fails verify; it may be shown and saved around, but blocks Start.
     public string? Error { get; init; }
+    public ProjectInputType InputType { get; init; }
+    public bool IsPassword => InputType == ProjectInputType.Password;
 }
 
 public sealed record ProjectCaseEditor(string Name, string Label, string Description);
@@ -51,11 +61,10 @@ internal static class ExplicitOptionIntent
                 $"ExplicitOptions.{option.Name}.Inputs 必须是 object。 ");
         }
 
-        var allowed = option.Inputs.Select(input => input.Name)
-            .ToHashSet(StringComparer.Ordinal);
+        var definitions = option.Inputs.ToDictionary(input => input.Name, StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var property in inputs.EnumerateObject()) {
-            if (!allowed.Contains(property.Name)) {
+            if (!definitions.TryGetValue(property.Name, out var definition)) {
                 throw new InvalidDataException(
                     $"ExplicitOptions.{option.Name}.Inputs 包含未知字段 {property.Name}。 ");
             }
@@ -63,7 +72,8 @@ internal static class ExplicitOptionIntent
                 throw new InvalidDataException(
                     $"ExplicitOptions.{option.Name}.Inputs.{property.Name} 必须是 string。 ");
             }
-            result.Add(property.Name, property.Value.GetString()!);
+            var value = property.Value.GetString()!;
+            result.Add(property.Name, definition.Password ? Unprotect(value) : value);
         }
         if (result.Count == 0) {
             throw new InvalidDataException(
@@ -115,13 +125,29 @@ internal static class ExplicitOptionIntent
         return selected.GetString();
     }
 
-    internal static JsonElement CreateInputs(IReadOnlyDictionary<string, string> values)
+    internal static JsonElement CreateInputs(OptionDefinition option, IReadOnlyDictionary<string, string> values)
     {
         var inputs = new JsonObject();
         foreach (var (name, value) in values.OrderBy(pair => pair.Key, StringComparer.Ordinal)) {
-            inputs[name] = value;
+            inputs[name] = option.IsPassword(name) ? Protect(value) : value;
         }
         return ToElement(new JsonObject { ["Inputs"] = inputs });
+    }
+
+    // Passwords stay DPAPI-encrypted for the current Windows user in the configuration, also in memory, and are
+    // decrypted only when read. A value that cannot be decrypted, e.g. a configuration copied from another user, reads
+    // as empty so the user enters it again.
+    private static string Protect(string value) => value.Length == 0 ? value : Convert.ToBase64String(
+        ProtectedData.Protect(Encoding.UTF8.GetBytes(value), null, DataProtectionScope.CurrentUser));
+
+    private static string Unprotect(string value)
+    {
+        try {
+            return value.Length == 0 ? value : Encoding.UTF8.GetString(
+                ProtectedData.Unprotect(Convert.FromBase64String(value), null, DataProtectionScope.CurrentUser));
+        } catch (Exception exception) when (exception is FormatException or CryptographicException) {
+            return string.Empty;
+        }
     }
 
     internal static JsonElement CreateSelectedCase(string selectedCase) =>

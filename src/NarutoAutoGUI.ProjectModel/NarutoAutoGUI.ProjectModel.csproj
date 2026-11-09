@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
@@ -11,6 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- DPAPI (ProtectedData) for password inputs ships with the Windows Desktop runtime the GUI already uses. -->
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App" />
     <ProjectReference Include="..\NarutoAutoGUI.Protocol\NarutoAutoGUI.Protocol.csproj" />
   </ItemGroup>
 

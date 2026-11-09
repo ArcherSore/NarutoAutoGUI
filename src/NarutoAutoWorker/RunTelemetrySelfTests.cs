@@ -165,8 +165,9 @@ internal static class RunTelemetrySelfTests
     // A broken transport, SDK or observer changes nothing the GUI can see about Runs, and never faults the Worker.
     private static async Task VerifyTelemetryFaults()
     {
-        var failing = new CapturingTransport { Fail = true };
-        await using (var harness = await TelemetryHarnessAsync(Options, failing)) {
+        foreach (var transport in new[] { new CapturingTransport { Fail = true }, new() { Hang = true } }) {
+            await using var harness = await TelemetryHarnessAsync(Options, transport);
+            await CompleteRunAsync(harness);
             await CompleteRunAsync(harness);
         }
         await using (var harness = await TelemetryHarnessAsync(Options with { Dsn = "not a dsn" },
@@ -233,10 +234,16 @@ internal sealed class CapturingTransport : ITransport
 
     internal bool Fail { get; init; }
 
+    // Never completes until the SDK gives up, like a network that accepts the connection and then stalls.
+    internal bool Hang { get; init; }
+
     public async Task SendEnvelopeAsync(Envelope envelope, CancellationToken cancellationToken = default)
     {
         if (Fail) {
             throw new IOException("scripted transport failure");
+        }
+        if (Hang) {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
         }
         using var stream = new MemoryStream();
         await envelope.SerializeAsync(stream, null, cancellationToken);

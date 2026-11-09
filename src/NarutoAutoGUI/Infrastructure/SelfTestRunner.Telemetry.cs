@@ -47,8 +47,7 @@ internal static partial class SelfTestRunner
              "failure_attachments_sample_rate":null}}
             """)).Telemetry == new ProjectTelemetry(TestDsn, null, true, 1.0, 1.0), "类型错误的可选字段应使用默认值。");
         foreach (var invalid in new[] {
-            "null",
-            "42", "[]", "{}", """{"sentry":"x"}""", """{"sentry":{}}""", """{"sentry":{"dsn":5}}""",
+            "null", "42", "[]", "{}", """{"sentry":"x"}""", """{"sentry":{}}""", """{"sentry":{"dsn":5}}""",
             """{"sentry":{"dsn":"  "}}""", """{"sentry":{"dsn":null}}""" }) {
             Require(Load(JsonNode.Parse(invalid)).Telemetry is null, $"无效遥测配置只关闭遥测：{invalid}");
         }

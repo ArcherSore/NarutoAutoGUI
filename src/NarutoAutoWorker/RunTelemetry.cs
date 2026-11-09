@@ -90,20 +90,17 @@ internal sealed class RunTelemetry : IRunTelemetry
         }
     }
 
+    // The host guards this call; a fault here only loses telemetry.
     public void Observe(WorkerSnapshot snapshot)
     {
-        try {
-            lock (_gate) {
-                if (snapshot.StateRevision <= _revision) {
-                    return;
-                }
-                _revision = snapshot.StateRevision;
-                if (_enabled) {
-                    ObserveLocked(snapshot);
-                }
+        lock (_gate) {
+            if (snapshot.StateRevision <= _revision) {
+                return;
             }
-        } catch (Exception exception) {
-            ReportFault(exception);
+            _revision = snapshot.StateRevision;
+            if (_enabled) {
+                ObserveLocked(snapshot);
+            }
         }
     }
 

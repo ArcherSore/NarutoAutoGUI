@@ -22,8 +22,7 @@ internal static class ProjectOptionResolver
     // Pretask options only become program arguments: without pipeline overrides, every input stays a string.
     // The argument carries passwords as entered; the resolved values are a record that reaches logs, so masked.
     internal static (JsonElement Values, JsonElement Argument) ResolvePretask(
-        ProjectDefinition project, PretaskDefinition pretask, TaskConfiguration config,
-        ISet<string>? passwords = null)
+        ProjectDefinition project, PretaskDefinition pretask, TaskConfiguration config, ISet<string>? passwords = null)
     {
         var values = new JsonObject();
         ResolveScope(project, pretask.Options, config, values, null, $"pretask.{pretask.Name}.option");

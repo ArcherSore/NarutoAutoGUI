@@ -38,10 +38,13 @@ internal sealed class WorkerHost
             options, (level, source, message) => Log(level, source, message)));
         _supervisor = new RunSupervisor(manifest, _logs, createExecution ?? CreateRuntimeExecution,
             (level, source, message, runId) => Log(level, source, message, runId), PublishState, _shutdown.Token);
-        IRunTelemetry? telemetry = null;
-        Telemetry(() => telemetry = (createTelemetry ?? (current => RunTelemetry.Create(current,
-            (level, source, message) => Log(level, source, message))))(manifest));
-        _telemetry = telemetry ?? RunTelemetry.None;
+        try {
+            _telemetry = createTelemetry?.Invoke(manifest)
+                ?? RunTelemetry.Create(manifest, (level, source, message) => Log(level, source, message));
+        } catch (Exception exception) {
+            Log("WARN", "telemetry", $"遥测异常，已忽略：{exception.GetBaseException().Message}");
+            _telemetry = RunTelemetry.None;
+        }
     }
 
     internal async Task RunAsync(CancellationToken cancellationToken)

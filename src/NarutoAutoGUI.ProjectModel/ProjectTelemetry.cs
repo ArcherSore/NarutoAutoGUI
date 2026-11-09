@@ -15,8 +15,8 @@ public sealed record ProjectTelemetry(
             || Text(sentry, "dsn") is not { } dsn) {
             return null;
         }
-        return new ProjectTelemetry(dsn, Text(sentry, "environment"),
-            sentry.TryGetProperty("tracing", out var tracing) && tracing.ValueKind == JsonValueKind.False ? false : true,
+        var tracing = !(sentry.TryGetProperty("tracing", out var value) && value.ValueKind == JsonValueKind.False);
+        return new ProjectTelemetry(dsn, Text(sentry, "environment"), tracing,
             Rate(sentry, "traces_sample_rate"), Rate(sentry, "failure_attachments_sample_rate"));
     }
 

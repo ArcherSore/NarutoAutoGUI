@@ -128,12 +128,23 @@ public sealed record MaaFrameworkOptions(bool SaveOnError = true, bool SaveDraw 
 
 public sealed record FrameworkSetOptionsResponse;
 
+// PI telemetry.sentry after the GUI's release gate; Enabled is the user's choice when the Worker starts.
+public sealed record TelemetryOptions(
+    string Dsn, string Release, string Environment, bool Tracing, double TracesSampleRate,
+    double FailureAttachmentsSampleRate)
+{
+    public bool Enabled { get; init; }
+}
+
 public sealed record LaunchManifest(
     int LaunchContextVersion, Guid WorkerInstanceId, string RuntimeProfileDigest,
     string ProjectRoot, ProjectProvenance Project, Win32ControllerDefinition Controller,
     IReadOnlyList<ResourceDefinition> Resources, AgentDefinition Agent)
 {
     public MaaFrameworkOptions FrameworkOptions { get; init; } = new();
+
+    // Absent when the project declares no telemetry or the gate blocks it; not part of the Runtime Profile Digest.
+    public TelemetryOptions? Telemetry { get; init; }
 }
 
 public sealed record RunPlan(

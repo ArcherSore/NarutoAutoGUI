@@ -111,6 +111,7 @@
                 <ui:ToggleSwitch Grid.Column="2" Margin="24,0,0,0" VerticalAlignment="Center"
                                  OnContent="{x:Null}" OffContent="{x:Null}"
                                  IsChecked="{Binding Toggle.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 IsEnabled="{Binding Toggle.IsEnabled}"
                                  AutomationProperties.AutomationId="{Binding Definition.Id}"
                                  AutomationProperties.Name="{Binding Definition.Title}" />
             </Grid>

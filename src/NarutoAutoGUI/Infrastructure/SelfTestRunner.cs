@@ -43,6 +43,8 @@ internal static partial class SelfTestRunner
         new(Group.Support, nameof(VerifyNavigationRail), c => VerifyNavigationRail(c.Logger, c.Directory)),
         new(Group.Support, nameof(VerifyHelpPage), c => VerifyHelpPage(c.Logger, c.Directory)),
         new(Group.Support, nameof(VerifyPreparationGuidance), _ => VerifyPreparationGuidance()),
+        new(Group.Support, nameof(VerifyTelemetryGate), _ => VerifyTelemetryGate()),
+        new(Group.Support, nameof(VerifyTelemetryPreference), c => VerifyTelemetryPreference(c.Logger, c.Directory)),
 
         new(Group.Project, nameof(VerifyPretaskModel), c => VerifyPretaskModel(c.Directory)),
         new(Group.Project, nameof(VerifyPretaskGuiWiring), c => VerifyPretaskGuiWiring(c.Logger, c.Directory)),
@@ -152,6 +154,8 @@ internal static partial class SelfTestRunner
             : args.Contains("--project-only", StringComparer.Ordinal) ? new[] { Group.Support, Group.Project }
             : args.Contains("--runtime-controls-only", StringComparer.Ordinal) ? new[] { Group.RuntimeControls }
             : Enum.GetValues<Group>();
+        // Nothing a self-test drives may ever reach a real telemetry service.
+        TelemetryBuild.SelfTestProcess = true;
         var root = Path.Combine(Path.GetTempPath(), $"NarutoAutoGUI-self-test-{Guid.NewGuid():N}");
         // Scenarios open and close windows in turn; closing the last of them must not end the run.
         System.Windows.Application.Current.ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;

@@ -19,6 +19,8 @@ internal sealed class WorkerHost
     private readonly RunSupervisor _supervisor;
     private readonly Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>> _checkReadiness;
     private readonly Action<MaaFrameworkOptions> _applyFrameworkOptions;
+    private readonly IRunTelemetry _telemetry;
+    private int _telemetryFaultLogged;
 
     // The execution factory and readiness check default to MaaFramework and the dependency probe; self-tests replace
     // them so Run rules can be exercised without native runtime, a game window or an Agent.
@@ -26,7 +28,8 @@ internal sealed class WorkerHost
         WorkerArguments arguments, LaunchManifest manifest,
         Func<Guid, RunPlanItem, Action, IPlanItemExecution>? createExecution = null,
         Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>>? checkReadiness = null,
-        Action<MaaFrameworkOptions>? applyFrameworkOptions = null)
+        Action<MaaFrameworkOptions>? applyFrameworkOptions = null,
+        Func<LaunchManifest, IRunTelemetry>? createTelemetry = null)
     {
         _arguments = arguments;
         _manifest = manifest;
@@ -35,6 +38,10 @@ internal sealed class WorkerHost
             options, (level, source, message) => Log(level, source, message)));
         _supervisor = new RunSupervisor(manifest, _logs, createExecution ?? CreateRuntimeExecution,
             (level, source, message, runId) => Log(level, source, message, runId), PublishState, _shutdown.Token);
+        IRunTelemetry? telemetry = null;
+        Telemetry(() => telemetry = (createTelemetry ?? (current => RunTelemetry.Create(current,
+            (level, source, message) => Log(level, source, message))))(manifest));
+        _telemetry = telemetry ?? RunTelemetry.None;
     }
 
     internal async Task RunAsync(CancellationToken cancellationToken)
@@ -61,7 +68,11 @@ internal sealed class WorkerHost
             await initialization;
         } catch (OperationCanceledException) when (linked.IsCancellationRequested) {
         }
+        DisposeTelemetry();
     }
+
+    // Sends what is queued within the SDK's shutdown timeout; a Child Session logoff ends the process before that.
+    internal void DisposeTelemetry() => Telemetry(_telemetry.Dispose);
 
     internal async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -201,6 +212,8 @@ internal sealed class WorkerHost
 
     private FrameworkSetOptionsResponse SetFrameworkOptions(FrameworkSetOptionsRequest request)
     {
+        // The telemetry choice goes first, so a failing framework switch cannot keep telemetry on.
+        Telemetry(() => _telemetry.SetEnabled(request.TelemetryEnabled));
         _applyFrameworkOptions(request.Framework);
         return new FrameworkSetOptionsResponse();
     }
@@ -249,12 +262,25 @@ internal sealed class WorkerHost
 
     private void PublishState(string operation, WorkerSnapshot snapshot)
     {
+        Telemetry(() => _telemetry.Observe(snapshot));
         WorkerEventSender? events;
         lock (_eventsGate) {
             events = _events;
         }
         events?.PublishState(WireEnvelope.Event(
             operation, new StateChangedEvent(_manifest.WorkerInstanceId, snapshot.StateRevision, snapshot)));
+    }
+
+    // Telemetry is a side path (ADR 0009): whatever it throws is logged once and never reaches a Run.
+    private void Telemetry(Action action)
+    {
+        try {
+            action();
+        } catch (Exception exception) {
+            if (Interlocked.Exchange(ref _telemetryFaultLogged, 1) == 0) {
+                Log("WARN", "telemetry", $"遥测异常，已忽略：{exception.GetBaseException().Message}");
+            }
+        }
     }
 
     private void Log(

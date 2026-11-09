@@ -7,7 +7,14 @@ namespace NarutoAutoWorker;
 
 internal static class WorkerSelfTestRunner
 {
-    internal static int Run(string[] args) => SelfTestSuite.Run("WORKER SELF-TEST", [
+    internal static int Run(string[] args)
+    {
+        // Nothing a self-test drives may reach a real telemetry service; telemetry checks supply their transport.
+        RunTelemetry.SelfTestProcess = true;
+        return SelfTestSuite.Run("WORKER SELF-TEST", Checks, args);
+    }
+
+    private static IEnumerable<(string Name, Action Body)> Checks => [
         .. RunSelfTests.Checks,
         (nameof(VerifyFocusProjection), VerifyFocusProjection),
         (nameof(VerifyCallbackAdapter), VerifyCallbackAdapter),
@@ -20,8 +27,9 @@ internal static class WorkerSelfTestRunner
         (nameof(NativeTaskCleanupSelfTests), () => NativeTaskCleanupSelfTests.RunAsync().GetAwaiter().GetResult()),
         (nameof(FrameworkOptionsSelfTests), FrameworkOptionsSelfTests.Run),
         (nameof(VerifyBootstrapLog), VerifyBootstrapLog),
-        .. PretaskSelfTests.Checks
-    ], args);
+        .. PretaskSelfTests.Checks,
+        .. RunTelemetrySelfTests.Checks
+    ];
 
     // A startup failure written anywhere else never reaches the diagnostic package.
     private static void VerifyBootstrapLog()

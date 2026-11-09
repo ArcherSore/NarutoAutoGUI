@@ -24,12 +24,12 @@ internal sealed class RunHarness : IAsyncDisposable
     private ProtocolConnection _worker = null!;
     private Task _receiving = Task.CompletedTask;
 
-    private RunHarness(Guid workerId)
+    private RunHarness(Guid workerId, TelemetryOptions? telemetry, Func<LaunchManifest, IRunTelemetry>? createTelemetry)
     {
         Executions = new ScriptedExecutionFactory();
         var manifest = new LaunchManifest(ProtocolConstants.LaunchContextVersion, workerId, ProfileDigest,
             "C:\\dummy", Project, new Win32ControllerDefinition("test", "class", "window", "Cache", "Send", "Send"),
-            [], new AgentDefinition("python.exe", [], "C:\\dummy"));
+            [], new AgentDefinition("python.exe", [], "C:\\dummy")) { Telemetry = telemetry };
         Host = new WorkerHost(new WorkerArguments(workerId, "test", "C:\\dummy"), manifest,
             Executions.Create,
             _ => Task.FromResult((Dependencies, ReadinessFailure)),
@@ -38,7 +38,8 @@ internal sealed class RunHarness : IAsyncDisposable
                     throw FrameworkOptionsFailure;
                 }
                 AppliedFrameworkOptions.Add(options);
-            });
+            },
+            createTelemetry ?? (_ => RunTelemetry.None));
         Executions.Probe = Host.GetSnapshot;
     }
 
@@ -65,10 +66,10 @@ internal sealed class RunHarness : IAsyncDisposable
         }
     }
 
-    internal static async Task<RunHarness> CreateAsync(
-        bool initialize = true)
+    internal static async Task<RunHarness> CreateAsync(bool initialize = true, TelemetryOptions? telemetry = null,
+        Func<LaunchManifest, IRunTelemetry>? createTelemetry = null)
     {
-        var harness = new RunHarness(Guid.NewGuid());
+        var harness = new RunHarness(Guid.NewGuid(), telemetry, createTelemetry);
         await harness.ConnectAsync();
         if (initialize) {
             await harness.Host.InitializeAsync(CancellationToken.None);
@@ -185,6 +186,7 @@ internal sealed class RunHarness : IAsyncDisposable
         } catch (Exception) {
             // Tests that expect a particular connection outcome await Serving themselves.
         }
+        Host.DisposeTelemetry();
         await _gui.DisposeAsync();
         await _worker.DisposeAsync();
         _shutdown.Dispose();
@@ -362,6 +364,8 @@ internal sealed class ScriptedExecution : IPlanItemExecution
             throw new TimeoutException($"{Item.TaskName} 未调用 StopAsync。");
         }
     }
+
+    internal void Complete(RuntimeExecutionResult result) => _result.TrySetResult(result);
 
     internal void Complete(RuntimeExecutionOutcome outcome, string? errorCode = null) =>
         _result.TrySetResult(new RuntimeExecutionResult(outcome,

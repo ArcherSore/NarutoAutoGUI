@@ -12,8 +12,8 @@ internal static class MaaRunLogFormatter
         @"\{(?<name>[A-Za-z_][A-Za-z0-9_]*)\}",
         RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
-    // PI v2: a string template is the content; an object carries content, display and trace. Every display channel
-    // is written to the run log, which is the only channel this frontend offers.
+    // PI v2: a string template is the content; an object carries content, display and trace. The run log is the only
+    // channel this frontend offers, so content goes there whatever display names.
     internal static MaaFocus Read(string message, string detailsJson)
     {
         if (string.IsNullOrEmpty(message) || string.IsNullOrWhiteSpace(detailsJson)) {
@@ -43,8 +43,8 @@ internal static class MaaRunLogFormatter
             content = template;
         }
 
-        return new MaaFocus(content.ValueKind == JsonValueKind.String ? Render(details, content.GetString()) : null,
-            trace);
+        var text = content.ValueKind == JsonValueKind.String ? Render(details, content.GetString()) : null;
+        return new MaaFocus(text, trace);
     }
 
     private static string? Render(JsonElement details, string? template)

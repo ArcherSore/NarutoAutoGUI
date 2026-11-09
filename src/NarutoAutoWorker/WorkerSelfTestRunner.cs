@@ -66,7 +66,7 @@ internal static class WorkerSelfTestRunner
             throw new InvalidOperationException("字符串 focus 或占位符投影验证失败。 ");
         }
 
-        // PI v2.3 object form: content renders like the string form; every display channel lands in the run log.
+        // PI v2 object form: content renders like the string form; every display channel lands in the run log.
         buffer = new WorkerLogBuffer();
         adapter = new MaaRunLogAdapter((level, source, message) => buffer.Add(level, source, message));
         adapter.Handle("Node.Action.Starting", details);
@@ -93,6 +93,8 @@ internal static class WorkerSelfTestRunner
         adapter.Handle("Node.Action.Failed", details);
         adapter.Handle("evt", "{\"focus\":{\"evt\":{\"trace\":true}}}");
         adapter.Handle("evt", "{\"focus\":{\"evt\":{\"content\":42}}}");
+        adapter.Handle("evt", "{\"focus\":{\"evt\":{\"content\":null}}}");
+        adapter.Handle("evt", "{\"focus\":{\"evt\":{\"content\":\" \"}}}");
         adapter.Handle("evt", "{}");
         adapter.Handle("evt", "{\"focus\":null}");
         adapter.Handle("evt", "{\"focus\":42}");

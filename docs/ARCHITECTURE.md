@@ -54,6 +54,14 @@ Worker 同时只执行一个 Run，逐项处理 Plan Item。pretask 非零退出
 
 GUI 负责更新界面、用户确认和运行环境关闭；Rust Update Engine 负责 Release 选择、完整包下载与验证、缓存和安装。GUI 将 Engine 给出的 descriptor/reference 原样交回，不解释更新包。安装前必须停止任务并确认运行环境退出；Engine 接管安装后等待 GUI 进程退出，再替换完整包内容。更新契约见 [Update Engine 文档](../src/MaaNOP.UpdateEngine/README.md)。
 
+## 遥测
+
+MaaNOP 在 Project Interface 声明 telemetry.sentry 时，NarutoAutoGUI 向该 Sentry 项目匿名上报，设计取舍见 ADR 0009。
+GUI 持有"帮助改进软件"开关和发布闸门：只有发布版 GUI 与发布版项目、且不在自检中才生成遥测配置，经 Launch Manifest 和
+framework.setOptions 交给 Worker。Worker 观察自身已发布的 Snapshot，以 Transaction 和 Span 上报 Run 与 Plan Item。
+遥测始终是旁路：初始化、发送或记录失败只写日志，不改变 Run、Worker 状态或运行环境生命周期，也不延迟结束运行环境。
+上报不含机器名与 PII，用户标识为 MachineGuid 的加盐哈希；PI password 输入值由 GUI 随 run.start 交给 Worker 脱敏。
+
 ## 当前支持边界
 
 支持按顺序执行不重复的顶层 MaaNOP task、Project Interface pretask、多份独立配置、桌面分身只读观看与手动操作和完整包更新。当前不支持同一 task 的多实例独立参数、依赖图、条件或并行调度，也不内置 QQ 登录或游戏登录资源、托管启动入口、录制或可调 Child Session 分辨率/DPI。

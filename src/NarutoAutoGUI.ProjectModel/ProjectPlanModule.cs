@@ -11,7 +11,11 @@ public sealed record ProjectTaskChoice(string Name, string Label, string Descrip
 
 public sealed record ProjectTaskGroup(string Name, string Label, string Description, string? Icon, bool DefaultExpand);
 
-public sealed record RunStartAttempt(Guid RunId, RunPlan Plan, string PlanDigest);
+public sealed record RunStartAttempt(Guid RunId, RunPlan Plan, string PlanDigest)
+{
+    // Every non-empty password this Run uses, for telemetry to redact; never part of the Plan or its digest.
+    public IReadOnlyList<string> RedactionValues { get; init; } = [];
+}
 
 public sealed partial class ProjectPlanModule
 {
@@ -51,6 +55,7 @@ public sealed partial class ProjectPlanModule
     public bool HasWelcome => _project.Welcome.Count > 0;
     public ProjectAbout About => _project.About;
     public string Title => _project.Title;
+    public ProjectTelemetry? Telemetry => _project.Telemetry;
     // Throws when the icon lies outside the project directory; whether it is an image is known only when shown.
     public string? ResolveIconPath() =>
         _project.Icon is { } icon ? ProjectContent.ResolvePath(_project.ProjectRoot, icon) : null;
@@ -360,13 +365,14 @@ public sealed partial class ProjectPlanModule
         }
         RequireRunnableOptions(config);
 
+        var passwords = new HashSet<string>(StringComparer.Ordinal);
         var resolvedItems = config.SelectedTasks.Select(taskName => {
             var task = FindTask(taskName);
-            return (Task: task, Resolved: ProjectOptionResolver.Resolve(_project, task, config));
+            return (Task: task, Resolved: ProjectOptionResolver.Resolve(_project, task, config, passwords));
         }).ToArray();
         var createdAtUtc = DateTime.UtcNow;
         var pretaskItems = SelectedPretaskDefinitions(config).Select(item => {
-            var (values, argument) = ProjectOptionResolver.ResolvePretask(_project, item, config);
+            var (values, argument) = ProjectOptionResolver.ResolvePretask(_project, item, config, passwords);
             var arguments = item.Arguments.ToList();
             if (item.Options.Count != 0) {
                 arguments.Add(JsonSerializer.Serialize(argument, ProtocolJson.Options));
@@ -391,7 +397,9 @@ public sealed partial class ProjectPlanModule
                 $"Run Plan 超过 {ProtocolConstants.MaximumRunPlanBytes} bytes：{serializedBytes.Length}。 ");
         }
 
-        return new RunStartAttempt(Guid.NewGuid(), plan, CanonicalDigest.ComputePlanDigestV2(plan));
+        return new RunStartAttempt(Guid.NewGuid(), plan, CanonicalDigest.ComputePlanDigestV2(plan)) {
+            RedactionValues = passwords.ToArray()
+        };
     }
 
     private TaskConfiguration LoadConfig() => FindConfiguration(ActiveConfigurationId);

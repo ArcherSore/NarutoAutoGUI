@@ -7,7 +7,7 @@ namespace NarutoAutoGUI.ProjectModel;
 internal static class ProjectOptionResolver
 {
     internal static ResolvedProjectOptions Resolve(
-        ProjectDefinition project, TaskDefinition task, TaskConfiguration config)
+        ProjectDefinition project, TaskDefinition task, TaskConfiguration config, ISet<string>? passwords = null)
     {
         var pipelineOverrides = new JsonArray { ParseObject(task.PipelineOverride) };
 
@@ -15,30 +15,34 @@ internal static class ProjectOptionResolver
         var taskValues = new JsonObject();
         ResolveScope(project, project.GlobalOptions, config, globalValues, pipelineOverrides, "global_option");
         ResolveScope(project, task.Options, config, taskValues, pipelineOverrides, $"task.{task.Name}.option");
-        return new ResolvedProjectOptions(ToElement(MaskPasswords(project, globalValues)),
-            ToElement(MaskPasswords(project, taskValues)), ToElement(pipelineOverrides));
+        return new ResolvedProjectOptions(ToElement(MaskPasswords(project, globalValues, passwords)),
+            ToElement(MaskPasswords(project, taskValues, passwords)), ToElement(pipelineOverrides));
     }
 
     // Pretask options only become program arguments: without pipeline overrides, every input stays a string.
     // The argument carries passwords as entered; the resolved values are a record that reaches logs, so masked.
     internal static (JsonElement Values, JsonElement Argument) ResolvePretask(
-        ProjectDefinition project, PretaskDefinition pretask, TaskConfiguration config)
+        ProjectDefinition project, PretaskDefinition pretask, TaskConfiguration config,
+        ISet<string>? passwords = null)
     {
         var values = new JsonObject();
         ResolveScope(project, pretask.Options, config, values, null, $"pretask.{pretask.Name}.option");
         var argument = ToElement(values);
-        return (ToElement(MaskPasswords(project, values)), argument);
+        return (ToElement(MaskPasswords(project, values, passwords)), argument);
     }
 
     // Resolved values are keyed by option name, so every filled password input can be found by its definition.
-    private static JsonObject MaskPasswords(ProjectDefinition project, JsonObject resolvedValues)
+    // Masking also collects each original value, which telemetry must redact from whatever it uploads.
+    private static JsonObject MaskPasswords(ProjectDefinition project, JsonObject resolvedValues,
+        ISet<string>? passwords)
     {
         foreach (var (optionName, node) in resolvedValues.ToArray()) {
             if (node is not JsonObject inputs) {
                 continue;
             }
             foreach (var input in project.Options[optionName].Inputs.Where(input => input.Password)) {
-                if (inputs[input.Name]?.GetValue<string>() is { Length: > 0 }) {
+                if (inputs[input.Name]?.GetValue<string>() is { Length: > 0 } value) {
+                    passwords?.Add(value);
                     inputs[input.Name] = ProjectInputEditor.PasswordMask;
                 }
             }

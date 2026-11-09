@@ -82,6 +82,7 @@ internal static partial class SelfTestRunner
         new(Group.Project, nameof(VerifyWelcomeContent), c => VerifyWelcomeContent(c.Directory)),
         new(Group.Project, nameof(VerifyWelcomeDialog), c => VerifyWelcomeDialog(c.Logger, c.Directory)),
         new(Group.Project, nameof(VerifyProjectIdentityContent), c => VerifyProjectIdentityContent(c.Directory)),
+        new(Group.Project, nameof(VerifyProjectTelemetry), c => VerifyProjectTelemetry(c.Directory)),
         new(Group.Project, nameof(VerifyProjectIdentityWindow),
             c => VerifyProjectIdentityWindow(c.Logger, c.Directory)),
 

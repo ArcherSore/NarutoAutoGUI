@@ -11,6 +11,9 @@ internal interface IRunTelemetry : IDisposable
 {
     void SetEnabled(bool enabled);
 
+    // The passwords a Run uses, registered before the Run is accepted so nothing it causes can carry them out.
+    void Register(IReadOnlyList<string> redactionValues);
+
     // Called with every published Worker snapshot, in no particular thread.
     void Observe(WorkerSnapshot snapshot);
 }
@@ -21,6 +24,7 @@ internal sealed class RunTelemetry : IRunTelemetry
     private readonly object _gate = new();
     private readonly Action<string, string, string> _log;
     private readonly IDisposable _sdk;
+    private readonly TelemetryScrubber _scrubber = new();
     private readonly Dictionary<Guid, ISpan> _spans = [];
     private readonly HashSet<Guid> _finished = [];
     private bool _enabled;
@@ -53,6 +57,8 @@ internal sealed class RunTelemetry : IRunTelemetry
             sentry.ShutdownTimeout = FlushTimeout;
             sentry.DisableAppDomainUnhandledExceptionCapture();
             sentry.DisableUnobservedTaskExceptionCapture();
+            sentry.EnableLogs = true;
+            _scrubber.Install(sentry, ReportFault);
             if (transport is not null) {
                 sentry.Transport = transport;
             }
@@ -75,6 +81,8 @@ internal sealed class RunTelemetry : IRunTelemetry
             return Disabled.Instance;
         }
     }
+
+    public void Register(IReadOnlyList<string> redactionValues) => _scrubber.Add(redactionValues);
 
     public void SetEnabled(bool enabled)
     {
@@ -252,6 +260,10 @@ internal sealed class RunTelemetry : IRunTelemetry
         internal static readonly Disabled Instance = new();
 
         public void SetEnabled(bool enabled)
+        {
+        }
+
+        public void Register(IReadOnlyList<string> redactionValues)
         {
         }
 

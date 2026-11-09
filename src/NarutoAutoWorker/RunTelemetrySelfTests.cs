@@ -14,7 +14,7 @@ internal static class RunTelemetrySelfTests
 
     internal static (string Name, Action Body)[] Checks => [
         Check(VerifyRunTransactions), Check(VerifyTelemetryToggle), Check(VerifyTransactionSampling),
-        Check(VerifyTelemetryFaults)
+        Check(VerifyTelemetryFaults), Check(VerifyRedactionInFinalEnvelope)
     ];
 
     private static (string Name, Action Body) Check(Func<Task> body) =>
@@ -182,6 +182,60 @@ internal static class RunTelemetrySelfTests
         }
     }
 
+    // Whatever finally leaves the process — Transaction, Error Event, Sentry Log — carries no password the Run used
+    // (raw or JSON-escaped) and no profile folder name; redacted items are still delivered, not silently dropped.
+    // The names here are invented: redaction follows PI password inputs, never a particular project.
+    private static async Task VerifyRedactionInFinalEnvelope()
+    {
+        const string pin = "731904";
+        const string phrase = "pa\"ss\\wörd密钥";
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var transport = new CapturingTransport();
+        await using (var harness = await TelemetryHarnessAsync(Options, transport)) {
+            var options = ProtocolJson.ToElement(new Dictionary<string, object> {
+                ["Mode"] = $"use-{pin}", ["Other"] = "Normal",
+                ["Credentials"] = new Dictionary<string, string> { ["secret"] = "••••••" }
+            });
+            var plan = new RunPlan(ProtocolConstants.PlanVersion, DateTime.UtcNow, RunHarness.Project,
+                RunHarness.ProfileDigest, ProtocolJson.ToElement(new { }), [
+                    new(Guid.NewGuid(), $"Sync-{pin}", "同步", "SyncEntry", options, ProtocolJson.ToElement(new { }))
+                ]);
+            var request = RunSelfTests.Request(plan) with { RedactionValues = [pin, phrase, ""] };
+            await harness.StartAsync(request);
+            var execution = await harness.Executions.ExecutingAsync(plan.Items[0].PlanItemId);
+            execution.ReportRunning();
+            // Stand-ins for the uploads later tickets add: an Agent stderr line in an exception, a log line, an extra.
+            Sentry.SentrySdk.CaptureException(new InvalidOperationException(
+                $"agent.stderr: login {pin} with {phrase} from {profile}\\agent"));
+            Sentry.SentrySdk.CaptureMessage($"worker log: {phrase}", scope => scope.SetExtra("detail",
+                new { text = $"{pin} at {profile}", nested = new[] { phrase } }));
+            // A log's text is fixed once created: callers scrub first, and one that still leaks is refused.
+            Sentry.SentrySdk.Logger.LogWarning($"maafw: input_text {pin} {phrase} {profile}");
+            // An item whose scrubbing fails is dropped, never sent as it was.
+            Sentry.SentrySdk.CaptureMessage("unscrubbable item", scope => scope.SetExtra("value", new Unreadable()));
+            execution.Complete(RuntimeExecutionOutcome.Succeeded);
+            await harness.WaitForStateAsync(s => s.LastRun?.RunId == request.RunId, "Run 应终结。");
+        }
+
+        var text = transport.Text;
+        foreach (var secret in new[] { pin, phrase, profile }) {
+            foreach (var form in new[] { secret, JsonEncodedText.Encode(secret).ToString(),
+                JsonEncodedText.Encode(secret, System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping)
+                    .ToString() }) {
+                RunSelfTests.Expect(!text.Contains(form, StringComparison.OrdinalIgnoreCase),
+                    $"最终 envelope 不得包含密码或用户目录：{form}");
+            }
+        }
+        var transaction = transport.Items("transaction").Single();
+        var span = transaction.GetProperty("spans").EnumerateArray().Single();
+        RunSelfTests.Expect(span.GetProperty("data").GetProperty("option.Other").GetString() == "Normal"
+            && span.GetProperty("data").GetProperty("option.Mode").GetString()!.Contains("[Filtered]"),
+            "Span 中的密码应被替换，其余内容保留；空值不得导致整体替换。");
+        RunSelfTests.Expect(!transport.Text.Contains("unscrubbable item"), "清洗失败的上报必须丢弃。");
+        RunSelfTests.Expect(transport.Items("event").Count() == 2 && transport.Text.Contains("[Filtered]"),
+            "含密码的事件应脱敏后照常发送，而不是被丢弃。");
+    }
+
     private static async Task CompleteRunAsync(RunHarness harness)
     {
         var request = RunSelfTests.Request(RunSelfTests.Plan(2));
@@ -218,9 +272,16 @@ internal static class RunTelemetrySelfTests
         item.TryGetProperty("status", out var status) ? status.GetString()
         : item.GetProperty("contexts").GetProperty("trace").GetProperty("status").GetString();
 
+    private sealed class Unreadable
+    {
+        public string Value => throw new InvalidOperationException("scripted unreadable value");
+    }
+
     private sealed class ThrowingTelemetry : IRunTelemetry
     {
         public void SetEnabled(bool enabled) => throw new InvalidOperationException("scripted telemetry fault");
+        public void Register(IReadOnlyList<string> redactionValues) =>
+            throw new InvalidOperationException("scripted telemetry fault");
         public void Observe(WorkerSnapshot snapshot) => throw new InvalidOperationException("scripted telemetry fault");
         public void Dispose() => throw new InvalidOperationException("scripted telemetry fault");
     }

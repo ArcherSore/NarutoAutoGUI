@@ -186,8 +186,7 @@ internal sealed class WorkerHost
                 ProtocolOperations.WorkerGetSnapshot => WireEnvelope.Response(
                     request.Operation, requestId, new GetSnapshotResponse(GetSnapshot())),
                 ProtocolOperations.RunStart => WireEnvelope.Response(
-                    request.Operation, requestId,
-                    _supervisor.Accept(ProtocolJson.Deserialize<RunStartRequest>(request.Data))),
+                    request.Operation, requestId, StartRun(ProtocolJson.Deserialize<RunStartRequest>(request.Data))),
                 ProtocolOperations.RunStop => WireEnvelope.Response(
                     request.Operation, requestId,
                     _supervisor.Stop(ProtocolJson.Deserialize<RunStopRequest>(request.Data), out pendingStop)),
@@ -211,6 +210,12 @@ internal sealed class WorkerHost
                 request.Operation, requestId, "internal_error",
                 exception.GetBaseException().Message);
         }
+    }
+
+    private RunStartResponse StartRun(RunStartRequest request)
+    {
+        Telemetry(() => _telemetry.Register(request.RedactionValues));
+        return _supervisor.Accept(request);
     }
 
     private FrameworkSetOptionsResponse SetFrameworkOptions(FrameworkSetOptionsRequest request)

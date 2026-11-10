@@ -47,6 +47,7 @@ internal sealed class RunTelemetry : IRunTelemetry
     private readonly string _debugDirectory;
     private readonly double _attachmentRate;
     private readonly Func<Guid, IReadOnlyList<WorkerLogEntry>> _itemLogs;
+    private readonly HashSet<PendingFailure> _pending = [];
     private volatile bool _enabled;
     private WorkerState? _workerState;
     // Only a Run that started while telemetry was on is reported whole.
@@ -351,12 +352,29 @@ internal sealed class RunTelemetry : IRunTelemetry
         }
         var agent = trace?.AgentProcessId;
         // Reading the debug folder takes time; neither the Run nor the next one waits for it.
-        return () => _ = Task.Run(() => SendFailure(sentryEvent, span, run.RunId, item, agent));
+        return () => {
+            var pending = new PendingFailure(sentryEvent, span);
+            lock (_pending) {
+                _pending.Add(pending);
+            }
+            _ = Task.Run(() => {
+                try {
+                    SendFailure(pending, run.RunId, item, agent);
+                } catch (Exception exception) {
+                    ReportFault(exception);
+                } finally {
+                    lock (_pending) {
+                        _pending.Remove(pending);
+                    }
+                }
+            });
+        };
     }
 
     // The event leaves with the screenshots it was sampled for; its logs follow as Sentry Logs, always.
-    private void SendFailure(SentryEvent sentryEvent, ISpan span, Guid runId, PlanItemSnapshot item, int? agent)
+    private void SendFailure(PendingFailure pending, Guid runId, PlanItemSnapshot item, int? agent)
     {
+        var sentryEvent = pending.Event;
         var hint = new SentryHint();
         var logs = new List<(string Source, string Text)>();
         try {
@@ -384,7 +402,9 @@ internal sealed class RunTelemetry : IRunTelemetry
             sentryEvent.SetExtra("logs.status", "failed");
             ReportFault(exception);
         }
-        var eventId = SentrySdk.CaptureEvent(sentryEvent, hint, scope => scope.Span = span);
+        if (pending.Capture(hint) is not { } eventId) {
+            return;
+        }
         foreach (var (source, text) in logs) {
             var chunks = Chunks(_scrubber.Scrub(text)).ToArray();
             for (var index = 0; index < chunks.Length; index++) {
@@ -394,6 +414,9 @@ internal sealed class RunTelemetry : IRunTelemetry
                     log.SetAttribute("evidence.event_id", eventId.ToString());
                     log.SetAttribute("run.id", runId.ToString());
                     log.SetAttribute("evidence.chunk", chunk);
+                    log.SetAttribute("evidence.chunks", chunks.Length);
+                    log.SetAttribute("plan_item.id", item.PlanItemId.ToString());
+                    // Without parameters the SDK sends the text as it is, so the JSON in maafw.log needs no escaping.
                 }, chunks[index]);
             }
         }
@@ -498,6 +521,22 @@ internal sealed class RunTelemetry : IRunTelemetry
     public void Dispose()
     {
         try {
+            // A failure whose evidence is still being read gets a moment; then it leaves without it rather than not
+            // at all.
+            var deadline = DateTime.UtcNow + FlushTimeout;
+            PendingFailure[] pending;
+            while (true) {
+                lock (_pending) {
+                    pending = _pending.ToArray();
+                }
+                if (pending.Length == 0 || DateTime.UtcNow >= deadline) {
+                    break;
+                }
+                Thread.Sleep(20);
+            }
+            foreach (var failure in pending) {
+                failure.Capture(new SentryHint(), "shutdown");
+            }
             _sdk.Dispose();
         } catch (Exception exception) {
             ReportFault(exception);
@@ -505,6 +544,26 @@ internal sealed class RunTelemetry : IRunTelemetry
     }
 
     private sealed record NodeFailure(string Node, string Stage, long TaskId);
+
+    // A failure event is sent exactly once: with its evidence, or without it when the Worker shuts down first.
+    private sealed class PendingFailure(SentryEvent sentryEvent, ISpan span)
+    {
+        private int _captured;
+
+        internal SentryEvent Event { get; } = sentryEvent;
+
+        internal SentryId? Capture(SentryHint hint, string? evidence = null)
+        {
+            if (Interlocked.Exchange(ref _captured, 1) != 0) {
+                return null;
+            }
+            if (evidence is not null) {
+                Event.SetExtra("logs.status", evidence);
+                Event.SetExtra("attachment.status", evidence);
+            }
+            return SentrySdk.CaptureEvent(Event, hint, scope => scope.Span = span);
+        }
+    }
 
     // What the callbacks of one Plan Item have shown so far.
     private sealed class PlanItemTrace

@@ -33,16 +33,17 @@ internal static partial class FailureEvidence
                     FileShare.ReadWrite | FileShare.Delete));
                 var taking = false;
                 while (reader.ReadLine() is { } line) {
-                    if (LinePrefix().Match(line) is { Success: true } prefix) {
-                        var time = DateTime.ParseExact(prefix.Groups["time"].Value, "yyyy-MM-dd HH:mm:ss.fff",
-                            CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal);
-                        var pid = int.Parse(prefix.Groups["pid"].Value, CultureInfo.InvariantCulture);
+                    // A line without a readable prefix continues the one before it.
+                    if (LinePrefix().Match(line) is { Success: true } prefix
+                        && DateTime.TryParseExact(prefix.Groups["time"].Value, "yyyy-MM-dd HH:mm:ss.fff",
+                            CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var time)
+                        && int.TryParse(prefix.Groups["pid"].Value, CultureInfo.InvariantCulture, out var pid)) {
                         taking = time >= start && time <= end && window.ProcessIds.Contains(pid);
                     }
                     if (!taking) {
                         continue;
                     }
-                    // The part closest to the failure is kept.
+                    // The part closest to the failure is kept; each line costs its bytes and a line break.
                     lines.Enqueue(line);
                     bytes += Encoding.UTF8.GetByteCount(line) + 1;
                     while (bytes - 1 > MaximumLogBytes) {
@@ -104,8 +105,9 @@ internal static partial class FailureEvidence
     }
 
     // maafw.bak.<rotation time>.log holds lines from before its rotation, so only one rotated inside the window or
-    // later can hold the window's lines; the live maafw.log comes last.
-    private static IEnumerable<string> LogFiles(string debugDirectory, DateTime start)
+    // later can hold the window's lines; a writing process continues in the new maafw.log, which comes last. The list
+    // is taken at once, before any file is read.
+    private static string[] LogFiles(string debugDirectory, DateTime start)
     {
         var rotated = Directory.EnumerateFiles(debugDirectory, "maafw.bak.*.log")
             .Select(path => (Path: path, Match: RotatedName().Match(Path.GetFileName(path))))
@@ -114,7 +116,7 @@ internal static partial class FailureEvidence
                 "yyyy.MM.dd-HH.mm.ss.fff", CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal)))
             .Where(file => file.Time >= start).OrderBy(file => file.Time).Select(file => file.Path);
         var current = Path.Combine(debugDirectory, "maafw.log");
-        return File.Exists(current) ? rotated.Append(current) : rotated;
+        return (File.Exists(current) ? rotated.Append(current) : rotated).ToArray();
     }
 
     [GeneratedRegex(@"\A\[(?<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]\[[A-Z]+\]\[Px(?<pid>\d+)\]")]

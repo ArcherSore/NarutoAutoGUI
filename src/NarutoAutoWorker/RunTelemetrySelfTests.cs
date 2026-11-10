@@ -436,6 +436,8 @@ internal static class RunTelemetrySelfTests
                     execution.ReportAgent(agent);
                     File.AppendAllLines(Path.Combine(debug, "maafw.log"), [
                         Line(Environment.ProcessId, $"worker input_text {pin}"), Line(agent, "agent custom action"),
+                        // maafw.log is full of JSON; braces must not turn a log into a broken template.
+                        Line(agent, "details {\"name\":\"Node\",\"x\":{}}"),
                         Line(9999, "foreign process")
                     ]);
                     File.WriteAllBytes(Path.Combine(debug, "on_error", "failed.png"), [1, 2, 3]);
@@ -461,6 +463,7 @@ internal static class RunTelemetrySelfTests
                 var text = transport.Text;
                 RunSelfTests.Expect(extra.GetProperty("logs.status").GetString() == "captured"
                     && text.Contains("agent custom action") && text.Contains("worker input_text [Filtered]")
+                    && LogBodies(transport).Contains("details {\"name\":\"Node\",\"x\":{}}")
                     && !text.Contains("foreign process") && !text.Contains("next run") && !text.Contains(pin),
                     $"失败证据日志应只含本项的时间窗和进程，且已脱敏：rate={rate}");
                 var zips = transport.Payloads("attachment").ToArray();
@@ -479,6 +482,11 @@ internal static class RunTelemetrySelfTests
             }
         }
     }
+
+    // The text of every Sentry Log sent, decoded from the envelope.
+    private static string LogBodies(CapturingTransport transport) => string.Join("\n", transport.Items("log")
+        .SelectMany(batch => batch.GetProperty("items").EnumerateArray())
+        .Select(log => log.GetProperty("body").GetString()));
 
     private static async Task CompleteRunAsync(RunHarness harness)
     {

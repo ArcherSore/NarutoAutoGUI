@@ -196,6 +196,8 @@ internal static class RunTelemetrySelfTests
     {
         const string pin = "731904";
         const string phrase = "pa\"ss\\wörd密钥";
+        // Python's json.dumps escapes every non-ASCII character, in lower-case hex; .NET writes upper case.
+        const string pythonPhrase = @"pa\""ss\\w\u00f6rd\u5bc6\u94a5";
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var transport = new CapturingTransport();
         await using (var harness = await TelemetryHarnessAsync(Options, transport)) {
@@ -216,6 +218,7 @@ internal static class RunTelemetrySelfTests
             // Stand-ins for the uploads later tickets add: an Agent stderr line in an exception, a log line, an extra.
             Sentry.SentrySdk.CaptureException(new InvalidOperationException(
                 $"agent.stderr: login {pin} with {phrase} from {profile}\\agent"));
+            Sentry.SentrySdk.CaptureMessage($"agent stdout: {{\"password\": \"{pythonPhrase}\"}}");
             Sentry.SentrySdk.CaptureMessage($"worker log: {phrase}", scope => scope.SetExtra("detail",
                 new { text = $"{pin} at {profile}", nested = new[] { phrase } }));
             // A log's text is fixed once created: callers scrub first, and one that still leaks is refused.
@@ -238,11 +241,22 @@ internal static class RunTelemetrySelfTests
         }
 
         var text = transport.Text;
+        static IEnumerable<string> Strings(JsonElement element) => element.ValueKind switch {
+            JsonValueKind.Object => element.EnumerateObject().SelectMany(item => Strings(item.Value).Append(item.Name)),
+            JsonValueKind.Array => element.EnumerateArray().SelectMany(Strings),
+            JsonValueKind.String => [element.GetString()!],
+            _ => []
+        };
+        var decoded = new[] { "event", "transaction", "log" }.SelectMany(transport.Items).SelectMany(Strings)
+            .ToArray();
         foreach (var secret in new[] { pin, phrase, profile }) {
-            foreach (var form in new[] { secret, JsonEncodedText.Encode(secret).ToString(),
+            string[] forms = [secret, JsonEncodedText.Encode(secret).ToString(),
                 JsonEncodedText.Encode(secret, System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping)
-                    .ToString() }) {
-                RunSelfTests.Expect(!text.Contains(form, StringComparison.OrdinalIgnoreCase),
+                    .ToString(), .. secret == phrase ? [pythonPhrase] : Array.Empty<string>()];
+            // An escaped form reaches the envelope escaped once more, so the decoded strings are searched as well.
+            foreach (var form in forms) {
+                RunSelfTests.Expect(!text.Contains(form, StringComparison.OrdinalIgnoreCase)
+                    && !decoded.Any(value => value.Contains(form, StringComparison.OrdinalIgnoreCase)),
                     $"最终 envelope 不得包含密码或用户目录：{form}");
             }
         }
@@ -253,7 +267,7 @@ internal static class RunTelemetrySelfTests
             && span.GetProperty("data").GetProperty("option.Mode").GetString()!.Contains("[Filtered]"),
             "Span 中的密码应被替换，其余内容保留；空值不得导致整体替换。");
         RunSelfTests.Expect(!transport.Text.Contains("unscrubbable item"), "清洗失败的上报必须丢弃。");
-        RunSelfTests.Expect(transport.Items("event").Count() == 5 && transport.Text.Contains("[Filtered]"),
+        RunSelfTests.Expect(transport.Items("event").Count() == 6 && transport.Text.Contains("[Filtered]"),
             "含密码的事件应脱敏后照常发送，而不是被丢弃。");
     }
 

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using NarutoAutoGUI.Protocol;
 using Sentry;
 
@@ -11,7 +12,7 @@ namespace NarutoAutoWorker;
 // inputs[].password, never a project's own names) is replaced, raw and JSON-escaped. The SDK hooks are the last gate:
 // an item whose text still carries a password or the profile folder after scrubbing, or whose scrubbing fails, is
 // dropped rather than sent.
-internal sealed class TelemetryScrubber
+internal sealed partial class TelemetryScrubber
 {
     internal const string Filtered = "[Filtered]";
     private static readonly JavaScriptEncoder[] Encoders = [JavaScriptEncoder.Default,
@@ -32,14 +33,43 @@ internal sealed class TelemetryScrubber
             var forms = new HashSet<string>(_forms, StringComparer.Ordinal);
             foreach (var password in passwords.Where(value => value.Length != 0)) {
                 forms.Add(password);
-                foreach (var encoder in Encoders) {
-                    forms.Add(JsonEncodedText.Encode(password, encoder).ToString());
+                // Encoders differ in what they escape and in the case of the hex digits: Python writes \u5bc6
+                // where .NET writes \u5BC6.
+                var escaped = Encoders.Select(encoder => JsonEncodedText.Encode(password, encoder).ToString())
+                    .Append(AsciiEscaped(password));
+                foreach (var form in escaped) {
+                    forms.Add(form);
+                    forms.Add(UnicodeEscape().Replace(form, match => match.Value.ToLowerInvariant()));
+                    forms.Add(UnicodeEscape().Replace(form, match => "\\u" + match.Value[2..].ToUpperInvariant()));
                 }
             }
             // Longer forms first, so a password inside another is not replaced in part.
             _forms = forms.OrderByDescending(form => form.Length).ToArray();
         }
     }
+
+    // JSON with every non-ASCII character escaped, as Python's json.dumps writes it by default.
+    private static string AsciiEscaped(string text)
+    {
+        var escaped = new StringBuilder();
+        foreach (var character in text) {
+            escaped.Append(character switch {
+                '"' => "\\\"",
+                '\\' => "\\\\",
+                '\b' => "\\b",
+                '\f' => "\\f",
+                '\n' => "\\n",
+                '\r' => "\\r",
+                '\t' => "\\t",
+                < ' ' or > '\x7F' => $"\\u{(int)character:x4}",
+                _ => character.ToString()
+            });
+        }
+        return escaped.ToString();
+    }
+
+    [GeneratedRegex(@"\\u[0-9A-Fa-f]{4}")]
+    private static partial Regex UnicodeEscape();
 
     internal string Scrub(string text)
     {

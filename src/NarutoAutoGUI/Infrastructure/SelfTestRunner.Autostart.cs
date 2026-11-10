@@ -129,6 +129,17 @@ internal static partial class SelfTestRunner
         Require(later.AutoRunConfigurationId is null && !later.AutoRunOnManualLaunch.Value,
             "回退必须持久化，配置再次出现也不能自动恢复。");
 
+        // A configuration file that cannot be read yields a placeholder list, and the choice must survive it.
+        var unreadable = Create();
+        unreadable.UpdateAutoRunConfigurations([daily, weekly]);
+        unreadable.AutoRunConfiguration.Selected = unreadable.AutoRunConfiguration.Options[1];
+        unreadable.AutoRunOnManualLaunch.Value = true;
+        unreadable.UpdateAutoRunConfigurations([new AutoRunTarget(Guid.NewGuid(), "配置 1")], authoritative: false);
+        Require(unreadable.AutoRunConfigurationId == daily.Id && unreadable.AutoRunOnManualLaunch.Value
+            && Create().AutoRunConfigurationId == daily.Id, "配置文件暂时读不出来时不能丢掉已选的自动执行配置。");
+        unreadable.UpdateAutoRunConfigurations([daily, weekly]);
+        Require(unreadable.AutoRunConfiguration.Selected.Id == daily.Id.ToString(), "文件恢复可读后必须仍选中原配置。");
+
         var path = Path.Combine(directory, "config", "autorun-configuration.txt");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         using (new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read)) {

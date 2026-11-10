@@ -38,6 +38,7 @@ internal sealed class MaaNopConfigStore
     private bool _protectOriginal;
     private bool _originalBackedUp;
     internal string? LoadWarning { get; private set; }
+    internal bool Unreadable => _protectOriginal;
     internal bool WasMissing { get; private set; }
 
     internal MaaNopConfigStore(string path, Action<string>? log = null)

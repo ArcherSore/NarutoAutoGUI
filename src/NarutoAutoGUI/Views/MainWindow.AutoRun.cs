@@ -24,6 +24,12 @@ public partial class MainWindow
         if (_projectPlan is not { } project) {
             return false;
         }
+        // The list is a placeholder then, so nothing can be matched; say so instead of skipping silently.
+        if (project.ConfigurationsUnreadable && (_launchCommand.AutoStart || _settings.AutoRunOnManualLaunch.Value)
+            && (_launchCommand.Instance is not null || _settings.AutoRunConfigurationId is not null)) {
+            ReportUnattendedFailure("自动执行", new InvalidOperationException("无法读取任务配置文件，请检查后重试。"));
+            return true;
+        }
         var canStart = AutoRunPlanner.RuntimeAllows(CurrentControls);
         var decision = AutoRunPlanner.Decide(
             _launchCommand, _settings.AutoRunConfigurationId, _settings.AutoRunOnManualLaunch.Value,

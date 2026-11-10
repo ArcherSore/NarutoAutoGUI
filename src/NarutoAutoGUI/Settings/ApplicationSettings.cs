@@ -144,10 +144,13 @@ internal sealed class ApplicationSettings
 
     // The choice is stored by configuration id, so renaming keeps it. One that no longer exists falls back to "none"
     // together with the manual-launch switch, quietly: there is nothing for the user to act on.
-    internal void UpdateAutoRunConfigurations(IReadOnlyList<AutoRunTarget> configurations)
+    // authoritative is false while the configuration file cannot be read: the list is then a placeholder, and the
+    // chosen configuration is kept for when the file can be read again instead of being reset as deleted.
+    internal void UpdateAutoRunConfigurations(IReadOnlyList<AutoRunTarget> configurations, bool authoritative = true)
     {
         var options = configurations.Select(item => new SettingsChoiceOption(item.Id.ToString(), item.Name)).ToArray();
-        if (_autoRunConfigurationId is not null && options.All(option => option.Id != _autoRunConfigurationId)) {
+        if (authoritative && _autoRunConfigurationId is not null
+            && options.All(option => option.Id != _autoRunConfigurationId)) {
             try {
                 SaveAutoRunConfiguration(null);
                 AutoRunOnManualLaunch.Value = false;

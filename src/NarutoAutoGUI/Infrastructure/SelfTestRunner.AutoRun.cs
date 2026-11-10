@@ -209,6 +209,14 @@ internal static partial class SelfTestRunner
             Require(ran && prepared.Count == 0 && started.Count == 0 && failures.Count == 1,
                 "目标配置没有任务时必须报告失败，不能白白创建桌面分身。"),
             fixture: TwoConfigurations(weeklyHasTask: false));
+        var twoConfigurations = TwoConfigurations();
+        Launch("unreadable-configurations", boot with { Instance = "周常" }, null, false, (_, ran) =>
+            Require(ran && prepared.Count == 0 && started.Count == 0 && failures.Count == 1,
+                "任务配置读不出来时必须报告失败，不能悄悄跳过，也不能运行占位的配置。"),
+            fixture: directory => {
+                twoConfigurations(directory);
+                File.WriteAllText(Path.Combine(directory, "config", "maanop-config.json"), "{ not json");
+            });
         FileStream? locked = null;
         Launch("switch-refused", boot, "周常", false, (window, ran) => {
             locked?.Dispose();

@@ -25,7 +25,7 @@ public partial class MainWindow
     private void RenderConfigurationTabs()
     {
         var project = _projectPlan!;
-        _settings.UpdateAutoRunConfigurations(AutoRunTarget.Of(project));
+        _settings.UpdateAutoRunConfigurations(AutoRunTarget.Of(project), !project.ConfigurationsUnreadable);
         PresetConfigurationButton.Visibility = project.Presets.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         var existing = ConfigurationTabs.Items.Cast<TabItem>().ToArray();
         if (!existing.Select(item => (Id: (Guid)item.Tag, Name: AutomationProperties.GetName(item)))

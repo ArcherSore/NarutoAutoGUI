@@ -410,7 +410,7 @@ internal static partial class SelfTestRunner
         var window = new MainWindow(logger, windowSession, windowCoordinator,
             environment ?? WindowEnvironment(logger, windowSession, windowCoordinator, runOperation),
             () => Task.CompletedTask, endEnvironment ?? (() => Task.CompletedTask), _ => Task.CompletedTask,
-            projectDirectory, prepareEnvironment: prepareEnvironment);
+            projectDirectory, prepareEnvironment: prepareEnvironment, autostart: InertAutostart());
         var application = System.Windows.Application.Current;
         var shutdown = application.ShutdownMode;
         application.ShutdownMode = ShutdownMode.OnExplicitShutdown;

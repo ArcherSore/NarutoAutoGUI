@@ -111,8 +111,30 @@
                 <ui:ToggleSwitch Grid.Column="2" Margin="24,0,0,0" VerticalAlignment="Center"
                                  OnContent="{x:Null}" OffContent="{x:Null}"
                                  IsChecked="{Binding Toggle.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 IsEnabled="{Binding Toggle.IsEnabled}"
                                  AutomationProperties.AutomationId="{Binding Definition.Id}"
                                  AutomationProperties.Name="{Binding Definition.Title}" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="ChoiceRow">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ui:SymbolIcon Symbol="{Binding Definition.Icon}" Style="{StaticResource ItemIcon}" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Definition.Title}" Style="{StaticResource ItemHeading}" />
+                    <TextBlock Text="{Binding Definition.Description}" Style="{StaticResource ItemDescription}" />
+                    <TextBlock Text="{Binding Choice.Status}" Style="{StaticResource OptionalText}"
+                               Margin="0,4,0,0" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+                <ComboBox Grid.Column="2" Margin="24,0,0,0" MinWidth="200" VerticalAlignment="Center"
+                          ItemsSource="{Binding Choice.Options}" DisplayMemberPath="Name"
+                          SelectedItem="{Binding Choice.Selected, Mode=TwoWay}"
+                          AutomationProperties.AutomationId="{Binding Definition.Id}"
+                          AutomationProperties.Name="{Binding Definition.Title}" />
             </Grid>
         </DataTemplate>
         <DataTemplate x:Key="ActionRow">
@@ -171,6 +193,10 @@
                 <DataTrigger Binding="{Binding Definition.Type}"
                              Value="{x:Static settings:SettingsItemKind.Toggle}">
                     <Setter Property="ContentTemplate" Value="{StaticResource ToggleRow}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Definition.Type}"
+                             Value="{x:Static settings:SettingsItemKind.Choice}">
+                    <Setter Property="ContentTemplate" Value="{StaticResource ChoiceRow}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Definition.Type}"
                              Value="{x:Static settings:SettingsItemKind.Action}">

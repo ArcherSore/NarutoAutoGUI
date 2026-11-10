@@ -30,6 +30,12 @@ GUI 以真实 Windows 进程和 Session 身份核验 Worker，再通过受限的
 
 这些路径依赖管理员权限、交互式 Windows 桌面、RDP ActiveX、WTS、Task Scheduler COM 和 WMI。Child Session 的显示分辨率和缩放固定为 1920×1080、100%；预览缩放不改变隔离桌面的实际设置。
 
+## 启动与自动执行
+
+一次启动由命令行决定性质：带 `--autostart` 的是系统（登录计划任务）发起的无人值守启动，主窗口留在托盘、不弹公告和新手指引，已有实例在运行时静默退出。
+自动执行不是新的执行路径：LaunchCommand 与应用偏好交给 AutoRunPlanner 决定是否执行、执行哪份配置，随后激活该配置并走与“准备并开始”相同的流程。
+该流程中开始前的失败不弹模态框，只写日志并以托盘通知；`--quit-after-run` 只在本次启动触发的 Run 到达终态后退出，不在任务根本没开始时退出。
+
 ## 任务与状态流
 
 MaaNOP Config 保存多份独立任务配置及激活项；它是用户意图，不是执行结果。ProjectModel 按当前 Project Interface 校验激活配置，开始时生成不可变、有序的 Run Plan。Worker Launch Context 独立确定项目与框架环境；Run Plan 只描述本次任务与参数。

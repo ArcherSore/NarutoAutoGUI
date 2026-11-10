@@ -128,8 +128,10 @@ public partial class MainWindow : FluentWindow
         Func<Task> requestExitAsync, Func<Task> endEnvironmentAsync, Func<string, Task> installUpdateAsync,
         string? applicationDirectory = null, Func<CancellationToken, Task<EngineCheckResult>>? checkForUpdate = null,
         Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task>? prepareEnvironment = null,
-        Func<string, IProgress<EngineProgress>, CancellationToken, Task<string>>? prepareUpdate = null)
+        Func<string, IProgress<EngineProgress>, CancellationToken, Task<string>>? prepareUpdate = null,
+        AutostartTask? autostart = null, LaunchCommand? launchCommand = null)
     {
+        _launchCommand = launchCommand ?? new LaunchCommand(false, false, null);
         InitializeComponent();
         _runLog = new RunLogFeed(LogLines, MaximumGuiLogEntries);
         DataContext = this;
@@ -144,7 +146,7 @@ public partial class MainWindow : FluentWindow
         _settings = new ApplicationSettings(_applicationDirectory, logger,
             CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding, OpenAfdianAsync,
             ManageChildSessionCredentialsAsync, ClearDebugFilesAsync, ViewWelcome, OpenTaskDescriptionLink,
-            ReadLicense);
+            ReadLicense, autostart);
         SettingsView.DataContext = _settings.Page;
         HelpView.DataContext = _help = new HelpPageModel(
             _settings.ExportDiagnostics, new SettingsAction(OpenIssuesAsync), ReportCopyFailure);
@@ -215,6 +217,10 @@ public partial class MainWindow : FluentWindow
         try {
             AutoSessionMenuItem.IsChecked = File.Exists(AutoSessionPath)
                 && File.ReadAllText(AutoSessionPath).Trim() == "true";
+            // An auto-run prepares the environment itself, so the preparation below would only repeat it.
+            if (await AutoRunOnLaunchAsync()) {
+                return;
+            }
             if (AutoSessionMenuItem.IsChecked && CurrentControls.Action is RuntimeAction.Prepare { Enabled: true }) {
                 await PrepareFromPanelAsync();
             }
@@ -534,7 +540,7 @@ public partial class MainWindow : FluentWindow
         await PrepareFromPanelAsync();
     }
 
-    private async Task PrepareFromPanelAsync(bool startRun = false, bool startupOnly = false)
+    private async Task PrepareFromPanelAsync(bool startRun = false, bool startupOnly = false, bool unattended = false)
     {
         if (OperationOrExitInProgress) {
             LogIgnoredAction();
@@ -569,7 +575,8 @@ public partial class MainWindow : FluentWindow
                     SetPendingOperation(PendingOperation.StartingRun);
                     await StartCurrentPlanAsync(startupOnly);
                 }
-            });
+            },
+            unattended);
     }
 
     // RuntimeControls chooses what Retry means; this handler only carries it out.
@@ -1904,8 +1911,9 @@ public partial class MainWindow : FluentWindow
         $"操作未执行{AppLogger.Field("action", action)}{AppLogger.Field("current", CurrentControls.Action)}"
         + $"{AppLogger.Field("pending", _pendingOperation)}{AppLogger.Field("exiting", _exitInProgress)}");
 
-    private async Task RunOperationAsync(
-        PendingOperation pending, Func<Task> operation, [CallerMemberName] string caller = "")
+    // An unattended operation (started by the launch itself) reports its failure without a dialog nobody can answer.
+    private async Task RunOperationAsync(PendingOperation pending, Func<Task> operation, bool unattended = false,
+        [CallerMemberName] string caller = "")
     {
         if (OperationOrExitInProgress) {
             LogIgnoredAction(caller);
@@ -1918,6 +1926,8 @@ public partial class MainWindow : FluentWindow
             await _environment.RunExclusiveAsync(operation);
         } catch (OperationCanceledException) {
             _logger.Warn($"操作已取消：正在{OperationLabel(pending)}...");
+        } catch (Exception exception) when (unattended) {
+            ReportUnattendedFailure($"{OperationLabel(pending)}失败", exception);
         } catch (Exception exception) {
             HandleOperationError($"{OperationLabel(pending)}失败", exception);
         } finally {

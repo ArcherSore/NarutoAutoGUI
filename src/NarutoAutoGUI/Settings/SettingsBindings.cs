@@ -17,14 +17,18 @@ internal abstract class SettingsObservable : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
         }
     }
+
+    protected void Raise(string property) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
 }
 
 internal sealed class SettingsToggle(Action<bool> save) : SettingsObservable
 {
     private bool _value = true;
+    private bool _isEnabled = true;
     private string _status = "";
 
     public string Status { get => _status; set => Set(ref _status, value); }
+    public bool IsEnabled { get => _isEnabled; set => Set(ref _isEnabled, value); }
 
     public bool Value
     {
@@ -38,6 +42,48 @@ internal sealed class SettingsToggle(Action<bool> save) : SettingsObservable
 
     // Reading a preference must never write it back during startup or rendering.
     internal void Initialize(bool value) => Set(ref _value, value, nameof(Value));
+}
+
+internal sealed record SettingsChoiceOption(string? Id, string Name);
+
+// Picks one of a list that changes while the application runs. The first option is always "none", which has no Id.
+internal sealed class SettingsChoice(string noneName, Action<string?> save) : SettingsObservable
+{
+    private readonly SettingsChoiceOption _none = new(null, noneName);
+    private IReadOnlyList<SettingsChoiceOption>? _options;
+    private SettingsChoiceOption? _selected;
+    private string _status = "";
+
+    public IReadOnlyList<SettingsChoiceOption> Options => _options ??= [_none];
+    public string Status { get => _status; set => Set(ref _status, value); }
+
+    public SettingsChoiceOption Selected
+    {
+        get => _selected ?? _none;
+        set {
+            // A ComboBox clears its selection while the options are swapped; that is not a choice.
+            if (value is null || value == Selected) { return; }
+            var previous = Selected;
+            _selected = value;
+            try {
+                save(value.Id);
+                Status = "";
+            } catch (Exception) {
+                _selected = previous;
+                Status = "无法保存设置，已恢复原选择，请重试。";
+            }
+            Raise(nameof(Selected));
+        }
+    }
+
+    // Reading the list must never write the choice back; a choice that is no longer listed falls back to none.
+    internal void SetOptions(IEnumerable<SettingsChoiceOption> options, string? selectedId)
+    {
+        _options = [_none, .. options];
+        _selected = _options.FirstOrDefault(option => option.Id is not null && option.Id == selectedId) ?? _none;
+        Raise(nameof(Options));
+        Raise(nameof(Selected));
+    }
 }
 
 internal sealed class SettingsAction(Func<Task> execute) : SettingsObservable, ICommand
@@ -88,6 +134,7 @@ internal sealed class SettingsRegistry
 {
     internal ProjectAboutSettings About { get; } = new();
     internal Dictionary<string, SettingsToggle> Toggles { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<string, SettingsChoice> Choices { get; } = new(StringComparer.Ordinal);
     internal Dictionary<string, SettingsAction> Actions { get; } = new(StringComparer.Ordinal);
     internal Dictionary<string, SettingsValue> Values { get; } = new(StringComparer.Ordinal);
 
@@ -99,6 +146,7 @@ internal sealed class SettingsRegistry
 
     private SettingsItemModel BindItem(SettingsItemDefinition item) => item.Type switch {
         SettingsItemKind.Toggle => new(item, Toggle: Resolve(Toggles, item.SettingKey!, item.Id)),
+        SettingsItemKind.Choice => new(item, Choice: Resolve(Choices, item.ChoiceKey!, item.Id)),
         SettingsItemKind.Action => new(item, Action: Resolve(Actions, item.ActionId!, item.Id)),
         SettingsItemKind.Info => new(item,
             Value: item.ValueKey is null ? null : Resolve(Values, item.ValueKey, item.Id)),
@@ -130,4 +178,4 @@ internal sealed record SettingsSectionModel(
 
 internal sealed record SettingsItemModel(SettingsItemDefinition Definition,
     SettingsToggle? Toggle = null, SettingsAction? Action = null, SettingsValue? Value = null,
-    ProjectAboutSettings? About = null);
+    ProjectAboutSettings? About = null, SettingsChoice? Choice = null);

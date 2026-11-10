@@ -12,6 +12,32 @@
           "title": "关闭窗口时隐藏到托盘",
           "description": "开启时任务和桌面分身继续运行；关闭时退出程序，桌面分身运行中会先确认。",
           "settingKey": "application.closeToTray"
+        },
+        {
+          "id": "autostart",
+          "type": "toggle",
+          "icon": "Power20",
+          "title": "开机自启动",
+          "description": "登录 Windows 后自动运行本程序，窗口保持在托盘。",
+          "settingKey": "application.autostart"
+        },
+        {
+          "id": "autorun-configuration",
+          "type": "choice",
+          "icon": "Play20",
+          "title": "启动后自动执行",
+          "description": "选择程序启动后自动准备桌面分身并执行任务的配置。",
+          "choiceKey": "autorun.configuration",
+          "joinPrevious": true
+        },
+        {
+          "id": "autorun-on-manual-launch",
+          "type": "toggle",
+          "icon": "Rocket20",
+          "title": "手动启动时也自动执行",
+          "description": "每次手动打开程序时，也自动执行上方选定的配置（关闭则仅在开机自启动时触发）。",
+          "settingKey": "autorun.onManualLaunch",
+          "joinPrevious": true
         }
       ]
     },

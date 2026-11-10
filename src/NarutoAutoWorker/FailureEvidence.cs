@@ -113,7 +113,8 @@ internal static partial class FailureEvidence
             .Select(path => (Path: path, Match: RotatedName().Match(Path.GetFileName(path))))
             .Where(file => file.Match.Success)
             .Select(file => (file.Path, Time: DateTime.ParseExact(file.Match.Groups["time"].Value,
-                "yyyy.MM.dd-HH.mm.ss.fff", CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal)))
+                "yyyy.MM.dd-HH.mm.ss", CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal)
+                .AddMilliseconds(int.Parse(file.Match.Groups["ms"].Value, CultureInfo.InvariantCulture))))
             .Where(file => file.Time >= start).OrderBy(file => file.Time).Select(file => file.Path);
         var current = Path.Combine(debugDirectory, "maafw.log");
         return (File.Exists(current) ? rotated.Append(current) : rotated).ToArray();
@@ -122,6 +123,7 @@ internal static partial class FailureEvidence
     [GeneratedRegex(@"\A\[(?<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]\[[A-Z]+\]\[Px(?<pid>\d+)\]")]
     private static partial Regex LinePrefix();
 
-    [GeneratedRegex(@"\Amaafw\.bak\.(?<time>\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}\.\d{3})\.log\z")]
+    // As DiagnosticPackageExporter reads it: MaaUtils writes the milliseconds unpadded, 1 to 3 digits.
+    [GeneratedRegex(@"\Amaafw\.bak\.(?<time>\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2})\.(?<ms>\d{1,3})\.log\z")]
     private static partial Regex RotatedName();
 }

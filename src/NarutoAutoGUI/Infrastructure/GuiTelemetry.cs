@@ -65,23 +65,11 @@ internal sealed class GuiTelemetry(ITransport? transport = null) : IDisposable
             return;
         }
         try {
-            _sdk = SentrySdk.Init(sentry => {
-                sentry.Dsn = wanted.Dsn;
-                sentry.Release = wanted.Release;
-                sentry.Environment = wanted.Environment;
+            _sdk = _scrubber.InitSdk(wanted, transport, _ => { }, () => true, sentry => {
                 sentry.TracesSampleRate = 0;
-                sentry.SendDefaultPii = false;
-                sentry.ServerName = string.Empty;
-                sentry.AttachStacktrace = false;
                 sentry.AutoSessionTracking = true;
-                sentry.IsGlobalModeEnabled = true;
                 sentry.ShutdownTimeout = ShutdownTimeout;
-                _scrubber.Install(sentry, _ => { }, () => true);
-                if (transport is not null) {
-                    sentry.Transport = transport;
-                }
             });
-            SentrySdk.ConfigureScope(scope => scope.User = new SentryUser { Id = TelemetryIdentity.AnonymousUserId() });
             _running = wanted;
         } catch {
             // An invalid configuration only leaves telemetry off.

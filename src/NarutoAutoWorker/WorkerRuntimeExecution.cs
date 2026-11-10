@@ -43,8 +43,8 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
     private readonly uint _childSessionId;
     private readonly Action<string, string, string> _log;
     private readonly Action _onRunning;
-    private readonly Action<string, string, bool?> _onTaskerEvent;
-    private readonly Action<int> _onAgentStarted;
+    private readonly Action<string, string, bool?>? _onTaskerEvent;
+    private readonly Action<int>? _onAgentStarted;
     private readonly MaaRunLogAdapter _runLogAdapter;
     private readonly TaskCompletionSource<MaaTasker> _taskerReady = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
@@ -76,8 +76,8 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
         _childSessionId = childSessionId;
         _log = log;
         _onRunning = onRunning;
-        _onTaskerEvent = onTaskerEvent ?? ((_, _, _) => { });
-        _onAgentStarted = onAgentStarted ?? (_ => { });
+        _onTaskerEvent = onTaskerEvent;
+        _onAgentStarted = onAgentStarted;
         _runLogAdapter = new MaaRunLogAdapter(log);
     }
 
@@ -326,7 +326,7 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
             throw new InvalidOperationException("无法启动 Agent。 ");
         }
         _agentProcess = process;
-        _onAgentStarted(process.Id);
+        _onAgentStarted?.Invoke(process.Id);
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         _log("INFO", "runtime.agent", $"已启动 Agent PID={process.Id}。 ");
@@ -437,7 +437,7 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
             _taskCompleted.TrySetResult(MaaJobStatus.Failed);
         }
         // After the Run's own signals, so telemetry never delays them.
-        _onTaskerEvent(args.Message, args.Details, focus.Trace);
+        _onTaskerEvent?.Invoke(args.Message, args.Details, focus.Trace);
     }
 
     private void ReportRunningOnce()

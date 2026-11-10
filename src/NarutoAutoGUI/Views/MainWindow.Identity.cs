@@ -39,9 +39,9 @@ public partial class MainWindow
         Icon = icon ?? _defaultIcons.Value.Window;
         AppTitleBarIcon.Source = icon ?? _defaultIcons.Value.TitleBar;
         _settings.ShowProjectAbout(project?.About, icon);
-        _settings.ShowTelemetryAvailability(project is not null
-            && TelemetryGate.IsAvailable(TelemetryBuild.Current, project.Telemetry, project.ProjectVersion));
-        _telemetry.Configure(project is null ? null : TelemetryOptionsFor(project));
+        var telemetry = project is null ? null : TelemetryOptionsFor(project);
+        _settings.ShowTelemetryAvailability(telemetry is not null);
+        _telemetry.Configure(telemetry);
         ProjectIdentityChanged?.Invoke(this, new ProjectIdentity(project?.ProjectName ?? ApplicationName, path));
     }
 }

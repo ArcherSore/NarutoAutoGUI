@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using NarutoAutoGUI.Protocol;
 using Sentry;
+using Sentry.Extensibility;
 
 namespace NarutoAutoWorker;
 
@@ -71,17 +72,35 @@ internal sealed partial class TelemetryScrubber
     [GeneratedRegex(@"\\u[0-9A-Fa-f]{4}")]
     private static partial Regex UnicodeEscape();
 
-    internal string Scrub(string text)
+    // string.Replace returns the same instance when a form is absent, so clean text costs no allocation.
+    internal string Scrub(string text) =>
+        Forms.Aggregate(UserProfileMask.Apply(text), (scrubbed, form) => scrubbed.Replace(form, Filtered));
+
+    // The privacy settings both processes share (ADR 0009): no PII, no machine name, the anonymous user and this
+    // scrubber as the last gate. Each caller adds only what differs.
+    internal IDisposable InitSdk(TelemetryOptions telemetry, ITransport? transport, Action<Exception> fault,
+        Func<bool> sending, Action<SentryOptions> configure)
     {
-        var scrubbed = new StringBuilder(UserProfileMask.Apply(text));
-        foreach (var form in Forms) {
-            scrubbed.Replace(form, Filtered);
-        }
-        return scrubbed.ToString();
+        var sdk = SentrySdk.Init(sentry => {
+            sentry.Dsn = telemetry.Dsn;
+            sentry.Release = telemetry.Release;
+            sentry.Environment = telemetry.Environment;
+            sentry.SendDefaultPii = false;
+            sentry.ServerName = string.Empty;
+            sentry.AttachStacktrace = false;
+            sentry.IsGlobalModeEnabled = true;
+            Install(sentry, fault, sending);
+            configure(sentry);
+            if (transport is not null) {
+                sentry.Transport = transport;
+            }
+        });
+        SentrySdk.ConfigureScope(scope => scope.User = new SentryUser { Id = TelemetryIdentity.AnonymousUserId() });
+        return sdk;
     }
 
     // Nothing leaves while sending is off, including what the SDK captures on its own.
-    internal void Install(SentryOptions options, Action<Exception> fault, Func<bool> sending)
+    private void Install(SentryOptions options, Action<Exception> fault, Func<bool> sending)
     {
         // A breadcrumb repeats an earlier message on every later item; telemetry has no use for them.
         options.MaxBreadcrumbs = 0;

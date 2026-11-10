@@ -25,7 +25,7 @@ internal sealed class RunHarness : IAsyncDisposable
     private Task _receiving = Task.CompletedTask;
 
     private RunHarness(Guid workerId, TelemetryOptions? telemetry,
-        Func<LaunchManifest, Func<Guid, IReadOnlyList<WorkerLogEntry>>, IRunTelemetry>? createTelemetry,
+        Func<LaunchManifest, Func<Guid, IReadOnlyList<WorkerLogEntry>>, IRunTelemetry?>? createTelemetry,
         string projectRoot)
     {
         Executions = new ScriptedExecutionFactory();
@@ -41,7 +41,7 @@ internal sealed class RunHarness : IAsyncDisposable
                 }
                 AppliedFrameworkOptions.Add(options);
             },
-            createTelemetry ?? ((_, _) => RunTelemetry.None));
+            createTelemetry ?? ((_, _) => null));
         Executions.Probe = Host.GetSnapshot;
         Executions.TaskerEvent = Host.ReportTaskerEvent;
         Executions.AgentStarted = Host.ReportAgentStarted;
@@ -71,7 +71,7 @@ internal sealed class RunHarness : IAsyncDisposable
     }
 
     internal static async Task<RunHarness> CreateAsync(bool initialize = true, TelemetryOptions? telemetry = null,
-        Func<LaunchManifest, Func<Guid, IReadOnlyList<WorkerLogEntry>>, IRunTelemetry>? createTelemetry = null,
+        Func<LaunchManifest, Func<Guid, IReadOnlyList<WorkerLogEntry>>, IRunTelemetry?>? createTelemetry = null,
         string projectRoot = "C:\\dummy")
     {
         var harness = new RunHarness(Guid.NewGuid(), telemetry, createTelemetry, projectRoot);

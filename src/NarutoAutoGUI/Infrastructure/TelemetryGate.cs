@@ -29,8 +29,8 @@ internal static partial class TelemetryGate
 
     internal static TelemetryOptions? CreateOptions(TelemetryBuild build, ProjectTelemetry? telemetry,
         string projectName, string projectVersion, bool enabled) =>
-        IsAvailable(build, telemetry, projectVersion)
-            ? new TelemetryOptions(telemetry!.Dsn, $"NarutoAutoGUI@{build.GuiVersion.Split('+')[0]}+{projectName}@"
+        telemetry is not null && IsAvailable(build, telemetry, projectVersion)
+            ? new TelemetryOptions(telemetry.Dsn, $"NarutoAutoGUI@{build.GuiVersion.Split('+')[0]}+{projectName}@"
                 + projectVersion, telemetry.Environment ?? "production", telemetry.Tracing, telemetry.TracesSampleRate,
                 telemetry.FailureAttachmentsSampleRate) { Enabled = enabled }
             : null;

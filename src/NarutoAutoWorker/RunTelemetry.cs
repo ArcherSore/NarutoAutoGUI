@@ -58,8 +58,6 @@ internal sealed class RunTelemetry : IRunTelemetry
     private int _nodeSpanBudget;
     private int _faultLogged;
 
-    internal static IRunTelemetry None => Disabled.Instance;
-
     // A self-test may only send to the transport it supplies.
     internal static bool SelfTestProcess { get; set; }
 
@@ -73,41 +71,30 @@ internal sealed class RunTelemetry : IRunTelemetry
         _attachmentRate = options.FailureAttachmentsSampleRate;
         _itemLogs = itemLogs;
         _enabled = options.Enabled;
-        _sdk = SentrySdk.Init(sentry => {
-            sentry.Dsn = options.Dsn;
-            sentry.Release = options.Release;
-            sentry.Environment = options.Environment;
+        _sdk = _scrubber.InitSdk(options, transport, ReportFault, () => _enabled, sentry => {
             sentry.TracesSampleRate = options.Tracing ? options.TracesSampleRate : 0;
-            sentry.SendDefaultPii = false;
-            sentry.ServerName = string.Empty;
-            sentry.AttachStacktrace = false;
             sentry.AutoSessionTracking = false;
-            sentry.IsGlobalModeEnabled = true;
             sentry.ShutdownTimeout = FlushTimeout;
             // Fire-and-forget tasks are not the Worker's failures; an exception that ends the process is.
             sentry.DisableUnobservedTaskExceptionCapture();
             sentry.EnableLogs = true;
-            _scrubber.Install(sentry, ReportFault, () => _enabled);
-            if (transport is not null) {
-                sentry.Transport = transport;
-            }
         });
-        SentrySdk.ConfigureScope(scope => scope.User = new SentryUser { Id = TelemetryIdentity.AnonymousUserId() });
     }
 
-    internal static IRunTelemetry Create(LaunchManifest manifest, Action<string, string, string> log,
-        ITransport? transport = null, Func<Guid, IReadOnlyList<WorkerLogEntry>>? itemLogs = null)
+    // Null when the project declares no telemetry or the SDK cannot start: the Worker then runs without it.
+    internal static IRunTelemetry? Create(LaunchManifest manifest, Action<string, string, string> log,
+        ITransport? transport, Func<Guid, IReadOnlyList<WorkerLogEntry>> itemLogs)
     {
         if (manifest.Telemetry is not { } options || SelfTestProcess && transport is null) {
-            return Disabled.Instance;
+            return null;
         }
         try {
-            var telemetry = new RunTelemetry(manifest, options, log, transport, itemLogs ?? (_ => []));
+            var telemetry = new RunTelemetry(manifest, options, log, transport, itemLogs);
             log("INFO", "telemetry", $"遥测已初始化：release={options.Release}，enabled={options.Enabled}。");
             return telemetry;
         } catch (Exception exception) {
             log("WARN", "telemetry", $"遥测初始化失败，已关闭：{exception.GetBaseException().Message}");
-            return Disabled.Instance;
+            return null;
         }
     }
 
@@ -162,9 +149,7 @@ internal sealed class RunTelemetry : IRunTelemetry
             if (!_enabled || !_spans.TryGetValue(planItemId, out var span)) {
                 return;
             }
-            if (!_traces.TryGetValue(planItemId, out var item)) {
-                _traces.Add(planItemId, item = new PlanItemTrace());
-            }
+            var item = TraceOf(planItemId);
             if (message == MaaMsg.Node.Action.Failed) {
                 item.Stage = "action";
             } else if (message == MaaMsg.Node.NextList.Failed) {
@@ -224,12 +209,17 @@ internal sealed class RunTelemetry : IRunTelemetry
         }
         lock (_gate) {
             if (_spans.ContainsKey(planItemId)) {
-                if (!_traces.TryGetValue(planItemId, out var item)) {
-                    _traces.Add(planItemId, item = new PlanItemTrace());
-                }
-                item.AgentProcessId = processId;
+                TraceOf(planItemId).AgentProcessId = processId;
             }
         }
+    }
+
+    private PlanItemTrace TraceOf(Guid planItemId)
+    {
+        if (!_traces.TryGetValue(planItemId, out var item)) {
+            _traces.Add(planItemId, item = new PlanItemTrace());
+        }
+        return item;
     }
 
     public void CaptureUnhandled(Exception exception)
@@ -294,27 +284,30 @@ internal sealed class RunTelemetry : IRunTelemetry
 
         if (snapshot.ActiveRun is null) {
             transaction.SetData("result", run.State.ToString());
-            Finish(transaction, Status(run.State));
+            Finish(transaction, Status(run.State), captures);
         } else if (snapshot.WorkerState == WorkerState.Faulted) {
             // The Run will never end on its own: an unconfirmed stop keeps it until the Child Session is ended.
             foreach (var span in _spans.Values) {
                 span.Finish(SpanStatus.Aborted);
             }
             transaction.SetData("result", "faulted");
-            Finish(transaction, SpanStatus.Aborted);
+            Finish(transaction, SpanStatus.Aborted, captures);
         }
     }
 
-    private void Finish(ITransactionTracer transaction, SpanStatus status)
+    // Finishing sends the Transaction, and sending scrubs every Span, so it runs after the lock like a capture.
+    private void Finish(ITransactionTracer transaction, SpanStatus status, List<Action> captures)
     {
-        transaction.Finish(status);
         Forget();
-        _ = Task.Run(async () => {
-            try {
-                await SentrySdk.FlushAsync(FlushTimeout);
-            } catch (Exception exception) {
-                ReportFault(exception);
-            }
+        captures.Add(() => {
+            transaction.Finish(status);
+            _ = Task.Run(async () => {
+                try {
+                    await SentrySdk.FlushAsync(FlushTimeout);
+                } catch (Exception exception) {
+                    ReportFault(exception);
+                }
+            });
         });
     }
 
@@ -351,6 +344,7 @@ internal sealed class RunTelemetry : IRunTelemetry
                 new { node = failure.Node, stage = failure.Stage, task_id = failure.TaskId }).ToArray());
         }
         var agent = trace?.AgentProcessId;
+        var runId = run.RunId;
         // Reading the debug folder takes time; neither the Run nor the next one waits for it.
         return () => {
             var pending = new PendingFailure(sentryEvent, span);
@@ -359,7 +353,7 @@ internal sealed class RunTelemetry : IRunTelemetry
             }
             _ = Task.Run(() => {
                 try {
-                    SendFailure(pending, run.RunId, item, agent);
+                    SendFailure(pending, runId, item, agent);
                 } catch (Exception exception) {
                     ReportFault(exception);
                 } finally {
@@ -605,39 +599,6 @@ internal sealed class RunTelemetry : IRunTelemetry
                 _recent.Dequeue();
             }
             Stage = "unknown";
-        }
-    }
-
-    private sealed class Disabled : IRunTelemetry
-    {
-        internal static readonly Disabled Instance = new();
-
-        public void SetEnabled(bool enabled)
-        {
-        }
-
-        public void Register(IReadOnlyList<string> redactionValues)
-        {
-        }
-
-        public void OnTaskerEvent(Guid planItemId, string message, string details, bool? trace)
-        {
-        }
-
-        public void CaptureUnhandled(Exception exception)
-        {
-        }
-
-        public void AgentStarted(Guid planItemId, int processId)
-        {
-        }
-
-        public void Observe(WorkerSnapshot snapshot)
-        {
-        }
-
-        public void Dispose()
-        {
         }
     }
 }

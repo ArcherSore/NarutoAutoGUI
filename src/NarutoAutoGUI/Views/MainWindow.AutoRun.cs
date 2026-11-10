@@ -29,8 +29,8 @@ public partial class MainWindow
             _launchCommand, _settings.AutoRunConfigurationId, _settings.AutoRunOnManualLaunch.Value,
             AutoRunTarget.Of(project), canStart);
         if (decision.ConfigurationId is not { } id) {
-            if (_launchCommand.AutoStart || _settings.AutoRunOnManualLaunch.Value) {
-                _logger.Info("自动执行已跳过：没有可执行的目标配置，或当前不能开始任务。");
+            if (decision.SkipReason is { } reason) {
+                _logger.Info($"自动执行已跳过：{reason}。");
             }
             return false;
         }

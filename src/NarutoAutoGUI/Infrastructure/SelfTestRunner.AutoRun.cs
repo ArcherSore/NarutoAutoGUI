@@ -43,6 +43,16 @@ internal static partial class SelfTestRunner
 
         Require(!Decide(boot, daily.Id, canStart: false).Run, "运行控制栏不允许准备或开始时必须跳过。");
 
+        // A launch that asked for an auto-run and did not get one says why, and the reasons tell the cases apart.
+        string?[] reasons = [
+            Decide(boot with { Instance = "不存在" }, daily.Id).SkipReason, Decide(boot).SkipReason,
+            Decide(boot, daily.Id, canStart: false).SkipReason];
+        Require(reasons.All(reason => !string.IsNullOrWhiteSpace(reason))
+            && reasons.Distinct().Count() == reasons.Length,
+            "被跳过的自动执行必须给出能区分情形的原因。");
+        Require(Decide(manual, daily.Id).SkipReason is null && Decide(boot, daily.Id).SkipReason is null,
+            "没有请求自动执行，或已经执行时，不应有跳过原因。");
+
         // The runtime decides, not the configuration that is about to be replaced: an environment that is ready
         // while the active configuration has no tasks or is invalid still allows the other one to start.
         RuntimeControlState Controls(RuntimeAction action, bool editable = true) => new(

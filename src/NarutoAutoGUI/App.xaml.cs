@@ -99,7 +99,8 @@ public partial class App : System.Windows.Application
         logger.Info($"NarutoAutoGUI 正式 GUI 启动 [version={ApplicationVersion}] [pid={process.Id}] "
             + $"[session={process.SessionId}] [elevated={elevated}] [os={Environment.OSVersion}] "
             + $"[arch={RuntimeInformation.ProcessArchitecture}] [runtime={RuntimeInformation.FrameworkDescription}] "
-            + $"[directory={AppContext.BaseDirectory}] [logDirectory={logger.LogDirectory}]");
+            + $"[directory={AppContext.BaseDirectory}] [logDirectory={logger.LogDirectory}] "
+            + $"[args={LaunchCommand.JoinArguments(Environment.GetCommandLineArgs().Skip(1))}]");
     }
 
     internal Task RequestExitAsync() => ExitAsync(confirm: true);

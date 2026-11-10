@@ -248,7 +248,9 @@ internal sealed class ApplicationSettings
         }
         _autoRunConfigurationId = id;
         AutoRunOnManualLaunch.IsEnabled = id is not null;
-        LogToggleChanged("autorun.configuration", id is not null);
+        var name = AutoRunConfiguration.Options.FirstOrDefault(option => option.Id == id)?.Name;
+        _logger.Info($"设置已更改{AppLogger.Field("key", "autorun.configuration")}"
+            + $"{AppLogger.Field("value", id ?? "none")}{AppLogger.Field("name", name ?? string.Empty)}");
     }
 
     private void SaveClosePreference(bool value)

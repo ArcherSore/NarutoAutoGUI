@@ -9,7 +9,8 @@ internal sealed record AutoRunTarget(Guid Id, string Name)
         project.Configurations.Select(item => new AutoRunTarget(item.Id, item.Name)).ToArray();
 }
 
-internal sealed record AutoRunDecision(Guid? ConfigurationId, bool QuitAfterRun)
+// SkipReason is set when the launch asked for an auto-run that cannot happen; it is for the log.
+internal sealed record AutoRunDecision(Guid? ConfigurationId, bool QuitAfterRun, string? SkipReason = null)
 {
     internal bool Run => ConfigurationId is not null;
 }
@@ -17,8 +18,6 @@ internal sealed record AutoRunDecision(Guid? ConfigurationId, bool QuitAfterRun)
 // Decides, for one launch, whether to start a Task Configuration by itself and which one.
 internal static class AutoRunPlanner
 {
-    private static readonly AutoRunDecision Skip = new(null, false);
-
     // Whether the runtime allows a Run at all. What the active configuration holds does not count: it is about to be
     // replaced by the one that was asked for.
     internal static bool RuntimeAllows(RuntimeControlState controls) => controls.ConfigurationEditable
@@ -30,14 +29,25 @@ internal static class AutoRunPlanner
     internal static AutoRunDecision Decide(LaunchCommand command, Guid? configured, bool onManualLaunch,
         IReadOnlyList<AutoRunTarget> configurations, bool canStart)
     {
-        if (!canStart || (!command.AutoStart && !onManualLaunch)) {
-            return Skip;
+        if (!command.AutoStart && !onManualLaunch) {
+            return Skip(null);
         }
-        var target = command.AutoStart && command.Instance is { } selector
-            ? Resolve(selector, configurations)
+        if (!canStart) {
+            return Skip("运行环境当前不能准备或开始任务");
+        }
+        var byInstance = command.AutoStart && command.Instance is not null;
+        var target = byInstance
+            ? Resolve(command.Instance!, configurations)
             : configurations.FirstOrDefault(item => item.Id == configured);
-        return target is null ? Skip : new AutoRunDecision(target.Id, command.QuitAfterRun);
+        if (target is not null) {
+            return new AutoRunDecision(target.Id, command.QuitAfterRun);
+        }
+        return Skip(byInstance
+            ? $"--instance \"{command.Instance}\" 没有匹配到唯一的配置"
+            : "没有选择要自动执行的配置，或所选配置已不存在");
     }
+
+    private static AutoRunDecision Skip(string? reason) => new(null, false, reason);
 
     private static AutoRunTarget? Resolve(string selector, IReadOnlyList<AutoRunTarget> configurations)
     {

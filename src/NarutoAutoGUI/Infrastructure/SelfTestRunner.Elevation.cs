@@ -58,8 +58,13 @@ internal static partial class SelfTestRunner
         using var process = Process.Start(new ProcessStartInfo(executable, "--help") {
             RedirectStandardOutput = true, StandardOutputEncoding = Encoding.UTF8, CreateNoWindow = true
         })!;
-        var output = process.StandardOutput.ReadToEnd();
-        Require(process.WaitForExit(15000), "--help 必须输出后立即退出。");
+        // Reading to the end would wait as long as the process runs, so the limit is applied to the exit instead.
+        var reading = process.StandardOutput.ReadToEndAsync();
+        if (!process.WaitForExit(15000)) {
+            process.Kill();
+            throw new InvalidOperationException("--help 必须输出后立即退出。");
+        }
+        var output = reading.Result;
         Require(process.ExitCode == 0 && output.Contains("--quit-after-run", StringComparison.Ordinal),
             $"--help 必须在 stdout 输出帮助并以 0 退出：exit={process.ExitCode}，输出={output}");
     }

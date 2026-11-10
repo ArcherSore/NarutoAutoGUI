@@ -9,8 +9,13 @@ public partial class MainWindow
     // Raised just before the launch starts a configuration by itself, so --quit-after-run can start watching.
     internal event EventHandler<AutoRunDecision>? AutoRunStarted;
 
-    // Raised when a launch-started operation failed before any Run began. The text is for a notification.
+    // Raised when something the launch started on its own failed. The text is for a notification.
     internal event EventHandler<string>? AutoRunFailed;
+
+    // Raised when an auto-run ended without any Run having begun, so --quit-after-run has nothing to wait for.
+    internal event EventHandler? AutoRunAbandoned;
+
+    private int _acceptedRuns;
 
     // Starts the configuration this launch asks for, if any: activates it, prepares the Runtime Environment and
     // starts the Run, as the Start button does. Returns whether it did.
@@ -19,8 +24,7 @@ public partial class MainWindow
         if (_projectPlan is not { } project) {
             return false;
         }
-        var canStart = CurrentControls.Action is RuntimeAction.Prepare { Enabled: true }
-            or RuntimeAction.Start { Enabled: true };
+        var canStart = AutoRunPlanner.RuntimeAllows(CurrentControls);
         var decision = AutoRunPlanner.Decide(
             _launchCommand, _settings.AutoRunConfigurationId, _settings.AutoRunOnManualLaunch.Value,
             AutoRunTarget.Of(project), canStart);
@@ -30,10 +34,12 @@ public partial class MainWindow
             }
             return false;
         }
-        ChangeConfiguration(() => project.ActivateConfiguration(id));
-        // The switch can be refused (an input that cannot be committed, a locked editor); never run the other one.
-        if (project.ActiveConfigurationId != id) {
-            ReportUnattendedFailure("自动执行", new InvalidOperationException("无法切换到所选配置。"));
+        // A refusal is reported by the change itself: the other configuration must never be run instead.
+        if (!ChangeConfiguration(() => project.ActivateConfiguration(id), unattended: true)) {
+            return true;
+        }
+        if (project.EnabledItems.Count == 0) {
+            ReportUnattendedFailure("自动执行", new InvalidOperationException("所选配置没有可执行的任务。"));
             return true;
         }
         if (!_projectConfigurationValid) {
@@ -41,11 +47,16 @@ public partial class MainWindow
             return true;
         }
         _logger.Info($"自动执行：已激活配置并开始任务{AppLogger.Field("configuration", ConfigurationName(id))}");
+        var acceptedBefore = _acceptedRuns;
         AutoRunStarted?.Invoke(this, decision);
         if (CurrentControls.Action is RuntimeAction.Start) {
             await RunOperationAsync(PendingOperation.StartingRun, () => StartCurrentPlanAsync(), unattended: true);
         } else {
             await PrepareFromPanelAsync(startRun: true, unattended: true);
+        }
+        // Failed, refused or cancelled by an exit request: no Run began, whatever the reason.
+        if (_acceptedRuns == acceptedBefore) {
+            AutoRunAbandoned?.Invoke(this, EventArgs.Empty);
         }
         return true;
     }

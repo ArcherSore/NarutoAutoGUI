@@ -265,7 +265,8 @@ public partial class MainWindow : FluentWindow
             {
                 await _sessionManager.EnsureConnectedAsync(showPreview: true);
                 _logger.Info($"已有 Child Session {existingId} 恢复完成。");
-            });
+            },
+            unattended: _launchCommand.AutoStart);
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
@@ -637,6 +638,7 @@ public partial class MainWindow : FluentWindow
             $"run.start {response.Disposition}：runId={_pendingStartAttempt.RunId:D}；"
             + $"planDigest={_pendingStartAttempt.PlanDigest}。 ");
         _pendingStartAttempt = null;
+        _acceptedRuns++;
     }
 
     private async void StopRunButton_Click(object sender, RoutedEventArgs e)

@@ -42,6 +42,27 @@ internal static partial class SelfTestRunner
             "--instance 只对 --autostart 生效，手动启动仍用设置里的配置。");
 
         Require(!Decide(boot, daily.Id, canStart: false).Run, "运行控制栏不允许准备或开始时必须跳过。");
+
+        // The runtime decides, not the configuration that is about to be replaced: an environment that is ready
+        // while the active configuration has no tasks or is invalid still allows the other one to start.
+        RuntimeControlState Controls(RuntimeAction action, bool editable = true) => new(
+            action, editable, null, new DesktopToggle(DesktopAction.Show, false, DesktopStatus.NotRunning), true);
+        foreach (var allowed in new RuntimeAction[] {
+            new RuntimeAction.Prepare(true), new RuntimeAction.Start(true),
+            new RuntimeAction.Start(false, StartBlocker.NoTasks),
+            new RuntimeAction.Start(false, StartBlocker.ConfigurationInvalid)
+        }) {
+            Require(AutoRunPlanner.RuntimeAllows(Controls(allowed)), $"运行环境允许开始时不能被当前配置挡住：{allowed}");
+        }
+        foreach (var refused in new RuntimeAction[] {
+            new RuntimeAction.Prepare(false), new RuntimeAction.Start(false, StartBlocker.RuntimeNotReady),
+            new RuntimeAction.Start(false, StartBlocker.CommandsUnavailable), new RuntimeAction.Stop(true),
+            new RuntimeAction.Recover(true, RecoveryReason.WorkerLost)
+        }) {
+            Require(!AutoRunPlanner.RuntimeAllows(Controls(refused)), $"运行环境不允许开始时必须跳过：{refused}");
+        }
+        Require(!AutoRunPlanner.RuntimeAllows(Controls(new RuntimeAction.Prepare(true), editable: false)),
+            "配置被锁定（已有 Run 或运行环境忙）时必须跳过。");
         var quit = boot with { QuitAfterRun = true };
         Require(Decide(quit, daily.Id).QuitAfterRun, "触发自动执行后 --quit-after-run 生效。");
         Require(!Decide(quit).QuitAfterRun && !Decide(quit, daily.Id, canStart: false).QuitAfterRun,
@@ -74,17 +95,25 @@ internal static partial class SelfTestRunner
             "自动执行触发之前就已结束的 Run 不能让程序退出。");
     }
 
-    // Two configurations, "日常" active and "周常" second, so activation by the launch is observable.
-    private static void TwoConfigurations(string projectDirectory)
-    {
-        Directory.CreateDirectory(Path.Combine(projectDirectory, "config"));
-        var project = ProjectPlanModule.Open(
-            projectDirectory, Path.Combine(projectDirectory, "config", "maanop-config.json"));
-        var first = project.ActiveConfigurationId;
-        project.RenameConfiguration(first, "日常");
-        project.RenameConfiguration(project.CreateConfiguration(), "周常");
-        project.ActivateConfiguration(first);
-    }
+    // Two configurations, "日常" active and "周常" second, each with the project's first task unless left empty.
+    private static Action<string> TwoConfigurations(bool dailyHasTask = true, bool weeklyHasTask = true) =>
+        projectDirectory => {
+            Directory.CreateDirectory(Path.Combine(projectDirectory, "config"));
+            var project = ProjectPlanModule.Open(
+                projectDirectory, Path.Combine(projectDirectory, "config", "maanop-config.json"));
+            var daily = project.ActiveConfigurationId;
+            var task = project.SelectedTaskNames[0];
+            project.RenameConfiguration(daily, "日常");
+            project.ActivateConfiguration(project.CreateConfiguration());
+            project.RenameConfiguration(project.ActiveConfigurationId, "周常");
+            if (weeklyHasTask) {
+                project.AddTask(task);
+            }
+            project.ActivateConfiguration(daily);
+            if (!dailyHasTask) {
+                project.RemoveTask(task);
+            }
+        };
 
     private static void VerifyAutoRunOnLaunch(AppLogger logger, string testDirectory)
     {
@@ -92,18 +121,31 @@ internal static partial class SelfTestRunner
         var prepared = new List<string>();
         var started = new List<AutoRunDecision>();
         var failures = new List<string>();
-        Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task> failingPrepare = (project, _) => {
+        var abandoned = 0;
+        MainWindow? current = null;
+        Task PrepareThenFail(ProjectPlanModule project, Func<MaaFrameworkOptions> options)
+        {
             prepared.Add(project.Configurations.Single(item => item.Id == project.ActiveConfigurationId).Name);
             throw new InvalidOperationException("模拟准备失败");
-        };
+        }
+        // Prepares for good, but an exit is requested meanwhile, so the Run is never started and nothing failed.
+        Task PrepareThenExit(ProjectPlanModule project, Func<MaaFrameworkOptions> options)
+        {
+            prepared.Add(project.Configurations.Single(item => item.Id == project.ActiveConfigurationId).Name);
+            current!.SetExitInProgress(true);
+            return Task.CompletedTask;
+        }
         // Runs one launch through the window's own startup, then asks it to act on the launch.
         void Launch(string name, LaunchCommand command, string? target, bool onManualLaunch,
-            Action<MainWindow, bool> verify, Action<MainWindow>? beforeAutoRun = null)
+            Action<MainWindow, bool> verify, Action<MainWindow, string>? beforeAutoRun = null,
+            Action<string>? fixture = null,
+            Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task>? prepare = null)
         {
             prepared.Clear();
             started.Clear();
             failures.Clear();
-            RunOnboardingScenario(logger, Path.Combine(testDirectory, name), (window, _) => {
+            abandoned = 0;
+            RunOnboardingScenario(logger, Path.Combine(testDirectory, name), (window, directory) => {
                 CompleteOnboardingStartup(window);
                 var page = SettingsPageFor(window).Sections.SelectMany(section => section.Items).ToArray();
                 var choice = page.Single(item => item.Definition.ChoiceKey == "autorun.configuration").Choice!;
@@ -112,25 +154,34 @@ internal static partial class SelfTestRunner
                 }
                 page.Single(item => item.Definition.SettingKey == "autorun.onManualLaunch").Toggle!.Value
                     = onManualLaunch;
+                current = window;
                 window.AutoRunStarted += (_, decision) => started.Add(decision);
                 window.AutoRunFailed += (_, message) => failures.Add(message);
-                beforeAutoRun?.Invoke(window);
+                window.AutoRunAbandoned += (_, _) => abandoned++;
+                beforeAutoRun?.Invoke(window, directory);
                 var run = window.AutoRunOnLaunchAsync();
                 PumpUntil(() => run.IsCompleted, "自动执行必须结束，失败时不能停在模态框上。");
                 verify(window, run.Result);
-            }, beforeLoad: TwoConfigurations, launchCommand: command, prepareEnvironment: failingPrepare);
+            }, beforeLoad: fixture ?? TwoConfigurations(), launchCommand: command,
+                prepareEnvironment: prepare ?? PrepareThenFail);
         }
 
         Launch("manual", new LaunchCommand(false, false, null), "周常", false, (_, ran) =>
-            Require(!ran && prepared.Count == 0 && started.Count == 0, "手动启动且未开启开关时不得自动执行。"));
+            Require(!ran && prepared.Count == 0 && started.Count == 0 && abandoned == 0,
+                "手动启动且未开启开关时不得自动执行。"));
         Launch("boot", boot, "周常", false, (window, ran) => {
             Require(ran && prepared.SequenceEqual(["周常"]), "开机自启必须先激活所选配置再准备并开始。");
             Require(started is [{ QuitAfterRun: true }], "触发自动执行后必须通知，并带上 --quit-after-run。");
             Require(failures is [{ } failure] && failure.Contains("模拟准备失败"),
                 "自动执行开始前失败必须报告，而不是弹模态框。");
+            Require(abandoned == 1, "任务没能开始时必须放弃 --quit-after-run 的等待，以免之后手动任务结束时退出。");
             Require(ProjectOf(window).ActiveConfigurationId == ProjectOf(window).Configurations
                 .Single(item => item.Name == "周常").Id, "激活的配置必须保存下来。");
         });
+        Launch("exit-requested", boot, "周常", false, (_, ran) =>
+            Require(ran && started.Count == 1 && failures.Count == 0 && abandoned == 1,
+                "准备时用户要求退出，自动执行没有开始任务，必须放弃 --quit-after-run 的等待。"),
+            prepare: PrepareThenExit);
         Launch("manual-flag", new LaunchCommand(false, false, null), "周常", true, (_, ran) =>
             Require(ran && prepared.SequenceEqual(["周常"]), "开启“手动启动时也自动执行”后手动启动应自动执行。"));
         Launch("instance", boot with { Instance = "周常" }, "日常", false, (_, ran) =>
@@ -140,7 +191,24 @@ internal static partial class SelfTestRunner
                 "--instance 找不到时必须跳过，不回退到其他配置。"));
         Launch("not-startable", boot, "周常", false, (_, ran) =>
             Require(!ran && prepared.Count == 0 && started.Count == 0, "运行控制栏不允许开始时必须跳过。"),
-            window => window.SetExitInProgress(true));
+            (window, _) => window.SetExitInProgress(true));
+        Launch("empty-active-configuration", boot, "周常", false, (_, ran) =>
+            Require(ran && prepared.SequenceEqual(["周常"]), "目标配置有效时，原来激活的配置没有任务不能挡住它。"),
+            fixture: TwoConfigurations(dailyHasTask: false));
+        Launch("target-without-tasks", boot, "周常", false, (_, ran) =>
+            Require(ran && prepared.Count == 0 && started.Count == 0 && failures.Count == 1,
+                "目标配置没有任务时必须报告失败，不能白白创建桌面分身。"),
+            fixture: TwoConfigurations(weeklyHasTask: false));
+        FileStream? locked = null;
+        Launch("switch-refused", boot, "周常", false, (window, ran) => {
+            locked?.Dispose();
+            Require(ran && prepared.Count == 0 && started.Count == 0 && failures.Count == 1,
+                "无法切换到目标配置时必须报告失败，不能弹模态框，也不能改跑原来的配置。");
+            Require(ProjectOf(window).Configurations.Single(item => item.Name == "日常").Id
+                == ProjectOf(window).ActiveConfigurationId, "切换失败后仍是原配置。");
+        }, (_, directory) => locked = new FileStream(
+            Path.Combine(directory, "config", "maanop-config.json"),
+            FileMode.Open, FileAccess.Read, FileShare.Read));
     }
 
     private static void VerifyUnattendedStartupDialogs(AppLogger logger, string testDirectory)

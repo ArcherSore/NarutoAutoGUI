@@ -19,4 +19,13 @@ internal static partial class SelfTestRunner
             "--instance 缺少值时不能把下一个参数当作配置名。");
         Require(LaunchCommand.Parse(["-i", "  "]).Instance is null, "空白配置名按未指定处理。");
     }
+
+    private static void VerifyRunningCopies()
+    {
+        const string own = @"C:\Naruto\NarutoAutoGUI.exe";
+        Require(RunningCopies.Exists(own, 10, [(10, own), (11, @"c:\naruto\narutoautogui.exe")]),
+            "另一个会话里已有同一程序在运行时，系统发起的启动必须让位（路径不区分大小写）。");
+        Require(!RunningCopies.Exists(own, 10, [(10, own), (12, @"D:\Other\NarutoAutoGUI.exe"), (13, null)]),
+            "只有自己，或别处的另一份程序、无法读取路径的进程，都不算已有副本。");
+    }
 }

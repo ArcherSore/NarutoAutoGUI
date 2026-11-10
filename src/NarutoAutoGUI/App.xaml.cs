@@ -395,6 +395,10 @@ public partial class App : System.Windows.Application
     private bool TryAcquireSingleInstance(LaunchCommand command)
     {
         try {
+            if (command.AutoStart && RunningCopies.Exists()) {
+                Environment.ExitCode = 0;
+                return false;
+            }
             using var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
             var mutexName = $@"Local\NarutoAutoGUI-{currentProcess.SessionId}";
             var mutex = new Mutex(initiallyOwned: true, mutexName, out var createdNew);

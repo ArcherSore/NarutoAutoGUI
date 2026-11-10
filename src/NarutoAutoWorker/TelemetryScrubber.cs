@@ -38,14 +38,16 @@ internal sealed class TelemetryScrubber
         return scrubbed.ToString();
     }
 
-    internal void Install(SentryOptions options, Action<Exception> fault)
+    // Nothing leaves while sending is off, including what the SDK captures on its own.
+    internal void Install(SentryOptions options, Action<Exception> fault, Func<bool> sending)
     {
         // A breadcrumb repeats an earlier message on every later item and cannot be rewritten; none are kept.
         options.MaxBreadcrumbs = 0;
-        options.SetBeforeSend(sentryEvent => Guard(sentryEvent, ScrubEvent, fault));
-        options.SetBeforeSendTransaction(transaction => Guard(transaction, ScrubTransaction, fault));
+        options.SetBeforeSend(sentryEvent => sending() ? Guard(sentryEvent, ScrubEvent, fault) : null);
+        options.SetBeforeSendTransaction(transaction =>
+            sending() ? Guard(transaction, ScrubTransaction, fault) : null);
         // A log's text is fixed once created, so callers scrub before logging and this only refuses leftovers.
-        options.SetBeforeSendLog(log => Guard(log, item => Leaks(string.Join("\n",
+        options.SetBeforeSendLog(log => !sending() ? null : Guard(log, item => Leaks(string.Join("\n",
             new[] { item.Message, item.Template }.Concat(item.Parameters.Select(value => $"{value}")))) ? null : item,
             fault));
     }

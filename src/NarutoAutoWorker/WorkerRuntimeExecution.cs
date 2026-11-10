@@ -43,6 +43,7 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
     private readonly uint _childSessionId;
     private readonly Action<string, string, string> _log;
     private readonly Action _onRunning;
+    private readonly Action<string, string, bool?> _onTaskerEvent;
     private readonly MaaRunLogAdapter _runLogAdapter;
     private readonly TaskCompletionSource<MaaTasker> _taskerReady = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
@@ -65,7 +66,7 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
 
     internal WorkerRuntimeExecution(
         LaunchManifest manifest, Guid runId, RunPlanItem item, uint childSessionId,
-        Action<string, string, string> log, Action onRunning)
+        Action<string, string, string> log, Action onRunning, Action<string, string, bool?>? onTaskerEvent = null)
     {
         _manifest = manifest;
         _runId = runId;
@@ -73,6 +74,7 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
         _childSessionId = childSessionId;
         _log = log;
         _onRunning = onRunning;
+        _onTaskerEvent = onTaskerEvent ?? ((_, _, _) => { });
         _runLogAdapter = new MaaRunLogAdapter(log);
     }
 
@@ -421,7 +423,8 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
 
     internal void OnTaskerCallback(object? sender, MaaCallbackEventArgs args)
     {
-        _runLogAdapter.Handle(args.Message, args.Details);
+        var focus = _runLogAdapter.Handle(args.Message, args.Details);
+        _onTaskerEvent(args.Message, args.Details, focus.Trace);
 
         if (args.Message == MaaMsg.Tasker.Task.Starting) {
             ReportRunningOnce();

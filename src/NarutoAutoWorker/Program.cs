@@ -7,6 +7,7 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
+        WorkerHost? host = null;
         try {
             if (args.Length >= 3 && args[0] == "--pretask-test-child") {
                 return PretaskSelfTests.RunChild(args);
@@ -37,10 +38,12 @@ internal static class Program
                 eventArgs.Cancel = true;
                 shutdown.Cancel();
             };
-            var host = new WorkerHost(arguments, manifest);
+            host = new WorkerHost(arguments, manifest);
             await host.RunAsync(shutdown.Token);
             return 0;
         } catch (Exception exception) {
+            host?.ReportUnhandledException(exception);
+            host?.DisposeTelemetry();
             var text = $"[{DateTime.UtcNow:O}] {exception}{Environment.NewLine}";
             Console.Error.Write(text);
             WriteBootstrapLog(text, AppContext.BaseDirectory);

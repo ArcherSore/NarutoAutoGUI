@@ -77,6 +77,12 @@ internal sealed class WorkerHost
     // Sends what is queued within the SDK's shutdown timeout; a Child Session logoff ends the process before that.
     internal void DisposeTelemetry() => Telemetry(_telemetry.Dispose);
 
+    internal void ReportTaskerEvent(Guid planItemId, string message, string details, bool? trace) =>
+        Telemetry(() => _telemetry.OnTaskerEvent(planItemId, message, details, trace));
+
+    internal void ReportUnhandledException(Exception exception) =>
+        Telemetry(() => _telemetry.CaptureUnhandled(exception));
+
     internal async Task InitializeAsync(CancellationToken cancellationToken)
     {
         var (status, reason) = await _checkReadiness(cancellationToken);
@@ -252,7 +258,8 @@ internal sealed class WorkerHost
         return item.Kind switch {
             PlanItemKind.Pretask => new PretaskExecution(_manifest, item, WriteLog, onRunning),
             PlanItemKind.MaaTask => new WorkerRuntimeExecution(
-                _manifest, runId, item, checked((uint)Process.GetCurrentProcess().SessionId), WriteLog, onRunning),
+                _manifest, runId, item, checked((uint)Process.GetCurrentProcess().SessionId), WriteLog, onRunning,
+                (message, details, trace) => ReportTaskerEvent(planItemId, message, details, trace)),
             _ => throw new InvalidDataException("不支持的 Plan Item kind。 ")
         };
     }

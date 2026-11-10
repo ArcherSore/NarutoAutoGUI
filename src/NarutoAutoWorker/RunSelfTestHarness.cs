@@ -41,6 +41,7 @@ internal sealed class RunHarness : IAsyncDisposable
             },
             createTelemetry ?? (_ => RunTelemetry.None));
         Executions.Probe = Host.GetSnapshot;
+        Executions.TaskerEvent = Host.ReportTaskerEvent;
     }
 
     internal List<MaaFrameworkOptions> AppliedFrameworkOptions { get; } = [];
@@ -209,6 +210,9 @@ internal sealed class ScriptedExecutionFactory
 
     internal RecordingStream Wire { get; set; } = null!;
 
+    // Where a MaaFramework callback goes in the Worker, so scripted Plan Items can report node events.
+    internal Action<Guid, string, string, bool?> TaskerEvent { get; set; } = null!;
+
     internal bool StopFails { get; set; }
 
     // Plan Items whose execution cannot be created; the factory throws for them.
@@ -366,6 +370,13 @@ internal sealed class ScriptedExecution : IPlanItemExecution
     }
 
     internal void Complete(RuntimeExecutionResult result) => _result.TrySetResult(result);
+
+    // A MaaFramework callback as WorkerRuntimeExecution forwards it: the focus is parsed once, then reported.
+    internal void Emit(string message, object details)
+    {
+        var json = JsonSerializer.Serialize(details, ProtocolJson.Options);
+        _owner.TaskerEvent(Item.PlanItemId, message, json, MaaRunLogFormatter.Read(message, json).Trace);
+    }
 
     internal void Complete(RuntimeExecutionOutcome outcome, string? errorCode = null) =>
         _result.TrySetResult(new RuntimeExecutionResult(outcome,

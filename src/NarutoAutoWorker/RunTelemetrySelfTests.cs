@@ -14,13 +14,14 @@ internal static class RunTelemetrySelfTests
 
     internal static (string Name, Action Body)[] Checks => [
         Check(VerifyRunTransactions), Check(VerifyTelemetryToggle), Check(VerifyTransactionSampling),
-        Check(VerifyTelemetryFaults), Check(VerifyRedactionInFinalEnvelope)
+        Check(VerifyTelemetryFaults), Check(VerifyRedactionInFinalEnvelope), Check(VerifyNodeTraceSpans),
+        Check(VerifyFailureEvents)
     ];
 
     private static (string Name, Action Body) Check(Func<Task> body) =>
         ($"RunTelemetry.{body.Method.Name}", () => body().GetAwaiter().GetResult());
 
-    // One Transaction per Run and one Span per Plan Item, pretask included; no Error Event before redaction exists.
+    // One Transaction per Run and one Span per Plan Item, pretask included; only the failed Run has an Error Event.
     private static async Task VerifyRunTransactions()
     {
         var transport = new CapturingTransport();
@@ -68,8 +69,10 @@ internal static class RunTelemetrySelfTests
         }
 
         var transactions = transport.Items("transaction").ToArray();
-        RunSelfTests.Expect(transactions.Length == 3 && transport.Items("event").Count() == 0,
-            $"三个 Run 应各有一个 Transaction 且没有 Error Event，实际 {transactions.Length}。");
+        var events = transport.Items("event").ToArray();
+        RunSelfTests.Expect(transactions.Length == 3 && events.Length == 1
+            && events[0].GetProperty("tags").GetProperty("run.id").GetString() == failed.ToString(),
+            $"三个 Run 应各有一个 Transaction，只有失败的 Run 有失败事件：{transactions.Length}/{events.Length}");
         var byRun = transactions.ToDictionary(item => item.GetProperty("tags").GetProperty("run.id").GetString()!);
         var first = byRun[succeeded.ToString()];
         var spans = first.GetProperty("spans").EnumerateArray().ToArray();
@@ -236,6 +239,124 @@ internal static class RunTelemetrySelfTests
             "含密码的事件应脱敏后照常发送，而不是被丢弃。");
     }
 
+    // PI v2.9.1: an explicit focus trace decides; otherwise only Node.PipelineNode.Failed is traced, with or without
+    // focus. A Plan Item keeps at most 1000 node Spans, and a pipeline step's duration runs from its Starting.
+    private static async Task VerifyNodeTraceSpans()
+    {
+        var transport = new CapturingTransport();
+        await using (var harness = await TelemetryHarnessAsync(Options, transport)) {
+            var request = RunSelfTests.Request(RunSelfTests.Plan(1));
+            await harness.StartAsync(request);
+            var execution = await harness.Executions.ExecutingAsync(request.Plan.Items[0].PlanItemId);
+            execution.ReportRunning();
+            object Node(string name, int node, object? focus = null) =>
+                new { task_id = 7, node_id = node, name, focus };
+            execution.Emit("Tasker.Task.Starting", new { task_id = 7, entry = "Entry1" });
+            execution.Emit("Node.PipelineNode.Starting", Node("Untraced", 1));
+            execution.Emit("Node.PipelineNode.Succeeded", Node("Untraced", 1));
+            execution.Emit("Node.PipelineNode.Starting", Node("Slow", 2));
+            Thread.Sleep(30);
+            execution.Emit("Node.PipelineNode.Failed", Node("Slow", 2));
+            execution.Emit("Node.PipelineNode.Failed", Node("Muted", 3,
+                new Dictionary<string, object> { ["Node.PipelineNode.Failed"] = new { trace = false } }));
+            execution.Emit("Node.Action.Succeeded", Node("Opted", 4, new Dictionary<string, object> {
+                ["Node.Action.Succeeded"] = new { content = "{name}", trace = true } }));
+            execution.Emit("Node.Recognition.Succeeded", Node("Logged", 5,
+                new Dictionary<string, object> { ["Node.Recognition.Succeeded"] = "{name}" }));
+            for (var index = 0; index < 1005; index++) {
+                execution.Emit("Node.PipelineNode.Failed", Node("Flood", 100 + index));
+            }
+            execution.Complete(RuntimeExecutionOutcome.Succeeded);
+            await harness.WaitForStateAsync(s => s.LastRun?.RunId == request.RunId, "Run 应终结。");
+        }
+        var spans = transport.Items("transaction").Single().GetProperty("spans").EnumerateArray()
+            .Where(span => span.GetProperty("op").GetString() == "node").ToArray();
+        string[] Named(string name) => spans.Where(span => span.GetProperty("description").GetString() == name)
+            .Select(span => span.GetProperty("data").GetProperty("message").GetString()!).ToArray();
+        RunSelfTests.Expect(Named("Untraced").Length == 0 && Named("Muted").Length == 0 && Named("Logged").Length == 0
+            && Named("Slow").SequenceEqual(["Node.PipelineNode.Failed"])
+            && Named("Opted").SequenceEqual(["Node.Action.Succeeded"]), "节点 Span 应遵守 trace 显式值与默认值。");
+        var slow = spans.Single(span => span.GetProperty("description").GetString() == "Slow");
+        RunSelfTests.Expect(slow.GetProperty("data").GetProperty("duration_ms").GetInt64() >= 25
+            && Status(slow) == "internal_error" && spans.Length is > 990 and <= 1000,
+            $"失败节点应带耗时与错误状态，节点 Span 有上限而不是全部上报：{spans.Length}");
+    }
+
+    // One Error Event per failed Plan Item, grouped by the node that ended the task: MaaNOP recovers through on_error,
+    // so the first failure may not be the cause. Without a node failure the Worker's reason code is the cause.
+    private static async Task VerifyFailureEvents()
+    {
+        var transport = new CapturingTransport();
+        await using (var harness = await TelemetryHarnessAsync(Options, transport)) {
+            async Task<ScriptedExecution> StartAsync(RunPlan plan)
+            {
+                var request = RunSelfTests.Request(plan);
+                await harness.StartAsync(request);
+                var execution = await harness.Executions.ExecutingAsync(plan.Items[0].PlanItemId);
+                execution.ReportRunning();
+                return execution;
+            }
+            async Task FailAsync(ScriptedExecution execution, string code)
+            {
+                execution.Complete(RuntimeExecutionOutcome.Failed, code);
+                await harness.WaitForStateAsync(s => s.LastRun?.Items[0].PlanItemId == execution.Item.PlanItemId,
+                    "Run 应终结。");
+            }
+            object Node(int task, string name) => new { task_id = task, node_id = 1, name };
+
+            var recovered = await StartAsync(RunSelfTests.Plan(1));
+            recovered.Emit("Tasker.Task.Starting", new { task_id = 1, entry = "Entry1" });
+            recovered.Emit("Node.NextList.Failed", Node(1, "Recovered"));
+            recovered.Emit("Node.PipelineNode.Failed", Node(1, "Recovered"));
+            recovered.Emit("Node.NextList.Failed", Node(2, "Nested"));
+            recovered.Emit("Node.PipelineNode.Failed", Node(2, "Nested"));
+            recovered.Emit("Node.Action.Failed", Node(1, "Fatal"));
+            recovered.Emit("Node.PipelineNode.Failed", Node(1, "Fatal"));
+            recovered.Emit("Tasker.Task.Failed", new { task_id = 1, entry = "Entry1" });
+            await FailAsync(recovered, "MaaTaskFailed");
+
+            var silent = await StartAsync(RunSelfTests.Plan(1));
+            silent.Emit("Tasker.Task.Starting", new { task_id = 3, entry = "Entry1" });
+            await FailAsync(silent, "MaaTaskFailed");
+            await FailAsync(await StartAsync(RunSelfTests.Plan(1)), "RunExecutionFailed");
+            var pretaskPlan = PlanWithPretask(ProtocolJson.ToElement(new { }));
+            await FailAsync(await StartAsync(pretaskPlan with { Items = [pretaskPlan.Items[0]] }), "PretaskExitCode");
+
+            var stopping = RunSelfTests.Request(RunSelfTests.Plan(1));
+            await harness.StartAsync(stopping);
+            var stopped = await harness.Executions.ExecutingAsync(stopping.Plan.Items[0].PlanItemId);
+            stopped.ReportRunning();
+            await harness.StopAsync(stopping.RunId);
+            await stopped.StopCalledAsync();
+            stopped.Complete(RuntimeExecutionOutcome.Cancelled);
+            await harness.WaitForStateAsync(s => s.LastRun?.RunId == stopping.RunId, "停止的 Run 应终结。");
+
+            var faulting = await StartAsync(RunSelfTests.Plan(1));
+            faulting.Complete(new RuntimeExecutionResult(RuntimeExecutionOutcome.StopTimedOut, null,
+                new StructuredReason("StopTimeout", "scripted stop timeout")));
+            await harness.WaitForStateAsync(s => s.WorkerState == WorkerState.Faulted, "Worker 应进入 Faulted。");
+            harness.Host.ReportUnhandledException(new InvalidOperationException("scripted unhandled failure"));
+        }
+
+        var events = transport.Items("event").ToArray();
+        string[] Fingerprint(JsonElement item) => item.TryGetProperty("fingerprint", out var parts)
+            ? parts.EnumerateArray().Select(part => part.GetString()!).ToArray() : [];
+        var failures = events.Where(item => Fingerprint(item).FirstOrDefault() == "naruto-task-failure").ToArray();
+        RunSelfTests.Expect(failures.Length == 4, $"四个失败的 Plan Item 应各有一个失败事件：{failures.Length}");
+        var recent = failures[0].GetProperty("extra").GetProperty("failure.recent").GetRawText();
+        RunSelfTests.Expect(Fingerprint(failures[0]).SequenceEqual(["naruto-task-failure", "test", "Task1", "Fatal",
+                "action"]) && recent.Contains("Recovered") && recent.Contains("Nested"),
+            $"根因应是主任务最后一个失败节点，其余失败只作上下文：{string.Join("/", Fingerprint(failures[0]))}");
+        RunSelfTests.Expect(Fingerprint(failures[1])[3..].SequenceEqual(["MaaTaskFailed", "worker"])
+            && Fingerprint(failures[2])[3..].SequenceEqual(["RunExecutionFailed", "worker"])
+            && Fingerprint(failures[3])[2..].SequenceEqual(["Launch", "PretaskExitCode", "pretask"]),
+            "没有节点失败时，根因应是 StructuredReason code。");
+        RunSelfTests.Expect(events.Count(item => Fingerprint(item).FirstOrDefault() == "worker.faulted") == 1
+            && events.Count(item => item.GetProperty("tags").TryGetProperty("exception.source", out var source)
+                && source.GetString() == "worker.unhandled") == 1
+            && events.Length == 6, $"Faulted 与未处理异常应各报一次，用户停止不报错误：{events.Length}");
+    }
+
     private static async Task CompleteRunAsync(RunHarness harness)
     {
         var request = RunSelfTests.Request(RunSelfTests.Plan(2));
@@ -283,6 +404,10 @@ internal static class RunTelemetrySelfTests
         public void Register(IReadOnlyList<string> redactionValues) =>
             throw new InvalidOperationException("scripted telemetry fault");
         public void Observe(WorkerSnapshot snapshot) => throw new InvalidOperationException("scripted telemetry fault");
+        public void OnTaskerEvent(Guid planItemId, string message, string details, bool? trace) =>
+            throw new InvalidOperationException("scripted telemetry fault");
+        public void CaptureUnhandled(Exception exception) =>
+            throw new InvalidOperationException("scripted telemetry fault");
         public void Dispose() => throw new InvalidOperationException("scripted telemetry fault");
     }
 }

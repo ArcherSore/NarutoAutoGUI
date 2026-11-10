@@ -44,9 +44,10 @@ public partial class App : System.Windows.Application
         Forms.Application.EnableVisualStyles();
         Forms.Application.SetCompatibleTextRenderingDefault(false);
         _logger = new AppLogger();
-        RegisterGlobalExceptionHandlers(_logger);
-        // The SDK reports AppDomain and unobserved task exceptions itself once the loaded project enables it.
+        // Before the handler that shows a dialog, so a UI failure is reported even if the user never closes it. The
+        // SDK reports AppDomain and unobserved task exceptions itself once the loaded project enables it.
         _telemetry.Attach(Dispatcher);
+        RegisterGlobalExceptionHandlers(_logger);
         LogStartup(_logger);
 
         _sessionManager = new ChildSessionManager(_logger);
@@ -333,9 +334,9 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        // Sends what is queued within one second.
-        _telemetry.Dispose();
         ReleaseSingleInstance();
+        // Sends what is queued within one second, after a new instance may already start.
+        _telemetry.Dispose();
         base.OnExit(e);
     }
 

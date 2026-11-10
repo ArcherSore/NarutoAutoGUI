@@ -39,14 +39,14 @@ internal sealed class GuiTelemetry(ITransport? transport = null) : IDisposable
 
     // UI-thread exceptions are not seen by the SDK on its own; the application decides whether they are handled.
     internal void Attach(Dispatcher dispatcher) =>
-        dispatcher.UnhandledException += (_, args) => Capture(args.Exception, "dispatcher");
+        dispatcher.UnhandledException += (_, args) => Capture(args.Exception);
 
-    internal void Capture(Exception exception, string source)
+    private void Capture(Exception exception)
     {
         try {
             lock (_gate) {
                 if (_sdk is not null) {
-                    SentrySdk.CaptureException(exception, scope => scope.SetTag("exception.source", source));
+                    SentrySdk.CaptureException(exception, scope => scope.SetTag("exception.source", "dispatcher"));
                 }
             }
         } catch {

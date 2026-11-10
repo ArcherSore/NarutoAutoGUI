@@ -11,8 +11,8 @@ internal static partial class SelfTestRunner
     private static readonly TelemetryOptions GuiTelemetryOptions = new(TestDsn, "NarutoAutoGUI@1.0.0+test@1",
         "production", true, 1, 1) { Enabled = true };
 
-    // The GUI reports its own unhandled exceptions — the UI thread's included — in one application Session, never
-    // with the profile folder or the machine name, and nothing at all while the gate or the user keeps it off.
+    // The GUI reports its own UI-thread exceptions in one application Session, never with the profile folder, the
+    // machine name or an IP, and nothing at all while the gate or the user keeps it off.
     private static void VerifyGuiTelemetry()
     {
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -20,24 +20,24 @@ internal static partial class SelfTestRunner
         using (var telemetry = new GuiTelemetry(transport)) {
             telemetry.Configure(GuiTelemetryOptions);
             telemetry.Configure(GuiTelemetryOptions);
-            telemetry.Capture(new InvalidOperationException($"settings failed at {profile}\\config"), "app-domain");
             ThrowOnIsolatedDispatcher(telemetry, $"ui failed at {profile}\\ui");
         }
         var text = transport.Text;
-        Require(Count(text, "\"type\":\"event\"") == 2, "GUI 未处理异常（含 UI 线程）应上报。");
-        Require(Count(text, "\"init\":true") == 1, "一次 GUI 启动只应有一个应用 Session。");
-        Require(text.Contains("ui failed at") && text.Contains("dispatcher"), "UI 线程异常应经 Dispatcher 处理器上报。");
+        Require(Count(text, "\"type\":\"event\"") == 1 && text.Contains("ui failed at")
+            && text.Contains("dispatcher"), "UI 线程未处理异常应经 Dispatcher 处理器上报。");
+        Require(Count(text, "\"init\":true") == 1, "重复配置相同选项不得开始新的 Session。");
         Require(!text.Contains(profile, StringComparison.OrdinalIgnoreCase)
             && !text.Contains(profile.Replace("\\", "\\\\"), StringComparison.OrdinalIgnoreCase)
-            && !text.Contains(Environment.MachineName, StringComparison.OrdinalIgnoreCase),
-            "上报内容不得包含用户目录或机器名。");
+            && !text.Contains(Environment.MachineName, StringComparison.OrdinalIgnoreCase)
+            && !text.Contains("ip_address", StringComparison.Ordinal), "上报内容不得包含用户目录、机器名或 IP。");
 
-        foreach (var options in new TelemetryOptions?[] {
-            null, GuiTelemetryOptions with { Enabled = false }, GuiTelemetryOptions with { Dsn = "not a dsn" } }) {
+        TelemetryOptions?[] off = [null, GuiTelemetryOptions with { Enabled = false },
+            GuiTelemetryOptions with { Dsn = "not a dsn" }];
+        foreach (var options in off) {
             var silent = new GuiCapturingTransport();
             using (var telemetry = new GuiTelemetry(silent)) {
                 telemetry.Configure(options);
-                telemetry.Capture(new InvalidOperationException("must not leave"), "app-domain");
+                ThrowOnIsolatedDispatcher(telemetry, "must not leave");
             }
             Require(silent.Text.Length == 0, $"未启用或初始化失败时不得上报任何内容（含 Session）：{options}");
         }
@@ -46,9 +46,15 @@ internal static partial class SelfTestRunner
         using (var telemetry = new GuiTelemetry(switched)) {
             telemetry.Configure(GuiTelemetryOptions);
             telemetry.SetEnabled(false);
-            telemetry.Capture(new InvalidOperationException("after switching off"), "app-domain");
+            ThrowOnIsolatedDispatcher(telemetry, "after switching off");
         }
         Require(!switched.Text.Contains("after switching off"), "关闭“帮助改进软件”后不得再上报。");
+
+        // A transport that fails changes nothing the application sees: reporting and closing still return.
+        using (var telemetry = new GuiTelemetry(new GuiCapturingTransport { Fail = true })) {
+            telemetry.Configure(GuiTelemetryOptions);
+            ThrowOnIsolatedDispatcher(telemetry, "transport fails");
+        }
     }
 
     // A real Dispatcher on its own thread: its exception is always marked handled, so a failing check cannot end
@@ -81,6 +87,8 @@ internal static partial class SelfTestRunner
         private readonly object _gate = new();
         private readonly StringBuilder _text = new();
 
+        internal bool Fail { get; init; }
+
         internal string Text
         {
             get
@@ -93,6 +101,9 @@ internal static partial class SelfTestRunner
 
         public async Task SendEnvelopeAsync(Envelope envelope, CancellationToken cancellationToken = default)
         {
+            if (Fail) {
+                throw new IOException("scripted transport failure");
+            }
             using var stream = new MemoryStream();
             await envelope.SerializeAsync(stream, null, cancellationToken);
             lock (_gate) {

@@ -252,6 +252,32 @@ internal static partial class SelfTestRunner
             Require(probe.Failures.SequenceEqual([code]) && !probe.Host.SavedCredentialRejected,
                 $"未保存凭据时登录错误 {code} 的处理必须保持不变。");
         }
+        // The window of a hidden connection must come forward exactly when Windows waits for the user.
+        const int sessionContention = -5, reconnectOptions = -4, logonWarning = 3, continuing = -2;
+        foreach (var saved in new[] { true, false }) {
+            foreach (var code in new[] { sessionContention, reconnectOptions, logonWarning }) {
+                using var probe = new RdpEventProbe(savedCredential: saved);
+                probe.Raise("OnLogonError", code);
+                Require(probe.Attention == 1 && probe.Failures.Count == 0,
+                    $"Winlogon 等待用户操作（{code}，已保存凭据={saved}）时必须通知显示窗口。");
+            }
+        }
+        foreach (var code in new[] { badPassword, expiredPassword, otherFailure }) {
+            using var probe = new RdpEventProbe(savedCredential: true);
+            probe.Raise("OnLogonError", code);
+            Require(probe.Attention == 1 && probe.Failures.Count == 0,
+                $"保存的凭据遇到登录错误 {code} 时 Windows 登录界面留给用户，必须通知显示窗口。");
+        }
+        foreach (var (code, saved) in new[] { (continuing, true), (continuing, false), (badPassword, false) }) {
+            using var probe = new RdpEventProbe(savedCredential: saved);
+            probe.Raise("OnLogonError", code);
+            Require(probe.Attention == 0, $"正常的登录过渡或已按失败处理的错误（{code}，已保存凭据={saved}）不得显示窗口。");
+        }
+        foreach (var terminal in new[] { logonFailure, -1, -3 }) {
+            using var probe = new RdpEventProbe(savedCredential: true);
+            probe.Raise("OnLogonError", terminal);
+            Require(probe.Attention == 0, $"直接失败的登录错误 {terminal} 不需要用户在窗口里操作。");
+        }
         using (var probe = new RdpEventProbe(savedCredential: true)) {
             probe.Raise("OnLogonError", badPassword);
             probe.Raise("BeginConnectionAttempt", false);
@@ -269,12 +295,14 @@ internal static partial class SelfTestRunner
         {
             Host.ConnectionFailed += (_, e) => Failures.Add(e.ErrorCode);
             Host.LoginCompleted += (_, _) => Logins++;
+            Host.UserInteractionNeeded += (_, _) => Attention++;
             Raise("BeginConnectionAttempt", savedCredential);
         }
 
         internal RdpActiveXHost Host { get; } = new();
         internal List<int> Failures { get; } = [];
         internal int Logins { get; private set; }
+        internal int Attention { get; private set; }
 
         internal void Raise(string handler, params object[] args) => typeof(RdpActiveXHost)
             .GetMethod(handler, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Host, args);

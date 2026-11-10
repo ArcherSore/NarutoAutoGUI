@@ -58,7 +58,7 @@ public partial class MainWindow : FluentWindow
     private readonly HelpPageModel _help;
     private MainSection _section;
     private readonly string _applicationDirectory;
-    private readonly Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task> _prepareEnvironment;
+    private readonly Func<ProjectPlanModule, Func<MaaFrameworkOptions>, bool, Task> _prepareEnvironment;
     private CancellationTokenSource? _workerReadyWait;
     private readonly ChildSessionManager _sessionManager;
     private readonly WorkerCoordinator _workerCoordinator;
@@ -127,7 +127,7 @@ public partial class MainWindow : FluentWindow
         ChildSessionManager sessionManager, WorkerCoordinator workerCoordinator, RuntimeEnvironment environment,
         Func<Task> requestExitAsync, Func<Task> endEnvironmentAsync, Func<string, Task> installUpdateAsync,
         string? applicationDirectory = null, Func<CancellationToken, Task<EngineCheckResult>>? checkForUpdate = null,
-        Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task>? prepareEnvironment = null,
+        Func<ProjectPlanModule, Func<MaaFrameworkOptions>, bool, Task>? prepareEnvironment = null,
         Func<string, IProgress<EngineProgress>, CancellationToken, Task<string>>? prepareUpdate = null,
         AutostartTask? autostart = null, LaunchCommand? launchCommand = null)
     {
@@ -263,7 +263,7 @@ public partial class MainWindow : FluentWindow
             PendingOperation.RestoringSession,
             async () =>
             {
-                await _sessionManager.EnsureConnectedAsync(showPreview: true);
+                await _sessionManager.EnsureConnectedAsync(showPreview: false);
                 _logger.Info($"已有 Child Session {existingId} 恢复完成。");
             },
             unattended: _launchCommand.AutoStart);
@@ -538,10 +538,12 @@ public partial class MainWindow : FluentWindow
 
     private async void PrepareEnvironmentButton_Click(object sender, RoutedEventArgs e)
     {
-        await PrepareFromPanelAsync();
+        await PrepareFromPanelAsync(showDesktop: true);
     }
 
-    private async Task PrepareFromPanelAsync(bool startRun = false, bool startupOnly = false, bool unattended = false)
+    // Only a manual "仅启动分身" shows the Child Session window; every other preparation keeps it hidden.
+    private async Task PrepareFromPanelAsync(
+        bool startRun = false, bool startupOnly = false, bool unattended = false, bool showDesktop = false)
     {
         if (OperationOrExitInProgress) {
             LogIgnoredAction();
@@ -554,7 +556,7 @@ public partial class MainWindow : FluentWindow
             {
                 try {
                     LoadProject();
-                    await _prepareEnvironment(RequireProject(), _settings.CreateFrameworkOptions);
+                    await _prepareEnvironment(RequireProject(), _settings.CreateFrameworkOptions, showDesktop);
                 } catch {
                     _environmentPreparationFailed = true;
                     throw;

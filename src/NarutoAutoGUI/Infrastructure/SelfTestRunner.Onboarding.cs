@@ -246,7 +246,7 @@ internal static partial class SelfTestRunner
         Func<Task>? requestExit = null, ChildSessionCredentialStore? credentials = null,
         Func<string, IProgress<Updates.EngineProgress>, CancellationToken, Task<string>>? prepareUpdate = null,
         LaunchCommand? launchCommand = null,
-        Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task>? prepareEnvironment = null)
+        Func<ProjectPlanModule, Func<MaaFrameworkOptions>, bool, Task>? prepareEnvironment = null)
     {
         var projectDirectory = CreateProjectFixture(directory);
         beforeLoad?.Invoke(projectDirectory);

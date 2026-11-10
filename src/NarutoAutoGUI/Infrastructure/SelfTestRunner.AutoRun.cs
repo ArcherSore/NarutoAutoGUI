@@ -133,13 +133,15 @@ internal static partial class SelfTestRunner
         var failures = new List<string>();
         var abandoned = 0;
         MainWindow? current = null;
-        Task PrepareThenFail(ProjectPlanModule project, Func<MaaFrameworkOptions> options)
+        var desktopShown = new List<bool>();
+        Task PrepareThenFail(ProjectPlanModule project, Func<MaaFrameworkOptions> options, bool showDesktop)
         {
             prepared.Add(project.Configurations.Single(item => item.Id == project.ActiveConfigurationId).Name);
+            desktopShown.Add(showDesktop);
             throw new InvalidOperationException("模拟准备失败");
         }
         // Prepares for good, but an exit is requested meanwhile, so the Run is never started and nothing failed.
-        Task PrepareThenExit(ProjectPlanModule project, Func<MaaFrameworkOptions> options)
+        Task PrepareThenExit(ProjectPlanModule project, Func<MaaFrameworkOptions> options, bool showDesktop)
         {
             prepared.Add(project.Configurations.Single(item => item.Id == project.ActiveConfigurationId).Name);
             current!.SetExitInProgress(true);
@@ -149,9 +151,10 @@ internal static partial class SelfTestRunner
         void Launch(string name, LaunchCommand command, string? target, bool onManualLaunch,
             Action<MainWindow, bool> verify, Action<MainWindow, string>? beforeAutoRun = null,
             Action<string>? fixture = null,
-            Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task>? prepare = null)
+            Func<ProjectPlanModule, Func<MaaFrameworkOptions>, bool, Task>? prepare = null)
         {
             prepared.Clear();
+            desktopShown.Clear();
             started.Clear();
             failures.Clear();
             abandoned = 0;
@@ -181,6 +184,7 @@ internal static partial class SelfTestRunner
                 "手动启动且未开启开关时不得自动执行。"));
         Launch("boot", boot, "周常", false, (window, ran) => {
             Require(ran && prepared.SequenceEqual(["周常"]), "开机自启必须先激活所选配置再准备并开始。");
+            Require(desktopShown.SequenceEqual([false]), "自动执行准备运行环境时不得弹出分身窗口。");
             Require(started is [{ QuitAfterRun: true }], "触发自动执行后必须通知，并带上 --quit-after-run。");
             Require(failures is [{ } failure] && failure.Contains("模拟准备失败"),
                 "自动执行开始前失败必须报告，而不是弹模态框。");

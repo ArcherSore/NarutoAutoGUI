@@ -30,6 +30,8 @@ internal static partial class WorkerCoordinatorSelfTest
             logger, directory, WorkerPath, CurrentSession)),
         (nameof(VerifyWorkerPipeEofAsync), (logger, directory, project) => VerifyWorkerPipeEofAsync(
             logger, directory, WorkerPath, CurrentSession, OpenProject(project, directory))),
+        (nameof(VerifyTelemetryProtocolAsync), (logger, directory, project) => VerifyTelemetryProtocolAsync(
+            logger, directory, OpenProject(project, directory))),
         (nameof(VerifyRealWorkerAsync), (logger, directory, project) => VerifyRealWorkerAsync(
             logger, directory, OpenProject(project, directory))),
         (nameof(VerifyRealWorkerCleanWhileRunningAsync),

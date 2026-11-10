@@ -43,6 +43,8 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
     private readonly uint _childSessionId;
     private readonly Action<string, string, string> _log;
     private readonly Action _onRunning;
+    private readonly Action<string, string, bool?>? _onTaskerEvent;
+    private readonly Action<int>? _onAgentStarted;
     private readonly MaaRunLogAdapter _runLogAdapter;
     private readonly TaskCompletionSource<MaaTasker> _taskerReady = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
@@ -65,7 +67,8 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
 
     internal WorkerRuntimeExecution(
         LaunchManifest manifest, Guid runId, RunPlanItem item, uint childSessionId,
-        Action<string, string, string> log, Action onRunning)
+        Action<string, string, string> log, Action onRunning, Action<string, string, bool?>? onTaskerEvent = null,
+        Action<int>? onAgentStarted = null)
     {
         _manifest = manifest;
         _runId = runId;
@@ -73,6 +76,8 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
         _childSessionId = childSessionId;
         _log = log;
         _onRunning = onRunning;
+        _onTaskerEvent = onTaskerEvent;
+        _onAgentStarted = onAgentStarted;
         _runLogAdapter = new MaaRunLogAdapter(log);
     }
 
@@ -321,6 +326,7 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
             throw new InvalidOperationException("无法启动 Agent。 ");
         }
         _agentProcess = process;
+        _onAgentStarted?.Invoke(process.Id);
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         _log("INFO", "runtime.agent", $"已启动 Agent PID={process.Id}。 ");
@@ -421,7 +427,7 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
 
     internal void OnTaskerCallback(object? sender, MaaCallbackEventArgs args)
     {
-        _runLogAdapter.Handle(args.Message, args.Details);
+        var focus = _runLogAdapter.Handle(args.Message, args.Details);
 
         if (args.Message == MaaMsg.Tasker.Task.Starting) {
             ReportRunningOnce();
@@ -430,6 +436,8 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
         } else if (args.Message == MaaMsg.Tasker.Task.Failed) {
             _taskCompleted.TrySetResult(MaaJobStatus.Failed);
         }
+        // After the Run's own signals, so telemetry never delays them.
+        _onTaskerEvent?.Invoke(args.Message, args.Details, focus.Trace);
     }
 
     private void ReportRunningOnce()

@@ -22,9 +22,11 @@ internal abstract class SettingsObservable : INotifyPropertyChanged
 internal sealed class SettingsToggle(Action<bool> save) : SettingsObservable
 {
     private bool _value = true;
+    private bool _isEnabled = true;
     private string _status = "";
 
     public string Status { get => _status; set => Set(ref _status, value); }
+    public bool IsEnabled { get => _isEnabled; set => Set(ref _isEnabled, value); }
 
     public bool Value
     {

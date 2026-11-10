@@ -24,12 +24,14 @@ internal sealed class RunHarness : IAsyncDisposable
     private ProtocolConnection _worker = null!;
     private Task _receiving = Task.CompletedTask;
 
-    private RunHarness(Guid workerId)
+    private RunHarness(Guid workerId, TelemetryOptions? telemetry,
+        Func<LaunchManifest, Func<Guid, IReadOnlyList<WorkerLogEntry>>, IRunTelemetry?>? createTelemetry,
+        string projectRoot)
     {
         Executions = new ScriptedExecutionFactory();
         var manifest = new LaunchManifest(ProtocolConstants.LaunchContextVersion, workerId, ProfileDigest,
-            "C:\\dummy", Project, new Win32ControllerDefinition("test", "class", "window", "Cache", "Send", "Send"),
-            [], new AgentDefinition("python.exe", [], "C:\\dummy"));
+            projectRoot, Project, new Win32ControllerDefinition("test", "class", "window", "Cache", "Send", "Send"),
+            [], new AgentDefinition("python.exe", [], "C:\\dummy")) { Telemetry = telemetry };
         Host = new WorkerHost(new WorkerArguments(workerId, "test", "C:\\dummy"), manifest,
             Executions.Create,
             _ => Task.FromResult((Dependencies, ReadinessFailure)),
@@ -38,8 +40,11 @@ internal sealed class RunHarness : IAsyncDisposable
                     throw FrameworkOptionsFailure;
                 }
                 AppliedFrameworkOptions.Add(options);
-            });
+            },
+            createTelemetry ?? ((_, _) => null));
         Executions.Probe = Host.GetSnapshot;
+        Executions.TaskerEvent = Host.ReportTaskerEvent;
+        Executions.AgentStarted = Host.ReportAgentStarted;
     }
 
     internal List<MaaFrameworkOptions> AppliedFrameworkOptions { get; } = [];
@@ -65,10 +70,11 @@ internal sealed class RunHarness : IAsyncDisposable
         }
     }
 
-    internal static async Task<RunHarness> CreateAsync(
-        bool initialize = true)
+    internal static async Task<RunHarness> CreateAsync(bool initialize = true, TelemetryOptions? telemetry = null,
+        Func<LaunchManifest, Func<Guid, IReadOnlyList<WorkerLogEntry>>, IRunTelemetry?>? createTelemetry = null,
+        string projectRoot = "C:\\dummy")
     {
-        var harness = new RunHarness(Guid.NewGuid());
+        var harness = new RunHarness(Guid.NewGuid(), telemetry, createTelemetry, projectRoot);
         await harness.ConnectAsync();
         if (initialize) {
             await harness.Host.InitializeAsync(CancellationToken.None);
@@ -185,6 +191,7 @@ internal sealed class RunHarness : IAsyncDisposable
         } catch (Exception) {
             // Tests that expect a particular connection outcome await Serving themselves.
         }
+        Host.DisposeTelemetry();
         await _gui.DisposeAsync();
         await _worker.DisposeAsync();
         _shutdown.Dispose();
@@ -206,6 +213,11 @@ internal sealed class ScriptedExecutionFactory
     internal Func<WorkerSnapshot> Probe { get; set; } = null!;
 
     internal RecordingStream Wire { get; set; } = null!;
+
+    // Where a MaaFramework callback goes in the Worker, so scripted Plan Items can report node events.
+    internal Action<Guid, string, string, bool?> TaskerEvent { get; set; } = null!;
+
+    internal Action<Guid, int> AgentStarted { get; set; } = null!;
 
     internal bool StopFails { get; set; }
 
@@ -361,6 +373,17 @@ internal sealed class ScriptedExecution : IPlanItemExecution
         } catch (TimeoutException) {
             throw new TimeoutException($"{Item.TaskName} 未调用 StopAsync。");
         }
+    }
+
+    internal void Complete(RuntimeExecutionResult result) => _result.TrySetResult(result);
+
+    internal void ReportAgent(int processId) => _owner.AgentStarted(Item.PlanItemId, processId);
+
+    // A MaaFramework callback as WorkerRuntimeExecution forwards it: the focus is parsed once, then reported.
+    internal void Emit(string message, object details)
+    {
+        var json = JsonSerializer.Serialize(details, ProtocolJson.Options);
+        _owner.TaskerEvent(Item.PlanItemId, message, json, MaaRunLogFormatter.Read(message, json).Trace);
     }
 
     internal void Complete(RuntimeExecutionOutcome outcome, string? errorCode = null) =>

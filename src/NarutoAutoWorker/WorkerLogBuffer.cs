@@ -34,6 +34,14 @@ internal sealed class WorkerLogBuffer
         }
     }
 
+    // The retained entries of one Plan Item, for its failure evidence.
+    internal IReadOnlyList<WorkerLogEntry> ForPlanItem(Guid planItemId)
+    {
+        lock (_gate) {
+            return _entries.Select(item => item.Entry).Where(entry => entry.PlanItemId == planItemId).ToArray();
+        }
+    }
+
     internal (long First, long Last) GetRange()
     {
         lock (_gate) {

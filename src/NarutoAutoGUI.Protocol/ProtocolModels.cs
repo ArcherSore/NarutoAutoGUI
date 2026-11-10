@@ -5,7 +5,7 @@ namespace NarutoAutoGUI.Protocol;
 
 public static class ProtocolConstants
 {
-    public const int ProtocolVersion = 7;
+    public const int ProtocolVersion = 8;
     public const int SnapshotVersion = 3;
     public const int LaunchContextVersion = 1;
     public const int PlanVersion = 2;
@@ -126,7 +126,18 @@ public sealed record AgentDefinition(string ChildExec, IReadOnlyList<string> Chi
 
 public sealed record MaaFrameworkOptions(bool SaveOnError = true, bool SaveDraw = false, bool DebugMode = false);
 
+// The user's diagnostic switches and telemetry choice, applied to a running Worker from the next recognition on.
+public sealed record FrameworkSetOptionsRequest(MaaFrameworkOptions Framework, bool TelemetryEnabled);
+
 public sealed record FrameworkSetOptionsResponse;
+
+// PI telemetry.sentry after the GUI's release gate; Enabled is the user's choice when the Worker starts.
+public sealed record TelemetryOptions(
+    string Dsn, string Release, string Environment, bool Tracing, double TracesSampleRate,
+    double FailureAttachmentsSampleRate)
+{
+    public bool Enabled { get; init; }
+}
 
 public sealed record LaunchManifest(
     int LaunchContextVersion, Guid WorkerInstanceId, string RuntimeProfileDigest,
@@ -134,6 +145,9 @@ public sealed record LaunchManifest(
     IReadOnlyList<ResourceDefinition> Resources, AgentDefinition Agent)
 {
     public MaaFrameworkOptions FrameworkOptions { get; init; } = new();
+
+    // Absent when the project declares no telemetry or the gate blocks it; not part of the Runtime Profile Digest.
+    public TelemetryOptions? Telemetry { get; init; }
 }
 
 public sealed record RunPlan(
@@ -198,7 +212,11 @@ public sealed record ConnectionOpenRequest(Guid WorkerInstanceId, string LaunchT
 
 public sealed record GetSnapshotResponse(WorkerSnapshot Snapshot);
 
-public sealed record RunStartRequest(Guid RunId, string PlanDigest, RunPlan Plan);
+public sealed record RunStartRequest(Guid RunId, string PlanDigest, RunPlan Plan)
+{
+    // The passwords this Run uses, which telemetry redacts; outside the Plan, its digest and every Snapshot.
+    public IReadOnlyList<string> RedactionValues { get; init; } = [];
+}
 
 public sealed record RunStartResponse(string Disposition);
 

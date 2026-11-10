@@ -21,6 +21,7 @@
     <ProjectReference Include="..\NarutoAutoGUI.Protocol\NarutoAutoGUI.Protocol.csproj" />
     <PackageReference Include="Maa.Framework" Version="5.10.0" />
     <PackageReference Include="Maa.Framework.Runtimes" Version="5.12.3" />
+    <PackageReference Include="Sentry" Version="6.12.1" />
     <Compile Include="..\NarutoAutoGUI\Infrastructure\SelfTestSuite.cs" Link="SelfTestSuite.cs" />
   </ItemGroup>
 

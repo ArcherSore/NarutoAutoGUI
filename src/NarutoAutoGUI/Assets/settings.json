@@ -161,6 +161,14 @@
           "actionId": "project.viewLicense"
         },
         {
+          "id": "help-improve",
+          "type": "toggle",
+          "icon": "DataUsage20",
+          "title": "帮助改进软件",
+          "description": "匿名发送崩溃信息、任务运行结果，以及失败任务的相关日志和错误截图，帮助资源作者定位问题。",
+          "settingKey": "telemetry.helpImprove"
+        },
+        {
           "id": "replay-onboarding",
           "type": "action",
           "icon": "Lightbulb20",

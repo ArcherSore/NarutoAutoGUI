@@ -62,6 +62,7 @@ public partial class MainWindow : FluentWindow
     private CancellationTokenSource? _workerReadyWait;
     private readonly ChildSessionManager _sessionManager;
     private readonly WorkerCoordinator _workerCoordinator;
+    private readonly GuiTelemetry _telemetry;
     private readonly RuntimeEnvironment _environment;
     private readonly Func<Task> _requestExitAsync;
     private readonly Func<Task> _endEnvironmentAsync;
@@ -128,7 +129,8 @@ public partial class MainWindow : FluentWindow
         Func<Task> requestExitAsync, Func<Task> endEnvironmentAsync, Func<string, Task> installUpdateAsync,
         string? applicationDirectory = null, Func<CancellationToken, Task<EngineCheckResult>>? checkForUpdate = null,
         Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task>? prepareEnvironment = null,
-        Func<string, IProgress<EngineProgress>, CancellationToken, Task<string>>? prepareUpdate = null)
+        Func<string, IProgress<EngineProgress>, CancellationToken, Task<string>>? prepareUpdate = null,
+        GuiTelemetry? telemetry = null)
     {
         InitializeComponent();
         _runLog = new RunLogFeed(LogLines, MaximumGuiLogEntries);
@@ -152,9 +154,9 @@ public partial class MainWindow : FluentWindow
         _sessionManager = sessionManager;
         _workerCoordinator = workerCoordinator;
         _workerCoordinator.FrameworkOptions = _settings.CreateFrameworkOptions;
+        _telemetry = telemetry ?? new GuiTelemetry();
         _workerCoordinator.TelemetryEnabled = () => _settings.HelpImprove.Value;
-        _workerCoordinator.TelemetryOptions = project => TelemetryGate.CreateOptions(TelemetryBuild.Current,
-            project.Telemetry, project.ProjectName, project.ProjectVersion, _settings.HelpImprove.Value);
+        _workerCoordinator.TelemetryOptions = TelemetryOptionsFor;
         _settings.FrameworkOptionsChanged += OnFrameworkOptionsChanged;
         // A surviving Worker may have connected before the choice above was available.
         OnFrameworkOptionsChanged(_settings.SaveDraw);
@@ -625,6 +627,7 @@ public partial class MainWindow : FluentWindow
         _pendingStartupOnly = startupOnly;
         _pendingStartAttempt ??= project.CreateRunStartAttempt(startupOnly);
         RunResultLog.WritePlan(_logger, _pendingStartAttempt, ActiveConfigurationName, startupOnly);
+        _telemetry.Register(_pendingStartAttempt.RedactionValues);
         var response = await _workerCoordinator.StartRunAsync(_pendingStartAttempt);
         if (response.Disposition is not ("accepted" or "already_accepted")) {
             throw new InvalidDataException($"未知 run.start disposition：{response.Disposition}。 ");

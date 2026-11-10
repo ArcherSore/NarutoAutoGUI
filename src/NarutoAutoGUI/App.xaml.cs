@@ -20,6 +20,7 @@ public partial class App : System.Windows.Application
     private WorkerCoordinator? _workerCoordinator;
     private RuntimeEnvironment? _environment;
     private MainWindow? _mainWindow;
+    private readonly GuiTelemetry _telemetry = new();
     private Forms.NotifyIcon? _trayIcon;
     private Mutex? _singleInstanceMutex;
     private bool _ownsSingleInstanceMutex;
@@ -44,6 +45,8 @@ public partial class App : System.Windows.Application
         Forms.Application.SetCompatibleTextRenderingDefault(false);
         _logger = new AppLogger();
         RegisterGlobalExceptionHandlers(_logger);
+        // The SDK reports AppDomain and unobserved task exceptions itself once the loaded project enables it.
+        _telemetry.Attach(Dispatcher);
         LogStartup(_logger);
 
         _sessionManager = new ChildSessionManager(_logger);
@@ -54,7 +57,7 @@ public partial class App : System.Windows.Application
         _environment = new RuntimeEnvironment(_logger, _sessionManager, _workerCoordinator);
         _mainWindow = new MainWindow(
             _logger, _sessionManager, _workerCoordinator, _environment, RequestExitAsync, EndEnvironmentAsync,
-            InstallUpdateAsync);
+            InstallUpdateAsync, telemetry: _telemetry);
         _mainWindow.HiddenToTray += MainWindow_HiddenToTray;
         _mainWindow.ProjectIdentityChanged += MainWindow_ProjectIdentityChanged;
         MainWindow = _mainWindow;
@@ -330,6 +333,8 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        // Sends what is queued within one second.
+        _telemetry.Dispose();
         ReleaseSingleInstance();
         base.OnExit(e);
     }

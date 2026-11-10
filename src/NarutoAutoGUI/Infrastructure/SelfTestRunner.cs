@@ -45,6 +45,7 @@ internal static partial class SelfTestRunner
         new(Group.Support, nameof(VerifyPreparationGuidance), _ => VerifyPreparationGuidance()),
         new(Group.Support, nameof(VerifyTelemetryGate), _ => VerifyTelemetryGate()),
         new(Group.Support, nameof(VerifyTelemetryPreference), c => VerifyTelemetryPreference(c.Logger, c.Directory)),
+        new(Group.Support, nameof(VerifyGuiTelemetry), _ => VerifyGuiTelemetry()),
 
         new(Group.Project, nameof(VerifyPretaskModel), c => VerifyPretaskModel(c.Directory)),
         new(Group.Project, nameof(VerifyPretaskGuiWiring), c => VerifyPretaskGuiWiring(c.Logger, c.Directory)),

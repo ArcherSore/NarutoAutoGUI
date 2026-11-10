@@ -2,6 +2,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using NarutoAutoGUI.Infrastructure;
 using NarutoAutoGUI.ProjectModel;
+using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoGUI.Views;
 
@@ -14,6 +15,11 @@ public partial class MainWindow
 
     // The tray follows the project name and icon; IconPath is null while the default icon is shown.
     internal event EventHandler<ProjectIdentity>? ProjectIdentityChanged;
+
+    // Telemetry for the loaded project after the release gate, with the user's current choice.
+    private TelemetryOptions? TelemetryOptionsFor(ProjectPlanModule project) => TelemetryGate.CreateOptions(
+        TelemetryBuild.Current, project.Telemetry, project.ProjectName, project.ProjectVersion,
+        _settings.HelpImprove.Value);
 
     // Project title, icon and About, reapplied on every load; without a project the application's own are shown.
     private void ShowProjectIdentity(ProjectPlanModule? project)
@@ -35,6 +41,7 @@ public partial class MainWindow
         _settings.ShowProjectAbout(project?.About, icon);
         _settings.ShowTelemetryAvailability(project is not null
             && TelemetryGate.IsAvailable(TelemetryBuild.Current, project.Telemetry, project.ProjectVersion));
+        _telemetry.Configure(project is null ? null : TelemetryOptionsFor(project));
         ProjectIdentityChanged?.Invoke(this, new ProjectIdentity(project?.ProjectName ?? ApplicationName, path));
     }
 }

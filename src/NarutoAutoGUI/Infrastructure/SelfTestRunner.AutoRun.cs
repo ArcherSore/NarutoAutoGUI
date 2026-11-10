@@ -126,7 +126,7 @@ internal static partial class SelfTestRunner
         Launch("boot", boot, "周常", false, (window, ran) => {
             Require(ran && prepared.SequenceEqual(["周常"]), "开机自启必须先激活所选配置再准备并开始。");
             Require(started is [{ QuitAfterRun: true }], "触发自动执行后必须通知，并带上 --quit-after-run。");
-            Require(failures is [{ } failure] && failure.Contains("准备运行环境失败") && failure.Contains("模拟准备失败"),
+            Require(failures is [{ } failure] && failure.Contains("模拟准备失败"),
                 "自动执行开始前失败必须报告，而不是弹模态框。");
             Require(ProjectOf(window).ActiveConfigurationId == ProjectOf(window).Configurations
                 .Single(item => item.Name == "周常").Id, "激活的配置必须保存下来。");

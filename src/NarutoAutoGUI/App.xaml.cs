@@ -73,7 +73,12 @@ public partial class App : System.Windows.Application
         _mainWindow.ProjectIdentityChanged += MainWindow_ProjectIdentityChanged;
         _mainWindow.AutoRunStarted += (_, decision) =>
             _quitAfterRun = decision.QuitAfterRun ? new QuitAfterRunTracker(DateTime.UtcNow) : null;
-        _mainWindow.AutoRunFailed += (_, message) => ShowBalloon("自动执行未能开始", message, failed: true);
+        _mainWindow.AutoRunFailed += (_, message) => {
+            // The Run this launch meant to start never began, so --quit-after-run has nothing to wait for; a Run the
+            // user starts later in this session must not end the program.
+            _quitAfterRun = null;
+            ShowBalloon("自动执行未能开始", message, failed: true);
+        };
         MainWindow = _mainWindow;
         CreateTrayIcon();
         // A launch by the system (logon) has no one to look at the window; it waits in the tray.

@@ -14,7 +14,7 @@ internal abstract class SettingsObservable : INotifyPropertyChanged
     {
         if (!EqualityComparer<T>.Default.Equals(field, value)) {
             field = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
+            Raise(property!);
         }
     }
 

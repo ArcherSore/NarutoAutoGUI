@@ -23,7 +23,7 @@ public partial class MainWindow
             or RuntimeAction.Start { Enabled: true };
         var decision = AutoRunPlanner.Decide(
             _launchCommand, _settings.AutoRunConfigurationId, _settings.AutoRunOnManualLaunch.Value,
-            project.Configurations.Select(item => new AutoRunTarget(item.Id, item.Name)).ToArray(), canStart);
+            AutoRunTarget.Of(project), canStart);
         if (decision.ConfigurationId is not { } id) {
             if (_launchCommand.AutoStart || _settings.AutoRunOnManualLaunch.Value) {
                 _logger.Info("自动执行已跳过：没有可执行的目标配置，或当前不能开始任务。");
@@ -31,6 +31,11 @@ public partial class MainWindow
             return false;
         }
         ChangeConfiguration(() => project.ActivateConfiguration(id));
+        // The switch can be refused (an input that cannot be committed, a locked editor); never run the other one.
+        if (project.ActiveConfigurationId != id) {
+            ReportUnattendedFailure("自动执行", new InvalidOperationException("无法切换到所选配置。"));
+            return true;
+        }
         if (!_projectConfigurationValid) {
             ReportUnattendedFailure("自动执行", new InvalidOperationException("所选配置未通过校验，请打开程序检查参数。"));
             return true;

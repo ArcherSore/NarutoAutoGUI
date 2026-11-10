@@ -69,7 +69,8 @@ internal static partial class SelfTestRunner
         var weekly = new AutoRunTarget(Guid.NewGuid(), "周常");
 
         var settings = Create();
-        Require(!settings.Autostart.Value && store.Calls.Count == 1, "开机自启的初始状态必须来自系统，读取不得创建任务。");
+        Require(!settings.Autostart.Value && store.Calls.All(call => call[0] == "/query"),
+            "开机自启的初始状态必须来自系统，读取不得创建任务。");
         settings.Autostart.Value = true;
         Require(store.Registered && Create().Autostart.Value, "开启必须创建计划任务，重启后仍显示开启。");
         settings.Autostart.Value = false;

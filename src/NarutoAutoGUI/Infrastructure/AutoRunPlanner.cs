@@ -1,6 +1,12 @@
+using NarutoAutoGUI.ProjectModel;
+
 namespace NarutoAutoGUI.Infrastructure;
 
-internal sealed record AutoRunTarget(Guid Id, string Name);
+internal sealed record AutoRunTarget(Guid Id, string Name)
+{
+    internal static AutoRunTarget[] Of(ProjectPlanModule project) =>
+        project.Configurations.Select(item => new AutoRunTarget(item.Id, item.Name)).ToArray();
+}
 
 internal sealed record AutoRunDecision(Guid? ConfigurationId, bool QuitAfterRun)
 {
@@ -17,7 +23,7 @@ internal static class AutoRunPlanner
     internal static AutoRunDecision Decide(LaunchCommand command, Guid? configured, bool onManualLaunch,
         IReadOnlyList<AutoRunTarget> configurations, bool canStart)
     {
-        if (!canStart || !command.AutoStart && !onManualLaunch) {
+        if (!canStart || (!command.AutoStart && !onManualLaunch)) {
             return Skip;
         }
         var target = command.AutoStart && command.Instance is { } selector

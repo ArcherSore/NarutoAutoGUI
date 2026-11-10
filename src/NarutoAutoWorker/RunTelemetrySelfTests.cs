@@ -203,7 +203,9 @@ internal static class RunTelemetrySelfTests
                 RunHarness.ProfileDigest, ProtocolJson.ToElement(new { }), [
                     new(Guid.NewGuid(), $"Sync-{pin}", "同步", "SyncEntry", options, ProtocolJson.ToElement(new { }))
                 ]);
-            var request = RunSelfTests.Request(plan) with { RedactionValues = [pin, phrase, ""] };
+            // A short numeric password also matches digits the SDK writes, such as timestamps; those must not cost
+            // the whole item.
+            var request = RunSelfTests.Request(plan) with { RedactionValues = [pin, phrase, "2026", ""] };
             await harness.StartAsync(request);
             var execution = await harness.Executions.ExecutingAsync(plan.Items[0].PlanItemId);
             execution.ReportRunning();

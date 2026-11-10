@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using NarutoAutoGUI.Protocol;
@@ -15,7 +16,7 @@ internal static class RunTelemetrySelfTests
     internal static (string Name, Action Body)[] Checks => [
         Check(VerifyRunTransactions), Check(VerifyTelemetryToggle), Check(VerifyTransactionSampling),
         Check(VerifyTelemetryFaults), Check(VerifyRedactionInFinalEnvelope), Check(VerifyNodeTraceSpans),
-        Check(VerifyFailureEvents)
+        Check(VerifyFailureEvents), Check(VerifyFailureEvidence)
     ];
 
     private static (string Name, Action Body) Check(Func<Task> body) =>
@@ -179,7 +180,7 @@ internal static class RunTelemetrySelfTests
             await CompleteRunAsync(harness);
         }
         await using (var harness = await RunHarness.CreateAsync(telemetry: Options,
-            createTelemetry: _ => new ThrowingTelemetry())) {
+            createTelemetry: (_, _) => new ThrowingTelemetry())) {
             await CompleteRunAsync(harness);
             await FailRunAsync(harness);
             harness.Host.ReportUnhandledException(new InvalidOperationException("scripted crash"));
@@ -410,6 +411,75 @@ internal static class RunTelemetrySelfTests
             "遥测不得改变失败 Run 的结果、Plan Item 状态或 Worker State。");
     }
 
+    // A failed MaaTask carries its own window of maafw.log and Worker log as Sentry Logs, always, and its screenshots
+    // as a sampled zip; the next Run, starting at once, adds nothing to it, and no password leaves.
+    private static async Task VerifyFailureEvidence()
+    {
+        const string pin = "583120";
+        const int agent = 4242;
+        foreach (var rate in new[] { 1.0, 0.0 }) {
+            var root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(),
+                "NarutoEvidence_" + Guid.NewGuid().ToString("N"))).FullName;
+            var debug = Directory.CreateDirectory(Path.Combine(root, "debug", "on_error")).Parent!.FullName;
+            var transport = new CapturingTransport();
+            string Line(int pid, string text) =>
+                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}][INF][Px{pid}][Tx1][Test] {text}";
+            try {
+                await using (var harness = await RunHarness.CreateAsync(projectRoot: root,
+                    telemetry: Options with { FailureAttachmentsSampleRate = rate },
+                    createTelemetry: (manifest, logs) => RunTelemetry.Create(manifest, (_, _, _) => { }, transport,
+                        logs))) {
+                    var failing = RunSelfTests.Request(RunSelfTests.Plan(1)) with { RedactionValues = [pin] };
+                    await harness.StartAsync(failing);
+                    var execution = await harness.Executions.ExecutingAsync(failing.Plan.Items[0].PlanItemId);
+                    execution.ReportRunning();
+                    execution.ReportAgent(agent);
+                    File.AppendAllLines(Path.Combine(debug, "maafw.log"), [
+                        Line(Environment.ProcessId, $"worker input_text {pin}"), Line(agent, "agent custom action"),
+                        Line(9999, "foreign process")
+                    ]);
+                    File.WriteAllBytes(Path.Combine(debug, "on_error", "failed.png"), [1, 2, 3]);
+                    execution.Complete(RuntimeExecutionOutcome.Failed, "MaaTaskFailed");
+                    await harness.WaitForStateAsync(s => s.LastRun?.RunId == failing.RunId, "失败的 Run 应终结。");
+
+                    var next = RunSelfTests.Request(RunSelfTests.Plan(1));
+                    await harness.StartAsync(next);
+                    var nextExecution = await harness.Executions.ExecutingAsync(next.Plan.Items[0].PlanItemId);
+                    File.AppendAllLines(Path.Combine(debug, "maafw.log"), [Line(Environment.ProcessId, "next run")]);
+                    File.WriteAllBytes(Path.Combine(debug, "on_error", "next.png"), [4, 5, 6]);
+                    nextExecution.Complete(RuntimeExecutionOutcome.Succeeded);
+                    await harness.WaitForStateAsync(s => s.LastRun?.RunId == next.RunId, "下一个 Run 应终结。");
+                    // Logs leave in batches; give the batch time before the SDK closes.
+                    var deadline = DateTime.UtcNow.AddSeconds(30);
+                    while (!transport.Text.Contains("agent custom action") && DateTime.UtcNow < deadline) {
+                        await Task.Delay(100);
+                    }
+                }
+
+                var failure = transport.Items("event").Single();
+                var extra = failure.GetProperty("extra");
+                var text = transport.Text;
+                RunSelfTests.Expect(extra.GetProperty("logs.status").GetString() == "captured"
+                    && text.Contains("agent custom action") && text.Contains("worker input_text [Filtered]")
+                    && !text.Contains("foreign process") && !text.Contains("next run") && !text.Contains(pin),
+                    $"失败证据日志应只含本项的时间窗和进程，且已脱敏：rate={rate}");
+                var zips = transport.Payloads("attachment").ToArray();
+                if (rate == 1.0) {
+                    using var archive = new ZipArchive(new MemoryStream(zips.Single()), ZipArchiveMode.Read);
+                    RunSelfTests.Expect(extra.GetProperty("attachment.status").GetString() == "attached"
+                        && archive.Entries.Select(entry => entry.FullName).SequenceEqual(["on_error/failed.png"]),
+                        "抽中时应附带本项时间窗内的截图 zip。");
+                } else {
+                    RunSelfTests.Expect(zips.Length == 0
+                        && extra.GetProperty("attachment.status").GetString() == "not_sampled",
+                        "采样率为 0 时不附截图，但失败事件与日志照常发送。");
+                }
+            } finally {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     private static async Task CompleteRunAsync(RunHarness harness)
     {
         var request = RunSelfTests.Request(RunSelfTests.Plan(2));
@@ -427,7 +497,7 @@ internal static class RunTelemetrySelfTests
 
     private static Task<RunHarness> TelemetryHarnessAsync(TelemetryOptions options, CapturingTransport transport) =>
         RunHarness.CreateAsync(telemetry: options,
-            createTelemetry: manifest => RunTelemetry.Create(manifest, (_, _, _) => { }, transport));
+            createTelemetry: (manifest, logs) => RunTelemetry.Create(manifest, (_, _, _) => { }, transport, logs));
 
     private static RunPlan PlanWithPretask(JsonElement taskOptions)
     {
@@ -460,6 +530,8 @@ internal static class RunTelemetrySelfTests
         public void OnTaskerEvent(Guid planItemId, string message, string details, bool? trace) =>
             throw new InvalidOperationException("scripted telemetry fault");
         public void CaptureUnhandled(Exception exception) =>
+            throw new InvalidOperationException("scripted telemetry fault");
+        public void AgentStarted(Guid planItemId, int processId) =>
             throw new InvalidOperationException("scripted telemetry fault");
         public void Dispose() => throw new InvalidOperationException("scripted telemetry fault");
     }
@@ -499,6 +571,15 @@ internal sealed class CapturingTransport : ITransport
                 return string.Join("\n", _envelopes.Select(Encoding.UTF8.GetString));
             }
         }
+    }
+
+    internal IEnumerable<byte[]> Payloads(string type)
+    {
+        byte[][] envelopes;
+        lock (_gate) {
+            envelopes = _envelopes.ToArray();
+        }
+        return envelopes.SelectMany(Parse).Where(item => item.Type == type).Select(item => item.Payload).ToArray();
     }
 
     // The JSON payloads of every item of the given type, in the order sent.

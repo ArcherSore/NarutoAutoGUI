@@ -28,7 +28,8 @@ internal static class WorkerSelfTestRunner
         (nameof(FrameworkOptionsSelfTests), FrameworkOptionsSelfTests.Run),
         (nameof(VerifyBootstrapLog), VerifyBootstrapLog),
         .. PretaskSelfTests.Checks,
-        .. RunTelemetrySelfTests.Checks
+        .. RunTelemetrySelfTests.Checks,
+        .. FailureEvidenceSelfTests.Checks
     ];
 
     // A startup failure written anywhere else never reaches the diagnostic package.

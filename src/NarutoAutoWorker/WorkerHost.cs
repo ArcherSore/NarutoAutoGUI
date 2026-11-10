@@ -29,7 +29,7 @@ internal sealed class WorkerHost
         Func<Guid, RunPlanItem, Action, IPlanItemExecution>? createExecution = null,
         Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>>? checkReadiness = null,
         Action<MaaFrameworkOptions>? applyFrameworkOptions = null,
-        Func<LaunchManifest, IRunTelemetry>? createTelemetry = null)
+        Func<LaunchManifest, Func<Guid, IReadOnlyList<WorkerLogEntry>>, IRunTelemetry>? createTelemetry = null)
     {
         _arguments = arguments;
         _manifest = manifest;
@@ -39,8 +39,8 @@ internal sealed class WorkerHost
         _supervisor = new RunSupervisor(manifest, _logs, createExecution ?? CreateRuntimeExecution,
             (level, source, message, runId) => Log(level, source, message, runId), PublishState, _shutdown.Token);
         try {
-            _telemetry = createTelemetry?.Invoke(manifest)
-                ?? RunTelemetry.Create(manifest, (level, source, message) => Log(level, source, message));
+            _telemetry = createTelemetry?.Invoke(manifest, _logs.ForPlanItem) ?? RunTelemetry.Create(manifest,
+                (level, source, message) => Log(level, source, message), itemLogs: _logs.ForPlanItem);
         } catch (Exception exception) {
             Log("WARN", "telemetry", $"遥测异常，已忽略：{exception.GetBaseException().Message}");
             _telemetry = RunTelemetry.None;
@@ -79,6 +79,9 @@ internal sealed class WorkerHost
 
     internal void ReportTaskerEvent(Guid planItemId, string message, string details, bool? trace) =>
         Telemetry(() => _telemetry.OnTaskerEvent(planItemId, message, details, trace));
+
+    internal void ReportAgentStarted(Guid planItemId, int processId) =>
+        Telemetry(() => _telemetry.AgentStarted(planItemId, processId));
 
     internal void ReportUnhandledException(Exception exception) =>
         Telemetry(() => _telemetry.CaptureUnhandled(exception));
@@ -259,7 +262,8 @@ internal sealed class WorkerHost
             PlanItemKind.Pretask => new PretaskExecution(_manifest, item, WriteLog, onRunning),
             PlanItemKind.MaaTask => new WorkerRuntimeExecution(
                 _manifest, runId, item, checked((uint)Process.GetCurrentProcess().SessionId), WriteLog, onRunning,
-                (message, details, trace) => ReportTaskerEvent(planItemId, message, details, trace)),
+                (message, details, trace) => ReportTaskerEvent(planItemId, message, details, trace),
+                processId => ReportAgentStarted(planItemId, processId)),
             _ => throw new InvalidDataException("不支持的 Plan Item kind。 ")
         };
     }

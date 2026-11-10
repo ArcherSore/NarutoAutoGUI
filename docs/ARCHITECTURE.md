@@ -58,7 +58,8 @@ GUI 负责更新界面、用户确认和运行环境关闭；Rust Update Engine 
 
 MaaNOP 在 Project Interface 声明 telemetry.sentry 时，NarutoAutoGUI 向该 Sentry 项目匿名上报，设计取舍见
 [ADR 0009](adr/0009-worker-owns-run-telemetry.md)。GUI 持有"帮助改进软件"开关和发布闸门：只有发布版 GUI 与发布版项目、
-且不在自检中才启用遥测，再把配置和用户选择交给 Worker。Worker 观察自身的运行状态，上报 Run 与 Plan Item 的结果。
+且不在自检中才启用遥测，再把配置和用户选择交给 Worker。Worker 观察自身的运行状态，上报 Run 与 Plan Item 的结果；
+Plan Item 失败时在后台取该项时间窗内的 maafw.log、Worker 日志和按采样的错误截图，Run 不等待。
 遥测始终是旁路：初始化、发送或记录失败只写日志，不改变 Run、Worker 状态或运行环境生命周期，也不延迟结束运行环境。
 上报不含机器名等可识别信息；本次 Run 用到的 PI password 输入值在上报前脱敏。传输契约见 [Worker IPC](WORKER-IPC.md)。
 

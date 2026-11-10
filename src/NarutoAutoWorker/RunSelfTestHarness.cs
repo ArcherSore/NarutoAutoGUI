@@ -24,11 +24,13 @@ internal sealed class RunHarness : IAsyncDisposable
     private ProtocolConnection _worker = null!;
     private Task _receiving = Task.CompletedTask;
 
-    private RunHarness(Guid workerId, TelemetryOptions? telemetry, Func<LaunchManifest, IRunTelemetry>? createTelemetry)
+    private RunHarness(Guid workerId, TelemetryOptions? telemetry,
+        Func<LaunchManifest, Func<Guid, IReadOnlyList<WorkerLogEntry>>, IRunTelemetry>? createTelemetry,
+        string projectRoot)
     {
         Executions = new ScriptedExecutionFactory();
         var manifest = new LaunchManifest(ProtocolConstants.LaunchContextVersion, workerId, ProfileDigest,
-            "C:\\dummy", Project, new Win32ControllerDefinition("test", "class", "window", "Cache", "Send", "Send"),
+            projectRoot, Project, new Win32ControllerDefinition("test", "class", "window", "Cache", "Send", "Send"),
             [], new AgentDefinition("python.exe", [], "C:\\dummy")) { Telemetry = telemetry };
         Host = new WorkerHost(new WorkerArguments(workerId, "test", "C:\\dummy"), manifest,
             Executions.Create,
@@ -39,9 +41,10 @@ internal sealed class RunHarness : IAsyncDisposable
                 }
                 AppliedFrameworkOptions.Add(options);
             },
-            createTelemetry ?? (_ => RunTelemetry.None));
+            createTelemetry ?? ((_, _) => RunTelemetry.None));
         Executions.Probe = Host.GetSnapshot;
         Executions.TaskerEvent = Host.ReportTaskerEvent;
+        Executions.AgentStarted = Host.ReportAgentStarted;
     }
 
     internal List<MaaFrameworkOptions> AppliedFrameworkOptions { get; } = [];
@@ -68,9 +71,10 @@ internal sealed class RunHarness : IAsyncDisposable
     }
 
     internal static async Task<RunHarness> CreateAsync(bool initialize = true, TelemetryOptions? telemetry = null,
-        Func<LaunchManifest, IRunTelemetry>? createTelemetry = null)
+        Func<LaunchManifest, Func<Guid, IReadOnlyList<WorkerLogEntry>>, IRunTelemetry>? createTelemetry = null,
+        string projectRoot = "C:\\dummy")
     {
-        var harness = new RunHarness(Guid.NewGuid(), telemetry, createTelemetry);
+        var harness = new RunHarness(Guid.NewGuid(), telemetry, createTelemetry, projectRoot);
         await harness.ConnectAsync();
         if (initialize) {
             await harness.Host.InitializeAsync(CancellationToken.None);
@@ -212,6 +216,8 @@ internal sealed class ScriptedExecutionFactory
 
     // Where a MaaFramework callback goes in the Worker, so scripted Plan Items can report node events.
     internal Action<Guid, string, string, bool?> TaskerEvent { get; set; } = null!;
+
+    internal Action<Guid, int> AgentStarted { get; set; } = null!;
 
     internal bool StopFails { get; set; }
 
@@ -370,6 +376,8 @@ internal sealed class ScriptedExecution : IPlanItemExecution
     }
 
     internal void Complete(RuntimeExecutionResult result) => _result.TrySetResult(result);
+
+    internal void ReportAgent(int processId) => _owner.AgentStarted(Item.PlanItemId, processId);
 
     // A MaaFramework callback as WorkerRuntimeExecution forwards it: the focus is parsed once, then reported.
     internal void Emit(string message, object details)

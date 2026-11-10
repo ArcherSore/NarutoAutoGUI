@@ -24,11 +24,16 @@ internal interface IRunTelemetry : IDisposable
 
     // An exception that ends the Worker process.
     void CaptureUnhandled(Exception exception);
+
+    // The Agent process of a Plan Item, whose lines in maafw.log belong to that item's evidence.
+    void AgentStarted(Guid planItemId, int processId);
 }
 
 internal sealed class RunTelemetry : IRunTelemetry
 {
     private static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(2);
+    // Each Sentry Log carries at most this much text.
+    private const int LogChunkCharacters = 6000;
     // The SDK keeps at most this many Spans in a Transaction; node Spans leave room for every Plan Item's own.
     private const int MaximumSpans = 1000;
     private readonly object _gate = new();
@@ -39,6 +44,9 @@ internal sealed class RunTelemetry : IRunTelemetry
     private readonly HashSet<Guid> _finished = [];
     private readonly Dictionary<Guid, PlanItemTrace> _traces = [];
     private readonly string _project;
+    private readonly string _debugDirectory;
+    private readonly double _attachmentRate;
+    private readonly Func<Guid, IReadOnlyList<WorkerLogEntry>> _itemLogs;
     private volatile bool _enabled;
     private WorkerState? _workerState;
     // Only a Run that started while telemetry was on is reported whole.
@@ -54,11 +62,15 @@ internal sealed class RunTelemetry : IRunTelemetry
     // A self-test may only send to the transport it supplies.
     internal static bool SelfTestProcess { get; set; }
 
-    private RunTelemetry(TelemetryOptions options, string project, Action<string, string, string> log,
-        ITransport? transport)
+    private RunTelemetry(LaunchManifest manifest, TelemetryOptions options, Action<string, string, string> log,
+        ITransport? transport, Func<Guid, IReadOnlyList<WorkerLogEntry>> itemLogs)
     {
         _log = log;
-        _project = project;
+        _project = manifest.Project.Name;
+        // MaaFramework's LogDir, where maafw.log and the failure screenshots are written.
+        _debugDirectory = Path.Combine(manifest.ProjectRoot, "debug");
+        _attachmentRate = options.FailureAttachmentsSampleRate;
+        _itemLogs = itemLogs;
         _enabled = options.Enabled;
         _sdk = SentrySdk.Init(sentry => {
             sentry.Dsn = options.Dsn;
@@ -83,13 +95,13 @@ internal sealed class RunTelemetry : IRunTelemetry
     }
 
     internal static IRunTelemetry Create(LaunchManifest manifest, Action<string, string, string> log,
-        ITransport? transport = null)
+        ITransport? transport = null, Func<Guid, IReadOnlyList<WorkerLogEntry>>? itemLogs = null)
     {
         if (manifest.Telemetry is not { } options || SelfTestProcess && transport is null) {
             return Disabled.Instance;
         }
         try {
-            var telemetry = new RunTelemetry(options, manifest.Project.Name, log, transport);
+            var telemetry = new RunTelemetry(manifest, options, log, transport, itemLogs ?? (_ => []));
             log("INFO", "telemetry", $"遥测已初始化：release={options.Release}，enabled={options.Enabled}。");
             return telemetry;
         } catch (Exception exception) {
@@ -201,6 +213,21 @@ internal sealed class RunTelemetry : IRunTelemetry
             }
             var failed = message.EndsWith(".Failed", StringComparison.Ordinal);
             node.Finish(failed ? SpanStatus.InternalError : SpanStatus.Ok);
+        }
+    }
+
+    public void AgentStarted(Guid planItemId, int processId)
+    {
+        if (!_enabled) {
+            return;
+        }
+        lock (_gate) {
+            if (_spans.ContainsKey(planItemId)) {
+                if (!_traces.TryGetValue(planItemId, out var item)) {
+                    _traces.Add(planItemId, item = new PlanItemTrace());
+                }
+                item.AgentProcessId = processId;
+            }
         }
     }
 
@@ -322,7 +349,76 @@ internal sealed class RunTelemetry : IRunTelemetry
             sentryEvent.SetExtra("failure.recent", trace.Recent.Select(failure =>
                 new { node = failure.Node, stage = failure.Stage, task_id = failure.TaskId }).ToArray());
         }
-        return () => SentrySdk.CaptureEvent(sentryEvent, scope => scope.Span = span);
+        var agent = trace?.AgentProcessId;
+        // Reading the debug folder takes time; neither the Run nor the next one waits for it.
+        return () => _ = Task.Run(() => SendFailure(sentryEvent, span, run.RunId, item, agent));
+    }
+
+    // The event leaves with the screenshots it was sampled for; its logs follow as Sentry Logs, always.
+    private void SendFailure(SentryEvent sentryEvent, ISpan span, Guid runId, PlanItemSnapshot item, int? agent)
+    {
+        var hint = new SentryHint();
+        var logs = new List<(string Source, string Text)>();
+        try {
+            if (item.Kind == PlanItemKind.MaaTask && item.StartedAtUtc is { } started
+                && item.EndedAtUtc is { } ended) {
+                int[] processes = agent is { } pid ? [Environment.ProcessId, pid] : [Environment.ProcessId];
+                var window = new EvidenceWindow(started, ended, processes);
+                var (text, status) = FailureEvidence.FrameworkLog(_debugDirectory, window);
+                sentryEvent.SetExtra("logs.status", status);
+                logs.Add(("maafw", text));
+                if (Random.Shared.NextDouble() < _attachmentRate) {
+                    var (zip, count, images) = FailureEvidence.ErrorImages(_debugDirectory, window);
+                    sentryEvent.SetExtra("attachment.status", images);
+                    sentryEvent.SetExtra("attachment.count", count);
+                    if (zip is not null) {
+                        hint.AddAttachment(zip, "on_error.zip", AttachmentType.Default, "application/zip");
+                    }
+                } else {
+                    sentryEvent.SetExtra("attachment.status", "not_sampled");
+                }
+            }
+            logs.Add(("worker", string.Join("\n", _itemLogs(item.PlanItemId)
+                .Select(entry => $"[{entry.TimestampUtc:O}] [{entry.Level}] [{entry.Source}] {entry.Message}"))));
+        } catch (Exception exception) {
+            sentryEvent.SetExtra("logs.status", "failed");
+            ReportFault(exception);
+        }
+        var eventId = SentrySdk.CaptureEvent(sentryEvent, hint, scope => scope.Span = span);
+        foreach (var (source, text) in logs) {
+            var chunks = Chunks(_scrubber.Scrub(text)).ToArray();
+            for (var index = 0; index < chunks.Length; index++) {
+                var chunk = index;
+                SentrySdk.Logger.LogInfo(log => {
+                    log.SetAttribute("evidence.source", source);
+                    log.SetAttribute("evidence.event_id", eventId.ToString());
+                    log.SetAttribute("run.id", runId.ToString());
+                    log.SetAttribute("evidence.chunk", chunk);
+                }, chunks[index]);
+            }
+        }
+    }
+
+    // Whole lines where they fit, so a chunk reads on its own.
+    private static IEnumerable<string> Chunks(string text)
+    {
+        var chunk = new System.Text.StringBuilder();
+        foreach (var line in text.Split('\n')) {
+            for (var start = 0; start < line.Length || start == 0; start += LogChunkCharacters) {
+                var part = line.Substring(start, Math.Min(LogChunkCharacters, line.Length - start));
+                if (chunk.Length != 0 && chunk.Length + part.Length + 1 > LogChunkCharacters) {
+                    yield return chunk.ToString();
+                    chunk.Clear();
+                }
+                chunk.Append(chunk.Length == 0 ? part : "\n" + part);
+                if (line.Length == 0) {
+                    break;
+                }
+            }
+        }
+        if (chunk.ToString().Trim().Length != 0) {
+            yield return chunk.ToString();
+        }
     }
 
     // Stop unconfirmed, cleanup failed or the Run loop broke: the Worker needs the Child Session ended.
@@ -417,6 +513,8 @@ internal sealed class RunTelemetry : IRunTelemetry
 
         internal long? MainTaskId { get; set; }
 
+        internal int? AgentProcessId { get; set; }
+
         // The failure that most recently preceded a pipeline step's end: an action, or a next list never recognised.
         internal string Stage { get; set; } = "unknown";
 
@@ -468,6 +566,10 @@ internal sealed class RunTelemetry : IRunTelemetry
         }
 
         public void CaptureUnhandled(Exception exception)
+        {
+        }
+
+        public void AgentStarted(Guid planItemId, int processId)
         {
         }
 

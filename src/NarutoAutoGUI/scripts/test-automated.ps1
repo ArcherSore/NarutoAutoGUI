@@ -54,7 +54,8 @@ function Complete-Stage
     if ($script:firstExitCode -eq 0) { $script:firstExitCode = $LASTEXITCODE }
 }
 
-# Running the DLLs through dotnet bypasses the elevated apphost manifests. The self-tests do not connect RDP.
+# Running the DLLs through dotnet bypasses the apphost, so the GUI never relaunches itself elevated. The self-tests
+# do not connect RDP.
 # GUI tests create a local RDP control to check input locking, and start the real Worker,
 # which probes the native runtime.
 $workerExe = [IO.Path]::ChangeExtension((Resolve-Path -LiteralPath $WorkerDll).Path, '.exe')

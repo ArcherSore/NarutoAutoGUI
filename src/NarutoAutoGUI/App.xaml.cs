@@ -37,6 +37,18 @@ public partial class App : System.Windows.Application
         }
 
         var command = LaunchCommand.Parse(e.Args);
+        // Both come before anything that would touch the single-instance lock, the log or a window.
+        if (command.Help) {
+            ConsoleOutput.Write(LaunchCommand.HelpText);
+            Shutdown(0);
+            return;
+        }
+        if (!Elevation.IsElevated()) {
+            Environment.ExitCode = RelaunchElevated(e.Args) ? 0 : 1;
+            Shutdown(Environment.ExitCode);
+            return;
+        }
+
         if (!TryAcquireSingleInstance(command)) {
             Shutdown(Environment.ExitCode);
             return;
@@ -360,6 +372,20 @@ public partial class App : System.Windows.Application
     {
         ReleaseSingleInstance();
         base.OnExit(e);
+    }
+
+    // The elevated process takes over; this one only exists to ask. Without administrator rights nothing can run,
+    // so a declined prompt ends the launch.
+    private static bool RelaunchElevated(string[] arguments)
+    {
+        try {
+            return Elevation.TryRelaunch(arguments);
+        } catch (Exception exception) {
+            WpfMessageBox.Show(
+                $"无法请求管理员权限，程序将退出：\n\n{exception.GetBaseException().Message}",
+                "NarutoAutoGUI", MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
+        }
     }
 
     private bool TryAcquireSingleInstance(LaunchCommand command)

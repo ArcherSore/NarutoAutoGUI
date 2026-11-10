@@ -4,8 +4,9 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- WTSEnableChildSessions requires an administrator. -->
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+        <!-- Child Session needs an administrator (WTSEnableChildSessions, highest-run-level Worker task), but the
+             program asks for it itself at launch (Elevation), so that the help option can answer before any UAC prompt. -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

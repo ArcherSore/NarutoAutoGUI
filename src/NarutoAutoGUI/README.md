@@ -1,6 +1,6 @@
 # NarutoAutoGUI 正式 GUI
 
-Windows x64 / .NET 10 WPF 程序。需要管理员权限和交互式桌面。
+Windows x64 / .NET 10 WPF 程序。需要管理员权限和交互式桌面；manifest 为 asInvoker，由程序在启动时自行请求提权（`--help` 在提权前输出）。
 
 ## 构建与自动自检
 
@@ -19,7 +19,7 @@ Windows x64 / .NET 10 WPF 程序。需要管理员权限和交互式桌面。
 
 完整发布仍使用 `scripts/build.ps1`；发布目录为 `artifacts\NarutoAutoGUI\win-x64`，
 并包含 `worker\NarutoAutoWorker.exe` 及固定 runtime。
-自检通过 `dotnet NarutoAutoGUI.dll --self-test` 运行，不触发 apphost 的 UAC manifest，不连接 RDP；完整 GUI 自检会创建本机 RDP 控件验证输入禁用和窗口模式。
+自检通过 `dotnet NarutoAutoGUI.dll --self-test` 运行，不经过 apphost，因此不会请求提权，也不连接 RDP；完整 GUI 自检会创建本机 RDP 控件验证输入禁用和窗口模式。
 通知 tracker、诊断 ZIP 与 Settings 离屏布局可定向验证：
 
 ```powershell

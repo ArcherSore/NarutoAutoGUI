@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using MaaFramework.Binding.Notification;
 using NarutoAutoGUI.Protocol;
 using Sentry;
 using Sentry.Extensibility;
@@ -28,11 +29,8 @@ internal interface IRunTelemetry : IDisposable
 internal sealed class RunTelemetry : IRunTelemetry
 {
     private static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(2);
-    private const int MaximumNodeSpans = 1000;
-    private const string TaskStarting = "Tasker.Task.Starting";
-    private const string PipelineStarting = "Node.PipelineNode.Starting";
-    private const string PipelineSucceeded = "Node.PipelineNode.Succeeded";
-    private const string PipelineFailed = "Node.PipelineNode.Failed";
+    // The SDK keeps at most this many Spans in a Transaction; node Spans leave room for every Plan Item's own.
+    private const int MaximumSpans = 1000;
     private readonly object _gate = new();
     private readonly Action<string, string, string> _log;
     private readonly IDisposable _sdk;
@@ -48,6 +46,7 @@ internal sealed class RunTelemetry : IRunTelemetry
     private long _revision;
     private Guid? _runId;
     private ITransactionTracer? _transaction;
+    private int _nodeSpanBudget;
     private int _faultLogged;
 
     internal static IRunTelemetry None => Disabled.Instance;
@@ -118,28 +117,34 @@ internal sealed class RunTelemetry : IRunTelemetry
     // The host guards this call; a fault here only loses telemetry.
     public void Observe(WorkerSnapshot snapshot)
     {
+        // Captured after the lock: scrubbing runs inside the capture, and callbacks must not wait for it.
+        var captures = new List<Action>();
         lock (_gate) {
             if (snapshot.StateRevision <= _revision) {
                 return;
             }
             _revision = snapshot.StateRevision;
             if (_enabled) {
-                ObserveLocked(snapshot);
+                ObserveLocked(snapshot, captures);
                 if (snapshot.WorkerState == WorkerState.Faulted && _workerState != WorkerState.Faulted) {
-                    CaptureFault(snapshot);
+                    captures.Add(FaultCapture(snapshot));
                 }
             }
             _workerState = snapshot.WorkerState;
+        }
+        foreach (var capture in captures) {
+            capture();
         }
     }
 
     // Only the messages that decide a failure or a traced node are parsed; most callbacks return at once.
     public void OnTaskerEvent(Guid planItemId, string message, string details, bool? trace)
     {
-        if (message != TaskStarting && !message.StartsWith("Node.", StringComparison.Ordinal)) {
+        if (!_enabled
+            || message != MaaMsg.Tasker.Task.Starting && !message.StartsWith("Node.", StringComparison.Ordinal)) {
             return;
         }
-        var traced = trace ?? message == PipelineFailed;
+        var traced = trace ?? message == MaaMsg.Node.PipelineNode.Failed;
         lock (_gate) {
             if (!_enabled || !_spans.TryGetValue(planItemId, out var span)) {
                 return;
@@ -147,12 +152,13 @@ internal sealed class RunTelemetry : IRunTelemetry
             if (!_traces.TryGetValue(planItemId, out var item)) {
                 _traces.Add(planItemId, item = new PlanItemTrace());
             }
-            if (message == "Node.Action.Failed") {
+            if (message == MaaMsg.Node.Action.Failed) {
                 item.Stage = "action";
-            } else if (message == "Node.NextList.Failed") {
+            } else if (message == MaaMsg.Node.NextList.Failed) {
                 item.Stage = "recognition";
             }
-            if (!traced && message is not (TaskStarting or PipelineStarting or PipelineFailed)) {
+            if (!traced && message != MaaMsg.Tasker.Task.Starting && message != MaaMsg.Node.PipelineNode.Starting
+                && message != MaaMsg.Node.PipelineNode.Failed) {
                 return;
             }
 
@@ -162,26 +168,27 @@ internal sealed class RunTelemetry : IRunTelemetry
             var nodeId = Number(root, "node_id");
             var name = root.TryGetProperty("name", out var value) && value.ValueKind == JsonValueKind.String
                 ? value.GetString()! : "unknown";
-            if (message == TaskStarting) {
+            if (message == MaaMsg.Tasker.Task.Starting) {
                 item.MainTaskId ??= taskId;
                 return;
             }
-            if (message == PipelineStarting) {
-                item.Steps[taskId] = (nodeId, Stopwatch.GetTimestamp());
+            if (message == MaaMsg.Node.PipelineNode.Starting) {
+                item.StartStep(taskId, nodeId);
             }
             long? duration = null;
-            if (message is PipelineSucceeded or PipelineFailed && item.Steps.Remove(taskId, out var step)
-                && step.Node == nodeId) {
+            if ((message == MaaMsg.Node.PipelineNode.Succeeded || message == MaaMsg.Node.PipelineNode.Failed)
+                && item.Steps.Remove(taskId, out var step) && step.Node == nodeId) {
                 duration = (long)Stopwatch.GetElapsedTime(step.Started).TotalMilliseconds;
             }
             string? stage = null;
-            if (message == PipelineFailed) {
+            if (message == MaaMsg.Node.PipelineNode.Failed) {
                 stage = item.Stage;
                 item.Record(new NodeFailure(name, stage, taskId));
             }
-            if (!traced || ++item.TracedNodes > MaximumNodeSpans) {
+            if (!traced || _nodeSpanBudget <= 0) {
                 return;
             }
+            _nodeSpanBudget--;
             var node = span.StartChild("node", name);
             node.SetData("message", message);
             node.SetData("task_id", taskId);
@@ -204,7 +211,7 @@ internal sealed class RunTelemetry : IRunTelemetry
         }
     }
 
-    private void ObserveLocked(WorkerSnapshot snapshot)
+    private void ObserveLocked(WorkerSnapshot snapshot, List<Action> captures)
     {
         var run = snapshot.ActiveRun ?? snapshot.LastRun;
         if (run is null) {
@@ -219,6 +226,7 @@ internal sealed class RunTelemetry : IRunTelemetry
             _transaction = SentrySdk.StartTransaction("maanop.run", "run");
             _transaction.SetTag("run.id", run.RunId.ToString());
             _transaction.SetData("item_count", run.Items.Count);
+            _nodeSpanBudget = MaximumSpans - run.Items.Count;
         }
         if (_transaction is not { } transaction) {
             return;
@@ -229,7 +237,7 @@ internal sealed class RunTelemetry : IRunTelemetry
                 continue;
             }
             if (!_spans.TryGetValue(item.PlanItemId, out var span)) {
-                span = transaction.StartChild(item.Kind == PlanItemKind.Pretask ? "pretask" : "task", item.TaskName);
+                span = transaction.StartChild(KindName(item), item.TaskName);
                 span.SetData("task", item.TaskName);
                 foreach (var (key, value) in SummariseOptions(item.ResolvedOptions)) {
                     span.SetData($"option.{key}", value);
@@ -248,7 +256,7 @@ internal sealed class RunTelemetry : IRunTelemetry
             }
             span.SetData("result", item.State.ToString());
             if (item.State == PlanItemState.Failed) {
-                CaptureFailure(run, item, span);
+                captures.Add(FailureCapture(run, item, span));
             }
             span.Finish(Status(item.State));
             _traces.Remove(item.PlanItemId);
@@ -293,7 +301,7 @@ internal sealed class RunTelemetry : IRunTelemetry
 
     // Grouped by the node that ended the task: MaaNOP recovers through on_error, so an earlier failure may not be
     // the cause. A Plan Item that failed without a node failure is grouped by the Worker's reason code.
-    private void CaptureFailure(RunSnapshot run, PlanItemSnapshot item, ISpan span)
+    private Action FailureCapture(RunSnapshot run, PlanItemSnapshot item, ISpan span)
     {
         var trace = _traces.GetValueOrDefault(item.PlanItemId);
         var (cause, stage) = item.Kind == PlanItemKind.MaaTask && trace?.Root is { } root ? (root.Node, root.Stage)
@@ -305,7 +313,7 @@ internal sealed class RunTelemetry : IRunTelemetry
         };
         sentryEvent.SetTag("run.id", run.RunId.ToString());
         sentryEvent.SetTag("task.name", item.TaskName);
-        sentryEvent.SetTag("task.kind", item.Kind == PlanItemKind.Pretask ? "pretask" : "task");
+        sentryEvent.SetTag("task.kind", KindName(item));
         sentryEvent.SetTag("failure.node", cause);
         sentryEvent.SetTag("failure.stage", stage);
         sentryEvent.SetExtra("failure.code", item.Error?.Code);
@@ -314,11 +322,11 @@ internal sealed class RunTelemetry : IRunTelemetry
             sentryEvent.SetExtra("failure.recent", trace.Recent.Select(failure =>
                 new { node = failure.Node, stage = failure.Stage, task_id = failure.TaskId }).ToArray());
         }
-        SentrySdk.CaptureEvent(sentryEvent, scope => scope.Span = span);
+        return () => SentrySdk.CaptureEvent(sentryEvent, scope => scope.Span = span);
     }
 
     // Stop unconfirmed, cleanup failed or the Run loop broke: the Worker needs the Child Session ended.
-    private void CaptureFault(WorkerSnapshot snapshot)
+    private Action FaultCapture(WorkerSnapshot snapshot)
     {
         var code = snapshot.WorkerReason?.Code ?? "unknown";
         var sentryEvent = new SentryEvent {
@@ -331,8 +339,10 @@ internal sealed class RunTelemetry : IRunTelemetry
             sentryEvent.SetTag("run.id", run.RunId.ToString());
         }
         sentryEvent.SetExtra("worker.reason_message", snapshot.WorkerReason?.Message);
-        SentrySdk.CaptureEvent(sentryEvent);
+        return () => SentrySdk.CaptureEvent(sentryEvent);
     }
+
+    private static string KindName(PlanItemSnapshot item) => item.Kind == PlanItemKind.Pretask ? "pretask" : "task";
 
     private static long Number(JsonElement element, string name) =>
         element.TryGetProperty(name, out var value) && value.TryGetInt64(out var number) ? number : 0;
@@ -412,12 +422,21 @@ internal sealed class RunTelemetry : IRunTelemetry
 
         internal Dictionary<long, (long Node, long Started)> Steps { get; } = [];
 
-        internal int TracedNodes { get; set; }
-
         // The last failure of the main task; nested run_task failures and recovered ones are only context.
         internal NodeFailure? Root { get; private set; }
 
         internal IEnumerable<NodeFailure> Recent => _recent;
+
+        // A new step means the pipeline went on: a failure before it on the main task was recovered (on_error), and
+        // the stage of an earlier step no longer applies.
+        internal void StartStep(long taskId, long nodeId)
+        {
+            Steps[taskId] = (nodeId, Stopwatch.GetTimestamp());
+            if (taskId == MainTaskId) {
+                Root = null;
+            }
+            Stage = "unknown";
+        }
 
         internal void Record(NodeFailure failure)
         {

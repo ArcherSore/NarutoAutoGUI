@@ -109,6 +109,8 @@ internal sealed class TelemetryScrubber
         foreach (var (key, value) in sentryEvent.Tags.ToArray()) {
             sentryEvent.SetTag(key, Scrub(value));
         }
+        // Grouping may name the node that failed, and node names are the project's own text.
+        sentryEvent.Fingerprint = sentryEvent.Fingerprint.Select(Scrub).ToArray();
         return Checked(sentryEvent);
     }
 

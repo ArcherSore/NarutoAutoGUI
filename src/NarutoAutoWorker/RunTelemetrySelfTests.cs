@@ -171,6 +171,7 @@ internal static class RunTelemetrySelfTests
         foreach (var transport in new[] { new CapturingTransport { Fail = true }, new() { Hang = true } }) {
             await using var harness = await TelemetryHarnessAsync(Options, transport);
             await CompleteRunAsync(harness);
+            await FailRunAsync(harness);
             await CompleteRunAsync(harness);
         }
         await using (var harness = await TelemetryHarnessAsync(Options with { Dsn = "not a dsn" },
@@ -180,6 +181,8 @@ internal static class RunTelemetrySelfTests
         await using (var harness = await RunHarness.CreateAsync(telemetry: Options,
             createTelemetry: _ => new ThrowingTelemetry())) {
             await CompleteRunAsync(harness);
+            await FailRunAsync(harness);
+            harness.Host.ReportUnhandledException(new InvalidOperationException("scripted crash"));
             RunSelfTests.Expect((await harness.RequestAsync(ProtocolOperations.FrameworkSetOptions,
                 new FrameworkSetOptionsRequest(new(), true))).Success == true, "遥测异常不得让 setOptions 失败。");
         }
@@ -218,8 +221,19 @@ internal static class RunTelemetrySelfTests
             Sentry.SentrySdk.Logger.LogWarning($"maafw: input_text {pin} {phrase} {profile}");
             // An item whose scrubbing fails is dropped, never sent as it was.
             Sentry.SentrySdk.CaptureMessage("unscrubbable item", scope => scope.SetExtra("value", new Unreadable()));
-            execution.Complete(RuntimeExecutionOutcome.Succeeded);
+            // What this ticket's own paths report: a failed node, the failure reason, a fault and a crash.
+            execution.Emit("Tasker.Task.Starting", new { task_id = 1, entry = "SyncEntry" });
+            execution.Emit("Node.PipelineNode.Failed", new { task_id = 1, node_id = 2, name = $"Login-{pin}" });
+            execution.Complete(new RuntimeExecutionResult(RuntimeExecutionOutcome.Failed, null,
+                new StructuredReason("MaaTaskFailed", $"input {phrase} at {profile}")));
             await harness.WaitForStateAsync(s => s.LastRun?.RunId == request.RunId, "Run 应终结。");
+            var faulting = RunSelfTests.Request(RunSelfTests.Plan(1));
+            await harness.StartAsync(faulting);
+            (await harness.Executions.ExecutingAsync(faulting.Plan.Items[0].PlanItemId)).Complete(
+                new RuntimeExecutionResult(RuntimeExecutionOutcome.StopTimedOut, null,
+                    new StructuredReason("StopTimeout", $"agent {pin} still running in {profile}")));
+            await harness.WaitForStateAsync(s => s.WorkerState == WorkerState.Faulted, "Worker 应进入 Faulted。");
+            harness.Host.ReportUnhandledException(new InvalidOperationException($"crashed with {phrase}"));
         }
 
         var text = transport.Text;
@@ -231,23 +245,25 @@ internal static class RunTelemetrySelfTests
                     $"最终 envelope 不得包含密码或用户目录：{form}");
             }
         }
-        var transaction = transport.Items("transaction").Single();
-        var span = transaction.GetProperty("spans").EnumerateArray().Single();
+        var transaction = transport.Items("transaction").First();
+        var span = transaction.GetProperty("spans").EnumerateArray()
+            .Single(item => item.GetProperty("op").GetString() == "task");
         RunSelfTests.Expect(span.GetProperty("data").GetProperty("option.Other").GetString() == "Normal"
             && span.GetProperty("data").GetProperty("option.Mode").GetString()!.Contains("[Filtered]"),
             "Span 中的密码应被替换，其余内容保留；空值不得导致整体替换。");
         RunSelfTests.Expect(!transport.Text.Contains("unscrubbable item"), "清洗失败的上报必须丢弃。");
-        RunSelfTests.Expect(transport.Items("event").Count() == 2 && transport.Text.Contains("[Filtered]"),
+        RunSelfTests.Expect(transport.Items("event").Count() == 5 && transport.Text.Contains("[Filtered]"),
             "含密码的事件应脱敏后照常发送，而不是被丢弃。");
     }
 
     // PI v2.9.1: an explicit focus trace decides; otherwise only Node.PipelineNode.Failed is traced, with or without
-    // focus. A Plan Item keeps at most 1000 node Spans, and a pipeline step's duration runs from its Starting.
+    // focus. A pipeline step's duration runs from its Starting. Node Spans are bounded and never take the room a
+    // later Plan Item needs for its own Span.
     private static async Task VerifyNodeTraceSpans()
     {
         var transport = new CapturingTransport();
         await using (var harness = await TelemetryHarnessAsync(Options, transport)) {
-            var request = RunSelfTests.Request(RunSelfTests.Plan(1));
+            var request = RunSelfTests.Request(RunSelfTests.Plan(2));
             await harness.StartAsync(request);
             var execution = await harness.Executions.ExecutingAsync(request.Plan.Items[0].PlanItemId);
             execution.ReportRunning();
@@ -269,10 +285,15 @@ internal static class RunTelemetrySelfTests
                 execution.Emit("Node.PipelineNode.Failed", Node("Flood", 100 + index));
             }
             execution.Complete(RuntimeExecutionOutcome.Succeeded);
+            var next = await harness.Executions.ExecutingAsync(request.Plan.Items[1].PlanItemId);
+            next.ReportRunning();
+            next.Complete(RuntimeExecutionOutcome.Succeeded);
             await harness.WaitForStateAsync(s => s.LastRun?.RunId == request.RunId, "Run 应终结。");
         }
-        var spans = transport.Items("transaction").Single().GetProperty("spans").EnumerateArray()
-            .Where(span => span.GetProperty("op").GetString() == "node").ToArray();
+        var all = transport.Items("transaction").Single().GetProperty("spans").EnumerateArray().ToArray();
+        var spans = all.Where(span => span.GetProperty("op").GetString() == "node").ToArray();
+        RunSelfTests.Expect(all.Count(span => span.GetProperty("op").GetString() == "task") == 2,
+            "节点 Span 不得挤掉后续 Plan Item 自己的 Span。");
         string[] Named(string name) => spans.Where(span => span.GetProperty("description").GetString() == name)
             .Select(span => span.GetProperty("data").GetProperty("message").GetString()!).ToArray();
         RunSelfTests.Expect(Named("Untraced").Length == 0 && Named("Muted").Length == 0 && Named("Logged").Length == 0
@@ -280,7 +301,7 @@ internal static class RunTelemetrySelfTests
             && Named("Opted").SequenceEqual(["Node.Action.Succeeded"]), "节点 Span 应遵守 trace 显式值与默认值。");
         var slow = spans.Single(span => span.GetProperty("description").GetString() == "Slow");
         RunSelfTests.Expect(slow.GetProperty("data").GetProperty("duration_ms").GetInt64() >= 25
-            && Status(slow) == "internal_error" && spans.Length is > 990 and <= 1000,
+            && Status(slow) == "internal_error" && spans.Length is > 990 and <= 998,
             $"失败节点应带耗时与错误状态，节点 Span 有上限而不是全部上报：{spans.Length}");
     }
 
@@ -317,6 +338,15 @@ internal static class RunTelemetrySelfTests
             recovered.Emit("Tasker.Task.Failed", new { task_id = 1, entry = "Entry1" });
             await FailAsync(recovered, "MaaTaskFailed");
 
+            var exited = await StartAsync(RunSelfTests.Plan(1));
+            exited.Emit("Tasker.Task.Starting", new { task_id = 5, entry = "Entry1" });
+            exited.Emit("Node.PipelineNode.Starting", Node(5, "Recovered2"));
+            exited.Emit("Node.NextList.Failed", Node(5, "Recovered2"));
+            exited.Emit("Node.PipelineNode.Failed", Node(5, "Recovered2"));
+            exited.Emit("Node.PipelineNode.Starting", Node(5, "After"));
+            exited.Emit("Tasker.Task.Failed", new { task_id = 5, entry = "Entry1" });
+            await FailAsync(exited, "AgentExited");
+
             var silent = await StartAsync(RunSelfTests.Plan(1));
             silent.Emit("Tasker.Task.Starting", new { task_id = 3, entry = "Entry1" });
             await FailAsync(silent, "MaaTaskFailed");
@@ -344,19 +374,40 @@ internal static class RunTelemetrySelfTests
         string[] Fingerprint(JsonElement item) => item.TryGetProperty("fingerprint", out var parts)
             ? parts.EnumerateArray().Select(part => part.GetString()!).ToArray() : [];
         var failures = events.Where(item => Fingerprint(item).FirstOrDefault() == "naruto-task-failure").ToArray();
-        RunSelfTests.Expect(failures.Length == 4, $"四个失败的 Plan Item 应各有一个失败事件：{failures.Length}");
+        RunSelfTests.Expect(failures.Length == 5, $"五个失败的 Plan Item 应各有一个失败事件：{failures.Length}");
         var recent = failures[0].GetProperty("extra").GetProperty("failure.recent").GetRawText();
         RunSelfTests.Expect(Fingerprint(failures[0]).SequenceEqual(["naruto-task-failure", "test", "Task1", "Fatal",
                 "action"]) && recent.Contains("Recovered") && recent.Contains("Nested"),
             $"根因应是主任务最后一个失败节点，其余失败只作上下文：{string.Join("/", Fingerprint(failures[0]))}");
-        RunSelfTests.Expect(Fingerprint(failures[1])[3..].SequenceEqual(["MaaTaskFailed", "worker"])
-            && Fingerprint(failures[2])[3..].SequenceEqual(["RunExecutionFailed", "worker"])
-            && Fingerprint(failures[3])[2..].SequenceEqual(["Launch", "PretaskExitCode", "pretask"]),
+        RunSelfTests.Expect(Fingerprint(failures[1])[3..].SequenceEqual(["AgentExited", "worker"])
+            && failures[1].GetProperty("extra").GetProperty("failure.recent").GetRawText().Contains("Recovered2"),
+            "已被 on_error 恢复的失败不能成为根因，只作上下文。");
+        RunSelfTests.Expect(Fingerprint(failures[2])[3..].SequenceEqual(["MaaTaskFailed", "worker"])
+            && Fingerprint(failures[3])[3..].SequenceEqual(["RunExecutionFailed", "worker"])
+            && Fingerprint(failures[4])[2..].SequenceEqual(["Launch", "PretaskExitCode", "pretask"]),
             "没有节点失败时，根因应是 StructuredReason code。");
         RunSelfTests.Expect(events.Count(item => Fingerprint(item).FirstOrDefault() == "worker.faulted") == 1
             && events.Count(item => item.GetProperty("tags").TryGetProperty("exception.source", out var source)
                 && source.GetString() == "worker.unhandled") == 1
-            && events.Length == 6, $"Faulted 与未处理异常应各报一次，用户停止不报错误：{events.Length}");
+            && events.Length == 7, $"Faulted 与未处理异常应各报一次，用户停止不报错误：{events.Length}");
+    }
+
+    // Callbacks and a failed Plan Item reach every telemetry path, yet the Run ends as it would without telemetry.
+    private static async Task FailRunAsync(RunHarness harness)
+    {
+        var request = RunSelfTests.Request(RunSelfTests.Plan(2));
+        await harness.StartAsync(request);
+        var execution = await harness.Executions.ExecutingAsync(request.Plan.Items[0].PlanItemId);
+        execution.ReportRunning();
+        execution.Emit("Tasker.Task.Starting", new { task_id = 1, entry = "Entry1" });
+        execution.Emit("Node.PipelineNode.Starting", new { task_id = 1, node_id = 1, name = "A" });
+        execution.Emit("Node.PipelineNode.Failed", new { task_id = 1, node_id = 1, name = "A" });
+        execution.Complete(RuntimeExecutionOutcome.Failed, "MaaTaskFailed");
+        var final = await harness.WaitForStateAsync(s => s.LastRun?.RunId == request.RunId, "Run 应终结。");
+        RunSelfTests.Expect(final is { WorkerState: WorkerState.Ready, LastRun.State: RunState.Failed }
+            && final.LastRun.Items[0].State == PlanItemState.Failed
+            && final.LastRun.Items[1].State == PlanItemState.Cancelled,
+            "遥测不得改变失败 Run 的结果、Plan Item 状态或 Worker State。");
     }
 
     private static async Task CompleteRunAsync(RunHarness harness)

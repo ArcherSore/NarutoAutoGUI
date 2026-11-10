@@ -424,7 +424,6 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
     internal void OnTaskerCallback(object? sender, MaaCallbackEventArgs args)
     {
         var focus = _runLogAdapter.Handle(args.Message, args.Details);
-        _onTaskerEvent(args.Message, args.Details, focus.Trace);
 
         if (args.Message == MaaMsg.Tasker.Task.Starting) {
             ReportRunningOnce();
@@ -433,6 +432,8 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
         } else if (args.Message == MaaMsg.Tasker.Task.Failed) {
             _taskCompleted.TrySetResult(MaaJobStatus.Failed);
         }
+        // After the Run's own signals, so telemetry never delays them.
+        _onTaskerEvent(args.Message, args.Details, focus.Trace);
     }
 
     private void ReportRunningOnce()

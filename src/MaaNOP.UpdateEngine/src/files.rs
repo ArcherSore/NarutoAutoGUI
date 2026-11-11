@@ -3,6 +3,31 @@ use std::path::Path;
 
 pub const PRESERVED: [&str; 4] = ["config", "logs", "debug", "cache"];
 
+/// Entry-file names of one package layout: the launcher, this engine, the GUI's updater library and the Worker.
+pub struct Layout
+{
+    pub app: &'static str,
+    pub engine: &'static str,
+    pub updates: &'static str,
+    pub worker: &'static str,
+}
+
+/// Layouts an installed copy may update to. The NarutoAutoGUI layout predates the rename to Bunshin and stays
+/// until copies that old can no longer be updating; drop it then.
+pub const LAYOUTS: [Layout; 2] = [
+    Layout { app: "Bunshin", engine: "update-engine", updates: "Updates", worker: "Bunshin.Worker" },
+    Layout {
+        app: "NarutoAutoGUI", engine: "maanop-update-engine", updates: "NarutoAutoGUI.Updates",
+        worker: "NarutoAutoWorker",
+    },
+];
+
+/// The layout whose launcher sits in `directory`, if any.
+pub fn layout(directory: &Path) -> Option<&'static Layout>
+{
+    LAYOUTS.iter().find(|layout| directory.join(format!("{}.exe", layout.app)).is_file())
+}
+
 pub fn preserved(name: &str) -> bool
 {
     PRESERVED.iter().any(|p| name.eq_ignore_ascii_case(p))

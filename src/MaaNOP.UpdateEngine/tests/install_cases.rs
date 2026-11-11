@@ -316,3 +316,18 @@ fn writable_cache_cannot_hide_root_permission_failure_before_ready()
     assert!(root.join("old-file").exists());
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn install_relaunches_the_launcher_of_the_installed_layout()
+{
+    let root = fixture("layout");
+    fs::remove_file(root.join("cache/updater/payload/NarutoAutoGUI.exe")).unwrap();
+    fs::write(root.join("cache/updater/payload/Bunshin.exe"), "new").unwrap();
+    fs::write(root.join("cache/updater/payload/update-engine.exe"), "new").unwrap();
+    let result = install(&request(&root, 123), |_| Ok(()), |_| Ok(()), |exe| {
+        assert_eq!(exe, root.join("Bunshin.exe"));
+        Ok(())
+    }, &mut |_| {});
+    assert_eq!(result["type"], "result", "{result}");
+    fs::remove_dir_all(root).unwrap();
+}

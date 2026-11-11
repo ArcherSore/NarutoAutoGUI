@@ -104,19 +104,26 @@ fn package_without(extra: &[&str], omitted: &str) -> Vec<u8>
 // The fixture carries no .NET runtime files: their presence is the package's choice, not an Engine rule.
 fn package_with_config(extra: &[&str], omitted: &str, runtimeconfig: &str) -> Vec<u8>
 {
+    package_for(("Bunshin", "update-engine", "Updates", "Bunshin.Worker"), extra, omitted, runtimeconfig)
+}
+
+// (launcher, engine, updates library, worker) names of one package layout.
+fn package_for(layout: (&str, &str, &str, &str), extra: &[&str], omitted: &str, runtimeconfig: &str) -> Vec<u8>
+{
+    let (app, engine, updates, worker) = layout;
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let files = ["NarutoAutoGUI.exe", "NarutoAutoGUI.dll", "maanop-update-engine.exe",
-        "NarutoAutoGUI.deps.json", "NarutoAutoGUI.runtimeconfig.json",
-        "libs/Wpf.Ui.dll", "libs/NarutoAutoGUI.Updates.dll",
-        "worker/NarutoAutoWorker.exe", "worker/NarutoAutoWorker.dll",
-        "worker/NarutoAutoWorker.deps.json", "worker/NarutoAutoWorker.runtimeconfig.json",
-        "worker/runtimes/win-x64/native/MaaFramework.dll",
-        "worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll", "python/python.exe",
-        "resource/a", "agent/a", "config/default"];
+    let files = [format!("{app}.exe"), format!("{app}.dll"), format!("{engine}.exe"),
+        format!("{app}.deps.json"), format!("{app}.runtimeconfig.json"),
+        "libs/Wpf.Ui.dll".into(), format!("libs/{updates}.dll"),
+        format!("worker/{worker}.exe"), format!("worker/{worker}.dll"),
+        format!("worker/{worker}.deps.json"), format!("worker/{worker}.runtimeconfig.json"),
+        "worker/runtimes/win-x64/native/MaaFramework.dll".into(),
+        "worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll".into(), "python/python.exe".into(),
+        "resource/a".into(), "agent/a".into(), "config/default".into()];
     for file in files {
         if file == omitted { continue; }
-        zip.start_file(file, zip::write::SimpleFileOptions::default()).unwrap();
-        let body = if file == "NarutoAutoGUI.runtimeconfig.json" { runtimeconfig.as_bytes() } else { b"new" };
+        zip.start_file(&file, zip::write::SimpleFileOptions::default()).unwrap();
+        let body = if file == format!("{app}.runtimeconfig.json") { runtimeconfig.as_bytes() } else { b"new" };
         zip.write_all(body).unwrap();
     }
     zip.start_file("interface.json", zip::write::SimpleFileOptions::default()).unwrap();
@@ -135,9 +142,9 @@ fn prepare_rejects_missing_gui_and_worker_startup_dependencies()
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("interface.json"),
         r#"{"name":"MaaNOP","version":"1.0.0","github":"https://github.com/test/product"}"#).unwrap();
-    for omitted in ["NarutoAutoGUI.deps.json", "NarutoAutoGUI.runtimeconfig.json",
-        "libs/Wpf.Ui.dll", "libs/NarutoAutoGUI.Updates.dll",
-        "worker/NarutoAutoWorker.deps.json", "worker/NarutoAutoWorker.runtimeconfig.json"] {
+    for omitted in ["Bunshin.deps.json", "Bunshin.runtimeconfig.json",
+        "libs/Wpf.Ui.dll", "libs/Updates.dll",
+        "worker/Bunshin.Worker.deps.json", "worker/Bunshin.Worker.runtimeconfig.json"] {
         let bytes = package_without(&[], omitted);
         let request = prepare_request(&root, &bytes);
         let result = prepare(&request, |_| Ok(Box::new(Cursor::new(bytes))),
@@ -321,5 +328,22 @@ fn concurrent_prepare_cannot_replace_an_active_download()
     assert_eq!(result["type"], "error");
     assert!(result["message"].as_str().unwrap().contains("已有更新准备"));
     drop(lock);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+// Installed copies from before the rename to Bunshin still receive packages of either layout.
+#[test]
+fn prepare_accepts_the_layout_from_before_the_rename()
+{
+    let root = std::env::temp_dir().join(format!("maanop-prepare-legacy-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("interface.json"),
+        r#"{"name":"MaaNOP","version":"1.0.0","github":"https://github.com/test/product"}"#).unwrap();
+    let legacy = ("NarutoAutoGUI", "maanop-update-engine", "NarutoAutoGUI.Updates", "NarutoAutoWorker");
+    let bytes = package_for(legacy, &[], "", r#"{"runtimeOptions":{"includedFrameworks":[]}}"#);
+    let request = prepare_request(&root, &bytes);
+    let result = prepare(&request, |_| Ok(Box::new(Cursor::new(bytes))),
+        &AtomicBool::new(false), &mut |_| Ok(()));
+    assert_eq!(result["type"], "result", "{result}");
     std::fs::remove_dir_all(root).unwrap();
 }

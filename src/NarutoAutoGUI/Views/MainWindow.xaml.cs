@@ -638,7 +638,15 @@ public partial class MainWindow : FluentWindow
         _pendingStartAttempt ??= project.CreateRunStartAttempt(startupOnly);
         RunResultLog.WritePlan(_logger, _pendingStartAttempt, ActiveConfigurationName, startupOnly);
         _telemetry.Register(_pendingStartAttempt.RedactionValues);
-        var response = await _workerCoordinator.StartRunAsync(_pendingStartAttempt);
+        RunStartResponse response;
+        try {
+            response = await _workerCoordinator.StartRunAsync(_pendingStartAttempt);
+        } catch (Exception exception)
+            when (exception is not (WorkerProtocolErrorException or InvalidOperationException)) {
+            // Sent, but no answer: the Worker may have started it, so a retry reuses the same Run ID.
+            _unconfirmedRunId = _pendingStartAttempt.RunId;
+            throw;
+        }
         if (response.Disposition is not ("accepted" or "already_accepted")) {
             throw new InvalidDataException($"未知 run.start disposition：{response.Disposition}。 ");
         }

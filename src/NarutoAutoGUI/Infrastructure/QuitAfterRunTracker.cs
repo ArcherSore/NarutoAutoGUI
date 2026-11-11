@@ -9,11 +9,16 @@ namespace NarutoAutoGUI.Infrastructure;
 internal sealed class QuitAfterRunTracker(DateTime armedAtUtc)
 {
     private bool _triggered;
+    private Guid? _runId;
+
+    // Narrows the wait to one Run, for a start request whose answer was lost.
+    internal void Await(Guid runId) => _runId = runId;
 
     internal bool Observe(WorkerCoordinatorSnapshot observation)
     {
         if (_triggered || !observation.SnapshotFresh
             || observation.WorkerSnapshot?.LastRun is not { } run || run.StartedAtUtc < armedAtUtc
+            || _runId is { } runId && run.RunId != runId
             || run.State is not (RunState.Succeeded or RunState.Failed or RunState.Cancelled)) {
             return false;
         }

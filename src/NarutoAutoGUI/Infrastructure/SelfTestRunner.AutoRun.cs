@@ -60,14 +60,18 @@ internal static partial class SelfTestRunner
         foreach (var allowed in new RuntimeAction[] {
             new RuntimeAction.Prepare(true), new RuntimeAction.Start(true),
             new RuntimeAction.Start(false, StartBlocker.NoTasks),
-            new RuntimeAction.Start(false, StartBlocker.ConfigurationInvalid)
+            new RuntimeAction.Start(false, StartBlocker.ConfigurationInvalid),
+            new RuntimeAction.Retry(RetryTarget.Start, true),
+            new RuntimeAction.Retry(RetryTarget.Start, false, StartBlocker.NoTasks)
         }) {
             Require(AutoRunPlanner.RuntimeAllows(Controls(allowed)), $"运行环境允许开始时不能被当前配置挡住：{allowed}");
         }
         foreach (var refused in new RuntimeAction[] {
             new RuntimeAction.Prepare(false), new RuntimeAction.Start(false, StartBlocker.RuntimeNotReady),
             new RuntimeAction.Start(false, StartBlocker.CommandsUnavailable), new RuntimeAction.Stop(true),
-            new RuntimeAction.Recover(true, RecoveryReason.WorkerLost)
+            new RuntimeAction.Recover(true, RecoveryReason.WorkerLost),
+            new RuntimeAction.Retry(RetryTarget.Prepare, true),
+            new RuntimeAction.Retry(RetryTarget.Start, false, StartBlocker.RuntimeNotReady)
         }) {
             Require(!AutoRunPlanner.RuntimeAllows(Controls(refused)), $"运行环境不允许开始时必须跳过：{refused}");
         }
@@ -103,6 +107,15 @@ internal static partial class SelfTestRunner
         var late = new QuitAfterRunTracker(runStarted.AddMinutes(1));
         Require(!late.Observe(FinishNotificationRun(running, RunState.Succeeded)),
             "自动执行触发之前就已结束的 Run 不能让程序退出。");
+
+        // A start request whose answer was lost: only the Run that was requested may end the wait.
+        var requested = ArmedBeforeRun();
+        requested.Await(Guid.NewGuid());
+        Require(!requested.Observe(FinishNotificationRun(running, RunState.Succeeded)),
+            "按 Run ID 等待时，其他 Run 结束不能让程序退出。");
+        var awaited = ArmedBeforeRun();
+        awaited.Await(running.WorkerSnapshot.ActiveRun!.RunId);
+        Require(awaited.Observe(FinishNotificationRun(running, RunState.Succeeded)), "等待的那个 Run 结束必须触发退出。");
     }
 
     // Two configurations, "日常" active and "周常" second, each with the project's first task unless left empty.

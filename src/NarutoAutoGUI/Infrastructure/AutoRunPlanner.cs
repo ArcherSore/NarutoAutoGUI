@@ -19,10 +19,13 @@ internal sealed record AutoRunDecision(Guid? ConfigurationId, bool QuitAfterRun,
 internal static class AutoRunPlanner
 {
     // Whether the runtime allows a Run at all. What the active configuration holds does not count: it is about to be
-    // replaced by the one that was asked for.
+    // replaced by the one that was asked for. A Retry that would start the Run is a ready runtime whose last Run failed.
     internal static bool RuntimeAllows(RuntimeControlState controls) => controls.ConfigurationEditable
         && controls.Action is RuntimeAction.Prepare { Enabled: true }
-            or RuntimeAction.Start { Blocker: null or StartBlocker.NoTasks or StartBlocker.ConfigurationInvalid };
+            or RuntimeAction.Start { Blocker: null or StartBlocker.NoTasks or StartBlocker.ConfigurationInvalid }
+            or RuntimeAction.Retry {
+                Target: RetryTarget.Start, Blocker: null or StartBlocker.NoTasks or StartBlocker.ConfigurationInvalid
+            };
 
     // --instance only applies to --autostart, and a selector that does not resolve to exactly one configuration
     // never falls back to the configured one: a script must not run the wrong configuration.

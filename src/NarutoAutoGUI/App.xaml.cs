@@ -81,6 +81,8 @@ public partial class App : System.Windows.Application
         // The Run this launch meant to start never began, so --quit-after-run has nothing to wait for; a Run the
         // user starts later in this session must not end the program.
         _mainWindow.AutoRunAbandoned += (_, _) => _quitAfterRun = null;
+        // The start request got no answer. The Worker may have started that Run, so wait for exactly that one.
+        _mainWindow.AutoRunUnconfirmed += (_, runId) => _quitAfterRun?.Await(runId);
         MainWindow = _mainWindow;
         CreateTrayIcon();
         // A launch by the system (logon) has no one to look at the window; it waits in the tray.

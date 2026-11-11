@@ -15,7 +15,11 @@ public partial class MainWindow
     // Raised when an auto-run ended without any Run having begun, so --quit-after-run has nothing to wait for.
     internal event EventHandler? AutoRunAbandoned;
 
+    // Raised when the start request got no answer, so the Worker may have started this Run anyway.
+    internal event EventHandler<Guid>? AutoRunUnconfirmed;
+
     private int _acceptedRuns;
+    private Guid? _unconfirmedRunId;
 
     // Starts the configuration this launch asks for, if any: activates it, prepares the Runtime Environment and
     // starts the Run, as the Start button does. Returns whether it did.
@@ -54,14 +58,20 @@ public partial class MainWindow
         }
         _logger.Info($"自动执行：已激活配置并开始任务{AppLogger.Field("configuration", ConfigurationName(id))}");
         var acceptedBefore = _acceptedRuns;
+        _unconfirmedRunId = null;
         AutoRunStarted?.Invoke(this, decision);
-        if (CurrentControls.Action is RuntimeAction.Start) {
+        if (CurrentControls.Action is RuntimeAction.Start or RuntimeAction.Retry { Target: RetryTarget.Start }) {
             await RunOperationAsync(PendingOperation.StartingRun, () => StartCurrentPlanAsync(), unattended: true);
         } else {
             await PrepareFromPanelAsync(startRun: true, unattended: true);
         }
-        // Failed, refused or cancelled by an exit request: no Run began, whatever the reason.
-        if (_acceptedRuns == acceptedBefore) {
+        if (_acceptedRuns != acceptedBefore) {
+            return true;
+        }
+        // Otherwise no Run is known to have begun, whatever the reason, unless the Worker never answered.
+        if (_unconfirmedRunId is { } runId) {
+            AutoRunUnconfirmed?.Invoke(this, runId);
+        } else {
             AutoRunAbandoned?.Invoke(this, EventArgs.Empty);
         }
         return true;

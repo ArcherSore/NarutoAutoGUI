@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Security.Principal;
 using System.Windows.Controls;
 using Meziantou.Framework.Win32;
 using NarutoAutoGUI.ChildSession;
@@ -14,6 +15,7 @@ internal static partial class SelfTestRunner
 
     private static void VerifyChildSessionCredentials(AppLogger logger, string testDirectory)
     {
+        VerifyCredentialFallback();
         foreach (var (name, domain, userName) in new[] {
                      (FakeAccount, "", FakeAccount),
                      ("microsoftaccount\\User@Example.invalid", "", "microsoftaccount\\User@Example.invalid"),
@@ -172,6 +174,87 @@ internal static partial class SelfTestRunner
             return true;
         }
         return false;
+    }
+
+    private static void VerifyCredentialFallback()
+    {
+        const string target = ChildSessionCredentialStore.Target;
+        var direct = new FaultingCredentialVault();
+        var scopes = 0;
+        var fallback = new CredentialVaultFallback(direct, action => {
+            scopes++;
+            direct.InScope = true;
+            try {
+                action();
+            } finally {
+                direct.InScope = false;
+            }
+        });
+        Require(fallback.Read(target) is null && scopes == 0, "未保存凭据不能触发身份切换。");
+        fallback.Write(target, FakeAccount, FakePassword);
+        Require(fallback.Read(target)?.Password == FakePassword && scopes == 0,
+            "正常读写不应依赖资源管理器或切换身份。");
+        direct.DirectError = 1312;
+        Require(fallback.Read(target)?.Password == FakePassword && scopes == 1,
+            "登录会话缺少凭据集时应使用交互身份读取保存的凭据。");
+        fallback.Write(target, FakeAccount, FakePassword + "2");
+        Require(direct.Saved?.Password == FakePassword + "2" && scopes == 2 && !direct.InScope,
+            "1312 后必须在交互身份下保存用户的新密码，并退出该作用域。");
+        var before = scopes;
+        direct.DirectError = 5;
+        Require(Throws<Win32Exception>(() => fallback.Read(target))
+            && Throws<Win32Exception>(() => fallback.Write(target, FakeAccount, FakePassword)) && scopes == before,
+            "权限拒绝等非 1312 错误不能切换身份后重试。");
+        direct.DirectError = 1312;
+        Require(Throws<Win32Exception>(() => fallback.Read(target + "/Other")) && scopes == before,
+            "备用访问不能扩大到其他凭据目标。");
+        direct.ScopedError = 1312;
+        Require(Throws<Win32Exception>(() => fallback.Read(target)) && scopes == before + 1 && !direct.InScope,
+            "备用读取仍失败时应报告失败，不能无限重试或伪装为未保存。");
+        Require(Throws<Win32Exception>(() => fallback.Write(target, FakeAccount, FakePassword))
+            && direct.Saved?.Password == FakePassword + "2" && !direct.InScope,
+            "备用保存失败不能报告成功或继续在模拟身份下操作。");
+        var unavailable = new CredentialVaultFallback(direct,
+            _ => throw new InvalidOperationException("shell unavailable"));
+        Require(Throws<InvalidOperationException>(() => unavailable.Read(target))
+            && Throws<InvalidOperationException>(() => unavailable.Write(target, FakeAccount, FakePassword)),
+            "资源管理器不可用时读写错误必须交回现有调用者处理。");
+        var user = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        var other = new SecurityIdentifier("S-1-5-21-1-2-3-1002");
+        Require(ShellCredentialAccess.Matches(user, 1, user, 1, false)
+            && !ShellCredentialAccess.Matches(user, 1, other, 1, false)
+            && !ShellCredentialAccess.Matches(user, 1, user, 2, false)
+            && !ShellCredentialAccess.Matches(user, 1, user, 1, true)
+            && !ShellCredentialAccess.Matches(null, 1, null, 1, false),
+            "备用凭据访问必须拒绝不同用户、不同会话、提权或未知身份的令牌。");
+    }
+
+    private sealed class FaultingCredentialVault : ICredentialVault
+    {
+        internal bool InScope { get; set; }
+        internal int DirectError { get; set; }
+        internal int ScopedError { get; set; }
+        internal (string? UserName, string? Password)? Saved { get; set; }
+
+        public (string? UserName, string? Password)? Read(string target)
+        {
+            CheckError();
+            return Saved;
+        }
+
+        public void Write(string target, string userName, string password)
+        {
+            CheckError();
+            Saved = (userName, password);
+        }
+
+        private void CheckError()
+        {
+            var error = InScope ? ScopedError : DirectError;
+            if (error != 0) {
+                throw new Win32Exception(error);
+            }
+        }
     }
 
     // Stands in for WindowsCredentialVault with its semantics: Read returns null only when nothing is saved

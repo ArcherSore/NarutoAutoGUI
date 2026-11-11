@@ -70,7 +70,7 @@ internal static class WorkerSelfTestRunner
         adapter.Handle("Node.Action.Succeeded", details);
         var entries = buffer.GetSince(0, 500).Entries;
         if (entries.Count != 1 || entries[0].Level != "INFO"
-            || entries[0].Source != ProtocolConstants.MaaNopRunLogSource
+            || entries[0].Source != ProtocolConstants.RunLogSource
             || entries[0].Message != "领取邮件: 42, true, {missing}, {nested}") {
             throw new InvalidOperationException("字符串 focus 或占位符投影验证失败。 ");
         }
@@ -84,7 +84,7 @@ internal static class WorkerSelfTestRunner
         entries = buffer.GetSince(0, 500).Entries;
         if (entries.Count != 3 || entries[0].Message != "unsupported" || entries[1].Message != "N 开始"
             || entries[2].Message != "仅 toast"
-            || entries.Any(entry => entry.Source != ProtocolConstants.MaaNopRunLogSource)) {
+            || entries.Any(entry => entry.Source != ProtocolConstants.RunLogSource)) {
             throw new InvalidOperationException("对象写法 focus 的 content 应写入运行日志。 ");
         }
 
@@ -127,7 +127,7 @@ internal static class WorkerSelfTestRunner
         adapter.Handle("Node.Action.Succeeded", "not-json");
         adapter.Handle("Node.Action.Succeeded", "still-not-json");
         entries = buffer.GetSince(0, 500).Entries;
-        if (entries.Count != 1 || entries[0].Level != "WARN" || entries[0].Source != "maanop.callback") {
+        if (entries.Count != 1 || entries[0].Level != "WARN" || entries[0].Source != "framework.callback") {
             throw new InvalidOperationException("非法 JSON 应经 Adapter 产生最多一条 WARN，不逃逸异常。 ");
         }
     }
@@ -137,7 +137,7 @@ internal static class WorkerSelfTestRunner
         var buffer = new WorkerLogBuffer();
         var message = new string('x', ProtocolConstants.MaximumLogMessageBytes);
         for (var index = 0; index < 40; index++) {
-            buffer.Add("INFO", ProtocolConstants.MaaNopRunLogSource, message);
+            buffer.Add("INFO", ProtocolConstants.RunLogSource, message);
         }
 
         var page = buffer.GetSince(0, 500);
@@ -169,10 +169,10 @@ internal static class WorkerSelfTestRunner
         adapter.Handle("Node.Action.Succeeded", "still-not-json");
         var entries = buffer.GetSince(0, 500).Entries;
         if (entries.Count != 2 || entries[0].Level != "INFO"
-            || entries[0].Source != ProtocolConstants.MaaNopRunLogSource
+            || entries[0].Source != ProtocolConstants.RunLogSource
             || entries[0].Message != "完成 领取邮件" || entries[0].RunId != runId
             || entries[0].PlanItemId != planItemId || entries[0].TaskName != "Task"
-            || entries[1].Level != "WARN" || entries[1].Source != "maanop.callback") {
+            || entries[1].Level != "WARN" || entries[1].Source != "framework.callback") {
             throw new InvalidOperationException("Callback Adapter 输出、关联字段或诊断限频验证失败。 ");
         }
 

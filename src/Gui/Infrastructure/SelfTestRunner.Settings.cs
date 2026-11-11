@@ -178,7 +178,7 @@ internal static partial class SelfTestRunner
         var check = new TaskCompletionSource<EngineCheckResult>();
         var checks = 0;
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "settings-update"), (window, directory) => {
-            var configPath = Path.Combine(directory, "config", "maanop-config.json");
+            var configPath = Path.Combine(directory, "config", "configurations.json");
             var config = File.ReadAllBytes(configPath);
             var interfacePath = Path.Combine(directory, "interface.json");
             var projectInterface = File.ReadAllBytes(interfacePath);
@@ -260,7 +260,7 @@ internal static partial class SelfTestRunner
                 || !config.SequenceEqual(File.ReadAllBytes(configPath))
                 || !projectInterface.SequenceEqual(File.ReadAllBytes(interfacePath))
                 || CanonicalDigest.ComputePlanDigestV2(afterPlan) != CanonicalDigest.ComputePlanDigestV2(plan)) {
-                throw new InvalidOperationException("Settings 操作不能影响 Home、MaaNOP 配置、PI 或 RunPlan。");
+                throw new InvalidOperationException("Settings 操作不能影响 Home、任务配置、PI 或 RunPlan。");
             }
         }, checkForUpdate: _ => { checks++; return check.Task; });
     }

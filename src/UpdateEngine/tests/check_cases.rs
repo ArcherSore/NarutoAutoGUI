@@ -12,11 +12,11 @@ impl Installation
 {
     fn new(version: &str) -> Self
     {
-        let root = std::env::temp_dir().join(format!("maanop-check-{}-{}", std::process::id(),
+        let root = std::env::temp_dir().join(format!("check-{}-{}", std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)));
         fs::create_dir(&root).unwrap();
         fs::write(root.join("interface.json"), json!({
-            "name": "MaaNOP", "version": version, "github": "https://github.com/owner/repo"
+            "name": "Sample", "version": version, "github": "https://github.com/owner/repo"
         }).to_string()).unwrap();
         Self(root)
     }
@@ -46,8 +46,8 @@ impl Drop for Installation
 fn release(tag: &str) -> Value
 {
     json!({"tag_name": tag, "draft": false, "prerelease": false, "body": "新版说明\n第二行", "assets": [
-        {"name": "MaaNOP-linux-x86_64-v2.10.0.zip"},
-        {"name": format!("MaaNOP-win-x86_64-{tag}.zip"), "size": 123,
+        {"name": "Sample-linux-x86_64-v2.10.0.zip"},
+        {"name": format!("Sample-win-x86_64-{tag}.zip"), "size": 123,
          "browser_download_url": "https://github.com/owner/repo/releases/download/test/package.zip",
          "digest": "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}
     ]})
@@ -110,7 +110,7 @@ fn incompatible_ambiguous_or_unverified_assets_are_errors()
     let installation = Installation::new("1.0.0");
     let original = release("v2.0.0");
     let mut missing = original.clone();
-    missing["assets"][1]["name"] = json!("MaaNOP-win-arm64-v2.0.0.zip");
+    missing["assets"][1]["name"] = json!("Sample-win-arm64-v2.0.0.zip");
     let mut duplicate = original.clone();
     duplicate["assets"].as_array_mut().unwrap().push(original["assets"][1].clone());
     let mut no_digest = original.clone();
@@ -137,7 +137,7 @@ fn invalid_source_cannot_redirect_check_to_another_host()
         "https://github.com/owner/repo?x=y", "https://github.com/owner/repo#x",
         "https://github.com/owner/repo/more", "https://github.com/owner/r%2fepo"] {
         fs::write(installation.0.join("interface.json"), json!({
-            "name": "MaaNOP", "version": "1.0.0", "github": github
+            "name": "Sample", "version": "1.0.0", "github": github
         }).to_string()).unwrap();
         let result = execute(&installation.request(), |_| panic!("Invalid source reached network"));
         assert_eq!(result["code"], "invalid_source", "{github}");

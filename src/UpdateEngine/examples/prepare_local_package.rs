@@ -23,9 +23,12 @@ fn main()
         if count == 0 { break; }
         hash.update(&buffer[..count]);
     }
+    let interface = std::fs::read_to_string(std::path::Path::new(root).join("interface.json")).unwrap();
+    let interface: serde_json::Value = serde_json::from_str(interface.trim_start_matches('\u{feff}')).unwrap();
+    let project = interface["name"].as_str().expect("interface.json has no project name");
     let candidate = execute(&json!({"protocolVersion":1,"operation":"check","installation":root}).to_string(),
         |_| Ok(json!({"tag_name":tag,"draft":false,"prerelease":false,"body":"Local release acceptance",
-            "assets":[{"name":format!("MaaNOP-win-x86_64-{tag}.zip"),"size":size,
+            "assets":[{"name":format!("{project}-win-x86_64-{tag}.zip"),"size":size,
                 "browser_download_url":"https://example.invalid/acceptance.zip",
                 "digest":format!("sha256:{:x}",hash.finalize())}]}).to_string()));
     let descriptor = candidate["update"]["descriptor"].as_str().expect("check did not select local candidate");

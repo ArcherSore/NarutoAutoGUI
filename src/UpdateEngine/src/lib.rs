@@ -31,6 +31,12 @@ struct Request
     installation: String,
 }
 
+/// The Release asset that carries a project's Windows x64 package.
+pub(crate) fn package_name(project: &str, tag: &str) -> String
+{
+    format!("{project}-win-x86_64-{tag}.zip")
+}
+
 #[derive(Deserialize)]
 struct Project
 {
@@ -90,7 +96,7 @@ fn check(request: &str, fetch_release: impl FnOnce(&str) -> Result<String, Strin
     if !installation.is_absolute() || !installation.is_dir() {
         return Err(("invalid_source", "安装目录必须为存在的绝对路径。".to_owned()));
     }
-    let invalid_source = || ("invalid_source", "Project Interface 未提供有效的 MaaNOP 更新来源。".to_owned());
+    let invalid_source = || ("invalid_source", "Project Interface 未提供有效的更新来源。".to_owned());
     let mut source = String::new();
     File::open(installation.join("interface.json")).map_err(|_| invalid_source())?
         .take((MAX_MESSAGE_BYTES + 1) as u64).read_to_string(&mut source).map_err(|_| invalid_source())?;
@@ -99,9 +105,6 @@ fn check(request: &str, fetch_release: impl FnOnce(&str) -> Result<String, Strin
     }
     let project: Project = serde_json::from_str(source.trim_start_matches('\u{feff}'))
         .map_err(|_| invalid_source())?;
-    if project.name != "MaaNOP" {
-        return Err(invalid_source());
-    }
     let current = Version::parse(&project.version).ok_or_else(invalid_source)?;
     let repository = repository(&project.github).ok_or_else(invalid_source)?;
     let release_json = fetch_release(&format!("https://api.github.com/repos/{repository}/releases/latest"))
@@ -122,7 +125,7 @@ fn check(request: &str, fetch_release: impl FnOnce(&str) -> Result<String, Strin
     if target <= current {
         return Ok(result);
     }
-    let name = format!("MaaNOP-win-x86_64-{}.zip", release.tag_name);
+    let name = package_name(&project.name, &release.tag_name);
     let mut matches = release.assets.iter().filter(|asset| asset["name"].as_str() == Some(&name));
     let asset = matches.next().ok_or_else(|| {
         ("invalid_release", "当前 Release 不包含唯一兼容的 Windows x64 更新包。".to_owned())

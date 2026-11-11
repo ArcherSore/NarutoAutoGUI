@@ -418,11 +418,28 @@ internal static partial class SelfTestRunner
         }
     }
 
+    private static void VerifyLegacyConfigFile(string testDirectory)
+    {
+        var directory = Path.Combine(testDirectory, "legacy-config");
+        Directory.CreateDirectory(directory);
+        var legacy = Path.Combine(directory, "maanop-config.json");
+        var path = Path.Combine(directory, "configurations.json");
+        LegacyConfigFile.Migrate(path);
+        Require(!File.Exists(path), "没有旧文件时不能凭空生成配置文件。");
+        File.WriteAllText(legacy, "old");
+        LegacyConfigFile.Migrate(path);
+        Require(File.ReadAllText(path) == "old" && File.ReadAllText(legacy) == "old",
+            "升级前保存的任务配置必须复制到新文件名，旧文件保留。");
+        File.WriteAllText(legacy, "changed");
+        LegacyConfigFile.Migrate(path);
+        Require(File.ReadAllText(path) == "old", "新文件已存在时不能被旧文件覆盖。");
+    }
+
     private static void VerifyConfigurationFallback(string testDirectory, string projectDirectory)
     {
         var directory = Path.Combine(testDirectory, "fallback");
         Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, "maanop-config.json");
+        var path = Path.Combine(directory, "configurations.json");
         var invalid = System.Text.Encoding.UTF8.GetBytes("{ broken original\r\n");
         File.WriteAllBytes(path, invalid);
         var project = ProjectPlanModule.Open(projectDirectory, path);
@@ -453,7 +470,7 @@ internal static partial class SelfTestRunner
             }
         }
         project.AddTask("RealTask");
-        var backup = Directory.GetFiles(directory, "maanop-config.invalid-*.json").Single();
+        var backup = Directory.GetFiles(directory, "configurations.invalid-*.json").Single();
         if (!File.ReadAllBytes(backup).SequenceEqual(invalid)) {
             throw new InvalidOperationException("异常备份必须保留原始 bytes。");
         }
@@ -491,7 +508,7 @@ internal static partial class SelfTestRunner
     {
         var directory = Path.Combine(testDirectory, "store-log");
         Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, "maanop-config.json");
+        var path = Path.Combine(directory, "configurations.json");
         var written = new List<string>();
         ProjectPlanModule Open() => ProjectPlanModule.Open(projectDirectory, path, log: written.Add);
         void Expect(string failure, params string[] lines)
@@ -532,7 +549,7 @@ internal static partial class SelfTestRunner
         Require(project.LoadWarning is not null, "读取回退应留下警告，由 GUI 写入日志。");
         Expect("回退时尚未备份，不应写备份");
         project.AddTask("RealTask");
-        var backup = Path.GetFileName(Directory.GetFiles(directory, "maanop-config.invalid-*.json").Single());
+        var backup = Path.GetFileName(Directory.GetFiles(directory, "configurations.invalid-*.json").Single());
         Expect("备份应只写文件名", $"已备份无法读取的任务配置 [backup={backup}]");
     }
 
@@ -612,7 +629,7 @@ internal static partial class SelfTestRunner
         var project = ProjectPlanModule.Open(projectDirectory, path);
         using var saved = JsonDocument.Parse(File.ReadAllBytes(path));
         var root = saved.RootElement;
-        if (root.GetProperty("SchemaVersion").GetInt32() != MaaNopConfig.CurrentSchemaVersion) {
+        if (root.GetProperty("SchemaVersion").GetInt32() != ConfigurationSet.CurrentSchemaVersion) {
             throw new InvalidOperationException("V1 应在首次加载时迁移到当前配置版本。");
         }
         var configuration = root.GetProperty("Configurations")[0];

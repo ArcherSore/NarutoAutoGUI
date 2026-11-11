@@ -1,6 +1,6 @@
 # Bunshin
 
-Bunshin 是面向 MaaNOP 的 Windows 图形前端；这里统一项目特有的术语。
+Bunshin 是 Windows 图形前端，目前服务 MaaNOP；这里统一项目特有的术语。
 
 ## Language
 
@@ -9,8 +9,12 @@ Bunshin 是面向 MaaNOP 的 Windows 图形前端；这里统一项目特有的�
 _Avoid_: MaaFramework、MFAAvalonia
 
 **Bunshin**:
-用户配置和观察 MaaNOP 自动化的专用前端。
+在 Child Session 中配置、运行和观察 Project Interface 项目自动化的前端。
 _Avoid_: MaaNOP、Worker
+
+**项目**:
+Bunshin 运行的自动化项目，由 Project Interface 描述。目前只支持 MaaNOP；项目专属的取舍集中在 ProjectModel 的支持范围和 ProjectProfile，其余机制不写死项目名。
+_Avoid_: MaaNOP
 
 **MaaFramework**:
 执行 MaaNOP 自动化任务的框架。
@@ -33,20 +37,20 @@ _Avoid_: 子进程、Worker
 _Avoid_: Windows 服务、GUI 后台线程
 
 **Runtime Environment（运行环境）**:
-协同运行的 Child Session、其中已接纳的 Child Session Worker 与游戏客户端，共同承载 MaaNOP Run。
+协同运行的 Child Session、其中已接纳的 Child Session Worker 与游戏客户端，共同承载 Run。
 运行环境就绪不代表游戏已确认处于可直接执行任务的状态。
 _Avoid_: 桌面分身、Worker Launch Context
 
 **Project Interface**:
-MaaNOP 向前端声明可用任务、选项、资源和展示信息的项目接口。
+项目向前端声明可用任务、选项、资源和展示信息的接口。
 _Avoid_: 用户配置、Run Plan
 
-**MaaNOP Config**:
+**Configuration Set**:
 Bunshin 保存的任务配置集合与当前激活配置，表达用户选择。
 _Avoid_: Application Settings、Run Plan
 
 **Task Configuration（任务配置）**:
-一份独立的 MaaNOP 用户选择，包含要执行的任务、顺序和显式设置的选项。
+一份独立的用户选择，包含要执行的任务、顺序和显式设置的选项。
 _Avoid_: task 实例、Run Plan
 
 **Active Configuration（激活配置）**:
@@ -55,27 +59,27 @@ _Avoid_: Active Run
 
 **Application Settings**:
 Bunshin 自身的偏好设置，不包含 MaaNOP 任务和选项。
-_Avoid_: MaaNOP Config
+_Avoid_: Configuration Set
 
 **Settings Definition**:
 Bunshin 设置页面的内容定义，不是用户偏好或 MaaNOP 项目接口。
 _Avoid_: Application Settings、Project Interface
 
-**MaaNOP Run**:
-Worker 接受的一次 MaaNOP 自动化执行。
+**Run**:
+Worker 接受的一次项目自动化执行。
 _Avoid_: IPC 连接、GUI 操作
 
 **Active Run**:
-Worker 当前尚未终结的 MaaNOP Run。
+Worker 当前尚未终结的 Run。
 _Avoid_: Active Configuration、Last Run
 
 **Last Run**:
-Worker 最近一次已终结的 MaaNOP Run。
+Worker 最近一次已终结的 Run。
 _Avoid_: Active Run、持久化运行历史
 
 **Run Plan**:
-一次 MaaNOP Run 使用的任务和参数计划，在开始执行后不随用户配置变化。
-_Avoid_: MaaNOP Config、Worker Launch Context
+一次 Run 使用的任务和参数计划，在开始执行后不随用户配置变化。
+_Avoid_: Configuration Set、Worker Launch Context
 
 **Plan Item**:
 Run Plan 中一次前置程序或顶层 MaaNOP 任务执行。
@@ -98,5 +102,5 @@ _Avoid_: Worker State、Run State
 _Avoid_: 游戏窗口截图、任务状态
 
 **Update Engine**:
-负责 MaaNOP Windows 完整包检查、准备与安装规则的更新组件。
+负责项目 Windows 完整包检查、准备与安装规则的更新组件。
 _Avoid_: GUI 更新窗口、独立组件更新

@@ -19,7 +19,7 @@ internal static partial class WorkerCoordinatorSelfTest
     private static uint CurrentSession => checked((uint)Process.GetCurrentProcess().SessionId);
 
     private static ProjectPlanModule OpenProject(string projectDirectory, string testDirectory) =>
-        ProjectPlanModule.Open(projectDirectory, Path.Combine(testDirectory, "maanop-config.json"));
+        ProjectPlanModule.Open(projectDirectory, Path.Combine(testDirectory, "configurations.json"));
 
     internal static (string Name, Func<AppLogger, string, string, Task> Body)[] Checks => [
         (nameof(VerifyConnectionLifecycleAsync),
@@ -75,10 +75,10 @@ internal static partial class WorkerCoordinatorSelfTest
         await using var pipe = await OpenConnectionAsync(pipeName, record, lastLogSequence: 0, cancellationToken);
         var timestamp = DateTime.UtcNow;
         var diagnostic = CreateEntry(1, "runtime.task", "diagnostic", timestamp);
-        var firstRunLog = CreateEntry(2, ProtocolConstants.MaaNopRunLogSource, "first", timestamp.AddMilliseconds(1));
-        var secondRunLog = CreateEntry(3, ProtocolConstants.MaaNopRunLogSource, "second", timestamp.AddMilliseconds(2));
-        var thirdRunLog = CreateEntry(4, ProtocolConstants.MaaNopRunLogSource, "third", timestamp.AddMilliseconds(3));
-        var fourthRunLog = CreateEntry(5, ProtocolConstants.MaaNopRunLogSource, "fourth", timestamp.AddMilliseconds(4));
+        var firstRunLog = CreateEntry(2, ProtocolConstants.RunLogSource, "first", timestamp.AddMilliseconds(1));
+        var secondRunLog = CreateEntry(3, ProtocolConstants.RunLogSource, "second", timestamp.AddMilliseconds(2));
+        var thirdRunLog = CreateEntry(4, ProtocolConstants.RunLogSource, "third", timestamp.AddMilliseconds(3));
+        var fourthRunLog = CreateEntry(5, ProtocolConstants.RunLogSource, "fourth", timestamp.AddMilliseconds(4));
 
         await pipe.WriteAsync(CreateLogEvent(record.WorkerInstanceId, firstRunLog), cancellationToken);
         var firstRequest = await ReadRequestAsync(pipe, ProtocolOperations.LogGetSince, cancellationToken);
@@ -108,7 +108,7 @@ internal static partial class WorkerCoordinatorSelfTest
         CancellationToken cancellationToken)
     {
         var timestamp = DateTime.UtcNow;
-        var stranded = CreateEntry(7, ProtocolConstants.MaaNopRunLogSource, "recovered-after-eof", timestamp) with {
+        var stranded = CreateEntry(7, ProtocolConstants.RunLogSource, "recovered-after-eof", timestamp) with {
             RunId = Guid.NewGuid(), PlanItemId = Guid.NewGuid(), TaskName = "Recovered"
         };
         await using (var disconnected = await OpenConnectionAsync(
@@ -143,15 +143,15 @@ internal static partial class WorkerCoordinatorSelfTest
     {
         await using var pipe = await OpenConnectionAsync(pipeName, record, lastLogSequence: 7, cancellationToken);
         var timestamp = DateTime.UtcNow;
-        var contiguous = CreateEntry(8, ProtocolConstants.MaaNopRunLogSource, "reconnected", timestamp);
+        var contiguous = CreateEntry(8, ProtocolConstants.RunLogSource, "reconnected", timestamp);
         await pipe.WriteAsync(CreateLogEvent(record.WorkerInstanceId, contiguous), cancellationToken);
         await WaitForCountAsync(received, expectedCount: 7, cancellationToken);
 
-        var stranded = CreateEntry(10, ProtocolConstants.MaaNopRunLogSource, "must-not-publish", timestamp);
+        var stranded = CreateEntry(10, ProtocolConstants.RunLogSource, "must-not-publish", timestamp);
         await pipe.WriteAsync(CreateLogEvent(record.WorkerInstanceId, stranded), cancellationToken);
         var recoveryRequest = await ReadRequestAsync(pipe, ProtocolOperations.LogGetSince, cancellationToken);
         coordinator.ChildSessionEnded();
-        var missing = CreateEntry(9, ProtocolConstants.MaaNopRunLogSource, "also-hidden", timestamp);
+        var missing = CreateEntry(9, ProtocolConstants.RunLogSource, "also-hidden", timestamp);
         await WriteLogPageAsync(pipe, recoveryRequest, [missing, stranded], lastSequence: 10, cancellationToken);
         await Task.Delay(200, cancellationToken);
         if (received.Count != 7 || received.Last().Sequence != 8) {
@@ -180,7 +180,7 @@ internal static partial class WorkerCoordinatorSelfTest
         await coordinatorB.WaitForServerReadyAsync(timeoutB.Token);
 
         await using var pipeB = await OpenConnectionAsync(pipeNameB, recordB, 0, timeoutB.Token);
-        var entry = CreateEntry(1, ProtocolConstants.MaaNopRunLogSource, "worker-b-first", DateTime.UtcNow);
+        var entry = CreateEntry(1, ProtocolConstants.RunLogSource, "worker-b-first", DateTime.UtcNow);
         await pipeB.WriteAsync(CreateLogEvent(recordB.WorkerInstanceId, entry), timeoutB.Token);
         await WaitForCountAsync(received, expectedCount: 8, timeoutB.Token);
 

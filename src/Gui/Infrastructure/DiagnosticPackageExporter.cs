@@ -28,7 +28,7 @@ internal sealed class DiagnosticPackageExporter(AppLogger logger)
     {
         limits ??= new DiagnosticExportLimits();
         var exports = MaaDebugImages.ExportsDirectory(applicationDirectory);
-        var name = string.Join("-", new[] { projectName ?? "MaaNOP", "logs", projectVersion,
+        var name = string.Join("-", new[] { projectName ?? AppIdentity.Name, "logs", projectVersion,
             now.ToString(TimestampFormat, CultureInfo.InvariantCulture) }.Where(part => !string.IsNullOrEmpty(part)));
         name = string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
         var directory = Path.Combine(exports, name);
@@ -103,7 +103,7 @@ internal sealed class DiagnosticPackageExporter(AppLogger logger)
                 .Select(file => TextFile(file, "logs")))
             .Concat(Single(applicationDirectory, "logs/updater.log"))
             .Concat(frameworkLog)
-            .Concat(Single(applicationDirectory, "config/maanop-config.json"))
+            .Concat(Single(applicationDirectory, "config/configurations.json"))
             .Concat(Files(config, "maa-*.txt", "config", skip).OrderBy(file => file.Name, StringComparer.Ordinal)
                 .Select(file => TextFile(file, "config")));
         foreach (var source in first) {

@@ -46,7 +46,7 @@ internal static partial class SelfTestRunner
             }
         });
         RunOnboardingScenario(logger, Path.Combine(testDirectory, "replay"), (window, directory) => {
-            var path = Path.Combine(directory, "config", "maanop-config.json");
+            var path = Path.Combine(directory, "config", "configurations.json");
             var before = File.ReadAllBytes(path);
             var pendingPath = Path.Combine(directory, "config", "onboarding-new-user.pending");
             var pending = File.ReadAllBytes(pendingPath);
@@ -140,16 +140,16 @@ internal static partial class SelfTestRunner
                     throw new InvalidOperationException($"{existing} 不能自动显示 Tour 或新增首次资格。");
                 }
                 if (existing == "corrupt"
-                    && File.ReadAllText(Path.Combine(directory, "config", "maanop-config.json")) != "broken") {
+                    && File.ReadAllText(Path.Combine(directory, "config", "configurations.json")) != "broken") {
                     throw new InvalidOperationException("Tour 初始化不能覆盖损坏配置。");
                 }
             }, directory => {
                 var config = Path.Combine(directory, "config");
                 Directory.CreateDirectory(config);
                 if (existing == "old") {
-                    _ = ProjectPlanModule.Open(directory, Path.Combine(config, "maanop-config.json"));
+                    _ = ProjectPlanModule.Open(directory, Path.Combine(config, "configurations.json"));
                 } else if (existing == "corrupt") {
-                    File.WriteAllText(Path.Combine(config, "maanop-config.json"), "broken");
+                    File.WriteAllText(Path.Combine(config, "configurations.json"), "broken");
                 } else {
                     File.WriteAllText(Path.Combine(config, "onboarding.txt"), existing == "completed" ? "9" : "bad");
                 }

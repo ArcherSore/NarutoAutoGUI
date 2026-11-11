@@ -152,7 +152,7 @@ internal sealed class WorkerCoordinator : IAsyncDisposable
             }
             if (_connection is not null) {
                 throw new InvalidOperationException(Snapshot.SnapshotFresh
-                    ? $"当前 Worker 使用的 MaaNOP 项目与已加载的项目不一致。{EndChildSessionHint}"
+                    ? $"当前 Worker 使用的项目与已加载的项目不一致。{EndChildSessionHint}"
                     : "Worker 正在同步状态，请稍后重试。");
             }
             existing = _admission;

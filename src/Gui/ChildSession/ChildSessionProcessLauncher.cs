@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using Protocol;
 
 namespace Gui.ChildSession;
 
@@ -73,7 +74,7 @@ internal static class ChildSessionProcessLauncher
 
         var schedulerType = Type.GetTypeFromProgID("Schedule.Service")
             ?? throw new InvalidOperationException("当前 Windows 未提供任务计划程序 COM 服务。");
-        var taskName = $"MaaNOP-ChildSession-Launch-{Guid.NewGuid():N}";
+        var taskName = $"{AppIdentity.Name}-ChildSession-Launch-{Guid.NewGuid():N}";
         string accountName;
         using (var currentIdentity = WindowsIdentity.GetCurrent()) {
             accountName = currentIdentity.Name;
@@ -102,7 +103,7 @@ internal static class ChildSessionProcessLauncher
             taskDefObj = InvokeMember(schedulerObj, "NewTask", 0);
 
             var registrationInfo = GetProperty(taskDefObj, "RegistrationInfo");
-            SetProperty(registrationInfo, "Author", "MaaNOP");
+            SetProperty(registrationInfo, "Author", AppIdentity.Name);
             SetProperty(registrationInfo, "Description", $"临时启动 {Path.GetFileName(executablePath)} 到 Child Session {childSessionId}");
 
             var settings = GetProperty(taskDefObj, "Settings");

@@ -5,7 +5,7 @@ using Protocol;
 
 namespace Worker;
 
-// The Worker's authority over Worker State and its MaaNOP Runs (ADR-0001). One lock guards every state change, and
+// The Worker's authority over Worker State and its Runs (ADR-0001). One lock guards every state change, and
 // each commit advances stateRevision by one. Execution and stopping stay outside it because onRunning takes the lock.
 // Only the pretask ownership handoff shares its state commit; that fast native step has no callbacks or logging.
 internal sealed class RunSupervisor

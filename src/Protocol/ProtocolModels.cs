@@ -15,7 +15,7 @@ public static class ProtocolConstants
     public const int MaximumSnapshotPayloadBytes = 3 * 1024 * 1024;
     public const int MaximumLogMessageBytes = 64 * 1024;
     public const int MaximumLogGetSinceResponseBytes = 1024 * 1024;
-    public const string MaaNopRunLogSource = "maanop.run";
+    public const string RunLogSource = "run";
     public const string WorkerBootstrapLogFileName = "Worker.bootstrap.log";
 }
 

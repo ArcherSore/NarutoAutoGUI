@@ -20,12 +20,12 @@ public sealed record RunStartAttempt(Guid RunId, RunPlan Plan, string PlanDigest
 public sealed partial class ProjectPlanModule
 {
     private readonly ProjectDefinition _project;
-    private readonly MaaNopConfigStore _configStore;
-    private MaaNopConfig _config;
+    private readonly ConfigurationSetStore _configStore;
+    private ConfigurationSet _config;
     private string? _initializationWarning;
     private readonly HashSet<(Guid Configuration, PlanItemKind Kind, string Name)> _disabledItems = [];
 
-    private ProjectPlanModule(ProjectDefinition project, MaaNopConfigStore configStore)
+    private ProjectPlanModule(ProjectDefinition project, ConfigurationSetStore configStore)
     {
         _project = project;
         _configStore = configStore;
@@ -162,7 +162,7 @@ public sealed partial class ProjectPlanModule
         Action<string>? log = null)
     {
         var project = ProjectInterfaceLoader.Load(projectDirectory);
-        var module = new ProjectPlanModule(project, new MaaNopConfigStore(configPath, log));
+        var module = new ProjectPlanModule(project, new ConfigurationSetStore(configPath, log));
         if (previous is not null) {
             module._disabledItems.UnionWith(previous._disabledItems.Where(item => module.Configurations.Any(config =>
                 config.Id == item.Configuration && (item.Kind == PlanItemKind.Pretask
@@ -428,7 +428,7 @@ public sealed partial class ProjectPlanModule
         SaveConfig(updated);
     }
 
-    private void SaveConfig(MaaNopConfig config)
+    private void SaveConfig(ConfigurationSet config)
     {
         _configStore.Save(config);
         _config = config;
@@ -443,7 +443,7 @@ public sealed partial class ProjectPlanModule
         }
         foreach (var name in config.SelectedPretasks) {
             var pretask = _project.Pretasks.SingleOrDefault(item => item.Name == name)
-                ?? throw new InvalidDataException($"MaaNOP Config 选择的 pretask 不再存在：{name}。");
+                ?? throw new InvalidDataException($"任务配置选择的 pretask 不再存在：{name}。");
             if (pretask.Applicable) {
                 _ = ProjectOptionResolver.ResolvePretask(_project, pretask, config);
             }
@@ -505,7 +505,7 @@ public sealed partial class ProjectPlanModule
     {
         foreach (var taskName in config.SelectedTasks) {
             if (!_project.Tasks.Any(task => task.Name == taskName)) {
-                throw new InvalidDataException($"MaaNOP Config 选择的 task 不再存在：{taskName}。 ");
+                throw new InvalidDataException($"任务配置选择的 task 不再存在：{taskName}。 ");
             }
         }
     }

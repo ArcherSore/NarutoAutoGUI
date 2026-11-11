@@ -61,10 +61,10 @@ fn run(
         .map_err(|e| e.to_string())?.trim_start_matches('\u{feff}')).map_err(|e| e.to_string())?;
     let url = url::Url::parse(&descriptor.download_url).map_err(|e| e.to_string())?;
     let target = Version::parse(&descriptor.tag).ok_or("候选版本无效。")?;
-    if descriptor.schema != 1 || project.name != "MaaNOP"
+    if descriptor.schema != 1
         || repository(&project.github).as_deref() != Some(&descriptor.repository)
         || target <= Version::parse(&project.version).ok_or("当前版本无效。")?
-        || descriptor.name != format!("MaaNOP-win-x86_64-{}.zip", descriptor.tag)
+        || descriptor.name != crate::package_name(&project.name, &descriptor.tag)
         || descriptor.size == 0 || descriptor.size > i64::MAX as u64
         || descriptor.sha256.len() != 64 || !descriptor.sha256.bytes().all(|b| b.is_ascii_hexdigit())
         || url.scheme() != "https" || url.host_str().is_none()
@@ -122,7 +122,7 @@ fn run(
         emit(json!({"protocolVersion":1,"type":"progress","phase":"validate"}))?;
         let payload = work.join("payload");
         extract(&zip_path, &payload, cancelled)?;
-        validate(&payload, &descriptor.tag)?;
+        validate(&payload, &descriptor.tag, &project.name)?;
         interrupted(cancelled)?;
         files::remove(&saved)?;
         let token = format!("{}-{}", std::process::id(),
@@ -227,7 +227,8 @@ fn extract(zip: &Path, payload: &Path, cancelled: &AtomicBool) -> Result<(), Str
     Ok(())
 }
 
-fn validate(payload: &Path, tag: &str) -> Result<(), String>
+// The package must be the installed project's own; what the project ships beyond the program is not checked.
+fn validate(payload: &Path, tag: &str, project_name: &str) -> Result<(), String>
 {
     let Some(layout) = files::layout(payload) else {
         return Err(format!("完整包缺少必需文件：{}.exe", files::LAYOUTS[0].app));
@@ -240,17 +241,14 @@ fn validate(payload: &Path, tag: &str) -> Result<(), String>
         format!("worker/{worker}.dll"), format!("worker/{worker}.deps.json"),
         format!("worker/{worker}.runtimeconfig.json"),
         "worker/runtimes/win-x64/native/MaaFramework.dll".into(),
-        "worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll".into(), "python/python.exe".into(),
+        "worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll".into(),
     ];
     for file in required {
         if !payload.join(&file).is_file() { return Err(format!("完整包缺少必需文件：{file}")); }
     }
-    for directory in ["resource", "agent"] {
-        if !payload.join(directory).is_dir() { return Err(format!("完整包缺少目录：{directory}")); }
-    }
     let source = fs::read_to_string(payload.join("interface.json")).map_err(|e| e.to_string())?;
     let project: Project = serde_json::from_str(source.trim_start_matches('\u{feff}')).map_err(|e| e.to_string())?;
-    if project.name != "MaaNOP" || Version::parse(&project.version).is_none()
+    if project.name != project_name || Version::parse(&project.version).is_none()
         || Version::parse(&project.version) != Version::parse(tag) {
         return Err("完整包产品名或版本与候选不一致。".into());
     }
@@ -287,7 +285,7 @@ fn require_frameworks(runtimeconfig: &str, dotnet: &Path) -> Result<(), String>
 #[test]
 fn require_frameworks_follows_host_roll_forward()
 {
-    let dotnet = std::env::temp_dir().join(format!("maanop-frameworks-{}", std::process::id()));
+    let dotnet = std::env::temp_dir().join(format!("frameworks-{}", std::process::id()));
     let config = |version: &str| json!({"runtimeOptions":{"frameworks":[
         {"name":"Microsoft.WindowsDesktop.App","version":version}]}}).to_string();
     assert!(require_frameworks(&config("10.0.0"), &dotnet).is_err(), "nothing installed");

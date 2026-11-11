@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Gui.Models;
+using Protocol;
 using static Gui.Infrastructure.AppLogger;
 using DrawingSize = System.Drawing.Size;
 
@@ -104,8 +105,8 @@ internal sealed class RdpActiveXHost : AxHost
         SetComProperty(client, "DesktopWidth", width);
         SetComProperty(client, "DesktopHeight", height);
         SetComProperty(client, "ColorDepth", 32);
-        SetComProperty(client, "ConnectingText", "正在创建 MaaNOP Child Session...");
-        SetComProperty(client, "DisconnectedText", "MaaNOP Child Session 已断开");
+        SetComProperty(client, "ConnectingText", $"正在创建 {AppIdentity.Name} Child Session...");
+        SetComProperty(client, "DisconnectedText", $"{AppIdentity.Name} Child Session 已断开");
 
         var securedSettings = GetComProperty(client, "SecuredSettings2")
             ?? throw new COMException("RDP ActiveX 未返回 SecuredSettings2。");

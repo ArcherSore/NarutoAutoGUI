@@ -13,7 +13,7 @@ impl Fixture
 {
     fn new() -> Self
     {
-        let path = std::env::temp_dir().join(format!("maanop-curl-{}-{}", std::process::id(),
+        let path = std::env::temp_dir().join(format!("curl-{}-{}", std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)));
         std::fs::create_dir(&path).unwrap();
         Self(path.join("package.part"))

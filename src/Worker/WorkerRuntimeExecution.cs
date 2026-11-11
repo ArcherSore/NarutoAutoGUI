@@ -400,7 +400,8 @@ internal sealed class WorkerRuntimeExecution : IPlanItemExecution
             }
         } catch (Exception exception) {
             try {
-                _log("WARN", "maanop.callback", $"MaaFramework Callback 退订失败：{exception.GetBaseException().Message}");
+                _log("WARN", "framework.callback",
+                    $"MaaFramework Callback 退订失败：{exception.GetBaseException().Message}");
             } catch {
                 // A logging failure must not change the Run outcome.
             }

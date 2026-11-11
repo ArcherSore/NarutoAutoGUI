@@ -124,7 +124,7 @@ internal static partial class SelfTestRunner
             Require(bar.IsVisible && project.ActiveConfigurationId == project.Configurations[0].Id,
                 "参数存在无效草稿时标签条保持显示，并能切换配置。");
             typeof(MainWindow).GetMethod("ShowProjectUnavailableState", flags)!
-                .Invoke(window, new object[] { "MaaNOP 项目无法加载", "detail" });
+                .Invoke(window, new object[] { "项目无法加载", "detail" });
             PumpOnboarding();
             Require(!bar.IsVisible && title.IsVisible, "项目无法加载时标签条隐藏，标题保留。");
 

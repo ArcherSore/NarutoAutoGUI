@@ -376,7 +376,7 @@ internal static partial class SelfTestRunner
             };
             tracker.Observe(active);
             if (tracker.Observe(faulted) is not { Title: "任务未能确认结束", Failed: true,
-                    Message: "MaaNOP 可能仍在运行。打开 Bunshin 结束桌面分身以恢复。" }
+                    Message: "任务可能仍在运行。打开 Bunshin 结束桌面分身以恢复。" }
                 || tracker.Observe(faulted) is not null
                 || tracker.Observe(faulted with { SnapshotFresh = false }) is not null
                 || tracker.Observe(faulted) is not null) {
@@ -413,7 +413,7 @@ internal static partial class SelfTestRunner
 
         string[] included = [
             Create("logs/Worker.bootstrap.log"),
-            Create("logs/updater.log"), Create("debug/maafw.log"), Create("config/maanop-config.json"),
+            Create("logs/updater.log"), Create("debug/maafw.log"), Create("config/configurations.json"),
             Create("config/maa-save-on-error.txt"), Create("debug/on_error/new.png", ageMinutes: 1),
             Create("debug/on_error/old.png", ageMinutes: 90), Create("debug/vision/draw.jpg"),
             Create("debug/screencap/frame.jpg"), Create("debug/maafw.bak.2026.09.21-09.35.00.123.log")

@@ -129,7 +129,7 @@ internal static partial class SelfTestRunner
                 selection.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 PumpOnboarding();
             }
-            var configPath = Path.Combine(directory, "config", "maanop-config.json");
+            var configPath = Path.Combine(directory, "config", "configurations.json");
             var saved = File.ReadAllText(configPath);
             Require(Enumerable.Range(0, 3).All(index => Selection(index).IsChecked == true),
                 "所有计划项默认勾选。");

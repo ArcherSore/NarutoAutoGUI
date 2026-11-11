@@ -121,7 +121,7 @@ internal static partial class SelfTestRunner
         projectDirectory => {
             Directory.CreateDirectory(Path.Combine(projectDirectory, "config"));
             var project = ProjectPlanModule.Open(
-                projectDirectory, Path.Combine(projectDirectory, "config", "maanop-config.json"));
+                projectDirectory, Path.Combine(projectDirectory, "config", "configurations.json"));
             var daily = project.ActiveConfigurationId;
             var task = project.SelectedTaskNames[0];
             project.RenameConfiguration(daily, "日常");
@@ -230,7 +230,7 @@ internal static partial class SelfTestRunner
                 "任务配置读不出来时必须报告失败，不能悄悄跳过，也不能运行占位的配置。"),
             fixture: directory => {
                 twoConfigurations(directory);
-                File.WriteAllText(Path.Combine(directory, "config", "maanop-config.json"), "{ not json");
+                File.WriteAllText(Path.Combine(directory, "config", "configurations.json"), "{ not json");
             });
         FileStream? locked = null;
         Launch("switch-refused", boot, "周常", false, (window, ran) => {
@@ -240,7 +240,7 @@ internal static partial class SelfTestRunner
             Require(ProjectOf(window).Configurations.Single(item => item.Name == "日常").Id
                 == ProjectOf(window).ActiveConfigurationId, "切换失败后仍是原配置。");
         }, (_, directory) => locked = new FileStream(
-            Path.Combine(directory, "config", "maanop-config.json"),
+            Path.Combine(directory, "config", "configurations.json"),
             FileMode.Open, FileAccess.Read, FileShare.Read));
     }
 

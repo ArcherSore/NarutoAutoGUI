@@ -80,7 +80,7 @@
           "id": "check-update",
           "type": "action",
           "icon": "ArrowSync20",
-          "title": "检查 MaaNOP 更新",
+          "title": "检查更新",
           "buttonText": "检查更新",
           "actionId": "update.check"
         }
@@ -162,7 +162,7 @@
           "joinPrevious": true,
           "icon": "Sparkle20",
           "title": "欢迎信息",
-          "description": "查看 MaaNOP 的欢迎信息和公告。",
+          "description": "查看项目的欢迎信息和公告。",
           "buttonText": "查看欢迎信息",
           "actionId": "welcome.view"
         },
@@ -172,7 +172,7 @@
           "joinPrevious": true,
           "icon": "Code20",
           "title": "项目仓库",
-          "description": "在 GitHub 查看 MaaNOP 的源代码。",
+          "description": "在 GitHub 查看项目的源代码。",
           "buttonText": "前往 GitHub ↗",
           "actionId": "project.openRepository"
         },
@@ -182,7 +182,7 @@
           "joinPrevious": true,
           "icon": "Document20",
           "title": "许可证",
-          "description": "MaaNOP 的开源许可证。",
+          "description": "项目的开源许可证。",
           "buttonText": "查看许可证",
           "actionId": "project.viewLicense"
         },
@@ -207,8 +207,8 @@
           "id": "open-afdian",
           "type": "action",
           "icon": "Heart20",
-          "title": "支持 MaaNOP",
-          "description": "欢迎通过爱发电支持 MaaNOP 的持续开发与维护。",
+          "title": "支持项目",
+          "description": "欢迎通过爱发电支持项目的持续开发与维护。",
           "buttonText": "前往爱发电 ↗",
           "actionId": "support.openAfdian"
         }

@@ -28,7 +28,7 @@ Windows x64 / .NET 10 WPF 程序。需要管理员权限和交互式桌面；man
 
 ## 运行时文件
 
-- MaaNOP 用户配置：`<程序目录>\config\maanop-config.json`
+- 任务配置：`<程序目录>\config\configurations.json`
 - 滚动日志：`<程序目录>\logs\Bunshin-yyyyMMdd[.序号].log`
 - Worker 启动失败日志：`<程序目录>\logs\Worker.bootstrap.log`，只在 Worker 启动失败或异常退出时写入
 - 框架日志与图片：`<程序目录>\debug`，失败截图位于 `on_error`，识别可视化图片位于 `vision`
@@ -45,7 +45,7 @@ Windows x64 / .NET 10 WPF 程序。需要管理员权限和交互式桌面；man
 .\src\Gui\scripts\test-framework-diagnostics.ps1 -PackageDirectory artifacts\Bunshin\win-x64
 ```
 
-MaaNOP 项目根目录固定为应用程序目录，`interface.json` 直接从 `Bunshin.exe` 同级目录读取。日志按天和 10 MiB 滚动，保留 14 个文件，可从主窗口直接打开当前日志目录。若程序目录不可写，日志会回退到 LocalAppData 或临时目录并记录 WARN。
+项目根目录固定为应用程序目录，`interface.json` 直接从 `Bunshin.exe` 同级目录读取。日志按天和 10 MiB 滚动，保留 14 个文件，可从主窗口直接打开当前日志目录。若程序目录不可写，日志会回退到 LocalAppData 或临时目录并记录 WARN。
 
 游戏可在分身中手动启动，也可由当前任务配置选中的 Project Interface pretask 启动。GUI 不固定游戏启动器路径或参数；启动、登录等游戏行为由 MaaNOP 项目声明的程序和资源实现。
 

@@ -201,7 +201,7 @@ fn post_ready_failures_show_native_message_with_log_path()
         let clock = Instant::now();
         let text = loop {
             let windows = windows::windows(&copy);
-            if let Some((hwnd, text)) = windows.iter().find(|(_, text)| text.starts_with("MaaNOP 更新失败")) {
+            if let Some((hwnd, text)) = windows.iter().find(|(_, text)| text.starts_with("更新失败")) {
                 windows::dismiss(*hwnd);
                 break text.clone();
             }

@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace ProjectModel;
 
-public sealed record MaaNopConfig
+public sealed record ConfigurationSet
 {
     public const int CurrentSchemaVersion = 3;
 
@@ -23,7 +23,7 @@ public sealed record TaskConfiguration
         new Dictionary<string, JsonElement>(StringComparer.Ordinal);
 }
 
-internal sealed class MaaNopConfigStore
+internal sealed class ConfigurationSetStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new() {
         PropertyNamingPolicy = null,
@@ -41,15 +41,15 @@ internal sealed class MaaNopConfigStore
     internal bool Unreadable => _protectOriginal;
     internal bool WasMissing { get; private set; }
 
-    internal MaaNopConfigStore(string path, Action<string>? log = null)
+    internal ConfigurationSetStore(string path, Action<string>? log = null)
     {
         _path = Path.GetFullPath(path);
         _log = log;
     }
 
-    internal MaaNopConfig Load()
+    internal ConfigurationSet Load()
     {
-        MaaNopConfig config;
+        ConfigurationSet config;
         var changes = new List<string>();
         try {
             using var stream = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -57,27 +57,27 @@ internal sealed class MaaNopConfigStore
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("SchemaVersion", out var version)
                 || version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out var schema)) {
-                throw new InvalidDataException("MaaNOP Config 缺少合法的 SchemaVersion。");
+                throw new InvalidDataException("任务配置缺少合法的 SchemaVersion。");
             }
-            if (schema != MaaNopConfig.CurrentSchemaVersion) {
-                changes.Add($"SchemaVersion {schema} -> {MaaNopConfig.CurrentSchemaVersion}");
+            if (schema != ConfigurationSet.CurrentSchemaVersion) {
+                changes.Add($"SchemaVersion {schema} -> {ConfigurationSet.CurrentSchemaVersion}");
             }
             if (schema == 1) {
                 var legacy = root.Deserialize<LegacyConfig>(JsonOptions)
-                    ?? throw new InvalidDataException("MaaNOP Config 为空。");
+                    ?? throw new InvalidDataException("任务配置为空。");
                 var migrated = new TaskConfiguration {
                     Id = Guid.NewGuid(), Name = "配置 1",
                     SelectedTasks = legacy.SelectedTasks, ExplicitOptions = legacy.ExplicitOptions
                 };
-                config = new MaaNopConfig { ActiveConfigurationId = migrated.Id, Configurations = [migrated] };
-            } else if (schema is 2 || schema == MaaNopConfig.CurrentSchemaVersion) {
+                config = new ConfigurationSet { ActiveConfigurationId = migrated.Id, Configurations = [migrated] };
+            } else if (schema is 2 || schema == ConfigurationSet.CurrentSchemaVersion) {
                 var active = root.TryGetProperty("ActiveConfigurationId", out var pointer)
                     && pointer.ValueKind == JsonValueKind.String && pointer.TryGetGuid(out var id) ? id : Guid.Empty;
                 var node = JsonNode.Parse(root.GetRawText())!;
                 node["ActiveConfigurationId"] = active;
-                node["SchemaVersion"] = MaaNopConfig.CurrentSchemaVersion;
-                config = node.Deserialize<MaaNopConfig>(JsonOptions)
-                    ?? throw new InvalidDataException("MaaNOP Config 为空。");
+                node["SchemaVersion"] = ConfigurationSet.CurrentSchemaVersion;
+                config = node.Deserialize<ConfigurationSet>(JsonOptions)
+                    ?? throw new InvalidDataException("任务配置为空。");
                 Validate(config, requireActive: false);
                 if (config.Configurations.Count == 0) {
                     config = CreateEmpty();
@@ -87,7 +87,7 @@ internal sealed class MaaNopConfigStore
                     changes.Add("激活配置不存在");
                 }
             } else {
-                throw new InvalidDataException($"不支持 MaaNOP Config SchemaVersion {schema}。");
+                throw new InvalidDataException($"不支持 任务配置SchemaVersion {schema}。");
             }
             Validate(config);
         } catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException) {
@@ -111,13 +111,13 @@ internal sealed class MaaNopConfigStore
         return config;
     }
 
-    private static MaaNopConfig CreateEmpty()
+    private static ConfigurationSet CreateEmpty()
     {
         var empty = new TaskConfiguration { Id = Guid.NewGuid(), Name = "配置 1" };
-        return new MaaNopConfig { ActiveConfigurationId = empty.Id, Configurations = [empty] };
+        return new ConfigurationSet { ActiveConfigurationId = empty.Id, Configurations = [empty] };
     }
 
-    internal void Save(MaaNopConfig config)
+    internal void Save(ConfigurationSet config)
     {
         Validate(config);
         if (_protectOriginal && !_originalBackedUp) {
@@ -129,7 +129,7 @@ internal sealed class MaaNopConfigStore
         }
 
         var directory = Path.GetDirectoryName(_path)
-                        ?? throw new InvalidOperationException("MaaNOP Config 路径没有父目录。 ");
+                        ?? throw new InvalidOperationException("任务配置路径没有父目录。 ");
         Directory.CreateDirectory(directory);
         var tempPath = Path.Combine(directory, $".{Path.GetFileName(_path)}.{Guid.NewGuid():N}.tmp");
         try {
@@ -156,10 +156,10 @@ internal sealed class MaaNopConfigStore
             new Dictionary<string, JsonElement>(StringComparer.Ordinal);
     }
 
-    private static void Validate(MaaNopConfig config, bool requireActive = true)
+    private static void Validate(ConfigurationSet config, bool requireActive = true)
     {
-        if (config.SchemaVersion != MaaNopConfig.CurrentSchemaVersion || config.Configurations is null) {
-            throw new InvalidDataException("MaaNOP Config 必须包含有效的 V3 配置列表。");
+        if (config.SchemaVersion != ConfigurationSet.CurrentSchemaVersion || config.Configurations is null) {
+            throw new InvalidDataException("任务配置必须包含有效的 V3 配置列表。");
         }
         var ids = new HashSet<Guid>();
         foreach (var item in config.Configurations) {

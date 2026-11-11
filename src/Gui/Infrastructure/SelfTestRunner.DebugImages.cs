@@ -19,7 +19,7 @@ internal static partial class SelfTestRunner
         ];
         var activeLog = Create("logs/Bunshin-active.log", ageHours: 0);
         string[] preserved = [
-            activeLog, Create("config/maanop-config.json"), Create("resource/image.png"), Create("debug/notes.txt"),
+            activeLog, Create("config/configurations.json"), Create("resource/image.png"), Create("debug/notes.txt"),
             Create("debug/vision/other.png"), Create("debug/on_error/other.jpg")
         ];
 

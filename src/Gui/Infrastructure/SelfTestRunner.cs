@@ -62,6 +62,7 @@ internal static partial class SelfTestRunner
         new(Group.Project, nameof(VerifyPretaskGuiWiring), c => VerifyPretaskGuiWiring(c.Logger, c.Directory)),
         new(Group.Project, nameof(VerifyPresets), c => VerifyPresets(c.Logger, c.Directory)),
         new(Group.Project, nameof(VerifyFirstConfiguration), c => VerifyFirstConfiguration(c.Directory, c.Project)),
+        new(Group.Project, nameof(VerifyLegacyConfigFile), c => VerifyLegacyConfigFile(c.Directory)),
         new(Group.Project, nameof(VerifyConfigurationMigration),
             c => VerifyConfigurationMigration(c.Directory, c.Project)),
         new(Group.Project, nameof(VerifyIndependentConfigurations),
@@ -204,7 +205,7 @@ internal static partial class SelfTestRunner
 
     private static void VerifyProjectPlan(string testDirectory, string projectDirectory)
     {
-        var configPath = Path.Combine(testDirectory, "maanop-config.json");
+        var configPath = Path.Combine(testDirectory, "configurations.json");
         var project = ProjectPlanModule.Open(projectDirectory, configPath);
         if (project.Tasks.Count != 1
             || project.Tasks[0].Name != "RealTask"
@@ -216,11 +217,11 @@ internal static partial class SelfTestRunner
         _ = project.AddTask("RealTask");
         using (var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath))) {
             var root = configDocument.RootElement;
-            if (root.GetProperty("SchemaVersion").GetInt32() != MaaNopConfig.CurrentSchemaVersion
+            if (root.GetProperty("SchemaVersion").GetInt32() != ConfigurationSet.CurrentSchemaVersion
                 || root.GetProperty("Configurations")[0].GetProperty("SelectedTasks")[0].GetString() != "RealTask"
                 || root.GetProperty("Configurations")[0].GetProperty("ExplicitOptions").EnumerateObject().Any()) {
                 throw new InvalidOperationException(
-                    $"MaaNOP Config SchemaVersion {MaaNopConfig.CurrentSchemaVersion} 验证失败。");
+                    $"任务配置SchemaVersion {ConfigurationSet.CurrentSchemaVersion} 验证失败。");
             }
         }
 
@@ -267,7 +268,7 @@ internal static partial class SelfTestRunner
                     .GetProperty("server_range").GetString() != "978"
                 || explicitOptions.GetProperty("Nested").GetProperty("SelectedCase")
                     .GetString() != "Off") {
-                throw new InvalidOperationException("MaaNOP Config explicit option 序列化验证失败。");
+                throw new InvalidOperationException("任务配置explicit option 序列化验证失败。");
             }
         }
 
@@ -296,7 +297,7 @@ internal static partial class SelfTestRunner
         using (var configDocument = JsonDocument.Parse(File.ReadAllBytes(configPath))) {
             if (configDocument.RootElement.GetProperty("Configurations")[0].GetProperty("ExplicitOptions")
                     .GetProperty("Nested").GetProperty("SelectedCase").GetString() != "Off") {
-                throw new InvalidOperationException("MaaNOP Config dormant intent 保留验证失败。");
+                throw new InvalidOperationException("任务配置dormant intent 保留验证失败。");
             }
         }
         var dormantAttempt = project.CreateRunStartAttempt();
@@ -330,7 +331,7 @@ internal static partial class SelfTestRunner
         }
 
         var resetProject = ProjectPlanModule.Open(
-            projectDirectory, Path.Combine(testDirectory, "default-maanop-config.json"));
+            projectDirectory, Path.Combine(testDirectory, "default-configurations.json"));
         _ = resetProject.AddTask("RealTask");
         var resetAttempt = resetProject.CreateRunStartAttempt();
         if (resetAttempt.Plan.ResolvedGlobalOptions.GetProperty("ServerRange")
@@ -371,7 +372,7 @@ internal static partial class SelfTestRunner
         var projectDirectory = Path.Combine(testDirectory, "task-catalog-variants");
         Directory.CreateDirectory(projectDirectory);
         File.WriteAllText(Path.Combine(projectDirectory, "interface.json"), root.ToJsonString());
-        var configPath = Path.Combine(projectDirectory, "maanop-config.json");
+        var configPath = Path.Combine(projectDirectory, "configurations.json");
         var project = ProjectPlanModule.Open(projectDirectory, configPath);
         if (project.Tasks.Count != 4
             || project.Tasks.Select(task => task.Name).SequenceEqual(
@@ -779,7 +780,7 @@ internal static partial class SelfTestRunner
 
         var timestampUtc = new DateTime(2026, 8, 24, 6, 30, 0, DateTimeKind.Utc);
         var userEntry = new WorkerLogEntry(
-            1, timestampUtc, "INFO", ProtocolConstants.MaaNopRunLogSource, "用户日志",
+            1, timestampUtc, "INFO", ProtocolConstants.RunLogSource, "用户日志",
             false, null, Guid.NewGuid(), Guid.NewGuid(), "Task");
         var diagnosticEntry = userEntry with { Sequence = 2, Source = "runtime.task" };
         var visibleEntries = new[] { userEntry, diagnosticEntry }
@@ -806,7 +807,7 @@ internal static partial class SelfTestRunner
             Environment.NewLine, Directory.EnumerateFiles(logDirectory, "*.log").Select(File.ReadAllText));
         if (!Regex.IsMatch(logText, @"\[DEBUG\] \[T\d+\] \[[^\]]+\] self-test-debug")
             || !Regex.IsMatch(logText, @"\[INFO\] \[T\d+\] \[[^\]]+\] self-test-info")
-            || !logText.Contains("[maanop.run] 用户日志", StringComparison.Ordinal)
+            || !logText.Contains("[run] 用户日志", StringComparison.Ordinal)
             || !logText.Contains("[runtime.task] 用户日志", StringComparison.Ordinal)
             || !logText.Contains("GUI diagnostic only", StringComparison.Ordinal)) {
             throw new InvalidOperationException("DEBUG+ 文件日志验证失败。");
@@ -868,13 +869,13 @@ internal static partial class SelfTestRunner
         VerifyRejectedProjectInterface(
             testDirectory, sourceInterface,
             "unsupported-controller-option",
-            "当前 MaaNOP GUI 不支持 $.controller[0].option",
+            "当前 GUI 不支持 $.controller[0].option",
             root => root["controller"]!.AsArray()[0]!.AsObject()["option"] =
                 new JsonArray("ServerRange"));
         VerifyRejectedProjectInterface(
             testDirectory, sourceInterface,
             "unsupported-resource-option",
-            "当前 MaaNOP GUI 不支持 $.resource[0].option",
+            "当前 GUI 不支持 $.resource[0].option",
             root => root["resource"]!.AsArray()[0]!.AsObject()["option"] =
                 new JsonArray("ServerRange"));
         VerifyRejectedProjectInterface(
@@ -903,7 +904,7 @@ internal static partial class SelfTestRunner
         Directory.CreateDirectory(emptyProjectDirectory);
         try {
             _ = ProjectPlanModule.Open(
-                emptyProjectDirectory, Path.Combine(emptyProjectDirectory, "maanop-config.json"));
+                emptyProjectDirectory, Path.Combine(emptyProjectDirectory, "configurations.json"));
             throw new InvalidOperationException("PI 未拒绝缺失 interface.json 的项目目录。");
         } catch (FileNotFoundException exception) when (
             exception.Message.Contains("安装目录缺少 interface.json", StringComparison.Ordinal)) {
@@ -997,7 +998,7 @@ internal static partial class SelfTestRunner
         File.WriteAllText(Path.Combine(projectDirectory, "interface.json"), root.ToJsonString());
 
         try {
-            _ = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "maanop-config.json"));
+            _ = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "configurations.json"));
             throw new InvalidOperationException($"PI 未拒绝非法定义：{fixtureName}。");
         } catch (InvalidDataException exception)
               when (exception.Message.Contains(expectedError, StringComparison.Ordinal)) {

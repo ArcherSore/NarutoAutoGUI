@@ -1,3 +1,4 @@
+using Gui.Infrastructure;
 using Gui.Settings;
 using Protocol;
 
@@ -59,7 +60,7 @@ internal sealed class HelpPageModel : SettingsObservable
     public SettingsAction ExportDiagnostics { get; }
     public SettingsAction OpenIssues { get; }
     public SettingsAction CopyQq { get; }
-    public string Qq { get; } = "368655734";
+    public string Qq { get; } = ProjectProfile.SupportGroupQq;
     public bool QqCopied { get => _qqCopied; private set => Set(ref _qqCopied, value); }
 
     // The copy button reads 已复制 for two seconds; a later click restarts that period.

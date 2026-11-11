@@ -454,7 +454,7 @@ public partial class MainWindow
                 _invalidInputDrafts[tag.Key] = new InputDraft(text, message);
                 ShowOptionInputError(textBox, message);
                 RefreshParameterDisplays();
-                _logger.Info($"MaaNOP input 未通过校验，未保存：option={tag.OptionName}，input={tag.InputName}。 ");
+                _logger.Info($"input 未通过校验，未保存：option={tag.OptionName}，input={tag.InputName}。 ");
                 return false;
             }
             _projectPlan.SetInputValue(tag.ConfigurationId, tag.OptionName, tag.InputName, text);
@@ -467,7 +467,7 @@ public partial class MainWindow
         } catch (Exception exception) {
             SetInputText(textBox, tag.Value);
             textBox.Tag = tag with { Submitted = true };
-            HandleOperationError("保存 MaaNOP input option 失败", exception);
+            HandleOperationError("保存 input option 失败", exception);
             ShowProjectValidationError(exception);
             return false;
         } finally {

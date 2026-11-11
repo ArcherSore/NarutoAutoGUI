@@ -1035,13 +1035,13 @@
                                         VerticalAlignment="Center">
                                 <TextBlock x:Name="ProjectEmptyStateTitleText"
                                            HorizontalAlignment="Center"
-                                           Text="MaaNOP 项目无法加载"
+                                           Text="项目无法加载"
                                            TextAlignment="Center"
                                            Style="{StaticResource SectionTitleTextStyle}" />
                                 <TextBlock x:Name="ProjectEmptyStateDetailText"
                                            Margin="0,8,0,0"
                                            HorizontalAlignment="Center"
-                                           Text="请使用完整的 MaaNOP 发布包，确保安装目录下直接包含 interface.json。"
+                                           Text="请使用完整发布包，确保安装目录下直接包含 interface.json。"
                                            TextAlignment="Center"
                                            TextWrapping="Wrap"
                                            Style="{StaticResource SecondaryTextStyle}" />
@@ -1667,7 +1667,7 @@
                                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                                                  AutomationProperties.Name="运行动态"
-                                                 AutomationProperties.HelpText="最新在顶部，按任务分组，仅显示 MaaNOP 用户运行日志">
+                                                 AutomationProperties.HelpText="最新在顶部，按任务分组，仅显示用户运行日志">
                                             <ListBox.ItemContainerStyle>
                                                 <Style TargetType="{x:Type ListBoxItem}"
                                                        BasedOn="{StaticResource LogListBoxItemStyle}">

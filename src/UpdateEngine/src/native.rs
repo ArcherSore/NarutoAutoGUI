@@ -67,7 +67,7 @@ fn wide(value: &str) -> Vec<u16>
 pub fn failure(message: &str)
 {
     unsafe {
-        MessageBoxW(std::ptr::null_mut(), wide(message).as_ptr(), wide("MaaNOP 更新失败").as_ptr(),
+        MessageBoxW(std::ptr::null_mut(), wide(message).as_ptr(), wide("更新失败").as_ptr(),
             MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
     }
 }

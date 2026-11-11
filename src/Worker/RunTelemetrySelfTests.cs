@@ -320,8 +320,8 @@ internal static class RunTelemetrySelfTests
             $"失败节点应带耗时与错误状态，节点 Span 有上限而不是全部上报：{spans.Length}");
     }
 
-    // One Error Event per failed Plan Item, grouped by the node that ended the task: MaaNOP recovers through on_error,
-    // so the first failure may not be the cause. Without a node failure the Worker's reason code is the cause.
+    // One Error Event per failed Plan Item, grouped by the node that ended the task: the project recovers through
+    // on_error, so the first failure may not be the cause. Without a node failure the Worker's reason code is the cause.
     private static async Task VerifyFailureEvents()
     {
         var transport = new CapturingTransport();

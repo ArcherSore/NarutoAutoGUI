@@ -241,10 +241,10 @@ public partial class MainWindow : FluentWindow
             LoadProject();
         } catch (Exception exception) {
             _logger.Warn(
-                $"加载 MaaNOP Project Interface 失败。AppContext.BaseDirectory={AppContext.BaseDirectory}", exception);
+                $"加载 Project Interface 失败。AppContext.BaseDirectory={AppContext.BaseDirectory}", exception);
             ShowProjectUnavailableState(
-                "MaaNOP 项目无法加载",
-                $"请使用完整的 MaaNOP 发布包，确保 {AppIdentity.Name}.exe 同级目录直接包含 interface.json。");
+                "项目无法加载",
+                $"请使用完整发布包，确保 {AppIdentity.Name}.exe 同级目录直接包含 interface.json。");
             ShowProjectValidationError(exception);
             RefreshRuntimeControls();
         }
@@ -629,7 +629,7 @@ public partial class MainWindow : FluentWindow
         var project = RequireProject();
         if (!_projectConfigurationValid) {
             throw new InvalidOperationException(
-                "当前 MaaNOP Config 尚未通过正式 PI Resolver 校验。 ");
+                "当前 任务配置尚未通过正式 PI Resolver 校验。 ");
         }
         if (_pendingStartAttempt is not null && _pendingStartupOnly != startupOnly) {
             _pendingStartAttempt = null;
@@ -973,9 +973,9 @@ public partial class MainWindow : FluentWindow
             save(RequireProject());
             _pendingStartAttempt = null;
             RefreshAfterOptionSaved(!before.SequenceEqual(GetExpandedOptionNames()));
-            _logger.Info($"已保存 MaaNOP explicit case：option={optionName}。 ");
+            _logger.Info($"已保存 explicit case：option={optionName}。 ");
         } catch (Exception exception) {
-            HandleOperationError("保存 MaaNOP select/switch/checkbox option 失败", exception);
+            HandleOperationError("保存 select/switch/checkbox option 失败", exception);
             TryRenderTaskPlan();
             ShowProjectValidationError(exception);
         }
@@ -988,7 +988,7 @@ public partial class MainWindow : FluentWindow
         } catch (Exception exception) {
             _projectConfigurationValid = false;
             ShowProjectValidationError(exception);
-            _logger.Warn("刷新 MaaNOP option 编辑器失败。", exception);
+            _logger.Warn("刷新 option 编辑器失败。", exception);
             RefreshRuntimeControls();
         }
     }
@@ -1200,10 +1200,10 @@ public partial class MainWindow : FluentWindow
     }
 
     private Task OpenAfdianAsync() =>
-        OpenWebPageAsync(_settings.OpenAfdian, "https://afdian.com/a/archersore", "爱发电", "爱发电赞助页面");
+        OpenWebPageAsync(_settings.OpenAfdian, ProjectProfile.SponsorUrl, "爱发电", "爱发电赞助页面");
 
     private Task OpenIssuesAsync() => OpenWebPageAsync(
-        _help.OpenIssues, "https://github.com/ArcherSore/MaaNOP/issues", "GitHub Issues", "GitHub Issues 页面");
+        _help.OpenIssues, ProjectProfile.IssuesUrl, "GitHub Issues", "GitHub Issues 页面");
 
     private Task OpenWebPageAsync(SettingsAction action, string address, string site, string page)
     {
@@ -1760,7 +1760,7 @@ public partial class MainWindow : FluentWindow
         return note;
     }
 
-    // PI switch cases carry no on/off flag; MaaNOP names them Yes/No, so an affirmative name marks "on",
+    // PI switch cases carry no on/off flag; the project names them Yes/No, so an affirmative name marks "on",
     // otherwise the first case does.
     private static (ProjectCaseEditor On, ProjectCaseEditor Off) GetSwitchCases(ProjectOptionEditor option)
     {
@@ -1999,7 +1999,8 @@ public partial class MainWindow : FluentWindow
 
     private void LoadProject()
     {
-        var configPath = Path.Combine(_applicationDirectory, "config", "maanop-config.json");
+        var configPath = Path.Combine(_applicationDirectory, "config", "configurations.json");
+        LegacyConfigFile.Migrate(configPath);
         if (_onboardingPreferences is null) {
             _onboardingPreferences = new OnboardingPreferences(Path.GetDirectoryName(configPath)!, _logger);
             _onboardingPreferences.CaptureBeforeProjectLoad(configPath);
@@ -2029,14 +2030,14 @@ public partial class MainWindow : FluentWindow
         if (previous?.SourceInterfaceDigest != project.SourceInterfaceDigest
             || previous?.RuntimeProfileDigest != project.RuntimeProfileDigest) {
             _logger.Info(
-                $"已加载 MaaNOP Project Interface：{project.ProjectName} {project.ProjectVersion}；"
+                $"已加载 Project Interface：{project.ProjectName} {project.ProjectVersion}；"
                 + $"interfaceDigest={project.SourceInterfaceDigest}；"
                 + $"runtimeProfileDigest={project.RuntimeProfileDigest}。");
         }
     }
 
     private ProjectPlanModule RequireProject() =>
-        _projectPlan ?? throw new InvalidOperationException("MaaNOP 项目尚未加载。");
+        _projectPlan ?? throw new InvalidOperationException("项目尚未加载。");
 
     private void ShowProjectUnavailableState(
         string emptyStateTitle,
@@ -2059,7 +2060,7 @@ public partial class MainWindow : FluentWindow
     }
 
     internal static bool IsUserFacingRunLog(WorkerLogEntry entry) =>
-        string.Equals(entry.Source, ProtocolConstants.MaaNopRunLogSource, StringComparison.Ordinal);
+        string.Equals(entry.Source, ProtocolConstants.RunLogSource, StringComparison.Ordinal);
 
     // The task label comes from the Run Plan the Worker reports, falling back to the name the log carries.
     internal static LogEntry? CreateUserFacingRunLogEntry(WorkerLogEntry workerEntry, WorkerSnapshot? snapshot = null)
@@ -2397,14 +2398,14 @@ public partial class MainWindow : FluentWindow
 
     private static string StartBlockerText(StartBlocker blocker) => blocker switch {
         StartBlocker.CommandsUnavailable => "当前操作完成后可开始任务",
-        StartBlocker.ProjectNotLoaded => "MaaNOP 项目未加载，无法开始任务",
+        StartBlocker.ProjectNotLoaded => "项目未加载，无法开始任务",
         StartBlocker.NoTasks => "请先添加或勾选要执行的任务",
         StartBlocker.ConfigurationInvalid => "当前配置未通过校验，请先修正任务参数",
         _ => "运行环境尚未就绪，请稍候"
     };
 
     private static string RecoveryText(RecoveryReason reason) => reason switch {
-        RecoveryReason.StopUnconfirmed => "任务未能确认结束，MaaNOP 可能仍在运行",
+        RecoveryReason.StopUnconfirmed => "任务未能确认结束，任务可能仍在运行",
         RecoveryReason.RuntimeFaulted => "运行环境故障，Worker 无法继续执行任务",
         RecoveryReason.WorkerLost => "Worker 失联且未确认已退出；也可以等待它重新连接",
         _ => "上次结束桌面分身未确认"

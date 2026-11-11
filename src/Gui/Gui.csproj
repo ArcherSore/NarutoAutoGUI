@@ -21,7 +21,7 @@
     <Version>0.1.0</Version>
     <Company>Bunshin</Company>
     <Product>Bunshin</Product>
-    <Description>Bunshin Windows frontend for MaaNOP.</Description>
+    <Description>Bunshin Windows frontend for MaaFramework projects.</Description>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <BeautyLibsDir>./libs</BeautyLibsDir>
     <BeautyOnPublishOnly>True</BeautyOnPublishOnly>

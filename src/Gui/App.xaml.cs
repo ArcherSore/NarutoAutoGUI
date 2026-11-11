@@ -155,7 +155,7 @@ public partial class App : System.Windows.Application
     }
 
     private static bool ConfirmExit() => WpfMessageBox.Show(
-        "桌面分身仍在运行。退出程序将先停止正在运行的任务，再注销该 Session，并结束其中的游戏和 MaaNOP。\n\n确认退出吗？",
+        "桌面分身仍在运行。退出程序将先停止正在运行的任务，再注销该 Session，并结束其中的游戏和自动化程序。\n\n确认退出吗？",
         "确认退出",
         MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
 

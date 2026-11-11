@@ -1,4 +1,4 @@
-# MaaNOP Update Engine V2
+# Update Engine V2
 
 独立 Windows x64 Rust 进程，拥有 check、prepare、install 的更新规则。GUI 负责 UI、确认、进程通信和运行环境生命周期。
 Rust 1.98.1 MSVC 与 Cargo.lock 固定工具链/依赖，Windows CRT 静态链接，不复制 GUI 的 .NET runtime。
@@ -9,7 +9,7 @@ Rust 1.98.1 MSVC 与 Cargo.lock 固定工具链/依赖，Windows CRT 静态链�
 - 开发 GUI：`src/Gui/scripts/build-development.ps1 -Configuration Release`。
 - 自动化：`src/Gui/scripts/test-automated.ps1`，含 GUI、Worker、进程适配、Rust tests 和 Clippy。
 - 完整包集成和真实 Windows 验收条件见 [GitHub Issues](https://github.com/ArcherSore/Bunshin/issues)；
-  本仓库的前端 baseline 不包含 MaaNOP/Python 项目内容。
+  本仓库的前端 baseline 不包含项目与 Python 内容。
 
 ## JSONL v1
 

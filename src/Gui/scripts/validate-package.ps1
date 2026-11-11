@@ -83,7 +83,7 @@ function Assert-NoForbiddenPackageContent {
         $isPythonRuntime = $name -match '^python(?:w)?(?:\d+(?:\.\d+)*)?\.exe$' -or
             $name -match '^python\d+\.dll$'
         $isForbiddenDirectory -or $isForbiddenRootDirectory -or
-            $isForbiddenExtension -or $isPythonRuntime -or $isMaaNOP
+            $isForbiddenExtension -or $isPythonRuntime
     })
 
     if ($forbidden.Count -gt 0) {
@@ -91,7 +91,7 @@ function Assert-NoForbiddenPackageContent {
         throw "Package validation failed: forbidden content found: $($relativePaths -join ', ')"
     }
 
-    Write-Host '  [ok] no PDB/bak/Python/MaaNOP/source/bin/obj/log content'
+    Write-Host '  [ok] no PDB/bak/Python/source/bin/obj/log content'
 }
 
 if (-not (Test-Path -LiteralPath $PackageDirectory -PathType Container)) {

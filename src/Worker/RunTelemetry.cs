@@ -241,7 +241,7 @@ internal sealed class RunTelemetry : IRunTelemetry
             if (snapshot.ActiveRun is null || run.StartedAtUtc < _enabledSinceUtc) {
                 return;
             }
-            _transaction = SentrySdk.StartTransaction("maanop.run", "run");
+            _transaction = SentrySdk.StartTransaction("run", "run");
             _transaction.SetTag("run.id", run.RunId.ToString());
             _transaction.SetData("item_count", run.Items.Count);
             _nodeSpanBudget = MaximumSpans - run.Items.Count;
@@ -320,7 +320,7 @@ internal sealed class RunTelemetry : IRunTelemetry
         _traces.Clear();
     }
 
-    // Grouped by the node that ended the task: MaaNOP recovers through on_error, so an earlier failure may not be
+    // Grouped by the node that ended the task: the project recovers through on_error, so an earlier failure may not be
     // the cause. A Plan Item that failed without a node failure is grouped by the Worker's reason code.
     private Action FailureCapture(RunSnapshot run, PlanItemSnapshot item, ISpan span)
     {
@@ -328,7 +328,7 @@ internal sealed class RunTelemetry : IRunTelemetry
         var (cause, stage) = item.Kind == PlanItemKind.MaaTask && trace?.Root is { } root ? (root.Node, root.Stage)
             : (item.Error?.Code ?? "unknown", item.Kind == PlanItemKind.Pretask ? "pretask" : "worker");
         var sentryEvent = new SentryEvent {
-            Message = new SentryMessage { Message = $"MaaNOP task failed: {item.TaskName} at {cause} ({stage})" },
+            Message = new SentryMessage { Message = $"Task failed: {item.TaskName} at {cause} ({stage})" },
             Level = SentryLevel.Error,
             Fingerprint = ["task-failure", _project, item.TaskName, cause, stage]
         };

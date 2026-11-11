@@ -18,7 +18,7 @@ internal sealed class MaaRunLogAdapter
         try {
             var focus = MaaRunLogFormatter.Read(message, detailsJson);
             if (focus.LogText is not null) {
-                _log("INFO", ProtocolConstants.MaaNopRunLogSource, focus.LogText);
+                _log("INFO", ProtocolConstants.RunLogSource, focus.LogText);
             }
             return focus;
         } catch (Exception exception) {
@@ -28,7 +28,7 @@ internal sealed class MaaRunLogAdapter
 
             try {
                 _log(
-                    "WARN", "maanop.callback",
+                    "WARN", "framework.callback",
                     $"MaaFramework Callback focus 解析失败：{exception.GetBaseException().Message}");
             } catch {
                 // A logging failure must never escape the MaaFramework callback thread.

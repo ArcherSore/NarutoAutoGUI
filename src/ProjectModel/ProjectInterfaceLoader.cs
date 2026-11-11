@@ -85,7 +85,7 @@ internal static partial class ProjectInterfaceLoader
         var interfacePath = Path.Combine(projectRoot, "interface.json");
         if (!File.Exists(interfacePath)) {
             throw new FileNotFoundException(
-                "安装目录缺少 interface.json，请确认使用完整的 MaaNOP 发布包。", interfacePath);
+                "安装目录缺少 interface.json，请确认使用完整发布包。", interfacePath);
         }
 
         var bytes = File.ReadAllBytes(interfacePath);
@@ -610,7 +610,7 @@ internal static partial class ProjectInterfaceLoader
         var options = ReadStringArray(obj, "option", required: false, path);
         if (options.Count != 0) {
             throw new InvalidDataException(
-                $"当前 MaaNOP GUI 不支持 {path}.option；该数组必须省略或为空。 ");
+                $"当前 GUI 不支持 {path}.option；该数组必须省略或为空。 ");
         }
     }
 

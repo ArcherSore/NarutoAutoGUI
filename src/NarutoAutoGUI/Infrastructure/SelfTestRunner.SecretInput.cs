@@ -22,8 +22,9 @@ internal static partial class SelfTestRunner
         var configPath = Path.Combine(directory, "config.json");
         var project = ProjectPlanModule.Open(directory, configPath);
         project.AddPretask("Prepare");
-        Require(project.CreateRunStartAttempt().Plan.Items.Count == 2,
-            "没有 verify 的密码字段应允许为空并可以开始运行。");
+        var emptyAttempt = project.CreateRunStartAttempt();
+        Require(emptyAttempt.Plan.Items.Count == 2 && emptyAttempt.RedactionValues.Count == 0,
+            "没有 verify 的密码字段应允许为空并可以开始运行；空密码不需要脱敏。");
         project.SetInputValue("Login", "password", SecretInputValue);
         Require(!File.ReadAllText(configPath).Contains(SecretInputValue, StringComparison.Ordinal),
             "密码不得以明文写入配置文件。");
@@ -39,6 +40,10 @@ internal static partial class SelfTestRunner
             && items.Single(item => item.Kind == PlanItemKind.Pretask).Program!.Arguments[^1]
                 .Contains(SecretInputValue, StringComparison.Ordinal),
             "pipeline_override 与前置程序参数必须拿到密码原文。");
+        // Telemetry redacts exactly the passwords this Run uses, found through PI's inputs[].password.
+        Require(attempt.RedactionValues.SequenceEqual([SecretInputValue])
+            && reopened.CreateRunStartAttempt(startupOnly: true).RedactionValues.SequenceEqual([SecretInputValue]),
+            "Run 用到的每个非空密码（含前置任务选项）都必须列入 RedactionValues，且不重复。");
         var written = new List<LogEntry>();
         void Capture(object? sender, LogEntry entry) => written.Add(entry);
         logger.EntryWritten += Capture;

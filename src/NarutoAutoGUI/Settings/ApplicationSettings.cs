@@ -55,6 +55,9 @@ internal sealed class ApplicationSettings
         });
         SaveDraw.Initialize(false);
         DebugMode = CreateFrameworkToggle(applicationDirectory, "framework.debugMode", "debug-mode", false);
+        // A running Worker learns this choice through the same path as the framework switches.
+        HelpImprove = CreatePersistedToggle(Path.Combine(applicationDirectory, "config", "help-improve.txt"),
+            "telemetry.helpImprove", "帮助改进软件", true, toggle => FrameworkOptionsChanged?.Invoke(toggle));
         ClearOnStartup = CreatePersistedToggle(Path.Combine(applicationDirectory, "config", "clear-on-startup.txt"),
             "diagnostics.clearOnStartup", "启动时自动清理", false, null);
         CheckUpdate = new SettingsAction(checkUpdate);
@@ -86,6 +89,7 @@ internal sealed class ApplicationSettings
         Registry.Toggles.Add("framework.saveDraw", SaveDraw);
         Registry.Toggles.Add("framework.debugMode", DebugMode);
         Registry.Toggles.Add("diagnostics.clearOnStartup", ClearOnStartup);
+        Registry.Toggles.Add("telemetry.helpImprove", HelpImprove);
         Registry.Actions.Add("update.check", CheckUpdate);
         Registry.Actions.Add("diagnostics.export", ExportDiagnostics);
         Registry.Actions.Add("diagnostics.clear", ClearDebugFiles);
@@ -115,6 +119,7 @@ internal sealed class ApplicationSettings
     internal SettingsToggle SaveDraw { get; }
     internal SettingsToggle DebugMode { get; }
     internal SettingsToggle ClearOnStartup { get; }
+    internal SettingsToggle HelpImprove { get; }
     internal SettingsAction CheckUpdate { get; }
     internal SettingsAction ExportDiagnostics { get; }
     internal SettingsAction ClearDebugFiles { get; }
@@ -160,6 +165,9 @@ internal sealed class ApplicationSettings
         }
         AutoRunConfiguration.SetOptions(options, _autoRunConfigurationId);
     }
+
+    // The choice is kept while the gate blocks telemetry, so it is unavailable rather than switched off.
+    internal void ShowTelemetryAvailability(bool available) => HelpImprove.IsEnabled = available;
 
     internal MaaFrameworkOptions CreateFrameworkOptions() => new(SaveOnError.Value, SaveDraw.Value, DebugMode.Value);
 

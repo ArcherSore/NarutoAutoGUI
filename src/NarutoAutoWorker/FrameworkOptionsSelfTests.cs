@@ -68,12 +68,13 @@ internal static class FrameworkOptionsSelfTests
     {
         await using var harness = await RunHarness.CreateAsync();
         var options = new MaaFrameworkOptions(false, true, true);
-        var response = await harness.RequestAsync(ProtocolOperations.FrameworkSetOptions, options);
+        var request = new FrameworkSetOptionsRequest(options, TelemetryEnabled: false);
+        var response = await harness.RequestAsync(ProtocolOperations.FrameworkSetOptions, request);
         if (response.Success != true || harness.AppliedFrameworkOptions.SingleOrDefault() != options) {
             throw new InvalidOperationException("framework.setOptions 必须把选项应用到正在运行的 Worker。");
         }
         harness.FrameworkOptionsFailure = new InvalidOperationException("SetOption=false");
-        response = await harness.RequestAsync(ProtocolOperations.FrameworkSetOptions, options);
+        response = await harness.RequestAsync(ProtocolOperations.FrameworkSetOptions, request);
         if (response.Success != false) {
             throw new InvalidOperationException("选项设置失败时不能向 GUI 报告成功。");
         }

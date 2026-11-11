@@ -19,6 +19,9 @@ internal sealed class WorkerHost
     private readonly RunSupervisor _supervisor;
     private readonly Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>> _checkReadiness;
     private readonly Action<MaaFrameworkOptions> _applyFrameworkOptions;
+    // Null when the project declares no telemetry or the SDK could not start.
+    private readonly IRunTelemetry? _telemetry;
+    private int _telemetryFaultLogged;
 
     // The execution factory and readiness check default to MaaFramework and the dependency probe; self-tests replace
     // them so Run rules can be exercised without native runtime, a game window or an Agent.
@@ -26,7 +29,8 @@ internal sealed class WorkerHost
         WorkerArguments arguments, LaunchManifest manifest,
         Func<Guid, RunPlanItem, Action, IPlanItemExecution>? createExecution = null,
         Func<CancellationToken, Task<(DependencyStatus Status, StructuredReason? Reason)>>? checkReadiness = null,
-        Action<MaaFrameworkOptions>? applyFrameworkOptions = null)
+        Action<MaaFrameworkOptions>? applyFrameworkOptions = null,
+        Func<LaunchManifest, Func<Guid, IReadOnlyList<WorkerLogEntry>>, IRunTelemetry?>? createTelemetry = null)
     {
         _arguments = arguments;
         _manifest = manifest;
@@ -35,9 +39,25 @@ internal sealed class WorkerHost
             options, (level, source, message) => Log(level, source, message)));
         _supervisor = new RunSupervisor(manifest, _logs, createExecution ?? CreateRuntimeExecution,
             (level, source, message, runId) => Log(level, source, message, runId), PublishState, _shutdown.Token);
+        _telemetry = createTelemetry is not null ? createTelemetry(manifest, _logs.ForPlanItem)
+            : RunTelemetry.Create(manifest, (level, source, message) => Log(level, source, message), null,
+                _logs.ForPlanItem);
     }
 
+    // An exception that ends the Worker is reported, and what telemetry queued leaves, however the loop ends.
     internal async Task RunAsync(CancellationToken cancellationToken)
+    {
+        try {
+            await ServeAsync(cancellationToken);
+        } catch (Exception exception) {
+            ReportUnhandledException(exception);
+            throw;
+        } finally {
+            DisposeTelemetry();
+        }
+    }
+
+    private async Task ServeAsync(CancellationToken cancellationToken)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
         var initialization = InitializeAsync(linked.Token);
@@ -62,6 +82,18 @@ internal sealed class WorkerHost
         } catch (OperationCanceledException) when (linked.IsCancellationRequested) {
         }
     }
+
+    // Sends what is queued within the SDK's shutdown timeout; a Child Session logoff ends the process before that.
+    internal void DisposeTelemetry() => Telemetry(() => _telemetry?.Dispose());
+
+    internal void ReportTaskerEvent(Guid planItemId, string message, string details, bool? trace) =>
+        Telemetry(() => _telemetry?.OnTaskerEvent(planItemId, message, details, trace));
+
+    internal void ReportAgentStarted(Guid planItemId, int processId) =>
+        Telemetry(() => _telemetry?.AgentStarted(planItemId, processId));
+
+    internal void ReportUnhandledException(Exception exception) =>
+        Telemetry(() => _telemetry?.CaptureUnhandled(exception));
 
     internal async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -172,8 +204,7 @@ internal sealed class WorkerHost
                 ProtocolOperations.WorkerGetSnapshot => WireEnvelope.Response(
                     request.Operation, requestId, new GetSnapshotResponse(GetSnapshot())),
                 ProtocolOperations.RunStart => WireEnvelope.Response(
-                    request.Operation, requestId,
-                    _supervisor.Accept(ProtocolJson.Deserialize<RunStartRequest>(request.Data))),
+                    request.Operation, requestId, StartRun(ProtocolJson.Deserialize<RunStartRequest>(request.Data))),
                 ProtocolOperations.RunStop => WireEnvelope.Response(
                     request.Operation, requestId,
                     _supervisor.Stop(ProtocolJson.Deserialize<RunStopRequest>(request.Data), out pendingStop)),
@@ -182,7 +213,7 @@ internal sealed class WorkerHost
                     GetLogs(ProtocolJson.Deserialize<LogGetSinceRequest>(request.Data))),
                 ProtocolOperations.FrameworkSetOptions => WireEnvelope.Response(
                     request.Operation, requestId,
-                    SetFrameworkOptions(ProtocolJson.Deserialize<MaaFrameworkOptions>(request.Data))),
+                    SetFrameworkOptions(ProtocolJson.Deserialize<FrameworkSetOptionsRequest>(request.Data))),
                 _ => throw new WorkerRequestException("invalid_request", $"未知 operation：{request.Operation}。 ")
             };
         } catch (WorkerRequestException exception) {
@@ -199,9 +230,17 @@ internal sealed class WorkerHost
         }
     }
 
-    private FrameworkSetOptionsResponse SetFrameworkOptions(MaaFrameworkOptions options)
+    private RunStartResponse StartRun(RunStartRequest request)
     {
-        _applyFrameworkOptions(options);
+        Telemetry(() => _telemetry?.Register(request.RedactionValues));
+        return _supervisor.Accept(request);
+    }
+
+    private FrameworkSetOptionsResponse SetFrameworkOptions(FrameworkSetOptionsRequest request)
+    {
+        // The telemetry choice goes first, so a failing framework switch cannot keep telemetry on.
+        Telemetry(() => _telemetry?.SetEnabled(request.TelemetryEnabled));
+        _applyFrameworkOptions(request.Framework);
         return new FrameworkSetOptionsResponse();
     }
 
@@ -231,7 +270,9 @@ internal sealed class WorkerHost
         return item.Kind switch {
             PlanItemKind.Pretask => new PretaskExecution(_manifest, item, WriteLog, onRunning),
             PlanItemKind.MaaTask => new WorkerRuntimeExecution(
-                _manifest, runId, item, checked((uint)Process.GetCurrentProcess().SessionId), WriteLog, onRunning),
+                _manifest, runId, item, checked((uint)Process.GetCurrentProcess().SessionId), WriteLog, onRunning,
+                (message, details, trace) => ReportTaskerEvent(planItemId, message, details, trace),
+                processId => ReportAgentStarted(planItemId, processId)),
             _ => throw new InvalidDataException("不支持的 Plan Item kind。 ")
         };
     }
@@ -249,12 +290,25 @@ internal sealed class WorkerHost
 
     private void PublishState(string operation, WorkerSnapshot snapshot)
     {
+        Telemetry(() => _telemetry?.Observe(snapshot));
         WorkerEventSender? events;
         lock (_eventsGate) {
             events = _events;
         }
         events?.PublishState(WireEnvelope.Event(
             operation, new StateChangedEvent(_manifest.WorkerInstanceId, snapshot.StateRevision, snapshot)));
+    }
+
+    // Telemetry is a side path (ADR 0009): whatever it throws is logged once and never reaches a Run.
+    private void Telemetry(Action action)
+    {
+        try {
+            action();
+        } catch (Exception exception) {
+            if (Interlocked.Exchange(ref _telemetryFaultLogged, 1) == 0) {
+                Log("WARN", "telemetry", $"遥测异常，已忽略：{exception.GetBaseException().Message}");
+            }
+        }
     }
 
     private void Log(

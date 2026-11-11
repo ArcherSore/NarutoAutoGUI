@@ -102,6 +102,9 @@ public partial class MainWindow
 
     private async void OnFrameworkOptionsChanged(SettingsToggle toggle)
     {
+        if (ReferenceEquals(toggle, _settings.HelpImprove)) {
+            _telemetry.SetEnabled(toggle.Value);
+        }
         // An exception leaving an async void handler would end the process.
         try {
             await _workerCoordinator.ApplyFrameworkOptionsAsync();

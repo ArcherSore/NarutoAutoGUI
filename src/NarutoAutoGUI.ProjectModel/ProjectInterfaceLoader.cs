@@ -10,7 +10,8 @@ internal static partial class ProjectInterfaceLoader
     {
         "interface_version", "name", "label", "title", "version", "description", "icon", "github", "contact",
         "license",
-        "controller", "resource", "agent", "global_option", "task", "option", "group", "pretask", "preset", "welcome"
+        "controller", "resource", "agent", "global_option", "task", "option", "group", "pretask", "preset", "welcome",
+        "telemetry"
     };
 
     private static readonly HashSet<string> AllowedControllerProperties = new(StringComparer.Ordinal)
@@ -144,7 +145,7 @@ internal static partial class ProjectInterfaceLoader
                 ReadOptionalDescription(root, "license"), ReadOptionalDescription(root, "github")),
             // The protocol defaults title to name and version, not to label.
             ReadKeyText(root, "title") ?? $"{provenance.Name} {provenance.Version}".TrimEnd(),
-            ReadKeyText(root, "icon"));
+            ReadKeyText(root, "icon"), ProjectTelemetry.Read(root));
     }
 
     private static string? ReadKeyText(JsonElement root, string name) =>

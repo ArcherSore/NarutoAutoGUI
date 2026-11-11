@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using NarutoAutoGUI.Models;
+using NarutoAutoGUI.Protocol;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
@@ -17,7 +18,6 @@ internal sealed class AppLogger : IDisposable
     private const int RetainedFiles = 14;
     private const string OutputTemplate = "[{Time:l}] [{LevelName:l}] [T{ThreadId}] [{Source:l}] {Message:l}{NewLine}";
     internal static readonly string UserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    private static readonly Regex? UserProfilePattern = CreateProfilePattern(UserProfile);
     // Agent output relayed by the Worker carries terminal colours.
     private static readonly Regex AnsiCode = new(@"\x1B\[[0-9;]*[A-Za-z]", RegexOptions.CultureInvariant);
     private readonly object _sync = new();
@@ -90,24 +90,10 @@ internal sealed class AppLogger : IDisposable
     internal static string Field(string name, object? value) =>
         value is null or "" ? string.Empty : $" [{name}={value}]";
 
-    // A profile folder is usually named after the Windows account, which stays out of the logs. JSON doubles the
-    // backslashes in a path, and a longer sibling such as C:\Users\name2 is a different folder.
-    internal static string MaskUserProfile(string text) => Mask(text, UserProfilePattern);
+    // Shared with telemetry, which masks the same folder before anything leaves the machine.
+    internal static string MaskUserProfile(string text) => UserProfileMask.Apply(text);
 
-    internal static string MaskUserProfile(string text, string profile) => Mask(text, CreateProfilePattern(profile));
-
-    private static string Mask(string text, Regex? pattern) => pattern?.Replace(text, "%USERPROFILE%") ?? text;
-
-    private static Regex? CreateProfilePattern(string profile)
-    {
-        if (profile.Length == 0) {
-            return null;
-        }
-
-        var segments = profile.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries).Select(Regex.Escape);
-        return new Regex(string.Join(@"[\\/]+", segments) + @"(?![\p{L}\p{N}_-]|\.[\p{L}\p{N}])",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    }
+    internal static string MaskUserProfile(string text, string profile) => UserProfileMask.Apply(text, profile);
 
     public void Dispose()
     {

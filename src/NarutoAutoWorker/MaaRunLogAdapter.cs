@@ -12,16 +12,18 @@ internal sealed class MaaRunLogAdapter
         _log = log;
     }
 
-    internal void Handle(string message, string detailsJson)
+    // Writes the callback's focus content to the run log and returns the focus, so it is parsed once per callback.
+    internal MaaFocus Handle(string message, string detailsJson)
     {
         try {
-            var rendered = MaaRunLogFormatter.Format(message, detailsJson);
-            if (rendered is not null) {
-                _log("INFO", ProtocolConstants.MaaNopRunLogSource, rendered);
+            var focus = MaaRunLogFormatter.Read(message, detailsJson);
+            if (focus.LogText is not null) {
+                _log("INFO", ProtocolConstants.MaaNopRunLogSource, focus.LogText);
             }
+            return focus;
         } catch (Exception exception) {
             if (Interlocked.Exchange(ref _warningLogged, 1) != 0) {
-                return;
+                return default;
             }
 
             try {
@@ -31,6 +33,7 @@ internal sealed class MaaRunLogAdapter
             } catch {
                 // A logging failure must never escape the MaaFramework callback thread.
             }
+            return default;
         }
     }
 }

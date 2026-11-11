@@ -112,6 +112,8 @@ public sealed partial class ProjectPlanModule
     public IReadOnlyList<string> SelectedTaskNames => LoadConfig().SelectedTasks;
     public Guid ActiveConfigurationId => _config.ActiveConfigurationId;
     public string? LoadWarning => _initializationWarning ?? _configStore.LoadWarning;
+    // The file could not be read, so Configurations is a placeholder until the first save.
+    public bool ConfigurationsUnreadable => _configStore.Unreadable;
     public string? InitializedTaskName { get; }
     public IReadOnlyList<TaskConfiguration> Configurations => _config.Configurations;
 

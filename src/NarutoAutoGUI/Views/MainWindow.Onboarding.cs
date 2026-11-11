@@ -548,7 +548,9 @@ public partial class MainWindow
             }
             return;
         }
-        var ready = !_onboardingAutoEnded && _onboardingStartupCompleted && CanPresentOnboarding
+        // A launch by the system has nobody to answer the tour; it is left for the next manual launch.
+        var ready = !_launchCommand.AutoStart && !_onboardingAutoEnded && _onboardingStartupCompleted
+            && CanPresentOnboarding
             && _onboardingPreferences?.ShouldOfferAutomatically == true && _projectPlan!.LoadWarning is null;
         if (!ready) {
             CancelOnboardingStart();

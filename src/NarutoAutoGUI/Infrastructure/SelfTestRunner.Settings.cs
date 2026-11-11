@@ -14,10 +14,11 @@ namespace NarutoAutoGUI.Infrastructure;
 internal static partial class SelfTestRunner
 {
     // Settings whose actions do nothing, for tests that only check toggles and persisted values.
-    private static ApplicationSettings CreateIdleSettings(string directory, AppLogger logger) =>
+    private static ApplicationSettings CreateIdleSettings(
+        string directory, AppLogger logger, AutostartTask? autostart = null) =>
         new(directory, logger, () => Task.CompletedTask, () => Task.CompletedTask, () => { },
             () => Task.CompletedTask, () => Task.CompletedTask, () => Task.CompletedTask, () => { },
-            _ => { }, _ => { });
+            _ => { }, _ => { }, autostart ?? InertAutostart());
 
     private static void VerifyClosePreference(AppLogger logger, string testDirectory)
     {
@@ -75,7 +76,7 @@ internal static partial class SelfTestRunner
         var settings = new ApplicationSettings(directory, logger,
             () => Called("update.check"), () => Called("diagnostics.export"), () => calls.Add("onboarding.replay"),
             () => Called("support.openAfdian"), () => Called("childSession.credentials"),
-            () => Called("diagnostics.clear"), () => calls.Add("welcome.view"), _ => { }, _ => { });
+            () => Called("diagnostics.clear"), () => calls.Add("welcome.view"), _ => { }, _ => { }, InertAutostart());
         var page = settings.Page;
         var items = page.Sections.SelectMany(section => section.Items).ToArray();
         if (items.Single(item => item.Definition.SettingKey == "update.checkOnStartup").Toggle
@@ -272,8 +273,8 @@ internal static partial class SelfTestRunner
             window.Height = window.MinHeight;
             ClickOnboarding(window, "SettingsNavigationItem");
             var view = (SettingsView)window.FindName("SettingsView");
-            var list = SettingsVisualDescendants(view).OfType<System.Windows.Controls.ListBox>().Single();
-            var scroller = SettingsVisualDescendants(view).OfType<ScrollViewer>().Single();
+            var list = (System.Windows.Controls.ListBox)view.FindName("SectionNavigation");
+            var scroller = (ScrollViewer)view.FindName("SectionScroller");
             var sections = SettingsPageFor(window).Sections;
             Require(list.SelectedIndex == 0, "进入设置时目录应选中第一个分类。");
 

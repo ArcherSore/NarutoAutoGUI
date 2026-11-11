@@ -46,7 +46,13 @@ internal sealed class RdpActiveXHost : AxHost
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EnableWindow(nint window, [MarshalAs(UnmanagedType.Bool)] bool enabled);
 
+    // The one interim logon event every normal logon raises; it never needs the user.
+    private const int WinlogonContinuing = -2;
+
     internal event EventHandler? LoginCompleted;
+
+    // Windows is showing a logon screen or dialog that only the user can answer in the window.
+    internal event EventHandler? UserInteractionNeeded;
 
     internal event EventHandler<ChildSessionConnectionFailedEventArgs>? ConnectionFailed;
 
@@ -260,6 +266,9 @@ internal sealed class RdpActiveXHost : AxHost
                 + Field("savedCredential", _savedCredentialSubmitted));
             _lastConnectionDiagnostic = new ChildSessionConnectionFailedEventArgs(message, errorCode);
             SavedCredentialRejected |= _savedCredentialSubmitted && errorCode is 0 or 1 or 2;
+            if (errorCode != WinlogonContinuing) {
+                UserInteractionNeeded?.Invoke(this, EventArgs.Empty);
+            }
             return;
         }
 

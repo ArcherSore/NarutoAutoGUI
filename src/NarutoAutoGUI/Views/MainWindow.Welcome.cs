@@ -21,7 +21,8 @@ public partial class MainWindow
 
     private void ShowWelcomeIfChanged()
     {
-        if (ResolveWelcome() is { } welcome && welcome.Hash != ReadWelcomeHash()) {
+        // Nobody is there to dismiss it after a launch by the system, and it would be recorded as read.
+        if (!_launchCommand.AutoStart && ResolveWelcome() is { } welcome && welcome.Hash != ReadWelcomeHash()) {
             OpenReader(welcome.Title, WpfSymbol.Sparkle24, welcome.Contents, welcome.Hash);
         }
     }

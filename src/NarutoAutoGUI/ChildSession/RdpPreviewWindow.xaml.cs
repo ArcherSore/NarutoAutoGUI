@@ -13,11 +13,15 @@ internal sealed partial class RdpPreviewWindow
     private const double ChromeHeight = 37;
     private const double ChromeWidth = 6;
 
+    // Far enough from every monitor that nothing of the window shows.
+    private const double OffscreenCoordinate = -32000;
+
     private bool _large;
     private bool _interactive;
     private bool _connected;
     private bool _disconnected;
     private bool _changingVisibility;
+    private bool _offscreen;
     private bool? _modeBeforeMaximize;
 
     internal RdpActiveXHost Host { get; } = new();
@@ -61,9 +65,37 @@ internal sealed partial class RdpPreviewWindow
         RefreshToolbar();
     }
 
+    // True while the window is open far off screen for a connection nobody needs to watch.
+    internal bool Offscreen => _offscreen;
+
+    // The RDP control needs a shown window to connect. This one has no focus, no taskbar button and no place on screen.
+    internal void ShowOffscreen()
+    {
+        _offscreen = true;
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Left = OffscreenCoordinate;
+        Top = OffscreenCoordinate;
+        ShowInTaskbar = false;
+        ShowActivated = false;
+        ChangeVisibility(Show);
+    }
+
+    // Brings a window waiting off screen forward; returns whether it was waiting.
+    internal bool ShowIfOffscreen()
+    {
+        if (!_offscreen) {
+            return false;
+        }
+        ShowViewing();
+        return true;
+    }
+
     // Shows the window and brings it forward. A visible window keeps its mode; a hidden window reopens small.
     internal void ShowViewing()
     {
+        if (_offscreen) {
+            ReturnToScreen();
+        }
         if (!IsVisible) {
             _large = false;
             ChangeVisibility(Show);
@@ -82,6 +114,21 @@ internal sealed partial class RdpPreviewWindow
     {
         LockInput();
         ChangeVisibility(Hide);
+        if (_offscreen) {
+            ReturnToScreen();
+        }
+    }
+
+    // Back to the normal window, centred on the primary work area, so the next show looks like any other. The window
+    // has no monitor of its own while it is off screen.
+    private void ReturnToScreen()
+    {
+        _offscreen = false;
+        ShowInTaskbar = true;
+        ShowActivated = true;
+        var area = SystemParameters.WorkArea;
+        Left = Math.Max(area.Left, area.Left + (area.Width - Width) / 2);
+        Top = Math.Max(area.Top, area.Top + (area.Height - Height) / 2);
     }
 
     internal void SetViewingMode(bool large)
@@ -95,8 +142,10 @@ internal sealed partial class RdpPreviewWindow
         var width = Math.Min(large ? 1280 : 560, area.Width - 32);
         Width = width;
         Height = Math.Min((width - ChromeWidth) * 9 / 16 + ChromeHeight, area.Height - 32);
-        Left = Math.Clamp(Left, area.Left, Math.Max(area.Left, area.Right - Width));
-        Top = Math.Clamp(Top, area.Top, Math.Max(area.Top, area.Bottom - Height));
+        if (!_offscreen) {
+            Left = Math.Clamp(Left, area.Left, Math.Max(area.Left, area.Right - Width));
+            Top = Math.Clamp(Top, area.Top, Math.Max(area.Top, area.Bottom - Height));
+        }
         RefreshToolbar();
     }
 

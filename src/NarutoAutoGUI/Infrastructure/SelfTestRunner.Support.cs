@@ -96,7 +96,8 @@ internal static partial class SelfTestRunner
             || !Regex.IsMatch(text, @"\[INFO\] \[T\d+\] \[[^\]]+\] 作用域 \| enter\r?\n.*\] 作用域 \| leave, \d+ms\r?$",
                 RegexOptions.Multiline)
             || !Regex.IsMatch(text, @"\[App\.LogStartup:\d+\] NarutoAutoGUI 正式 GUI 启动 \[version=\S+\] "
-                + $@"\[pid={Environment.ProcessId}\] \[session=\d+\] \[elevated=(True|False)\] .*\[logDirectory=")) {
+                + $@"\[pid={Environment.ProcessId}\] \[session=\d+\] \[elevated=(True|False)\] "
+                + @".*\[logDirectory=.*\[args=")) {
             throw new InvalidOperationException($"日志行格式不符：{text}");
         }
         if (Directory.GetFiles(directory, "NarutoAutoGUI-*.log").Length != 14

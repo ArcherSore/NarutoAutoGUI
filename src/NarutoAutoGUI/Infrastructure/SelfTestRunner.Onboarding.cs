@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.ProjectModel;
+using NarutoAutoGUI.Protocol;
 using NarutoAutoGUI.Views;
 using NarutoAutoGUI.Worker;
 using WpfButton = System.Windows.Controls.Button;
@@ -243,7 +244,9 @@ internal static partial class SelfTestRunner
         Action<MainWindow, string> verify, Action<string>? beforeLoad = null, bool recoveryCompleted = false,
         Func<CancellationToken, Task<Updates.EngineCheckResult>>? checkForUpdate = null,
         Func<Task>? requestExit = null, ChildSessionCredentialStore? credentials = null,
-        Func<string, IProgress<Updates.EngineProgress>, CancellationToken, Task<string>>? prepareUpdate = null)
+        Func<string, IProgress<Updates.EngineProgress>, CancellationToken, Task<string>>? prepareUpdate = null,
+        LaunchCommand? launchCommand = null,
+        Func<ProjectPlanModule, Func<MaaFrameworkOptions>, bool, Task>? prepareEnvironment = null)
     {
         var projectDirectory = CreateProjectFixture(directory);
         beforeLoad?.Invoke(projectDirectory);
@@ -254,7 +257,8 @@ internal static partial class SelfTestRunner
             $"NarutoAutoGUI.Tour.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
         var window = new MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
             requestExit ?? (() => Task.CompletedTask), () => Task.CompletedTask, _ => Task.CompletedTask,
-            projectDirectory, checkForUpdate, prepareUpdate: prepareUpdate);
+            projectDirectory, checkForUpdate, prepareEnvironment: prepareEnvironment, prepareUpdate: prepareUpdate,
+            autostart: InertAutostart(), launchCommand: launchCommand);
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var loaded = typeof(MainWindow).GetMethod("MainWindow_Loaded", flags)!;
         window.Loaded -= (RoutedEventHandler)loaded.CreateDelegate(typeof(RoutedEventHandler), window);
@@ -273,7 +277,11 @@ internal static partial class SelfTestRunner
             window.WindowStartupLocation = WindowStartupLocation.Manual;
             window.Left = -32000;
             window.Top = -32000;
-            window.Show();
+            if (launchCommand?.AutoStart == true) {
+                window.StartInTray();
+            } else {
+                window.Show();
+            }
             PumpOnboarding();
             Func<Task> restoreSession = () => {
                 if (((UIElement)window.FindName("TaskWorkspacePanel")).Visibility != Visibility.Visible

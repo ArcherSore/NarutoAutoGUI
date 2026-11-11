@@ -73,7 +73,8 @@ internal sealed class ChildSessionManager : IDisposable
                     && Snapshot.State is (ChildSessionState.ConnectedVisible
                         or ChildSessionState.ConnectedHidden)
                     && connectedState == 1) {
-                    SetPreviewVisibility(showPreview);
+                    // A window the user is already watching stays; only a hidden one stays hidden.
+                    SetPreviewVisibility(showPreview || Snapshot.State == ChildSessionState.ConnectedVisible);
                     _logger.Debug($"复用已连接的 Child Session {connectedId}，show={showPreview}。");
                     return connectedId;
                 }
@@ -95,16 +96,22 @@ internal sealed class ChildSessionManager : IDisposable
                 preview.Host.Diagnostic += OnRdpDiagnostic;
                 preview.Closing += OnPreviewClosing;
                 preview.InteractiveChanged += OnPreviewInteractiveChanged;
+                preview.Host.UserInteractionNeeded += OnUserInteractionNeeded;
                 _previewWindow = preview;
                 _service = service;
 
-                // AxHost creation and interactive credential prompts require a visible native window.
-                preview.Show();
-                preview.Activate();
-                _logger.Info("正在连接 RDP Child Session（固定 1920×1080 @ 100%，SmartSizing 仅用于预览）。");
-
                 // Read just before connecting, so the password is held only for this logon attempt.
                 var credential = Credentials.Load();
+                // AxHost creation and interactive credential prompts require a shown native window. Without a saved
+                // credential Windows may ask the user to sign in, so that window stays visible. With one, a hidden
+                // connection waits off screen and comes forward only when Windows asks the user for something.
+                if (showPreview || credential is null) {
+                    preview.Show();
+                    preview.Activate();
+                } else {
+                    preview.ShowOffscreen();
+                }
+                _logger.Info("正在连接 RDP Child Session（固定 1920×1080 @ 100%，SmartSizing 仅用于预览）。");
                 if (credential is not null) {
                     savedCredentialSubmitted = true;
                     _logger.Info("将向 RDP 提交设置中保存的 Windows 登录凭据，登录结果以 RDP 登录完成为准。");
@@ -128,6 +135,10 @@ internal sealed class ChildSessionManager : IDisposable
                 SetPreviewVisibility(showPreview);
                 return sessionId;
             } catch (Exception exception) {
+                // A failed hidden connection must not leave a window nobody can see.
+                if (_previewWindow is { Offscreen: true } waiting) {
+                    waiting.HideViewing();
+                }
                 var actualException = exception.GetBaseException();
                 if (actualException is COMException comException && unchecked((uint)comException.ErrorCode) == 0x80040111) {
                     var descriptiveException = new InvalidOperationException(
@@ -291,6 +302,7 @@ internal sealed class ChildSessionManager : IDisposable
         }
 
         preview.Host.ConnectionFailed -= OnConnectionFailed;
+        preview.Host.UserInteractionNeeded -= OnUserInteractionNeeded;
         preview.Closing -= OnPreviewClosing;
         preview.InteractiveChanged -= OnPreviewInteractiveChanged;
         if (disconnect) {
@@ -305,6 +317,13 @@ internal sealed class ChildSessionManager : IDisposable
         // Closing the window disposes the RDP host.
         preview.Close();
         preview.Host.Diagnostic -= OnRdpDiagnostic;
+    }
+
+    private void OnUserInteractionNeeded(object? sender, EventArgs e)
+    {
+        if (_previewWindow?.ShowIfOffscreen() == true) {
+            _logger.Info("Windows 正等待用户在分身窗口中操作，已显示分身窗口。");
+        }
     }
 
     private void OnRdpDiagnostic(LogLevel level, string message)

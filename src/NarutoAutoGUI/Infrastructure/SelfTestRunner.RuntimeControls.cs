@@ -2,6 +2,7 @@
 using System.Windows.Automation;
 using System.Windows.Controls;
 using NarutoAutoGUI.ChildSession;
+using NarutoAutoGUI.ProjectModel;
 using NarutoAutoGUI.Protocol;
 using NarutoAutoGUI.Views;
 using NarutoAutoGUI.Worker;
@@ -390,7 +391,7 @@ internal static partial class SelfTestRunner
         ChildSessionManager? session = null, WorkerCoordinator? coordinator = null,
         Func<Func<Task>, Task>? runOperation = null, bool loadProject = true, RuntimeEnvironment? environment = null,
         Func<Task>? endEnvironment = null,
-        Func<NarutoAutoGUI.ProjectModel.ProjectPlanModule, Func<MaaFrameworkOptions>, Task>? prepareEnvironment = null)
+        Func<ProjectPlanModule, Func<MaaFrameworkOptions>, bool, Task>? prepareEnvironment = null)
     {
         var projectDirectory = CreateProjectFixture(directory);
         if (!loadProject) {
@@ -410,7 +411,7 @@ internal static partial class SelfTestRunner
         var window = new MainWindow(logger, windowSession, windowCoordinator,
             environment ?? WindowEnvironment(logger, windowSession, windowCoordinator, runOperation),
             () => Task.CompletedTask, endEnvironment ?? (() => Task.CompletedTask), _ => Task.CompletedTask,
-            projectDirectory, prepareEnvironment: prepareEnvironment);
+            projectDirectory, prepareEnvironment: prepareEnvironment, autostart: InertAutostart());
         var application = System.Windows.Application.Current;
         var shutdown = application.ShutdownMode;
         application.ShutdownMode = ShutdownMode.OnExplicitShutdown;

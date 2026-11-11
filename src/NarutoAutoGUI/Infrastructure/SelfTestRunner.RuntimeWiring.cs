@@ -279,8 +279,10 @@ internal static partial class SelfTestRunner
                         Require(requests == (runs ? 1 : 0),
                             "仅启动或取消准备不得提交任务，一键启动只能提交一次。");
                     }, session: session, coordinator: coordinator, environment: environment,
-                        prepareEnvironment: async (_, _) => {
+                        prepareEnvironment: async (_, _, showDesktop) => {
                             prepareCount++;
+                            Require(showDesktop == (scenario == "prepare-only"),
+                                "“启动并运行”默认不显示分身窗口；只有手动“仅启动分身”才显示。");
                             begin.TrySetResult();
                             await prepared.Task;
                             if (scenario == "cancel") {

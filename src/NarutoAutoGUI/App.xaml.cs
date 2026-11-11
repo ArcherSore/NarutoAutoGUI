@@ -1,6 +1,5 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Security.Principal;
 using System.Windows;
 using System.Windows.Threading;
 using NarutoAutoGUI.ChildSession;
@@ -25,6 +24,7 @@ public partial class App : System.Windows.Application
     private Mutex? _singleInstanceMutex;
     private bool _ownsSingleInstanceMutex;
     private bool _hasShownTrayNotification;
+    private QuitAfterRunTracker? _quitAfterRun;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -36,7 +36,20 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        if (!TryAcquireSingleInstance()) {
+        var command = LaunchCommand.Parse(e.Args);
+        // Both come before anything that would touch the single-instance lock, the log or a window.
+        if (command.Help) {
+            ConsoleOutput.Write(LaunchCommand.HelpText);
+            Shutdown(0);
+            return;
+        }
+        if (!Elevation.IsElevated()) {
+            Environment.ExitCode = RelaunchElevated(e.Args) ? 0 : 1;
+            Shutdown(Environment.ExitCode);
+            return;
+        }
+
+        if (!TryAcquireSingleInstance(command)) {
             Shutdown(Environment.ExitCode);
             return;
         }
@@ -58,12 +71,25 @@ public partial class App : System.Windows.Application
         _environment = new RuntimeEnvironment(_logger, _sessionManager, _workerCoordinator);
         _mainWindow = new MainWindow(
             _logger, _sessionManager, _workerCoordinator, _environment, RequestExitAsync, EndEnvironmentAsync,
-            InstallUpdateAsync, telemetry: _telemetry);
+            InstallUpdateAsync, telemetry: _telemetry, launchCommand: command);
         _mainWindow.HiddenToTray += MainWindow_HiddenToTray;
         _mainWindow.ProjectIdentityChanged += MainWindow_ProjectIdentityChanged;
+        _mainWindow.AutoRunStarted += (_, _) =>
+            _quitAfterRun = command.QuitAfterRun ? new QuitAfterRunTracker(DateTime.UtcNow) : null;
+        _mainWindow.AutoRunFailed += (_, message) => ShowBalloon("自动启动未能完成", message, failed: true);
+        // The Run this launch meant to start never began, so --quit-after-run has nothing to wait for; a Run the
+        // user starts later in this session must not end the program.
+        _mainWindow.AutoRunAbandoned += (_, _) => _quitAfterRun = null;
+        // The start request got no answer. The Worker may have started that Run, so wait for exactly that one.
+        _mainWindow.AutoRunUnconfirmed += (_, runId) => _quitAfterRun?.Await(runId);
         MainWindow = _mainWindow;
         CreateTrayIcon();
-        _mainWindow.Show();
+        // A launch by the system (logon) has no one to look at the window; it waits in the tray.
+        if (command.AutoStart) {
+            _mainWindow.StartInTray();
+        } else {
+            _mainWindow.Show();
+        }
     }
 
     internal static string ApplicationVersion =>
@@ -73,15 +99,16 @@ public partial class App : System.Windows.Application
     internal static void LogStartup(AppLogger logger)
     {
         using var process = System.Diagnostics.Process.GetCurrentProcess();
-        using var identity = WindowsIdentity.GetCurrent();
-        var elevated = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
         logger.Info($"NarutoAutoGUI 正式 GUI 启动 [version={ApplicationVersion}] [pid={process.Id}] "
-            + $"[session={process.SessionId}] [elevated={elevated}] [os={Environment.OSVersion}] "
+            + $"[session={process.SessionId}] [elevated={Elevation.IsElevated()}] [os={Environment.OSVersion}] "
             + $"[arch={RuntimeInformation.ProcessArchitecture}] [runtime={RuntimeInformation.FrameworkDescription}] "
-            + $"[directory={AppContext.BaseDirectory}] [logDirectory={logger.LogDirectory}]");
+            + $"[directory={AppContext.BaseDirectory}] [logDirectory={logger.LogDirectory}] "
+            + $"[args={string.Join(' ', Environment.GetCommandLineArgs().Skip(1))}]");
     }
 
-    internal async Task RequestExitAsync()
+    internal Task RequestExitAsync() => ExitAsync(confirm: true);
+
+    private async Task ExitAsync(bool confirm)
     {
         if (IsExiting || _logger is null || _sessionManager is null || _mainWindow is null || _environment is null) {
             return;
@@ -91,7 +118,7 @@ public partial class App : System.Windows.Application
         _mainWindow.SetExitInProgress(true);
         var exitCompleted = false;
         try {
-            await _environment.EndAsync(ConfirmExit, async ended => {
+            await _environment.EndAsync(confirm ? ConfirmExit : () => true, async ended => {
                 if (ended.Outcome != EnvironmentEndOutcome.Ended) {
                     if (ended.Error is { } error) {
                         WpfMessageBox.Show(
@@ -185,18 +212,31 @@ public partial class App : System.Windows.Application
     private void WorkerCoordinator_StateChanged(object? sender, WorkerCoordinatorSnapshot snapshot)
     {
         Dispatcher.BeginInvoke(() => {
-            var notification = _terminalNotifications.Observe(snapshot);
-            if (notification is null || IsExiting || _trayIcon is null
-                || _mainWindow is { IsVisible: true, IsActive: true, WindowState: not WindowState.Minimized }) {
+            // --quit-after-run: the Run this launch started has ended, so nothing is left to confirm or announce.
+            if (_quitAfterRun?.Observe(snapshot) == true) {
+                _quitAfterRun = null;
+                _logger?.Info("--quit-after-run：任务已结束，正在退出程序。");
+                _ = ExitAsync(confirm: false);
                 return;
             }
-            try {
-                _trayIcon.ShowBalloonTip(5000, notification.Title, notification.Message,
-                    notification.Failed ? Forms.ToolTipIcon.Error : Forms.ToolTipIcon.Info);
-            } catch (System.ComponentModel.Win32Exception exception) {
-                _logger?.Warn("显示任务通知失败。", exception);
+            if (_terminalNotifications.Observe(snapshot) is { } notification) {
+                ShowBalloon(notification.Title, notification.Message, notification.Failed);
             }
         });
+    }
+
+    // Only when the window is not already in front of the user.
+    private void ShowBalloon(string title, string message, bool failed)
+    {
+        if (IsExiting || _trayIcon is null
+            || _mainWindow is { IsVisible: true, IsActive: true, WindowState: not WindowState.Minimized }) {
+            return;
+        }
+        try {
+            _trayIcon.ShowBalloonTip(5000, title, message, failed ? Forms.ToolTipIcon.Error : Forms.ToolTipIcon.Info);
+        } catch (System.ComponentModel.Win32Exception exception) {
+            _logger?.Warn("显示任务通知失败。", exception);
+        }
     }
 
     private static System.Drawing.Icon LoadTrayIcon()
@@ -340,19 +380,40 @@ public partial class App : System.Windows.Application
         base.OnExit(e);
     }
 
-    private bool TryAcquireSingleInstance()
+    // The elevated process takes over; this one only exists to ask. Without administrator rights nothing can run,
+    // so a declined prompt ends the launch.
+    private static bool RelaunchElevated(string[] arguments)
     {
         try {
+            return Elevation.TryRelaunch(arguments);
+        } catch (Exception exception) {
+            WpfMessageBox.Show(
+                $"无法请求管理员权限，程序将退出：\n\n{exception.GetBaseException().Message}",
+                "NarutoAutoGUI", MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
+        }
+    }
+
+    private bool TryAcquireSingleInstance(LaunchCommand command)
+    {
+        try {
+            if (command.AutoStart && RunningCopies.Exists()) {
+                Environment.ExitCode = 0;
+                return false;
+            }
             using var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
             var mutexName = $@"Local\NarutoAutoGUI-{currentProcess.SessionId}";
             var mutex = new Mutex(initiallyOwned: true, mutexName, out var createdNew);
             if (!createdNew) {
                 mutex.Dispose();
                 Environment.ExitCode = 0;
-                WpfMessageBox.Show(
-                    "NarutoAutoGUI 已在当前 Windows Session 中运行。请从任务栏或托盘打开现有实例。",
-                    "NarutoAutoGUI",
-                MessageBoxButton.OK, MessageBoxImage.Information);
+                // A launch by the system (logon) has no one to answer a dialog, and the running instance wins.
+                if (!command.AutoStart) {
+                    WpfMessageBox.Show(
+                        "NarutoAutoGUI 已在当前 Windows Session 中运行。请从任务栏或托盘打开现有实例。",
+                        "NarutoAutoGUI",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                }
                 return false;
             }
 

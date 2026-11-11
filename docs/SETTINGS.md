@@ -9,6 +9,7 @@
 | item type | 必填字段（除 id/type） | 可选字段 |
 | --- | --- | --- |
 | toggle | icon、title、settingKey | description、joinPrevious |
+| choice | icon、title、choiceKey | description、joinPrevious |
 | action | icon、title、buttonText、actionId | description、joinPrevious |
 | info | icon；title / description / valueKey 至少一个非空 | 其余展示字段、joinPrevious |
 | about | title | description |
@@ -19,12 +20,15 @@
 
 ## 绑定边界
 
-SettingsDefinition 负责页面定义，SettingsRegistry 将 toggle、action、value key 显式绑定到业务对象，SettingsView 按四种行类型展示，并用左侧目录在连续滚动的分类间跳转和跟随。ApplicationSettings 负责应用偏好及行为入口，不持有 MaaNOP Config 或 Run Plan。新增同类设置行只需修改定义；新增行为或动态值还需注册代码。
+SettingsDefinition 负责页面定义，SettingsRegistry 将 toggle、choice、action、value key 显式绑定到业务对象，SettingsView 按五种行类型展示，并用左侧目录在连续滚动的分类间跳转和跟随。ApplicationSettings 负责应用偏好及行为入口，不持有 MaaNOP Config 或 Run Plan。新增同类设置行只需修改定义；新增行为或动态值还需注册代码。
 
 | 类型 | 当前 key | 含义 |
 | --- | --- | --- |
 | setting | update.checkOnStartup | 启动时检查更新 |
 | setting | application.closeToTray | 关闭窗口时隐藏到托盘 |
+| setting | application.autostart | 开机自启动；状态取自系统计划任务，不存配置 |
+| setting | autorun.onManualLaunch | 手动启动时也自动执行所选配置 |
+| choice | autorun.configuration | 启动后自动执行的配置；选项随配置列表变化，按配置 ID 保存，配置被删除时回退为不自动执行 |
 | setting | framework.saveOnError | 保存失败截图 |
 | setting | framework.saveDraw | 保存识别标注图，不持久化 |
 | setting | framework.debugMode | 框架调试模式 |

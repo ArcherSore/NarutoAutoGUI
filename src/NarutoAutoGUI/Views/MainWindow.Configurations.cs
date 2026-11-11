@@ -25,6 +25,7 @@ public partial class MainWindow
     private void RenderConfigurationTabs()
     {
         var project = _projectPlan!;
+        _settings.UpdateAutoRunConfigurations(AutoRunTarget.Of(project), !project.ConfigurationsUnreadable);
         PresetConfigurationButton.Visibility = project.Presets.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         var existing = ConfigurationTabs.Items.Cast<TabItem>().ToArray();
         if (!existing.Select(item => (Id: (Guid)item.Tag, Name: AutomationProperties.GetName(item)))
@@ -301,14 +302,19 @@ public partial class MainWindow
         }
     }
 
-    private void ChangeConfiguration(Action change)
+    // Returns whether the change was made. An unattended change (started by the launch itself) reports a refusal or
+    // failure without a dialog nobody can answer.
+    private bool ChangeConfiguration(Action change, bool unattended = false)
     {
         if (!CurrentControls.ConfigurationEditable || _configurationNameEditor is not null
             || !CommitFocusedConfigurationInput()) {
             if (_projectPlan is not null) {
                 RestoreConfigurationSelection();
             }
-            return;
+            if (unattended) {
+                ReportAutoRunFailure("无法切换到所选配置。");
+            }
+            return false;
         }
         try {
             var previous = _projectPlan?.ActiveConfigurationId;
@@ -324,9 +330,15 @@ public partial class MainWindow
             EndConfigurationRename();
             CloseTaskDescriptionDrawer();
             RenderTaskPlan();
+            return true;
         } catch (Exception exception) {
             RestoreConfigurationSelection();
-            HandleProjectEditError("保存任务配置失败", exception);
+            if (unattended) {
+                ReportUnattendedFailure("自动执行", exception);
+            } else {
+                HandleProjectEditError("保存任务配置失败", exception);
+            }
+            return false;
         }
     }
 

@@ -240,7 +240,8 @@ internal static partial class SelfTestRunner
             using var probe = new RdpEventProbe(savedCredential: true);
             probe.Raise("OnLogonError", terminal);
             probe.Raise("OnDisconnected", 2308);
-            Require(probe.Failures.SequenceEqual([terminal]), $"登录错误 {terminal} 仍必须立即报告失败。");
+            Require(probe.Failures.SequenceEqual([terminal]) && probe.Attention == 0,
+                $"登录错误 {terminal} 仍必须立即报告失败，且不需要用户在窗口里操作。");
         }
         using (var probe = new RdpEventProbe(savedCredential: true)) {
             probe.Raise("OnFatalError", 7);
@@ -249,8 +250,29 @@ internal static partial class SelfTestRunner
         foreach (var code in new[] { badPassword, expiredPassword, otherFailure }) {
             using var probe = new RdpEventProbe(savedCredential: false);
             probe.Raise("OnLogonError", code);
-            Require(probe.Failures.SequenceEqual([code]) && !probe.Host.SavedCredentialRejected,
-                $"未保存凭据时登录错误 {code} 的处理必须保持不变。");
+            Require(probe.Failures.SequenceEqual([code]) && !probe.Host.SavedCredentialRejected
+                && probe.Attention == 0, $"未保存凭据时登录错误 {code} 的处理必须保持不变，且已按失败处理不得显示窗口。");
+        }
+        // The window of a hidden connection must come forward exactly when Windows waits for the user.
+        const int sessionContention = -5, reconnectOptions = -4, logonWarning = 3, continuing = -2;
+        foreach (var saved in new[] { true, false }) {
+            foreach (var code in new[] { sessionContention, reconnectOptions, logonWarning }) {
+                using var probe = new RdpEventProbe(savedCredential: saved);
+                probe.Raise("OnLogonError", code);
+                Require(probe.Attention == 1 && probe.Failures.Count == 0,
+                    $"Winlogon 等待用户操作（{code}，已保存凭据={saved}）时必须通知显示窗口。");
+            }
+        }
+        foreach (var code in new[] { badPassword, expiredPassword, otherFailure }) {
+            using var probe = new RdpEventProbe(savedCredential: true);
+            probe.Raise("OnLogonError", code);
+            Require(probe.Attention == 1 && probe.Failures.Count == 0,
+                $"保存的凭据遇到登录错误 {code} 时 Windows 登录界面留给用户，必须通知显示窗口。");
+        }
+        foreach (var saved in new[] { true, false }) {
+            using var probe = new RdpEventProbe(savedCredential: saved);
+            probe.Raise("OnLogonError", continuing);
+            Require(probe.Attention == 0, $"正常的登录过渡（已保存凭据={saved}）不得显示窗口。");
         }
         using (var probe = new RdpEventProbe(savedCredential: true)) {
             probe.Raise("OnLogonError", badPassword);
@@ -269,12 +291,14 @@ internal static partial class SelfTestRunner
         {
             Host.ConnectionFailed += (_, e) => Failures.Add(e.ErrorCode);
             Host.LoginCompleted += (_, _) => Logins++;
+            Host.UserInteractionNeeded += (_, _) => Attention++;
             Raise("BeginConnectionAttempt", savedCredential);
         }
 
         internal RdpActiveXHost Host { get; } = new();
         internal List<int> Failures { get; } = [];
         internal int Logins { get; private set; }
+        internal int Attention { get; private set; }
 
         internal void Raise(string handler, params object[] args) => typeof(RdpActiveXHost)
             .GetMethod(handler, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Host, args);

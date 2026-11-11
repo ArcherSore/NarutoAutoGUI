@@ -51,16 +51,19 @@ internal sealed class RuntimeEnvironment
 
     // Runs inside an exclusive operation the caller has already entered. The framework options are read once the
     // Child Session is connected, just before the Worker is prepared.
-    internal async Task PrepareAsync(ProjectPlanModule project, Func<MaaFrameworkOptions> frameworkOptions)
+    internal async Task PrepareAsync(
+        ProjectPlanModule project, Func<MaaFrameworkOptions> frameworkOptions, bool showDesktop)
     {
         uint sessionId;
         using (_logger.Scope("连接 Child Session")) {
-            sessionId = await _session.EnsureConnectedAsync(showPreview: true);
+            sessionId = await _session.EnsureConnectedAsync(showDesktop);
         }
         using (_logger.Scope("准备 Worker")) {
             await _coordinator.PrepareWorkerAsync(sessionId, project, frameworkOptions: frameworkOptions());
         }
-        _session.ShowPreview();
+        if (showDesktop) {
+            _session.ShowPreview();
+        }
         _logger.Info("运行环境已准备；可开始前置任务，或登录游戏后开始普通任务。");
     }
 

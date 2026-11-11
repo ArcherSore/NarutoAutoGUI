@@ -58,7 +58,7 @@ public partial class MainWindow : FluentWindow
     private readonly HelpPageModel _help;
     private MainSection _section;
     private readonly string _applicationDirectory;
-    private readonly Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task> _prepareEnvironment;
+    private readonly Func<ProjectPlanModule, Func<MaaFrameworkOptions>, bool, Task> _prepareEnvironment;
     private CancellationTokenSource? _workerReadyWait;
     private readonly ChildSessionManager _sessionManager;
     private readonly WorkerCoordinator _workerCoordinator;
@@ -128,10 +128,12 @@ public partial class MainWindow : FluentWindow
         ChildSessionManager sessionManager, WorkerCoordinator workerCoordinator, RuntimeEnvironment environment,
         Func<Task> requestExitAsync, Func<Task> endEnvironmentAsync, Func<string, Task> installUpdateAsync,
         string? applicationDirectory = null, Func<CancellationToken, Task<EngineCheckResult>>? checkForUpdate = null,
-        Func<ProjectPlanModule, Func<MaaFrameworkOptions>, Task>? prepareEnvironment = null,
+        Func<ProjectPlanModule, Func<MaaFrameworkOptions>, bool, Task>? prepareEnvironment = null,
         Func<string, IProgress<EngineProgress>, CancellationToken, Task<string>>? prepareUpdate = null,
+        AutostartTask? autostart = null, LaunchCommand? launchCommand = null,
         GuiTelemetry? telemetry = null)
     {
+        _launchCommand = launchCommand ?? new LaunchCommand();
         InitializeComponent();
         _runLog = new RunLogFeed(LogLines, MaximumGuiLogEntries);
         DataContext = this;
@@ -146,7 +148,7 @@ public partial class MainWindow : FluentWindow
         _settings = new ApplicationSettings(_applicationDirectory, logger,
             CheckUpdateFromSettingsAsync, ExportDiagnosticsFromSettingsAsync, ReplayOnboarding, OpenAfdianAsync,
             ManageChildSessionCredentialsAsync, ClearDebugFilesAsync, ViewWelcome, OpenTaskDescriptionLink,
-            ReadLicense);
+            ReadLicense, autostart);
         SettingsView.DataContext = _settings.Page;
         HelpView.DataContext = _help = new HelpPageModel(
             _settings.ExportDiagnostics, new SettingsAction(OpenIssuesAsync), ReportCopyFailure);
@@ -220,6 +222,10 @@ public partial class MainWindow : FluentWindow
         try {
             AutoSessionMenuItem.IsChecked = File.Exists(AutoSessionPath)
                 && File.ReadAllText(AutoSessionPath).Trim() == "true";
+            // An auto-run prepares the environment itself, so the preparation below would only repeat it.
+            if (await AutoRunOnLaunchAsync()) {
+                return;
+            }
             if (AutoSessionMenuItem.IsChecked && CurrentControls.Action is RuntimeAction.Prepare { Enabled: true }) {
                 await PrepareFromPanelAsync();
             }
@@ -262,9 +268,10 @@ public partial class MainWindow : FluentWindow
             PendingOperation.RestoringSession,
             async () =>
             {
-                await _sessionManager.EnsureConnectedAsync(showPreview: true);
+                await _sessionManager.EnsureConnectedAsync(showPreview: false);
                 _logger.Info($"已有 Child Session {existingId} 恢复完成。");
-            });
+            },
+            unattended: _launchCommand.AutoStart);
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
@@ -536,10 +543,12 @@ public partial class MainWindow : FluentWindow
 
     private async void PrepareEnvironmentButton_Click(object sender, RoutedEventArgs e)
     {
-        await PrepareFromPanelAsync();
+        await PrepareFromPanelAsync(showDesktop: true);
     }
 
-    private async Task PrepareFromPanelAsync(bool startRun = false, bool startupOnly = false)
+    // Only a manual "仅启动分身" shows the Child Session window; every other preparation keeps it hidden.
+    private async Task PrepareFromPanelAsync(
+        bool startRun = false, bool startupOnly = false, bool unattended = false, bool showDesktop = false)
     {
         if (OperationOrExitInProgress) {
             LogIgnoredAction();
@@ -552,7 +561,7 @@ public partial class MainWindow : FluentWindow
             {
                 try {
                     LoadProject();
-                    await _prepareEnvironment(RequireProject(), _settings.CreateFrameworkOptions);
+                    await _prepareEnvironment(RequireProject(), _settings.CreateFrameworkOptions, showDesktop);
                 } catch {
                     _environmentPreparationFailed = true;
                     throw;
@@ -574,7 +583,8 @@ public partial class MainWindow : FluentWindow
                     SetPendingOperation(PendingOperation.StartingRun);
                     await StartCurrentPlanAsync(startupOnly);
                 }
-            });
+            },
+            unattended);
     }
 
     // RuntimeControls chooses what Retry means; this handler only carries it out.
@@ -628,7 +638,15 @@ public partial class MainWindow : FluentWindow
         _pendingStartAttempt ??= project.CreateRunStartAttempt(startupOnly);
         RunResultLog.WritePlan(_logger, _pendingStartAttempt, ActiveConfigurationName, startupOnly);
         _telemetry.Register(_pendingStartAttempt.RedactionValues);
-        var response = await _workerCoordinator.StartRunAsync(_pendingStartAttempt);
+        RunStartResponse response;
+        try {
+            response = await _workerCoordinator.StartRunAsync(_pendingStartAttempt);
+        } catch (Exception exception)
+            when (exception is not (WorkerProtocolErrorException or InvalidOperationException)) {
+            // Sent, but no answer: the Worker may have started it, so a retry reuses the same Run ID.
+            _unconfirmedRunId = _pendingStartAttempt.RunId;
+            throw;
+        }
         if (response.Disposition is not ("accepted" or "already_accepted")) {
             throw new InvalidDataException($"未知 run.start disposition：{response.Disposition}。 ");
         }
@@ -636,6 +654,7 @@ public partial class MainWindow : FluentWindow
             $"run.start {response.Disposition}：runId={_pendingStartAttempt.RunId:D}；"
             + $"planDigest={_pendingStartAttempt.PlanDigest}。 ");
         _pendingStartAttempt = null;
+        _runAccepted = true;
     }
 
     private async void StopRunButton_Click(object sender, RoutedEventArgs e)
@@ -1910,8 +1929,9 @@ public partial class MainWindow : FluentWindow
         $"操作未执行{AppLogger.Field("action", action)}{AppLogger.Field("current", CurrentControls.Action)}"
         + $"{AppLogger.Field("pending", _pendingOperation)}{AppLogger.Field("exiting", _exitInProgress)}");
 
-    private async Task RunOperationAsync(
-        PendingOperation pending, Func<Task> operation, [CallerMemberName] string caller = "")
+    // An unattended operation (started by the launch itself) reports its failure without a dialog nobody can answer.
+    private async Task RunOperationAsync(PendingOperation pending, Func<Task> operation, bool unattended = false,
+        [CallerMemberName] string caller = "")
     {
         if (OperationOrExitInProgress) {
             LogIgnoredAction(caller);
@@ -1924,6 +1944,8 @@ public partial class MainWindow : FluentWindow
             await _environment.RunExclusiveAsync(operation);
         } catch (OperationCanceledException) {
             _logger.Warn($"操作已取消：正在{OperationLabel(pending)}...");
+        } catch (Exception exception) when (unattended) {
+            ReportUnattendedFailure($"{OperationLabel(pending)}失败", exception);
         } catch (Exception exception) {
             HandleOperationError($"{OperationLabel(pending)}失败", exception);
         } finally {

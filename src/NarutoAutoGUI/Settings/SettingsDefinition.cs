@@ -6,7 +6,7 @@ namespace NarutoAutoGUI.Settings;
 
 internal enum SettingsItemKind
 {
-    Toggle, Action, Info, About
+    Toggle, Choice, Action, Info, About
 }
 
 internal sealed record SettingsDefinition
@@ -47,6 +47,10 @@ internal sealed record SettingsDefinition
                         Require(item.Title, $"{item.Id}.title");
                         Require(item.SettingKey, $"{item.Id}.settingKey");
                         break;
+                    case SettingsItemKind.Choice:
+                        Require(item.Title, $"{item.Id}.title");
+                        Require(item.ChoiceKey, $"{item.Id}.choiceKey");
+                        break;
                     case SettingsItemKind.Action:
                         Require(item.Title, $"{item.Id}.title");
                         Require(item.ButtonText, $"{item.Id}.buttonText");
@@ -63,6 +67,7 @@ internal sealed record SettingsDefinition
                     throw new InvalidDataException($"Settings Definition 缺少 {item.Id}.icon。");
                 }
                 if (item.Type != SettingsItemKind.Toggle && item.SettingKey is not null
+                    || item.Type != SettingsItemKind.Choice && item.ChoiceKey is not null
                     || item.Type != SettingsItemKind.Action
                         && (item.ActionId is not null || item.ButtonText is not null)
                     || item.Type != SettingsItemKind.Info && item.ValueKey is not null) {
@@ -110,6 +115,7 @@ internal sealed record SettingsItemDefinition
     public string? Title { get; init; }
     public string? Description { get; init; }
     public string? SettingKey { get; init; }
+    public string? ChoiceKey { get; init; }
     public string? ActionId { get; init; }
     public string? ButtonText { get; init; }
     public string? ValueKey { get; init; }

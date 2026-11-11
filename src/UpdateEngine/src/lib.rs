@@ -20,7 +20,7 @@ use version::Version;
 
 pub const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
 pub const MAX_RELEASE_BYTES: u64 = 4 * 1024 * 1024;
-pub const USER_AGENT: &str = "MaaNOP-UpdateEngine/2";
+pub const USER_AGENT: &str = "UpdateEngine/2";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

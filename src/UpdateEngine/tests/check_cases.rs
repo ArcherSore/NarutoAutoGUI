@@ -1,4 +1,4 @@
-use maanop_update_engine::{MAX_MESSAGE_BYTES, execute};
+use update_engine::{MAX_MESSAGE_BYTES, execute};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;

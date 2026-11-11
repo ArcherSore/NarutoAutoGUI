@@ -44,7 +44,7 @@ pub fn copy_and_launch(request: &str, root: &Path) -> Result<(), String>
 {
     let run = root.join("cache/updater/run");
     fs::create_dir(&run).map_err(|e| e.to_string())?;
-    let exe = run.join("maanop-update-engine.exe");
+    let exe = run.join("update-engine.exe");
     fs::copy(std::env::current_exe().map_err(|e| e.to_string())?, &exe).map_err(|e| e.to_string())?;
     let mut child = Command::new(exe).arg("--install-copy").arg(std::process::id().to_string())
         .creation_flags(0x08000000) // CREATE_NO_WINDOW; normal installation is silent.

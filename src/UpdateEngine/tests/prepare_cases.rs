@@ -1,4 +1,4 @@
-use maanop_update_engine::Download;
+use update_engine::Download;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::io::{Cursor, Write};
@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[test]
 fn prepare_validates_payload_and_preserves_installation()
 {
-    let root = std::env::temp_dir().join(format!("maanop-prepare-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("prepare-{}", std::process::id()));
     std::fs::create_dir_all(root.join("config")).unwrap();
     std::fs::write(root.join("config/user"), "keep").unwrap();
     std::fs::write(root.join("interface.json"),
@@ -34,7 +34,7 @@ fn prepare_validates_payload_and_preserves_installation()
 fn prepare_rejects_unsafe_corrupt_cancelled_and_incomplete_downloads()
 {
     use std::sync::atomic::Ordering;
-    let root = std::env::temp_dir().join(format!("maanop-prepare-bad-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("prepare-bad-{}", std::process::id()));
     std::fs::create_dir_all(root.join("cache/other")).unwrap();
     std::fs::write(root.join("cache/other/keep"), "keep").unwrap();
     std::fs::write(root.join("interface.json"),
@@ -138,7 +138,7 @@ fn package_for(layout: (&str, &str, &str, &str), extra: &[&str], omitted: &str, 
 #[test]
 fn prepare_rejects_missing_gui_and_worker_startup_dependencies()
 {
-    let root = std::env::temp_dir().join(format!("maanop-prepare-runtime-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("prepare-runtime-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("interface.json"),
         r#"{"name":"MaaNOP","version":"1.0.0","github":"https://github.com/test/product"}"#).unwrap();
@@ -213,11 +213,11 @@ fn prepare_rejects_duplicate_entries_and_links_in_otherwise_complete_packages()
 fn prepare_process_abandons_work_when_gui_pipe_closes()
 {
     use std::process::{Command, Stdio};
-    let root = std::env::temp_dir().join(format!("maanop-prepare-eof-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("prepare-eof-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("interface.json"),
         r#"{"name":"MaaNOP","version":"1.0.0","github":"https://github.com/test/product"}"#).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_maanop-update-engine"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_update-engine"))
         .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
     writeln!(child.stdin.take().unwrap(), "{}", prepare_request(&root, &[1])).unwrap();
     let output = child.wait_with_output().unwrap();
@@ -242,7 +242,7 @@ fn prepare(
     cancelled: &AtomicBool, emit: &mut dyn FnMut(Value) -> Result<(), String>,
 ) -> Value
 {
-    maanop_update_engine::prepare(request, |download: Download<'_>| {
+    update_engine::prepare(request, |download: Download<'_>| {
         let mut input = source(download.url)?;
         (download.progress)(0, 0.0)?;
         if download.cancelled.load(Ordering::Relaxed) { return Err("cancelled".into()); }
@@ -260,7 +260,7 @@ fn prepare_keeps_interrupted_bytes_and_reuses_only_the_same_candidate()
     let part = root.join("cache/updater/download/package.part");
     for cancel in [false, true] {
         let signal = AtomicBool::new(false);
-        let failed = maanop_update_engine::prepare(&request, |download| {
+        let failed = update_engine::prepare(&request, |download| {
             std::fs::write(download.path, &bytes[..100]).unwrap();
             signal.store(cancel, Ordering::Relaxed);
             Err("interrupted".into())
@@ -268,7 +268,7 @@ fn prepare_keeps_interrupted_bytes_and_reuses_only_the_same_candidate()
         assert_eq!(failed["type"], if cancel { "cancelled" } else { "error" });
         assert_eq!(std::fs::read(&part).unwrap(), bytes[..100]);
         assert!(!root.join("cache/updater/prepared").exists());
-        let resumed = maanop_update_engine::prepare(&request, |download| {
+        let resumed = update_engine::prepare(&request, |download| {
             assert_eq!(std::fs::read(download.path).unwrap(), bytes[..100]);
             let mut file = std::fs::OpenOptions::new().append(true).open(download.path).unwrap();
             file.write_all(&bytes[100..]).unwrap();
@@ -278,7 +278,7 @@ fn prepare_keeps_interrupted_bytes_and_reuses_only_the_same_candidate()
         assert!(!part.exists());
     }
     // A changed SHA256 must discard partial bytes even when version/name/size stay the same.
-    let _ = maanop_update_engine::prepare(&request, |download| {
+    let _ = update_engine::prepare(&request, |download| {
         std::fs::write(download.path, b"old candidate").unwrap();
         Err("interrupted".into())
     }, &AtomicBool::new(false), &mut |_| Ok(()));
@@ -286,7 +286,7 @@ fn prepare_keeps_interrupted_bytes_and_reuses_only_the_same_candidate()
     let mut descriptor: Value = serde_json::from_str(changed["descriptor"].as_str().unwrap()).unwrap();
     descriptor["sha256"] = json!("0".repeat(64));
     changed["descriptor"] = json!(descriptor.to_string());
-    let _ = maanop_update_engine::prepare(&changed.to_string(), |download| {
+    let _ = update_engine::prepare(&changed.to_string(), |download| {
         assert!(!download.path.exists());
         Err("different candidate".into())
     }, &AtomicBool::new(false), &mut |_| Ok(()));
@@ -300,14 +300,14 @@ fn complete_cache_is_verified_and_corruption_is_discarded()
     let bytes = package(&[]);
     let request = prepare_request(&root, &bytes);
     for corrupt in [true, false] {
-        let _ = maanop_update_engine::prepare(&request, |download| {
+        let _ = update_engine::prepare(&request, |download| {
             let mut cached = bytes.clone();
             if corrupt { cached[0] ^= 1; }
             std::fs::write(download.path, cached).unwrap();
             Err("process exited after final write".into())
         }, &AtomicBool::new(false), &mut |_| Ok(()));
         // download() must use the complete file without contacting example.com.
-        let result = maanop_update_engine::prepare(&request, maanop_update_engine::download,
+        let result = update_engine::prepare(&request, update_engine::download,
             &AtomicBool::new(false), &mut |_| Ok(()));
         assert_eq!(result["type"], if corrupt { "error" } else { "result" }, "{result}");
         if corrupt { assert!(result["message"].as_str().unwrap().contains("SHA256")); }
@@ -323,7 +323,7 @@ fn concurrent_prepare_cannot_replace_an_active_download()
     std::fs::create_dir_all(root.join("cache")).unwrap();
     let lock = std::fs::File::create(root.join("cache/updater.lock")).unwrap();
     lock.lock().unwrap();
-    let result = maanop_update_engine::prepare(&prepare_request(&root, &package(&[])), |_| panic!("locked"),
+    let result = update_engine::prepare(&prepare_request(&root, &package(&[])), |_| panic!("locked"),
         &AtomicBool::new(false), &mut |_| Ok(()));
     assert_eq!(result["type"], "error");
     assert!(result["message"].as_str().unwrap().contains("已有更新准备"));
@@ -335,7 +335,7 @@ fn concurrent_prepare_cannot_replace_an_active_download()
 #[test]
 fn prepare_accepts_the_layout_from_before_the_rename()
 {
-    let root = std::env::temp_dir().join(format!("maanop-prepare-legacy-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("prepare-legacy-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("interface.json"),
         r#"{"name":"MaaNOP","version":"1.0.0","github":"https://github.com/test/product"}"#).unwrap();

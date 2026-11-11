@@ -1,11 +1,11 @@
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$PackageDirectory)
 $ErrorActionPreference = 'Stop'
-$probeRoot = Join-Path ([IO.Path]::GetTempPath()) "maanop-engine-check-$([Guid]::NewGuid().ToString('N'))"
+$probeRoot = Join-Path ([IO.Path]::GetTempPath()) "engine-check-$([Guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $probeRoot | Out-Null
 try {
-    Copy-Item -LiteralPath (Join-Path $PackageDirectory 'maanop-update-engine.exe') -Destination $probeRoot
-    $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $probeRoot 'maanop-update-engine.exe'))
+    Copy-Item -LiteralPath (Join-Path $PackageDirectory 'update-engine.exe') -Destination $probeRoot
+    $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $probeRoot 'update-engine.exe'))
     $start.WorkingDirectory = $probeRoot
     $start.UseShellExecute = $false
     $start.CreateNoWindow = $true

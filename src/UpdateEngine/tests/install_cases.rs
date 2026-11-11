@@ -1,4 +1,4 @@
-use maanop_update_engine::install;
+use update_engine::install;
 use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,7 +9,7 @@ mod windows;
 
 fn fixture(name: &str) -> PathBuf
 {
-    let root = std::env::temp_dir().join(format!("maanop-install-{name}-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("install-{name}-{}", std::process::id()));
     if root.exists() { fs::remove_dir_all(&root).unwrap(); }
     fs::create_dir_all(root.join("cache/updater/payload")).unwrap();
     for directory in ["config", "logs", "debug", "cache/other"] {
@@ -20,8 +20,8 @@ fn fixture(name: &str) -> PathBuf
     fs::write(root.join("old-file"), "old").unwrap();
     fs::create_dir(root.join("state")).unwrap();
     fs::write(root.join("state/old"), "old").unwrap();
-    fs::write(root.join("cache/updater/payload/NarutoAutoGUI.exe"), "new").unwrap();
-    fs::write(root.join("cache/updater/payload/maanop-update-engine.exe"), "new").unwrap();
+    fs::write(root.join("cache/updater/payload/Bunshin.exe"), "new").unwrap();
+    fs::write(root.join("cache/updater/payload/update-engine.exe"), "new").unwrap();
     root
 }
 
@@ -43,7 +43,7 @@ fn install_waits_then_replaces_all_managed_entries_and_cleans_before_relaunch()
         assert!(!root.join("cache/updater/old").exists());
         Ok(())
     }, |exe| {
-        assert_eq!(exe, root.join("NarutoAutoGUI.exe"));
+        assert_eq!(exe, root.join("Bunshin.exe"));
         assert!(!root.join("old-file").exists());
         assert!(!root.join("state").exists());
         assert!(!root.join("cache/updater/old").exists());
@@ -72,7 +72,7 @@ fn preflight_and_wait_failures_leave_programs_untouched()
         }, |_| Err("timeout".into()), |_| panic!("must not relaunch"), &mut |_| {});
         assert_eq!(result["code"], "install_preflight", "{result}");
         assert_eq!(fs::read_to_string(root.join("old-file")).unwrap(), "old");
-        assert!(!root.join("NarutoAutoGUI.exe").exists());
+        assert!(!root.join("Bunshin.exe").exists());
         fs::remove_dir_all(root).unwrap();
     }
 }
@@ -84,7 +84,7 @@ fn relaunch_failure_does_not_undo_installed_files()
     let result = install(&request(&root, 123), |_| Ok(()), |_| Ok(()),
         |_| Err("cannot create process".into()), &mut |_| {});
     assert_eq!(result["code"], "relaunch_failed");
-    assert_eq!(fs::read_to_string(root.join("NarutoAutoGUI.exe")).unwrap(), "new");
+    assert_eq!(fs::read_to_string(root.join("Bunshin.exe")).unwrap(), "new");
     assert!(!root.join("old-file").exists());
     fs::remove_dir_all(root).unwrap();
 }
@@ -99,7 +99,7 @@ fn move_failure_stops_without_relaunch_or_rollback()
     let result = install(&request(&root, 123), |_| Ok(()), |_| Ok(()),
         |_| panic!("failed install must not relaunch"), &mut |_| {});
     assert_eq!(result["code"], "install_failed");
-    assert!(!root.join("NarutoAutoGUI.exe").exists());
+    assert!(!root.join("Bunshin.exe").exists());
     assert!(root.join("cache/updater/old").exists());
     drop(held);
     fs::remove_dir_all(root).unwrap();
@@ -117,10 +117,10 @@ fn actual_copy_handoff_waits_for_gui_pid_and_updates_itself()
     assert!(Command::new("rustc").arg("--edition=2024").arg("--crate-name=process_fixture")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/process_fixture.rs"))
         .arg("-o").arg(&helper).status().unwrap().success());
-    fs::copy(&helper, root.join("cache/updater/payload/NarutoAutoGUI.exe")).unwrap();
-    fs::copy(env!("CARGO_BIN_EXE_maanop-update-engine"), root.join("maanop-update-engine.exe")).unwrap();
+    fs::copy(&helper, root.join("cache/updater/payload/Bunshin.exe")).unwrap();
+    fs::copy(env!("CARGO_BIN_EXE_update-engine"), root.join("update-engine.exe")).unwrap();
     let mut gui = Command::new(&helper).arg("--wait").spawn().unwrap();
-    let mut engine = Command::new(root.join("maanop-update-engine.exe"))
+    let mut engine = Command::new(root.join("update-engine.exe"))
         .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
     writeln!(engine.stdin.take().unwrap(), "{}", request(&root, gui.id())).unwrap();
     let mut output = BufReader::new(engine.stdout.take().unwrap());
@@ -130,7 +130,7 @@ fn actual_copy_handoff_waits_for_gui_pid_and_updates_itself()
     assert!(engine.wait().unwrap().success());
     assert_eq!(fs::read_to_string(root.join("old-file")).unwrap(), "old");
     assert!(!root.join("cache/updater/old").exists());
-    let copy = root.join("cache/updater/run/maanop-update-engine.exe");
+    let copy = root.join("cache/updater/run/update-engine.exe");
     for _ in 0..20 {
         assert!(windows::windows(&copy).is_empty(), "normal handoff must not create any status UI");
         std::thread::sleep(Duration::from_millis(50));
@@ -144,7 +144,7 @@ fn actual_copy_handoff_waits_for_gui_pid_and_updates_itself()
         std::thread::sleep(Duration::from_millis(50));
     }
     assert!(root.join("relaunched").exists());
-    assert_eq!(fs::read_to_string(root.join("maanop-update-engine.exe")).unwrap(), "new");
+    assert_eq!(fs::read_to_string(root.join("update-engine.exe")).unwrap(), "new");
     assert!(!root.join("old-file").exists());
     // The terminal result is logged once even when the GUI closes stdout after ready.
     let clock = Instant::now();
@@ -177,9 +177,9 @@ fn post_ready_failures_show_native_message_with_log_path()
         assert!(Command::new("rustc").arg("--edition=2024").arg("--crate-name=process_fixture")
             .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/process_fixture.rs"))
             .arg("-o").arg(&helper).status().unwrap().success());
-        fs::copy(&helper, root.join("cache/updater/payload/NarutoAutoGUI.exe")).unwrap();
+        fs::copy(&helper, root.join("cache/updater/payload/Bunshin.exe")).unwrap();
         let mut gui = Command::new(&helper).arg("--wait").spawn().unwrap();
-        let mut engine = Command::new(env!("CARGO_BIN_EXE_maanop-update-engine"))
+        let mut engine = Command::new(env!("CARGO_BIN_EXE_update-engine"))
             .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
         writeln!(engine.stdin.take().unwrap(), "{}", request(&root, gui.id())).unwrap();
         let mut output = BufReader::new(engine.stdout.take().unwrap());
@@ -192,12 +192,12 @@ fn post_ready_failures_show_native_message_with_log_path()
         } else if code == "relaunch_failed" {
             // Allow replacement by rename, but deny CreateProcess access to the valid new executable.
             Some(fs::OpenOptions::new().read(true).share_mode(4 /* FILE_SHARE_DELETE */)
-                .open(root.join("cache/updater/payload/NarutoAutoGUI.exe")).unwrap())
+                .open(root.join("cache/updater/payload/Bunshin.exe")).unwrap())
         } else { None };
         if code != "install_preflight" {
             gui.kill().unwrap();
         }
-        let copy = root.join("cache/updater/run/maanop-update-engine.exe");
+        let copy = root.join("cache/updater/run/update-engine.exe");
         let clock = Instant::now();
         let text = loop {
             let windows = windows::windows(&copy);
@@ -227,7 +227,7 @@ fn post_ready_failures_show_native_message_with_log_path()
         if code == "relaunch_failed" {
             assert!(text.contains("文件安装完成但启动失败"));
             assert!(text.contains("请手动启动程序"));
-            assert_eq!(fs::read(root.join("NarutoAutoGUI.exe")).unwrap(), fs::read(&helper).unwrap());
+            assert_eq!(fs::read(root.join("Bunshin.exe")).unwrap(), fs::read(&helper).unwrap());
             assert!(!root.join("cache/updater/old").exists());
         } else if code == "install_preflight" {
             assert!(text.contains("等待进程退出超时或失败"));
@@ -235,7 +235,7 @@ fn post_ready_failures_show_native_message_with_log_path()
             assert!(root.join("old-file").exists());
         } else {
             assert!(text.contains("不要从 old 恢复"));
-            assert!(!root.join("NarutoAutoGUI.exe").exists());
+            assert!(!root.join("Bunshin.exe").exists());
         }
         drop(output);
         let clock = Instant::now();
@@ -254,7 +254,7 @@ fn preflight_process_failure_logs_once_without_launching_copy()
     use std::process::{Command, Stdio};
     let root = fixture("preflight-log");
     fs::write(root.join("cache/updater/prepared"), "wrong").unwrap();
-    let mut engine = Command::new(env!("CARGO_BIN_EXE_maanop-update-engine"))
+    let mut engine = Command::new(env!("CARGO_BIN_EXE_update-engine"))
         .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
     writeln!(engine.stdin.take().unwrap(), "{}", request(&root, std::process::id())).unwrap();
     let output = engine.wait_with_output().unwrap();
@@ -276,7 +276,7 @@ fn payload_write_failure_keeps_old_isolated_and_does_not_launch()
     use std::os::windows::fs::OpenOptionsExt;
     let root = fixture("write-failure");
     let held = fs::OpenOptions::new().read(true).share_mode(0)
-        .open(root.join("cache/updater/payload/NarutoAutoGUI.exe")).unwrap();
+        .open(root.join("cache/updater/payload/Bunshin.exe")).unwrap();
     let result = install(&request(&root, 123), |_| Ok(()), |_| Ok(()),
         |_| panic!("partial install cannot launch"), &mut |_| {});
     assert_eq!(result["code"], "install_failed");
@@ -318,14 +318,15 @@ fn writable_cache_cannot_hide_root_permission_failure_before_ready()
 }
 
 #[test]
-fn install_relaunches_the_launcher_of_the_installed_layout()
+fn install_relaunches_the_launcher_of_the_layout_from_before_the_rename()
 {
     let root = fixture("layout");
-    fs::remove_file(root.join("cache/updater/payload/NarutoAutoGUI.exe")).unwrap();
-    fs::write(root.join("cache/updater/payload/Bunshin.exe"), "new").unwrap();
-    fs::write(root.join("cache/updater/payload/update-engine.exe"), "new").unwrap();
+    fs::remove_file(root.join("cache/updater/payload/Bunshin.exe")).unwrap();
+    fs::remove_file(root.join("cache/updater/payload/update-engine.exe")).unwrap();
+    fs::write(root.join("cache/updater/payload/NarutoAutoGUI.exe"), "new").unwrap();
+    fs::write(root.join("cache/updater/payload/maanop-update-engine.exe"), "new").unwrap();
     let result = install(&request(&root, 123), |_| Ok(()), |_| Ok(()), |exe| {
-        assert_eq!(exe, root.join("Bunshin.exe"));
+        assert_eq!(exe, root.join("NarutoAutoGUI.exe"));
         Ok(())
     }, &mut |_| {});
     assert_eq!(result["type"], "result", "{result}");

@@ -11,7 +11,7 @@ Bunshin 是面向 MaaNOP 的 Windows x64 前端。主桌面负责配置与观察
 | ProjectModel | 读取 MaaNOP Project Interface，保存用户意图，解析本次 Run Plan |
 | Protocol | GUI 与 Worker 共享的消息与运行模型 |
 | Worker | 在 Child Session 中持有 MaaFramework、MaaNOP Agent、运行状态和日志 |
-| MaaNOP.UpdateEngine（Rust） | 完整包更新的检查、准备、校验、安装和重启规则 |
+| UpdateEngine（Rust） | 完整包更新的检查、准备、校验、安装和重启规则 |
 
 GUI 不加载 MaaFramework 执行任务。Worker 不读取或修改用户任务配置，也不重新解释 Project Interface 的选项。MFAAvalonia 仅用于人工对照，不参与正式运行链路。
 
@@ -64,7 +64,7 @@ Worker 同时只执行一个 Run，逐项处理 Plan Item。pretask 非零退出
 
 ## 更新
 
-GUI 负责更新界面、用户确认和运行环境关闭；Rust Update Engine 负责 Release 选择、完整包下载与验证、缓存和安装。GUI 将 Engine 给出的 descriptor/reference 原样交回，不解释更新包。安装前必须停止任务并确认运行环境退出；Engine 接管安装后等待 GUI 进程退出，再替换完整包内容。更新契约见 [Update Engine 文档](../src/MaaNOP.UpdateEngine/README.md)。
+GUI 负责更新界面、用户确认和运行环境关闭；Rust Update Engine 负责 Release 选择、完整包下载与验证、缓存和安装。GUI 将 Engine 给出的 descriptor/reference 原样交回，不解释更新包。安装前必须停止任务并确认运行环境退出；Engine 接管安装后等待 GUI 进程退出，再替换完整包内容。更新契约见 [Update Engine 文档](../src/UpdateEngine/README.md)。
 
 ## 遥测
 

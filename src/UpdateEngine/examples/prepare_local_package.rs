@@ -1,6 +1,6 @@
 //! Release acceptance harness: production check/prepare rules with only HTTP replaced by a local ZIP.
 //! This example is never shipped or exposed as an Engine operation.
-use maanop_update_engine::{execute, prepare};
+use update_engine::{execute, prepare};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::fs::File;

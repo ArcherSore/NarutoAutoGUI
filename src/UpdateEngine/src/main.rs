@@ -1,4 +1,4 @@
-use maanop_update_engine::{
+use update_engine::{
     MAX_MESSAGE_BYTES, MAX_RELEASE_BYTES, error, execute, prepare, handoff, download, fetch,
 };
 use std::fs::OpenOptions;

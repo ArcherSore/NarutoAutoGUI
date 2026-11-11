@@ -32,7 +32,7 @@ internal static partial class ProjectAboutResolver
         }
     }
 
-    // Keep in step with MaaNOP.UpdateEngine/src/lib.rs::repository (including the default HTTPS port).
+    // Keep in step with UpdateEngine/src/lib.rs::repository (including the default HTTPS port).
     private static Uri? Repository(string? value)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != "https"

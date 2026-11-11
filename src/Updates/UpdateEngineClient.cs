@@ -10,6 +10,8 @@ public sealed record EngineProgress(string Phase, long Bytes, long Total, double
 
 public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout = null)
 {
+    // The Engine's file name in the package; UpdateEngine/Cargo.toml and the package scripts must agree.
+    public const string FileName = "update-engine.exe";
     public const int MaxMessageBytes = 1024 * 1024;
     public const string DiagnosticsKey = "UpdateEngineDiagnostics";
     private const int MaxStderrChars = 4096;

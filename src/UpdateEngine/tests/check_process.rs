@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 #[test]
 fn invalid_request_returns_one_structured_error_and_failure_exit()
 {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_maanop-update-engine"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_update-engine"))
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     child.stdin.take().unwrap().write_all(b"{\"operation\":\"unknown\"}\n").unwrap();
     let output = child.wait_with_output().unwrap();

@@ -127,7 +127,7 @@ try {
             $cargo = (Get-Command cargo -ErrorAction SilentlyContinue).Source
             if (-not $cargo) { $cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe' }
             $env:PATH = (Split-Path $cargo) + ';' + $env:PATH
-            $manifest = Join-Path $repositoryRoot 'src\MaaNOP.UpdateEngine\Cargo.toml'
+            $manifest = Join-Path $repositoryRoot 'src\UpdateEngine\Cargo.toml'
             Invoke-VerificationStep 'engine-test' $cargo @('test', '--locked', '--manifest-path', $manifest)
             Invoke-VerificationStep 'engine-clippy' $cargo @(
                 'clippy', '--locked', '--manifest-path', $manifest, '--all-targets', '--', '-D', 'warnings'

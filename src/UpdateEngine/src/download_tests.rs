@@ -320,7 +320,7 @@ fn fetch_sends_headers_returns_body_and_enforces_limit()
     assert!(fetch_with(&url, &[], body.len() as u64 - 1, timeout, true).unwrap_err().contains("大小限制"));
     let request = server.join().unwrap();
     assert!(request.contains("x-github-api-version: 2022-11-28"), "{request}");
-    assert!(request.contains("user-agent: maanop-updateengine/2"), "{request}");
+    assert!(request.contains("user-agent: updateengine/2"), "{request}");
 }
 
 #[test]

@@ -103,7 +103,7 @@ public partial class MainWindow
 
     private static Task<EngineCheckResult> CheckWithEngineAsync(CancellationToken cancellation)
     {
-        var executable = Path.Combine(AppContext.BaseDirectory, "maanop-update-engine.exe");
+        var executable = Path.Combine(AppContext.BaseDirectory, UpdateEngineClient.FileName);
         var engine = new UpdateEngineClient(new ProcessStartInfo(executable) {
             WorkingDirectory = AppContext.BaseDirectory
         });
@@ -114,7 +114,7 @@ public partial class MainWindow
         string descriptor, IProgress<EngineProgress> progress, CancellationToken cancellation)
     {
         var engine = new UpdateEngineClient(new ProcessStartInfo(
-            Path.Combine(AppContext.BaseDirectory, "maanop-update-engine.exe")) {
+            Path.Combine(AppContext.BaseDirectory, UpdateEngineClient.FileName)) {
             WorkingDirectory = AppContext.BaseDirectory
         });
         return engine.PrepareAsync(AppContext.BaseDirectory, descriptor, progress, cancellation);

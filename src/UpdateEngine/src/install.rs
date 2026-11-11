@@ -108,11 +108,11 @@ fn run(
 #[test]
 fn cleanup_failure_does_not_prevent_relaunch()
 {
-    let root = std::env::temp_dir().join(format!("maanop-cleanup-failure-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("cleanup-failure-{}", std::process::id()));
     fs::create_dir_all(root.join("cache/updater/payload")).unwrap();
     fs::write(root.join("cache/updater/prepared"), "opaque").unwrap();
-    fs::write(root.join("cache/updater/payload/NarutoAutoGUI.exe"), "new").unwrap();
-    fs::write(root.join("cache/updater/payload/maanop-update-engine.exe"), "new").unwrap();
+    fs::write(root.join("cache/updater/payload/Bunshin.exe"), "new").unwrap();
+    fs::write(root.join("cache/updater/payload/update-engine.exe"), "new").unwrap();
     let request = json!({"protocolVersion":1,"operation":"install","installation":root,
         "reference":"opaque","guiPid":123}).to_string();
     let mut logged = Vec::new();
@@ -148,7 +148,7 @@ pub fn handoff(request: &str, copy_parent: Option<u32>) -> Value
             Err(message) => error("install_preflight", &message),
         };
     }
-    let expected = root.join("cache/updater/run/maanop-update-engine.exe");
+    let expected = root.join("cache/updater/run/update-engine.exe");
     if std::env::current_exe().ok().as_deref() != Some(expected.as_path()) {
         return error("install_preflight", "安装副本位置无效。");
     }

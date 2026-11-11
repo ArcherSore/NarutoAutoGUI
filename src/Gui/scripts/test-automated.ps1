@@ -82,9 +82,9 @@ if (-not $cargo) {
 }
 Push-Location $repositoryRoot
 try {
-    & $cargo test --locked --manifest-path src/MaaNOP.UpdateEngine/Cargo.toml
+    & $cargo test --locked --manifest-path src/UpdateEngine/Cargo.toml
     Complete-Stage 'Engine tests'
-    & $cargo clippy --locked --manifest-path src/MaaNOP.UpdateEngine/Cargo.toml --all-targets -- -D warnings
+    & $cargo clippy --locked --manifest-path src/UpdateEngine/Cargo.toml --all-targets -- -D warnings
     Complete-Stage 'Engine clippy'
 } finally { Pop-Location }
 

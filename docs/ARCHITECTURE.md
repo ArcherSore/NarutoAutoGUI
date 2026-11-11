@@ -24,6 +24,9 @@ GUI 启动时检查已有 Child Session，必要时恢复 RDP 预览宿主。创
 
 用户可在设置中保存用于 Child Session 登录的 Windows 账户密码。凭据只存于 Windows 凭据管理器，建立 RDP 连接时读取并提交给 ActiveX；设置页也会读取凭据以显示保存状态和账户。账户和密码不进入配置、日志或诊断包；登录是否成功以 RDP 登录完成为准。未保存或无法读取时保持 Windows 原有的密码提示。
 
+凭据读写仅在 Windows 返回 1312 时，以同用户、同会话且未提权的资源管理器令牌在当前进程内重试一次。
+身份模拟仅覆盖固定分身凭据的访问，结束或异常时恢复原身份；RDP、分身生命周期与 Worker 启动仍使用原权限。
+
 RuntimeEnvironment 是运行环境生命周期的唯一所有者：持有应用操作闸门，负责准备与结束运行环境。准备只创建或恢复 Child Session、连接 RDP 并接纳 Worker，不自动启动游戏。游戏可在分身中手动启动，也可由开始任务时执行的 Project Interface pretask 启动。退出、托盘、主窗口恢复操作与安装更新都以同一顺序结束运行环境：先在时限内正常停止 Active Run（失败时以注销恢复），再注销 Child Session，并在时限内确认 Child Session 已结束、已跟踪的 Worker 已退出，之后才丢弃 Admission。无法确认时如实报告"结束未确认"并保留 Admission，可再次结束。结束期间主窗口显示进度并暂停其他命令。
 
 GUI 以真实 Windows 进程和 Session 身份核验 Worker，再通过受限的本机 Named Pipe 接纳连接。同一 Child Session 只接纳一个 Worker。GUI 只在能证明 Worker 已不存在或 Child Session 已确认注销时丢弃 Admission，无法确认时拒绝准备；每次启动 Worker 前还会确认目标 Child Session 中没有 Worker 进程。断线时，已接纳 Worker 可继续运行；GUI 重连后取得新的完整 Snapshot 才能重新作出执行决策。Worker 不具备跨进程退出恢复 Run 的能力。

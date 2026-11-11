@@ -46,14 +46,14 @@ internal sealed class DebugFileCleaner(string applicationDirectory, string logDi
 
     private FileInfo[] Logs(string directory, Action<string, Exception> skip) =>
         MaaDebugImages.TryList(applicationDirectory, directory, skip, out var entries)
-            ? entries.OfType<FileInfo>().Where(file => file.Extension.Equals(".log", StringComparison.OrdinalIgnoreCase)
-                && !file.Attributes.HasFlag(FileAttributes.ReparsePoint)).ToArray()
+            ? entries.OfType<FileInfo>()
+                .Where(file => file.Extension.Equals(".log", StringComparison.OrdinalIgnoreCase)).ToArray()
             : [];
 
     private void RemoveEmptyExports()
     {
         var exports = MaaDebugImages.ExportsDirectory(applicationDirectory);
-        if (!Directory.Exists(exports) || File.GetAttributes(exports).HasFlag(FileAttributes.ReparsePoint)) {
+        if (!Directory.Exists(exports)) {
             return;
         }
         foreach (var directory in Directory.GetDirectories(exports)) {

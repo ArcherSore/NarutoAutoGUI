@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using NarutoAutoGUI.ChildSession;
 using NarutoAutoGUI.Views;
 
 namespace NarutoAutoGUI.Infrastructure;
@@ -11,10 +12,19 @@ internal static partial class SelfTestRunner
     private static void VerifyPreparationGuidance()
     {
         const string prepare = "准备运行环境失败";
-        Require(MainWindow.GetRecoveryGuidance(prepare, true) != MainWindow.GetRecoveryGuidance(prepare, false),
-            "仅允许 Windows Hello 登录时，准备运行环境失败应给出对应指引。");
+        var failure = new ChildSessionConnectionException("RDP 原始错误，断开码=123，扩展码=456");
+        var guidance = MainWindow.GetWindowsHelloGuidance(prepare, failure, true);
+        Require(!string.IsNullOrWhiteSpace(guidance) && !guidance.Contains(failure.Message),
+            "Hello 场景应直接给出恢复指引，不混入原始 RDP 错误和断开码。");
+        Require(MainWindow.GetWindowsHelloGuidance(prepare, failure, false) is null,
+            "未开启 Hello 限制时应保留原始故障说明。");
+        Require(MainWindow.GetWindowsHelloGuidance(prepare,
+            new InvalidOperationException("Worker 启动失败"), true) is null,
+            "即使开启 Hello 限制，也不能把 Worker 等其他准备失败归因于分身登录。");
+        Require(MainWindow.GetWindowsHelloGuidance(prepare, new InvalidOperationException("包装", failure), true)
+            == guidance, "包装的 RDP 连接异常也应保留恢复指引。");
         const string start = "开始任务失败";
-        Require(MainWindow.GetRecoveryGuidance(start, true) == MainWindow.GetRecoveryGuidance(start, false),
+        Require(MainWindow.GetWindowsHelloGuidance(start, failure, true) is null,
             "Windows Hello 指引不应出现在与登录无关的操作上。");
     }
 

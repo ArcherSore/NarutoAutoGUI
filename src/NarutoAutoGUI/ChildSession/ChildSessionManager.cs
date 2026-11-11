@@ -160,7 +160,8 @@ internal sealed class ChildSessionManager : IDisposable
                 if (savedCredentialSubmitted) {
                     // Error dialogs show the innermost message, so the hint goes without an inner exception; the
                     // original failure is logged above.
-                    throw new InvalidOperationException(detail);
+                    throw exception is ChildSessionConnectionException
+                        ? new ChildSessionConnectionException(detail) : new InvalidOperationException(detail);
                 }
                 throw;
             }

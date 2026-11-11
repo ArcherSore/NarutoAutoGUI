@@ -1,5 +1,8 @@
 # 用户使用手册
 
+首次使用前，运行完整包里的 `DependencySetup_依赖库安装.bat`，安装 .NET 10 桌面运行库和 Visual C++ 运行库（只需一次）。
+然后运行 `Bunshin.exe`，按提示允许管理员权限。
+
 ## 一、保存 Windows 凭据
 
 Bunshin 用一个独立的桌面分身运行游戏，分身需要登录你的 Windows 账户。

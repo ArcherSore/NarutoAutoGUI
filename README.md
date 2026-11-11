@@ -40,13 +40,15 @@ Bunshin 是 [MaaNOP](https://github.com/ArcherSore/MaaNOP) 的图形界面。它
 | 项目 | 要求 |
 |:---|:---|
 | 系统 | Windows 10 / 11 x64 |
+| 运行库 | [.NET 10 桌面运行库](https://dotnet.microsoft.com/download/dotnet/10.0)和 Visual C++ 运行库，可用包内的 `DependencySetup_依赖库安装.bat` 一键安装 |
 | 资源 | 带游戏资源的 [MaaNOP](https://github.com/ArcherSore/MaaNOP) 完整包 |
 
 ## 快速开始
 
 1. 前往 [MaaNOP](https://github.com/ArcherSore/MaaNOP) 下载完整包并解压。
-2. 运行 `Bunshin.exe`，按提示允许管理员权限。
-3. 阅读[用户使用手册](docs/USER-GUIDE.md)，完成 Windows 凭据和 QQ 大厅自动启动的一次性配置。
+2. 运行 `DependencySetup_依赖库安装.bat`，安装 .NET 10 桌面运行库和 Visual C++ 运行库（只需一次）。
+3. 运行 `Bunshin.exe`，按提示允许管理员权限。
+4. 阅读[用户使用手册](docs/USER-GUIDE.md)，完成 Windows 凭据和 QQ 大厅自动启动的一次性配置。
 
 ## 启动参数
 

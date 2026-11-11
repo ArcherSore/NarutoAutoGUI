@@ -229,14 +229,21 @@ fn extract(zip: &Path, payload: &Path, cancelled: &AtomicBool) -> Result<(), Str
 
 fn validate(payload: &Path, tag: &str) -> Result<(), String>
 {
-    for file in ["NarutoAutoGUI.exe", "NarutoAutoGUI.dll", "maanop-update-engine.exe",
-        "NarutoAutoGUI.deps.json", "NarutoAutoGUI.runtimeconfig.json",
-        "libs/Wpf.Ui.dll", "libs/NarutoAutoGUI.Updates.dll", "worker/NarutoAutoWorker.exe",
-        "worker/NarutoAutoWorker.dll",
-        "worker/NarutoAutoWorker.deps.json", "worker/NarutoAutoWorker.runtimeconfig.json",
-        "worker/runtimes/win-x64/native/MaaFramework.dll",
-        "worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll", "python/python.exe"] {
-        if !payload.join(file).is_file() { return Err(format!("完整包缺少必需文件：{file}")); }
+    let Some(layout) = files::layout(payload) else {
+        return Err(format!("完整包缺少必需文件：{}.exe", files::LAYOUTS[0].app));
+    };
+    let (app, worker) = (layout.app, layout.worker);
+    let required = [
+        format!("{app}.exe"), format!("{app}.dll"), format!("{}.exe", layout.engine),
+        format!("{app}.deps.json"), format!("{app}.runtimeconfig.json"),
+        "libs/Wpf.Ui.dll".into(), format!("libs/{}.dll", layout.updates), format!("worker/{worker}.exe"),
+        format!("worker/{worker}.dll"), format!("worker/{worker}.deps.json"),
+        format!("worker/{worker}.runtimeconfig.json"),
+        "worker/runtimes/win-x64/native/MaaFramework.dll".into(),
+        "worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll".into(), "python/python.exe".into(),
+    ];
+    for file in required {
+        if !payload.join(&file).is_file() { return Err(format!("完整包缺少必需文件：{file}")); }
     }
     for directory in ["resource", "agent"] {
         if !payload.join(directory).is_dir() { return Err(format!("完整包缺少目录：{directory}")); }
@@ -247,7 +254,7 @@ fn validate(payload: &Path, tag: &str) -> Result<(), String>
         || Version::parse(&project.version) != Version::parse(tag) {
         return Err("完整包产品名或版本与候选不一致。".into());
     }
-    let config = fs::read_to_string(payload.join("NarutoAutoGUI.runtimeconfig.json")).map_err(|e| e.to_string())?;
+    let config = fs::read_to_string(payload.join(format!("{app}.runtimeconfig.json"))).map_err(|e| e.to_string())?;
     let program_files = std::env::var_os("ProgramFiles").unwrap_or_else(|| "C:\\Program Files".into());
     require_frameworks(&config, &Path::new(&program_files).join("dotnet"))
 }

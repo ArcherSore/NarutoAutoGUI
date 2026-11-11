@@ -27,10 +27,10 @@ pub(crate) fn preflight(request: &str) -> Result<Request, String>
     let work = root.join("cache/updater");
     files::ancestors(&work)?;
     files::tree(&work)?;
+    let payload = work.join("payload");
     if request.reference.is_empty()
         || fs::read_to_string(work.join("prepared")).map_err(|e| e.to_string())? != request.reference
-        || !work.join("payload/NarutoAutoGUI.exe").is_file()
-        || !work.join("payload/maanop-update-engine.exe").is_file()
+        || !files::layout(&payload).is_some_and(|layout| payload.join(format!("{}.exe", layout.engine)).is_file())
         || work.join("old").exists() {
         return Err("已准备更新失效，请重新下载。".into());
     }
@@ -97,7 +97,8 @@ fn run(
     for path in [&old, &payload] {
         if let Err(message) = cleanup(path) { log(&format!("安装后清理失败：{message}")); }
     }
-    if let Err(message) = relaunch(&root.join("NarutoAutoGUI.exe")) {
+    let launcher = files::layout(root).map_or(files::LAYOUTS[0].app, |layout| layout.app);
+    if let Err(message) = relaunch(&root.join(format!("{launcher}.exe"))) {
         return error("relaunch_failed", &format!("文件安装完成但启动失败：{message}。请手动启动程序。"));
     }
     json!({"protocolVersion":1,"type":"result","operation":"install"})

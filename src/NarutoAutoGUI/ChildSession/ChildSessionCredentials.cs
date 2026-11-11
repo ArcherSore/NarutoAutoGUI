@@ -44,7 +44,7 @@ internal sealed class ChildSessionCredentialStore
     internal ChildSessionCredentialStore(AppLogger logger, ICredentialVault? vault = null)
     {
         _logger = logger;
-        _vault = vault ?? new CredentialVaultFallback(new WindowsCredentialVault());
+        _vault = vault ?? new CredentialVaultFallback(new WindowsCredentialVault(), ShellCredentialAccess.Run);
     }
 
     // Shows what is saved: null when nothing is, and throws when the store cannot be read or holds an incomplete

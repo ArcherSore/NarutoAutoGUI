@@ -1,0 +1,516 @@
+using System;
+using System.Drawing;
+using System.Globalization;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+using Gui.Models;
+using static Gui.Infrastructure.AppLogger;
+using DrawingSize = System.Drawing.Size;
+
+namespace Gui.ChildSession;
+
+// Adapted (trimmed) from BetterGI 0.63.0 RdpActiveXHost.cs.
+// The original BetterGI code is licensed under GPL-3.0; see THIRD_PARTY_NOTICES.md.
+// This file has been modified and is distributed as part of Bunshin (GPL-3.0-only).
+// Trimmed: dropped IMsRdpClientNonScriptable / SendKeys / Win+D / Win+Tab / SmartSizing toggle UI /
+// reconnect state machine. Kept: MsRdpClient10 hosting, ConnectToChildSession setup, the 4 events we
+// need (LoginComplete/Disconnected/FatalError/LogonError), and the diagnostic helpers.
+internal sealed class RdpActiveXHost : AxHost
+{
+    // MsRdpClient10 CLSID, supported on Windows 10 and 11. MsRdpClient11 (A0C63C30-...) exists only on Windows 11.
+    internal const string RdpClientClsid = "8B918B82-7985-4C24-89DF-C33AD2BBFBCD";
+
+    private ConnectionPointCookie? _eventCookie;
+    private RdpEventSink? _eventSink;
+    private bool _connectionAttemptInProgress;
+    private bool _connectionFailureReported;
+    private ChildSessionConnectionFailedEventArgs? _lastConnectionDiagnostic;
+    private bool _disconnectRequested;
+    private bool _savedCredentialSubmitted;
+    private bool _smartSizingEnabled = true;
+    private bool _inputBlocked = true;
+    private bool _loggedIn;
+
+    internal void SetInputBlocked(bool blocked)
+    {
+        _inputBlocked = blocked;
+        if (_loggedIn && IsHandleCreated) {
+            // Native disabling blocks input to the host and its child HWNDs, while painting continues.
+            EnableWindow(Handle, !blocked);
+            TabStop = !blocked;
+        }
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnableWindow(nint window, [MarshalAs(UnmanagedType.Bool)] bool enabled);
+
+    // The one interim logon event every normal logon raises; it never needs the user.
+    private const int WinlogonContinuing = -2;
+
+    internal event EventHandler? LoginCompleted;
+
+    // Windows is showing a logon screen or dialog that only the user can answer in the window.
+    internal event EventHandler? UserInteractionNeeded;
+
+    internal event EventHandler<ChildSessionConnectionFailedEventArgs>? ConnectionFailed;
+
+    // What only the host sees and no failure reports: interim logon events and ignored failures. Never credentials.
+    internal event Action<LogLevel, string>? Diagnostic;
+
+    internal void ReportDiagnostic(LogLevel level, string message) => Diagnostic?.Invoke(level, message);
+
+    internal ChildSessionConnectionFailedEventArgs? LastConnectionDiagnostic => _lastConnectionDiagnostic;
+
+    // Windows reported a logon failure for the saved credential of the current attempt and left its logon screen
+    // to the user; a later OnLoginComplete then means the user signed in by hand.
+    internal bool SavedCredentialRejected { get; private set; }
+
+    // Records acceptance of the request; the negotiated graphics path can still differ.
+    internal bool FrameBufferRedirectionEnabled { get; private set; }
+
+    internal string? FrameBufferRedirectionWarning { get; private set; }
+
+    internal RdpActiveXHost()
+        : base(RdpClientClsid)
+    {
+        Dock = DockStyle.Fill;
+    }
+
+    internal int ConnectedState
+    {
+        get
+        {
+            if (!IsHandleCreated) {
+                return 0;
+            }
+
+            return Convert.ToInt32(GetComProperty(GetRequiredOcx(), "Connected"), CultureInfo.InvariantCulture);
+        }
+    }
+
+    internal void ConnectToChildSession(DrawingSize desktopSize, ChildSessionCredential? credential)
+    {
+        if (ConnectedState != 0) {
+            return;
+        }
+
+        var client = GetRequiredOcx();
+        var width = Math.Clamp(desktopSize.Width, 200, 8192);
+        var height = Math.Clamp(desktopSize.Height, 200, 8192);
+
+        SetComProperty(client, "Server", "localhost");
+        SetComProperty(client, "DesktopWidth", width);
+        SetComProperty(client, "DesktopHeight", height);
+        SetComProperty(client, "ColorDepth", 32);
+        SetComProperty(client, "ConnectingText", "正在创建 MaaNOP Child Session...");
+        SetComProperty(client, "DisconnectedText", "MaaNOP Child Session 已断开");
+
+        var securedSettings = GetComProperty(client, "SecuredSettings2")
+            ?? throw new COMException("RDP ActiveX 未返回 SecuredSettings2。");
+        RunComStep("设置系统组合键发送位置", () => SetComProperty(securedSettings, "KeyboardHookMode", 1));
+
+        var advancedSettings = GetComProperty(client, "AdvancedSettings7")
+            ?? throw new COMException("RDP ActiveX 未返回 AdvancedSettings7。");
+        RunComStep("设置 RDP 连接端口", () =>
+            SetComProperty(advancedSettings, "RDPPort", ChildSessionNativeMethods.GetConfiguredRdpPort()));
+        RunComStep("启用 CredSSP", () => SetComProperty(advancedSettings, "EnableCredSspSupport", true));
+        RunComStep("启用远程 Windows 键", () => SetComProperty(advancedSettings, "EnableWindowsKey", 1));
+        RunComStep("设置显示缩放 (SmartSizing)", () => SetComProperty(advancedSettings, "SmartSizing", _smartSizingEnabled));
+
+        object connectToChildSession = true;
+        RunComStep("设置 ConnectToChildSession", () =>
+        {
+            var extendedSettings = (IMsRdpExtendedSettings)client;
+            SetAndVerifyExtendedUIntProperty(extendedSettings, "DesktopScaleFactor", 100);
+            SetAndVerifyExtendedUIntProperty(extendedSettings, "DeviceScaleFactor", 100);
+            TrySetExtendedProperty(extendedSettings, "EnableZoom", true);
+            extendedSettings.set_Property("ConnectToChildSession", ref connectToChildSession);
+            TryEnableFrameBufferRedirection(extendedSettings);
+        });
+
+        // Optional saved credential: when the parent session signed in with a PIN (Windows Hello), the Child
+        // Session cannot reuse that sign-in and Windows prompts for the account password. Like ParaDesk
+        // (sinpoce/ParaDesk a0ae7f6) it is applied after the Child Session and scale settings. Submitting it is
+        // not a logon; only OnLoginComplete confirms one.
+        if (credential is not null) {
+            var (domain, userName) = credential.RdpIdentity;
+            RunComStep("设置 Domain", () => SetComProperty(client, "Domain", domain));
+            RunComStep("设置 UserName", () => SetComProperty(client, "UserName", userName));
+            RunComStep("设置 ClearTextPassword", () =>
+                ((IMsRdpClientNonScriptable)client).put_ClearTextPassword(credential.Password));
+        }
+
+        BeginConnectionAttempt(savedCredentialSubmitted: credential is not null);
+        try {
+            RunComStep("调用 RDP Connect()", () => InvokeComMethod(client, "Connect"));
+        } catch {
+            _connectionAttemptInProgress = false;
+            throw;
+        }
+    }
+
+    private void BeginConnectionAttempt(bool savedCredentialSubmitted)
+    {
+        _connectionAttemptInProgress = true;
+        _connectionFailureReported = false;
+        _lastConnectionDiagnostic = null;
+        _disconnectRequested = false;
+        _savedCredentialSubmitted = savedCredentialSubmitted;
+        SavedCredentialRejected = false;
+    }
+
+    internal void DisconnectSession()
+    {
+        _ = DisconnectCore();
+    }
+
+    private bool DisconnectCore()
+    {
+        if (ConnectedState == 0) {
+            return false;
+        }
+
+        _disconnectRequested = true;
+        try {
+            InvokeComMethod(GetRequiredOcx(), "Disconnect");
+            return true;
+        } catch {
+            _disconnectRequested = false;
+            throw;
+        }
+    }
+
+    protected override void CreateSink()
+    {
+        base.CreateSink();
+
+        _eventSink = new RdpEventSink(this);
+        _eventCookie = new ConnectionPointCookie(GetOcx()!, _eventSink, typeof(IMsTscAxEvents));
+    }
+
+    protected override void DetachSink()
+    {
+        try {
+            _eventCookie?.Disconnect();
+            _eventCookie = null;
+            _eventSink = null;
+        } finally {
+            base.DetachSink();
+        }
+    }
+
+    private void OnLoginComplete()
+    {
+        _loggedIn = true;
+        SetInputBlocked(_inputBlocked);
+        _connectionAttemptInProgress = false;
+        _connectionFailureReported = false;
+        _lastConnectionDiagnostic = null;
+        LoginCompleted?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnDisconnected(int disconnectReason)
+    {
+        var failedWhileConnecting = _connectionAttemptInProgress;
+        _connectionAttemptInProgress = false;
+
+        if (_disconnectRequested) {
+            _disconnectRequested = false;
+            ReportDiagnostic(LogLevel.Debug, $"RDP 已按请求断开{Field("reason", FormatErrorCode(disconnectReason))}");
+            return;
+        }
+
+        var extendedDisconnectReason = TryGetExtendedDisconnectReason();
+        if (_connectionFailureReported) {
+            ReportDiagnostic(LogLevel.Debug, $"RDP 已断开，此前已报告失败{Field("reason", FormatErrorCode(disconnectReason))}"
+                + Field("extended", FormatErrorCode(extendedDisconnectReason)));
+            return;
+        }
+
+        var errorDescription = TryGetErrorDescription(disconnectReason, extendedDisconnectReason);
+        var failureTitle = failedWhileConnecting ? "RDP 连接失败" : "RDP 连接意外断开";
+        var message = string.IsNullOrWhiteSpace(errorDescription)
+            ? $"{failureTitle}。\n\n断开原因：{FormatErrorCode(disconnectReason)}\n"
+              + $"扩展原因：{FormatErrorCode(extendedDisconnectReason)}"
+            : $"{failureTitle}：{errorDescription}\n\n断开原因：{FormatErrorCode(disconnectReason)}\n"
+              + $"扩展原因：{FormatErrorCode(extendedDisconnectReason)}";
+
+        ReportConnectionFailure(message, disconnectReason, extendedDisconnectReason);
+    }
+
+    private void OnFatalError(int errorCode)
+    {
+        _connectionAttemptInProgress = false;
+        if (_disconnectRequested) {
+            return;
+        }
+
+        ReportConnectionFailure(
+            $"RDP 客户端发生致命错误：{GetFatalErrorDescription(errorCode)}\n\n错误代码：{FormatErrorCode(errorCode)}",
+            errorCode);
+    }
+
+    private void OnLogonError(int errorCode)
+    {
+        if (_disconnectRequested) {
+            return;
+        }
+
+        var message =
+            $"RDP 登录阶段：{GetLogonErrorDescription(errorCode)}\n\n错误代码：{FormatErrorCode(errorCode)}";
+        if (IsNonTerminalLogonEvent(errorCode, _savedCredentialSubmitted)) {
+            ReportDiagnostic(LogLevel.Info, $"RDP 登录阶段事件{Field("code", FormatErrorCode(errorCode))}"
+                + $"{Field("description", GetLogonErrorDescription(errorCode))}"
+                + Field("savedCredential", _savedCredentialSubmitted));
+            _lastConnectionDiagnostic = new ChildSessionConnectionFailedEventArgs(message, errorCode);
+            SavedCredentialRejected |= _savedCredentialSubmitted && errorCode is 0 or 1 or 2;
+            if (errorCode != WinlogonContinuing) {
+                UserInteractionNeeded?.Invoke(this, EventArgs.Empty);
+            }
+            return;
+        }
+
+        _connectionAttemptInProgress = false;
+        ReportConnectionFailure(message.Replace("RDP 登录阶段：", "RDP 登录失败：", StringComparison.Ordinal), errorCode);
+    }
+
+    // Like ConnectedState, the two lookups below never create the control just to describe a disconnect.
+    private int TryGetExtendedDisconnectReason()
+    {
+        if (!IsHandleCreated) {
+            return 0;
+        }
+        try {
+            return Convert.ToInt32(
+                GetComProperty(GetRequiredOcx(), "ExtendedDisconnectReason"), CultureInfo.InvariantCulture);
+        } catch (Exception exception) when (exception is COMException or TargetInvocationException or InvalidOperationException) {
+            return 0;
+        }
+    }
+
+    private string? TryGetErrorDescription(int disconnectReason, int extendedDisconnectReason)
+    {
+        if (!IsHandleCreated) {
+            return null;
+        }
+        try {
+            return Convert.ToString(
+                InvokeComMethod(
+                    GetRequiredOcx(), "GetErrorDescription", disconnectReason, extendedDisconnectReason),
+                CultureInfo.CurrentCulture);
+        } catch (Exception exception) when (exception is COMException or TargetInvocationException or InvalidOperationException) {
+            return null;
+        }
+    }
+
+    private void ReportConnectionFailure(string message, int errorCode, int? extendedErrorCode = null)
+    {
+        if (_connectionFailureReported) {
+            return;
+        }
+
+        _connectionFailureReported = true;
+        ConnectionFailed?.Invoke(
+            this, new ChildSessionConnectionFailedEventArgs(message, errorCode, extendedErrorCode));
+    }
+
+    private static string FormatErrorCode(int errorCode)
+    {
+        return $"{errorCode} (0x{unchecked((uint)errorCode):X8})";
+    }
+
+    private static string GetFatalErrorDescription(int errorCode) => errorCode switch {
+        0 => "发生未知错误。",
+        1 => "发生内部错误（1）。",
+        2 => "内存不足。",
+        3 => "无法创建 RDP 窗口。",
+        4 => "发生内部错误（2）。",
+        5 => "RDP 客户端进入了无效状态。",
+        6 => "发生内部错误（4）。",
+        7 => "建立客户端连接时发生不可恢复的错误。",
+        100 => "Windows 套接字初始化失败。",
+        _ => "发生未识别的致命错误。"
+    };
+
+    private static string GetLogonErrorDescription(int errorCode) => errorCode switch {
+        -7 => "Winlogon 正在显示“拒绝断开现有会话”对话框。",
+        -6 => "Winlogon 正在显示“无权限”对话框。",
+        -5 => "Winlogon 正在显示会话争用选项。",
+        -4 => "Winlogon 正在显示重新连接选项。",
+        -3 => "Winlogon 已静默终止登录。",
+        -2 => "Winlogon 正在继续登录。",
+        -1 => "访问被拒绝。",
+        0 => "登录凭据无效。",
+        1 => "密码已过期，必须先修改密码。",
+        2 => "登录或登录后的处理发生错误。",
+        3 => "RDP 客户端正在显示登录警告。",
+        unchecked((int)0xC000006D) => "用户名或身份验证信息无效。",
+        unchecked((int)0xC000006E) => "身份验证受到用户账户限制。",
+        unchecked((int)0xC0000224) => "密码已过期，必须先修改密码。",
+        _ => "登录阶段发生未识别的错误或事件。"
+    };
+
+    // -5/-4/-2/3: Winlogon is showing a dialog or continuing the logon. With a saved credential, 0/1/2 are interim
+    // too: Microsoft documents that a ClearTextPassword that fails to authenticate brings up the Windows Logon dialog
+    // at the server, that an expired password (1) must be updated to continue logging on, and that after 2 the
+    // client displays a logon screen. Such an attempt still ends through OnLoginComplete, OnDisconnected,
+    // OnFatalError or the connection timeout. Without a saved credential these codes stay terminal as before.
+    private static bool IsNonTerminalLogonEvent(int errorCode, bool savedCredentialSubmitted)
+        => errorCode is -5 or -4 or -2 or 3 || savedCredentialSubmitted && errorCode is 0 or 1 or 2;
+
+    private object GetRequiredOcx()
+    {
+        if (!IsHandleCreated) {
+            _ = Handle;
+        }
+
+        return GetOcx()
+               ?? throw new InvalidOperationException("RDP ActiveX 控件尚未完成初始化，无法访问 COM 实例。");
+    }
+
+    private static object? GetComProperty(object target, string propertyName)
+    {
+        return target.GetType().InvokeMember(
+            propertyName, BindingFlags.GetProperty, binder: null, target,
+            args: null, CultureInfo.InvariantCulture);
+    }
+
+    private static void SetComProperty(object target, string propertyName, object value)
+    {
+        target.GetType().InvokeMember(
+            propertyName, BindingFlags.SetProperty, binder: null, target,
+            [value], CultureInfo.InvariantCulture);
+    }
+
+    private void TrySetExtendedProperty(
+        IMsRdpExtendedSettings extendedSettings, string propertyName, object value)
+    {
+        try {
+            extendedSettings.set_Property(propertyName, ref value);
+        } catch (COMException exception) {
+            // Older MsTscAx may not support the extended property; keep default behavior.
+            ReportDiagnostic(LogLevel.Warn, $"RDP 扩展属性未生效，按默认行为继续{Field("property", propertyName)}"
+                + Field("error", FormatErrorCode(exception.ErrorCode)));
+        }
+    }
+
+    private void TryEnableFrameBufferRedirection(IMsRdpExtendedSettings extendedSettings)
+    {
+        FrameBufferRedirectionEnabled = false;
+        FrameBufferRedirectionWarning = null;
+        try {
+            // Request shared frame-buffer memory for this local loopback to avoid extra encode/presentation resources.
+            // The documented setting does not guarantee a particular graphics path after negotiation.
+            object enabled = true;
+            extendedSettings.set_Property("EnableFrameBufferRedirection", ref enabled);
+            FrameBufferRedirectionEnabled = extendedSettings.get_Property("EnableFrameBufferRedirection") is true;
+            if (!FrameBufferRedirectionEnabled) {
+                FrameBufferRedirectionWarning = "RDP 未确认本机共享帧缓冲设置，将继续建立连接。";
+            }
+        } catch (COMException exception) {
+            FrameBufferRedirectionWarning = $"RDP 本机共享帧缓冲设置失败（0x{unchecked((uint)exception.ErrorCode):X8}），"
+                + "将继续建立连接。";
+        }
+    }
+
+    private static void SetAndVerifyExtendedUIntProperty(
+        IMsRdpExtendedSettings extendedSettings, string propertyName, uint expectedValue)
+    {
+        object value = expectedValue;
+        extendedSettings.set_Property(propertyName, ref value);
+
+        var actualValue = Convert.ToUInt32(extendedSettings.get_Property(propertyName), CultureInfo.InvariantCulture);
+        if (actualValue != expectedValue) {
+            throw new COMException(
+                $"RDP 扩展属性 {propertyName} 写后读不一致：期望 {expectedValue}，实际 {actualValue}。");
+        }
+    }
+
+    private static object? InvokeComMethod(object target, string methodName, params object[]? args)
+    {
+        return target.GetType().InvokeMember(
+            methodName, BindingFlags.InvokeMethod, binder: null, target,
+            args, CultureInfo.InvariantCulture);
+    }
+
+    private static void RunComStep(string stepName, Action action)
+    {
+        try {
+            action();
+        } catch (Exception exception) {
+            var actualException = exception.GetBaseException();
+            if (actualException is COMException comException) {
+                throw new COMException(
+                    $"{stepName}失败：{comException.Message}",
+                    comException.ErrorCode);
+            }
+
+            throw;
+        }
+    }
+
+    [ComImport]
+    [Guid("336D5562-EFA8-482E-8CB3-C5C0FC7A7DB6")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIDispatch)]
+    private interface IMsTscAxEvents
+    {
+        // Trimmed to the 4 events this PoC handles. Unlisted DISPIDs return
+        // DISP_E_MEMBERNOTFOUND from the managed IDispatch and are ignored by the ActiveX.
+        [DispId(3)]
+        void OnLoginComplete();
+
+        [DispId(4)]
+        void OnDisconnected([In] int disconnectReason);
+
+        [DispId(10)]
+        void OnFatalError([In] int errorCode);
+
+        [DispId(22)]
+        void OnLogonError([In] int errorCode);
+    }
+
+    [ComImport]
+    [Guid("302D8188-0052-4807-806A-362B628F9AC5")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IMsRdpExtendedSettings
+    {
+        void set_Property(
+            [In, MarshalAs(UnmanagedType.BStr)] string propertyName, [In, MarshalAs(UnmanagedType.Struct)] ref object value);
+
+        [return: MarshalAs(UnmanagedType.Struct)]
+        object get_Property([In, MarshalAs(UnmanagedType.BStr)] string propertyName);
+    }
+
+    // Trimmed to the single member we need (put_ClearTextPassword, vtable slot 3). Used only when
+    // the user saved a Child Session credential, to log on without a credential prompt.
+    [ComImport]
+    [Guid("2F079C4C-87B2-4AFD-97AB-20CDB43038AE")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IMsRdpClientNonScriptable
+    {
+        void put_ClearTextPassword([In, MarshalAs(UnmanagedType.BStr)] string value);
+    }
+
+    [ComVisible(true)]
+    [ClassInterface(ClassInterfaceType.None)]
+    private sealed class RdpEventSink(RdpActiveXHost owner) : IMsTscAxEvents
+    {
+        public void OnLoginComplete() => owner.OnLoginComplete();
+
+        public void OnDisconnected(int disconnectReason) => owner.OnDisconnected(disconnectReason);
+
+        public void OnFatalError(int errorCode) => owner.OnFatalError(errorCode);
+
+        public void OnLogonError(int errorCode) => owner.OnLogonError(errorCode);
+    }
+}
+
+internal sealed class ChildSessionConnectionFailedEventArgs(
+    string message, int errorCode, int? extendedErrorCode = null) : EventArgs
+{
+    public string Message { get; } = message;
+    public int ErrorCode { get; } = errorCode;
+    public int? ExtendedErrorCode { get; } = extendedErrorCode;
+}

@@ -1,6 +1,6 @@
 # Application Settings Definition
 
-本协议只描述 NarutoAutoGUI 自身设置页面。定义源为 src/NarutoAutoGUI/Assets/settings.json，作为程序集内置资源发布；它不是用户配置，也不参与 MaaNOP Project Interface 解析。
+本协议只描述 Bunshin 自身设置页面。定义源为 src/Gui/Assets/settings.json，作为程序集内置资源发布；它不是用户配置，也不参与 MaaNOP Project Interface 解析。
 
 ## 格式
 

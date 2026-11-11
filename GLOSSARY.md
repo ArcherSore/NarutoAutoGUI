@@ -1,6 +1,6 @@
-# NarutoAutoGUI
+# Bunshin
 
-NarutoAutoGUI 是面向 MaaNOP 的 Windows 图形前端；这里统一项目特有的术语。
+Bunshin 是面向 MaaNOP 的 Windows 图形前端；这里统一项目特有的术语。
 
 ## Language
 
@@ -8,7 +8,7 @@ NarutoAutoGUI 是面向 MaaNOP 的 Windows 图形前端；这里统一项目特�
 基于 MaaFramework 的火影忍者 Online 自动化项目，定义任务、选项与资源。
 _Avoid_: MaaFramework、MFAAvalonia
 
-**NarutoAutoGUI**:
+**Bunshin**:
 用户配置和观察 MaaNOP 自动化的专用前端。
 _Avoid_: MaaNOP、Worker
 
@@ -17,7 +17,7 @@ _Avoid_: MaaNOP、Worker
 _Avoid_: MaaNOP
 
 **MFAAvalonia**:
-用于人工对照 MaaNOP 行为的另一前端，不属于 NarutoAutoGUI 的正常运行链路。
+用于人工对照 MaaNOP 行为的另一前端，不属于 Bunshin 的正常运行链路。
 _Avoid_: MaaNOP、Child Session Worker
 
 **桌面分身**:
@@ -42,7 +42,7 @@ MaaNOP 向前端声明可用任务、选项、资源和展示信息的项目接�
 _Avoid_: 用户配置、Run Plan
 
 **MaaNOP Config**:
-NarutoAutoGUI 保存的任务配置集合与当前激活配置，表达用户选择。
+Bunshin 保存的任务配置集合与当前激活配置，表达用户选择。
 _Avoid_: Application Settings、Run Plan
 
 **Task Configuration（任务配置）**:
@@ -54,11 +54,11 @@ _Avoid_: task 实例、Run Plan
 _Avoid_: Active Run
 
 **Application Settings**:
-NarutoAutoGUI 自身的偏好设置，不包含 MaaNOP 任务和选项。
+Bunshin 自身的偏好设置，不包含 MaaNOP 任务和选项。
 _Avoid_: MaaNOP Config
 
 **Settings Definition**:
-NarutoAutoGUI 设置页面的内容定义，不是用户偏好或 MaaNOP 项目接口。
+Bunshin 设置页面的内容定义，不是用户偏好或 MaaNOP 项目接口。
 _Avoid_: Application Settings、Project Interface
 
 **MaaNOP Run**:

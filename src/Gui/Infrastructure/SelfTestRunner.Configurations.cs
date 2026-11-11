@@ -1,0 +1,634 @@
+using System.Text.Json;
+using ProjectModel;
+
+namespace Gui.Infrastructure;
+
+internal static partial class SelfTestRunner
+{
+    private static void VerifyFirstConfiguration(string testDirectory, string projectDirectory)
+    {
+        var path = Path.Combine(testDirectory, "first-use.json");
+        var project = ProjectPlanModule.Open(projectDirectory, path);
+        if (!project.SelectedTaskNames.SequenceEqual(new[] { "RealTask" })
+            || project.Configurations.Single().Name != "配置 1"
+            || project.Configurations.Single().ExplicitOptions.Count != 0) {
+            throw new InvalidOperationException("首次缺失配置必须预置真实 PI 第一项且不写默认参数。");
+        }
+        var reopened = ProjectPlanModule.Open(projectDirectory, path);
+        if (reopened.ActiveConfigurationId != project.ActiveConfigurationId
+            || !reopened.SelectedTaskNames.SequenceEqual(project.SelectedTaskNames)) {
+            throw new InvalidOperationException("首次默认任务必须已保存，重开保持身份和任务。");
+        }
+        project.RemoveTask("RealTask");
+        if (ProjectPlanModule.Open(projectDirectory, path).SelectedTaskNames.Count != 0) {
+            throw new InvalidOperationException("已有空配置不得自动补入任务。");
+        }
+        var blockedDirectory = Path.Combine(testDirectory, "blocked-initial-save");
+        File.WriteAllText(blockedDirectory, "not a directory");
+        var failed = ProjectPlanModule.Open(projectDirectory, Path.Combine(blockedDirectory, "config.json"));
+        if (failed.LoadWarning is null || failed.SelectedTaskNames.Count != 0
+            || failed.InitializedTaskName is not null) {
+            throw new InvalidOperationException("默认保存失败必须保留空工作区并报告警告。");
+        }
+        var alternate = CreateProjectFixture(Path.Combine(testDirectory, "first-task-order"));
+        var interfacePath = Path.Combine(alternate, "interface.json");
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(interfacePath))!;
+        var first = json["task"]![0]!.DeepClone();
+        first["name"] = "DifferentFirstTask";
+        json["task"]!.AsArray().Insert(0, first);
+        File.WriteAllText(interfacePath, json.ToJsonString());
+        var reordered = ProjectPlanModule.Open(alternate, Path.Combine(alternate, "config.json"));
+        if (!reordered.SelectedTaskNames.SequenceEqual(new[] { "DifferentFirstTask" })) {
+            throw new InvalidOperationException("首次默认任务必须跟随 PI 数组顺序。");
+        }
+    }
+
+    private static void VerifyInvalidConfigurationIsolation(string testDirectory, string projectDirectory)
+    {
+        var path = Path.Combine(testDirectory, "invalid-intent.json");
+        File.WriteAllText(path, """
+            {"SchemaVersion":1,"SelectedTasks":["RemovedTask","RealTask"],"ExplicitOptions":{
+              "ServerRange":{"Inputs":{"server_range":"invalid"}}}}
+            """);
+        var project = ProjectPlanModule.Open(projectDirectory, path);
+        var invalid = project.ActiveConfigurationId;
+        var valid = project.CreateConfiguration();
+        project.AddTask("RealTask");
+        _ = project.CreateRunStartAttempt();
+        project.ActivateConfiguration(invalid);
+        project.RenameConfiguration(invalid, "仍可管理");
+        var editor = project.GetConfiguration("RealTask");
+        if (editor.GlobalOptions.Single().Inputs[0].Value != "invalid") {
+            throw new InvalidOperationException("语义失效的显式参数仍应可查看，不应清空。");
+        }
+        project.RemoveTask("RemovedTask");
+        project.SetInputValue(invalid, "ServerRange", "server_range", "978");
+        _ = project.CreateRunStartAttempt();
+        project.DeleteConfiguration(invalid);
+        if (project.ActiveConfigurationId != valid) {
+            throw new InvalidOperationException("失效配置修正或删除不能影响其他配置。");
+        }
+    }
+
+    private static void VerifyConfigurationTabs(AppLogger logger, string testDirectory, string projectDirectory)
+    {
+        var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(testDirectory, "tabs.json"));
+        WithPlanWindow(logger, testDirectory, project, (window, items) => {
+            InvokeOnboarding(window, "RenderTaskPlan");
+            var tabs = window.FindName("ConfigurationTabs") as System.Windows.Controls.TabControl
+                ?? throw new InvalidOperationException("任务工作区需要配置 Tab 控件。");
+            var add = (System.Windows.Controls.Button)window.FindName("NewConfigurationButton");
+            add.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            if (project.Configurations.Count != 2 || tabs.Items.Count != 2 || tabs.SelectedIndex != 1) {
+                throw new InvalidOperationException("新建按钮必须创建并激活第二份空配置。");
+            }
+            tabs.SelectedIndex = 0;
+            if (project.ActiveConfigurationId != project.Configurations[0].Id) {
+                throw new InvalidOperationException("Tab 选择必须保存 Active。");
+            }
+            project.AddTask("RealTask");
+            SetOnboardingField(window, "_expandedTaskName", "RealTask");
+            InvokeOnboarding(window, "RenderTaskPlan");
+            var retry = ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
+                .Single(item => System.Windows.Automation.AutomationProperties.GetName(item)
+                    == "Server range · Retry count");
+            retry.Text = "3";
+            retry.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(
+                System.Windows.Input.Keyboard.PrimaryDevice, 0, retry, tabs) {
+                RoutedEvent = System.Windows.Input.Keyboard.LostKeyboardFocusEvent
+            });
+            if (project.Configurations[0].ExplicitOptions["ServerRange"].GetProperty("Inputs")
+                .GetProperty("retry_count").GetString() != "3") {
+                throw new InvalidOperationException("显式提交等于默认值的输入也必须保留。");
+            }
+            var input = ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
+                .Single(item => System.Windows.Automation.AutomationProperties.GetName(item)
+                    == "Server range · Server");
+            input.Text = "979";
+            tabs.SelectedIndex = 1;
+            input.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(
+                System.Windows.Input.Keyboard.PrimaryDevice, 0, input, tabs) {
+                RoutedEvent = System.Windows.Input.Keyboard.LostKeyboardFocusEvent
+            });
+            if (project.Configurations[0].ExplicitOptions["ServerRange"].GetProperty("Inputs")
+                    .GetProperty("server_range").GetString() != "979"
+                || project.Configurations[1].ExplicitOptions.Count != 0) {
+                throw new InvalidOperationException("旧控件失焦只能写回其来源配置。");
+            }
+            tabs.SelectedIndex = 0;
+            VerifyInlineOptionEditing(window, project, items);
+            void SetBusy(bool busy)
+            {
+                SetOnboardingField(window, "_pendingOperation",
+                    busy ? Views.PendingOperation.PreparingEnvironment : Views.PendingOperation.None);
+                InvokeOnboarding(window, "RefreshRuntimeControls");
+            }
+            bool LockBadgeShown() => ((System.Windows.UIElement)window.FindName("ConfigurationLockBadge")).Visibility
+                == System.Windows.Visibility.Visible;
+            var editors = ConfigurationDescendants(items).OfType<System.Windows.Controls.Control>()
+                .Where(editor => editor is System.Windows.Controls.TextBox or System.Windows.Controls.ComboBox
+                    or Wpf.Ui.Controls.ToggleSwitch).ToArray();
+            SetBusy(true);
+            add.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            tabs.SelectedIndex = 1;
+            if (!tabs.IsEnabled || add.IsEnabled || project.Configurations.Count != 2 || tabs.SelectedIndex != 0
+                || project.ActiveConfigurationId != project.Configurations[0].Id
+                || ConfigurationDescendants(tabs).OfType<System.Windows.Controls.Button>()
+                    .Any(button => button.IsEnabled)) {
+                throw new InvalidOperationException("Start in-flight 必须锁住新增、切换与删除，但标签条保持可用。");
+            }
+            var buttons = ConfigurationDescendants(items).OfType<System.Windows.Controls.Button>().ToArray();
+            string NameOf(System.Windows.DependencyObject element) =>
+                System.Windows.Automation.AutomationProperties.GetName(element);
+            if (!((System.Windows.UIElement)window.FindName("TaskWorkspacePanel")).IsEnabled
+                || !((System.Windows.UIElement)window.FindName("PlanScroll")).IsEnabled
+                || !buttons.Single(button => NameOf(button).StartsWith("Real task，", StringComparison.Ordinal))
+                    .IsEnabled
+                || buttons.Single(button => NameOf(button) == "拖动以调整顺序").IsEnabled
+                || buttons.Single(button => NameOf(button).StartsWith("从执行计划移除", StringComparison.Ordinal))
+                    .IsEnabled
+                || editors.Length < 3 || editors.Any(editor => editor.IsEnabled) || !LockBadgeShown()) {
+                throw new InvalidOperationException("运行锁只能禁用编辑，查看、展开与滚动必须保留，并显示锁定说明。");
+            }
+            SetBusy(false);
+            if (!editors.All(editor => editor.IsEnabled) || LockBadgeShown()) {
+                throw new InvalidOperationException("解除运行锁后必须恢复编辑并隐藏锁定说明。");
+            }
+        });
+    }
+
+    // The added-tasks badge counts additions to the shown configuration, never ones made to another list.
+    // Runs with the task panel open, so the configuration switch happens mid-session.
+    private static void VerifyAddedTasksPerConfiguration(Views.MainWindow window)
+    {
+        var project = ProjectOf(window);
+        var tabs = (System.Windows.Controls.TabControl)window.FindName("ConfigurationTabs");
+        var catalog = (System.Windows.DependencyObject)window.FindName("AvailableTasksPanel");
+        var badge = (System.Windows.UIElement)window.FindName("AddedTasksBadge");
+        var text = (System.Windows.Controls.TextBlock)window.FindName("AddedTasksText");
+        void AddFirstAvailable() => ConfigurationDescendants(catalog).OfType<System.Windows.Controls.Button>()
+            .First(button => System.Windows.Automation.AutomationProperties.GetName(button)
+                .StartsWith("添加任务：", StringComparison.Ordinal))
+            .RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+
+        ClickOnboarding(window, "NewConfigurationButton");
+        AddFirstAvailable();
+        AddFirstAvailable();
+        var second = project.Configurations[1].SelectedTasks.ToArray();
+        if (tabs.SelectedIndex != 1 || text.Text != "已添加 2 项" || second.Length != 2) {
+            throw new InvalidOperationException("在第二份配置中连续添加应统计 2 项。");
+        }
+        var first = project.Configurations[0].SelectedTasks.ToArray();
+        tabs.SelectedIndex = 0;
+        if (badge.Visibility != System.Windows.Visibility.Collapsed
+            || ((System.Windows.UIElement)window.FindName("TaskShelfContent")).Visibility
+                != System.Windows.Visibility.Visible
+            || !project.Configurations[1].SelectedTasks.SequenceEqual(second)
+            || !project.Configurations[0].SelectedTasks.SequenceEqual(first)) {
+            throw new InvalidOperationException("切换配置应清零已添加统计、保持面板打开，且不改动任一配置的任务。");
+        }
+        AddFirstAvailable();
+        if (text.Text != "已添加 1 项" || project.Configurations[0].SelectedTasks.Count != first.Length + 1) {
+            throw new InvalidOperationException("切换后只应统计当前配置的添加。");
+        }
+    }
+
+    private static void VerifyInlineOptionEditing(
+        Views.MainWindow window, ProjectPlanModule project, System.Windows.DependencyObject items)
+    {
+        System.Windows.Controls.TextBox Server() => ConfigurationDescendants(items)
+            .OfType<System.Windows.Controls.TextBox>()
+            .Single(item => System.Windows.Automation.AutomationProperties.GetName(item) == "Server range · Server");
+        System.Windows.Controls.TextBlock? Hint() => ConfigurationDescendants(items)
+            .OfType<System.Windows.Controls.TextBlock>()
+            .SingleOrDefault(item => item.Text == "Use ranges such as 978 or 978-1012"
+                && item.Visibility == System.Windows.Visibility.Visible);
+        bool RevealDraft() => (bool)typeof(Views.MainWindow).GetMethod("RevealInvalidParameter",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null)!;
+        string SavedServer() => project.Configurations[0].ExplicitOptions["ServerRange"].GetProperty("Inputs")
+            .GetProperty("server_range").GetString()!;
+
+        SetOnboardingField(window, "_expandedTaskName", "RealTask");
+        InvokeOnboarding(window, "RenderTaskPlan");
+        var input = Server();
+        input.Text = "978-,";
+        input.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(
+            System.Windows.Input.Keyboard.PrimaryDevice, 0, input, null) {
+            RoutedEvent = System.Windows.Input.Keyboard.LostKeyboardFocusEvent
+        });
+        if (input.Text != "978-," || Hint() is null || SavedServer() != "979"
+            || ((System.Windows.UIElement)window.FindName("ProjectValidationBorder")).Visibility
+                == System.Windows.Visibility.Visible) {
+            throw new InvalidOperationException("非法输入应保留原文并在字段下提示，不得保存或弹出页面级错误。");
+        }
+        InvokeOnboarding(window, "RenderTaskPlan");
+        input = Server();
+        if (input.Text != "978-," || Hint() is null || !RevealDraft()) {
+            throw new InvalidOperationException("未修正的非法输入在重绘后必须保留，并阻止开始任务。");
+        }
+        SetOnboardingField(window, "_expandedTaskName", null!);
+        InvokeOnboarding(window, "RenderTaskPlan");
+        var draftSummary = ConfigurationDescendants(items).OfType<System.Windows.Documents.Run>()
+            .SingleOrDefault(run => run.Text == "Server：978-,");
+        if (draftSummary?.Foreground != window.FindResource("Brush.Error.Foreground")) {
+            throw new InvalidOperationException("折叠摘要必须以错误色显示未保存的非法输入，而非已保存值。");
+        }
+        SetOnboardingField(window, "_expandedTaskName", "RealTask");
+        InvokeOnboarding(window, "RenderTaskPlan");
+        input = Server();
+        using (var source = new System.Windows.Interop.HwndSource(
+            new System.Windows.Interop.HwndSourceParameters("self-test"))) {
+            input.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,
+                source, 0, System.Windows.Input.Key.Escape) {
+                RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent
+            });
+        }
+        if (input.Text != "979" || Hint() is not null || RevealDraft()) {
+            throw new InvalidOperationException("Esc 必须恢复已保存值并清除字段错误。");
+        }
+
+        var toggle = ConfigurationDescendants(items).OfType<Wpf.Ui.Controls.ToggleSwitch>()
+            .Single(item => System.Windows.Automation.AutomationProperties.GetName(item) == "Nested");
+        Require(toggle.IsChecked == true, "switch option 应按默认 case 显示为开关。");
+        toggle.IsChecked = false;
+        toggle.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        if (project.Configurations[0].ExplicitOptions["Nested"].GetProperty("SelectedCase").GetString() != "Off") {
+            throw new InvalidOperationException("关闭开关必须保存 switch 的另一个 case。");
+        }
+        if (!ConfigurationDescendants(items).OfType<Wpf.Ui.Controls.ToggleSwitch>().Contains(toggle)) {
+            throw new InvalidOperationException("不改变参数字段的 switch 不应重绘参数卡片，以免打断开关动画。");
+        }
+    }
+
+    private static void VerifyBlankParameterLabels(AppLogger logger, string testDirectory)
+    {
+        var projectDirectory = CreateProjectFixture(Path.Combine(testDirectory, "blank-labels"));
+        var interfacePath = Path.Combine(projectDirectory, "interface.json");
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(interfacePath))!;
+        var option = json["option"]!["ServerRange"]!;
+        option["label"] = "";
+        option["inputs"]![0]!["label"] = "";
+        File.WriteAllText(interfacePath, json.ToJsonString());
+        var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "config.json"));
+        WithPlanWindow(logger, testDirectory, project, (window, items) => {
+            SetOnboardingField(window, "_expandedTaskName", "RealTask");
+            InvokeOnboarding(window, "RenderTaskPlan");
+            if (!ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
+                    .Any(item => System.Windows.Automation.AutomationProperties.GetName(item) == "ServerRange")
+                || !ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBlock>()
+                    .Any(item => item.Text == "ServerRange")) {
+                throw new InvalidOperationException("option 与 input label 均为空时，参数字段应显示 option 名称。");
+            }
+            SetOnboardingField(window, "_expandedTaskName", null!);
+            InvokeOnboarding(window, "RenderTaskPlan");
+            if (!ConfigurationDescendants(items).OfType<System.Windows.Documents.Run>()
+                .Any(run => run.Text == "ServerRange：978-1012")) {
+                throw new InvalidOperationException("option 与 input label 均为空时，折叠摘要应显示 option 名称。");
+            }
+        });
+    }
+
+    private static void VerifyDraftSummarySync(AppLogger logger, string testDirectory)
+    {
+        var projectDirectory = CreateProjectFixture(Path.Combine(testDirectory, "draft-summary"));
+        var interfacePath = Path.Combine(projectDirectory, "interface.json");
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(interfacePath))!;
+        var other = json["task"]![0]!.DeepClone();
+        other["name"] = "OtherTask";
+        json["task"]!.AsArray().Add(other);
+        File.WriteAllText(interfacePath, json.ToJsonString());
+        var project = ProjectPlanModule.Open(projectDirectory, Path.Combine(projectDirectory, "config.json"));
+        project.AddTask("OtherTask");
+        WithPlanWindow(logger, testDirectory, project, (window, items) => {
+            SetOnboardingField(window, "_expandedTaskName", "RealTask");
+            InvokeOnboarding(window, "RenderTaskPlan");
+            System.Windows.Documents.Run? OtherSummary(string text) => ConfigurationDescendants(items)
+                .OfType<System.Windows.Documents.Run>().SingleOrDefault(run => run.Text == text);
+            var input = ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
+                .Single(item => System.Windows.Automation.AutomationProperties.GetName(item)
+                    == "Server range · Server");
+            input.Text = "978-,";
+            input.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(
+                System.Windows.Input.Keyboard.PrimaryDevice, 0, input, null) {
+                RoutedEvent = System.Windows.Input.Keyboard.LostKeyboardFocusEvent
+            });
+            if (OtherSummary("Server：978-,")?.Foreground != window.FindResource("Brush.Error.Foreground")) {
+                throw new InvalidOperationException("共享参数的非法草稿必须立即以错误色同步到其他折叠任务摘要。");
+            }
+            using (var source = new System.Windows.Interop.HwndSource(
+                new System.Windows.Interop.HwndSourceParameters("self-test"))) {
+                input.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,
+                    source, 0, System.Windows.Input.Key.Escape) {
+                    RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent
+                });
+            }
+            if (OtherSummary("Server：978-1012") is not { } restored
+                || restored.Foreground == window.FindResource("Brush.Error.Foreground")
+                || !ConfigurationDescendants(items).Contains(input)) {
+                throw new InvalidOperationException("Esc 必须立即恢复其他摘要的已保存值，且不重建正在编辑的输入框。");
+            }
+        });
+    }
+
+    // Enter submits like losing focus; an unchanged value or draft is not submitted, validated or logged again.
+    private static void VerifyEnterCommitsInput(AppLogger logger, string testDirectory)
+    {
+        var projectDirectory = CreateProjectFixture(Path.Combine(testDirectory, "enter-commit"));
+        var configPath = Path.Combine(projectDirectory, "config.json");
+        var rejections = 0;
+        void CountRejection(object? sender, Models.LogEntry entry)
+        {
+            rejections += entry.Message.Contains("未通过校验") ? 1 : 0;
+        }
+        logger.EntryWritten += CountRejection;
+        var project = ProjectPlanModule.Open(projectDirectory, configPath);
+        WithPlanWindow(logger, testDirectory, project, (window, items) => {
+            SetOnboardingField(window, "_expandedTaskName", "RealTask");
+            InvokeOnboarding(window, "RenderTaskPlan");
+            var input = ConfigurationDescendants(items).OfType<System.Windows.Controls.TextBox>()
+                .Single(item => System.Windows.Automation.AutomationProperties.GetName(item)
+                    == "Server range · Server");
+            string Saved() => ProjectPlanModule.Open(projectDirectory, configPath).Configurations[0]
+                .ExplicitOptions["ServerRange"].GetProperty("Inputs").GetProperty("server_range").GetString()!;
+            bool Invalid() => System.Windows.Automation.AutomationProperties.GetItemStatus(input).Length > 0;
+            using var source = new System.Windows.Interop.HwndSource(
+                new System.Windows.Interop.HwndSourceParameters("self-test"));
+            bool Press(System.Windows.Input.Key key)
+            {
+                var args = new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,
+                    source, 0, key) { RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent };
+                input.RaiseEvent(args);
+                return args.Handled;
+            }
+            void Blur() => input.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(
+                System.Windows.Input.Keyboard.PrimaryDevice, 0, input, null) {
+                RoutedEvent = System.Windows.Input.Keyboard.LostKeyboardFocusEvent
+            });
+
+            input.Text = "980";
+            Require(Press(System.Windows.Input.Key.Enter) && Saved() == "980" && !Invalid(),
+                "合法参数按 Enter 必须立即校验并保存。");
+            var savedText = File.ReadAllText(configPath);
+            File.Delete(configPath);
+            Require(Press(System.Windows.Input.Key.Enter), "Enter 应由参数输入框处理。");
+            Blur();
+            Require(!File.Exists(configPath), "未修改的参数再次按 Enter 或随后失焦不得重复保存。");
+            File.WriteAllText(configPath, savedText);
+
+            input.Text = "978-,";
+            Press(System.Windows.Input.Key.Enter);
+            Require(Invalid() && input.Text == "978-," && Saved() == "980" && rejections == 1,
+                "非法参数按 Enter 必须显示校验错误，保留草稿且不保存。");
+            Press(System.Windows.Input.Key.Enter);
+            Blur();
+            Require(Invalid() && rejections == 1, "未修改的非法草稿再按 Enter 或失焦不重复校验。");
+            Require(Press(System.Windows.Input.Key.Escape) && input.Text == "980" && !Invalid() && Saved() == "980",
+                "非法草稿经 Enter 提交后，Esc 必须恢复已保存值并清除错误。");
+        });
+    }
+
+    // A MainWindow that is never shown, rendering a project the check opened itself.
+    private static void WithPlanWindow(AppLogger logger, string directory, ProjectPlanModule project,
+        Action<Views.MainWindow, System.Windows.DependencyObject> verify)
+    {
+        using var session = new SimulatedWts().CreateManager(logger);
+        var coordinator = new Worker.WorkerCoordinator(logger, Path.Combine(directory, "plan-window-state"),
+            "unused.exe", $"Gui.PlanWindow.SelfTest.{Guid.NewGuid():N}", usePipeAcl: false);
+        var window = new Views.MainWindow(logger, session, coordinator, WindowEnvironment(logger, session, coordinator),
+            () => Task.CompletedTask, () => Task.CompletedTask, _ => Task.CompletedTask);
+        try {
+            SetOnboardingField(window, "_projectPlan", project);
+            verify(window, (System.Windows.DependencyObject)window.FindName("PlanItemsPanel"));
+        } finally {
+            window.AllowClose();
+            window.Close();
+            Task.Run(async () => await coordinator.DisposeAsync()).GetAwaiter().GetResult();
+        }
+    }
+
+    private static IEnumerable<System.Windows.DependencyObject> ConfigurationDescendants(
+        System.Windows.DependencyObject parent)
+    {
+        foreach (var child in System.Windows.LogicalTreeHelper.GetChildren(parent)
+            .OfType<System.Windows.DependencyObject>()) {
+            yield return child;
+            foreach (var descendant in ConfigurationDescendants(child)) {
+                yield return descendant;
+            }
+        }
+    }
+
+    private static void VerifyConfigurationFallback(string testDirectory, string projectDirectory)
+    {
+        var directory = Path.Combine(testDirectory, "fallback");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "maanop-config.json");
+        var invalid = System.Text.Encoding.UTF8.GetBytes("{ broken original\r\n");
+        File.WriteAllBytes(path, invalid);
+        var project = ProjectPlanModule.Open(projectDirectory, path);
+        var id = project.ActiveConfigurationId;
+        if (project.SelectedTaskNames.Count != 0 || project.Configurations.Single().Name != "配置 1"
+            || !File.ReadAllBytes(path).SequenceEqual(invalid)
+            || Directory.GetFiles(directory).Length != 1) {
+            throw new InvalidOperationException("异常文件加载必须提供空配置且不覆盖或提前备份。");
+        }
+        using (var locked = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) {
+            try {
+                project.AddTask("RealTask");
+                throw new InvalidOperationException("备份失败必须拒绝本次保存。");
+            } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+                if (project.SelectedTaskNames.Count != 0 || project.ActiveConfigurationId != id) {
+                    throw new InvalidOperationException("失败不能发布尚未保存的配置状态。");
+                }
+            }
+        }
+        using (var locked = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+            try {
+                project.AddTask("RealTask");
+                throw new InvalidOperationException("备份成功后替换失败也必须报告保存失败。");
+            } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+                if (!File.ReadAllBytes(path).SequenceEqual(invalid) || project.SelectedTaskNames.Count != 0) {
+                    throw new InvalidOperationException("替换失败不能破坏异常原文件或提交内存修改。");
+                }
+            }
+        }
+        project.AddTask("RealTask");
+        var backup = Directory.GetFiles(directory, "maanop-config.invalid-*.json").Single();
+        if (!File.ReadAllBytes(backup).SequenceEqual(invalid)) {
+            throw new InvalidOperationException("异常备份必须保留原始 bytes。");
+        }
+        project.SetInputValue("ServerRange", "server_range", "978");
+        if (Directory.GetFiles(directory, "*.invalid-*.json").Length != 1) {
+            throw new InvalidOperationException("正常保存不得产生异常备份历史。");
+        }
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!;
+        json["ActiveConfigurationId"] = Guid.NewGuid().ToString();
+        File.WriteAllText(path, json.ToJsonString());
+        project = ProjectPlanModule.Open(projectDirectory, path);
+        if (project.ActiveConfigurationId != id || project.SelectedTaskNames.Count != 1) {
+            throw new InvalidOperationException("无效 Active 应选择第一份而不是清空用户配置。");
+        }
+        File.WriteAllText(path, """{"SchemaVersion":2,"Configurations":[]}""");
+        project = ProjectPlanModule.Open(projectDirectory, path);
+        if (project.Configurations.Count != 1 || project.SelectedTaskNames.Count != 0) {
+            throw new InvalidOperationException("空列表必须生成一份空配置。");
+        }
+        foreach (var corrupt in new[] {
+            "{}", "{\"SchemaVersion\":99}", "{\"SchemaVersion\":\"2\"}",
+            "{\"SchemaVersion\":2,\"SchemaVersion\":2,\"Configurations\":[]}",
+            "{\"SchemaVersion\":2,\"Configurations\":null}"
+        }) {
+            File.WriteAllText(path, corrupt);
+            project = ProjectPlanModule.Open(projectDirectory, path);
+            if (project.Configurations.Count != 1 || project.LoadWarning is null
+                || File.ReadAllText(path) != corrupt) {
+                throw new InvalidOperationException("异常 schema 必须保留原文件并提供空工作区。");
+            }
+        }
+    }
+
+    private static void VerifyConfigurationStoreLog(string testDirectory, string projectDirectory)
+    {
+        var directory = Path.Combine(testDirectory, "store-log");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "maanop-config.json");
+        var written = new List<string>();
+        ProjectPlanModule Open() => ProjectPlanModule.Open(projectDirectory, path, log: written.Add);
+        void Expect(string failure, params string[] lines)
+        {
+            Require(written.SequenceEqual(lines), $"{failure}：{string.Join(" | ", written)}");
+            written.Clear();
+        }
+
+        _ = Open();
+        Expect("文件不存在应写明使用默认配置", "任务配置文件不存在，使用默认配置。");
+        _ = Open();
+        Expect("没有变化时不应写日志");
+
+        File.WriteAllText(path, """{"SchemaVersion":1,"SelectedTasks":["RealTask"],"ExplicitOptions":{}}""");
+        _ = Open();
+        Expect("迁移应写明版本", "已更新任务配置文件 [reason=SchemaVersion 1 -> 3]");
+
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!;
+        json["ActiveConfigurationId"] = Guid.NewGuid().ToString();
+        File.WriteAllText(path, json.ToJsonString());
+        _ = Open();
+        Expect("激活位置修正应写明原因", "已更新任务配置文件 [reason=激活配置不存在]");
+
+        File.WriteAllText(path, """{"SchemaVersion":2,"Configurations":[]}""");
+        _ = Open();
+        Expect("多个原因都应写出", "已更新任务配置文件 [reason=SchemaVersion 2 -> 3；配置列表为空]");
+
+        File.WriteAllText(path, """{"SchemaVersion":1,"SelectedTasks":[],"ExplicitOptions":{}}""");
+        ProjectPlanModule locked;
+        using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+            locked = Open();
+        }
+        Require(locked.LoadWarning is not null, "迁移保存失败应留下警告。");
+        Expect("保存失败不能写成已更新");
+
+        File.WriteAllText(path, "{ broken");
+        var project = Open();
+        Require(project.LoadWarning is not null, "读取回退应留下警告，由 GUI 写入日志。");
+        Expect("回退时尚未备份，不应写备份");
+        project.AddTask("RealTask");
+        var backup = Path.GetFileName(Directory.GetFiles(directory, "maanop-config.invalid-*.json").Single());
+        Expect("备份应只写文件名", $"已备份无法读取的任务配置 [backup={backup}]");
+    }
+
+    private static void VerifyIndependentConfigurations(string testDirectory, string projectDirectory)
+    {
+        var path = Path.Combine(testDirectory, "independent.json");
+        var project = ProjectPlanModule.Open(projectDirectory, path);
+        var first = project.ActiveConfigurationId;
+        project.AddTask("RealTask");
+        project.SetInputValue(first, "ServerRange", "server_range", "978");
+        var second = project.CreateConfiguration();
+        if (second == first || project.SelectedTaskNames.Count != 0
+            || project.Configurations[1].ExplicitOptions.Count != 0) {
+            throw new InvalidOperationException("新配置必须有新身份且没有继承任务或参数。");
+        }
+        project.AddTask("RealTask");
+        project.SetInputValue(second, "ServerRange", "server_range", "1012");
+        project.SetInputValue(first, "ServerRange", "server_range", "979");
+        if (project.CreateRunStartAttempt().Plan.ResolvedGlobalOptions.GetProperty("ServerRange")
+                .GetProperty("server_range").GetString() != "1012") {
+            throw new InvalidOperationException("来源配置的迟到编辑不能修改当前配置。");
+        }
+        project.RenameConfiguration(first, "小号");
+        project.RenameConfiguration(second, "小号");
+        project.ActivateConfiguration(first);
+        if (project.CreateRunStartAttempt().Plan.ResolvedGlobalOptions.GetProperty("ServerRange")
+                .GetProperty("server_range").GetString() != "979" || project.AddTask("RealTask")) {
+            throw new InvalidOperationException("配置必须隔离参数且同配置不能重复 task。");
+        }
+        project = ProjectPlanModule.Open(projectDirectory, path);
+        if (project.ActiveConfigurationId != first || project.Configurations.Count != 2
+            || project.Configurations.Any(item => item.Name != "小号")) {
+            throw new InvalidOperationException("重开必须恢复同名配置和 Active。");
+        }
+        var original = File.ReadAllBytes(path);
+        using (var locked = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+            try {
+                project.ActivateConfiguration(second);
+                throw new InvalidOperationException("文件不能替换时切换不能宣称成功。");
+            } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+                if (project.ActiveConfigurationId != first || !File.ReadAllBytes(path).SequenceEqual(original)) {
+                    throw new InvalidOperationException("保存失败必须保持 Active 与原文件。");
+                }
+            }
+        }
+        try {
+            project.RenameConfiguration(second, "  ");
+            throw new InvalidOperationException("空白配置名称必须被拒绝。");
+        } catch (InvalidDataException) {
+            // Rejected edits must leave persisted state unchanged.
+        }
+        project.DeleteConfiguration(first);
+        if (project.ActiveConfigurationId != second || project.DeleteConfiguration(second)) {
+            throw new InvalidOperationException("删除当前配置应选邻居且不能删除最后一份。");
+        }
+        var third = project.CreateConfiguration();
+        var fourth = project.CreateConfiguration();
+        project.DeleteConfiguration(fourth);
+        if (project.ActiveConfigurationId != third) {
+            throw new InvalidOperationException("删除当前配置应优先选左邻。");
+        }
+        project.DeleteConfiguration(second);
+        if (project.ActiveConfigurationId != third) {
+            throw new InvalidOperationException("删除非当前配置不应改变 Active。");
+        }
+    }
+
+    private static void VerifyConfigurationMigration(string testDirectory, string projectDirectory)
+    {
+        var path = Path.Combine(testDirectory, "migration.json");
+        File.WriteAllText(path, """
+            {"SchemaVersion":1,"SelectedTasks":["RealTask"],"ExplicitOptions":{
+              "ServerRange":{"Inputs":{"server_range":"978"}},
+              "Mode":{"SelectedCase":"Minimal"},"Nested":{"SelectedCase":"Off"},
+              "OldOption":{"SelectedCase":"Keep"}}}
+            """);
+        var project = ProjectPlanModule.Open(projectDirectory, path);
+        using var saved = JsonDocument.Parse(File.ReadAllBytes(path));
+        var root = saved.RootElement;
+        if (root.GetProperty("SchemaVersion").GetInt32() != MaaNopConfig.CurrentSchemaVersion) {
+            throw new InvalidOperationException("V1 应在首次加载时迁移到当前配置版本。");
+        }
+        var configuration = root.GetProperty("Configurations")[0];
+        var id = configuration.GetProperty("Id").GetGuid();
+        if (id == Guid.Empty || root.GetProperty("ActiveConfigurationId").GetGuid() != id
+            || configuration.GetProperty("Name").GetString() != "配置 1"
+            || configuration.GetProperty("ExplicitOptions").GetProperty("OldOption")
+                .GetProperty("SelectedCase").GetString() != "Keep"
+            || project.CreateRunStartAttempt().Plan.ResolvedGlobalOptions.GetProperty("ServerRange")
+                .GetProperty("server_range").GetString() != "978") {
+            throw new InvalidOperationException("V1 包装必须保留原始意图并激活稳定身份。");
+        }
+        _ = ProjectPlanModule.Open(projectDirectory, path);
+        using var reopened = JsonDocument.Parse(File.ReadAllBytes(path));
+        if (reopened.RootElement.GetProperty("ActiveConfigurationId").GetGuid() != id) {
+            throw new InvalidOperationException("重新打开配置不应重新生成配置 Id。");
+        }
+    }
+}

@@ -55,14 +55,14 @@ jobs:
             }
             $version = $tag -replace '^v', ''
             $prerelease = $tag -match '-(alpha|beta|rc)(\.\d+)?$'
-            $zipBase = "NarutoAutoGUI-win-x64-v$version"
+            $zipBase = "Bunshin-win-x64-v$version"
             Add-Content -Path $env:GITHUB_OUTPUT -Value "PACKAGE_VERSION=$version"
             Add-Content -Path $env:GITHUB_OUTPUT -Value "ZIP_BASE=$zipBase"
             Add-Content -Path $env:GITHUB_OUTPUT -Value "IS_PRERELEASE=$prerelease"
           } else {
             $shortSha = $env:GITHUB_SHA.Substring(0, 7)
             $version = "0.1.0-ci.$env:GITHUB_RUN_NUMBER+sha.$shortSha"
-            $zipBase = "NarutoAutoGUI-win-x64-ci-$env:GITHUB_RUN_NUMBER-$shortSha"
+            $zipBase = "Bunshin-win-x64-ci-$env:GITHUB_RUN_NUMBER-$shortSha"
             Add-Content -Path $env:GITHUB_OUTPUT -Value "PACKAGE_VERSION=$version"
             Add-Content -Path $env:GITHUB_OUTPUT -Value "ZIP_BASE=$zipBase"
             Add-Content -Path $env:GITHUB_OUTPUT -Value "IS_PRERELEASE=False"
@@ -75,7 +75,7 @@ jobs:
 
       - name: Build + publish (build.ps1, locked restore)
         run: |
-          ./src/NarutoAutoGUI/scripts/build.ps1 `
+          ./src/Gui/scripts/build.ps1 `
             -Configuration Release `
             -Runtime win-x64 `
             -OutputDirectory '${{ github.workspace }}/pkg' `
@@ -84,19 +84,19 @@ jobs:
 
       - name: Automated self-tests (test-automated.ps1)
         run: |
-          ./src/NarutoAutoGUI/scripts/test-automated.ps1
+          ./src/Gui/scripts/test-automated.ps1
 
       - name: Package layout validation (validate-package.ps1)
         run: |
-          ./src/NarutoAutoGUI/scripts/validate-package.ps1 -PackageDirectory '${{ github.workspace }}/pkg'
+          ./src/Gui/scripts/validate-package.ps1 -PackageDirectory '${{ github.workspace }}/pkg'
 
       - name: Published package runtime check (libs/ probing)
         run: |
           Push-Location '${{ github.workspace }}/pkg'
           try {
-            dotnet NarutoAutoGUI.dll --self-test
+            dotnet Bunshin.dll --self-test
             if ($LASTEXITCODE -ne 0) { throw "Published GUI self-test failed, exit $LASTEXITCODE" }
-            dotnet worker/NarutoAutoWorker.dll --self-test
+            dotnet worker/Bunshin.Worker.dll --self-test
             if ($LASTEXITCODE -ne 0) { throw "Published Worker self-test failed, exit $LASTEXITCODE" }
           } finally { Pop-Location }
 
@@ -114,18 +114,18 @@ jobs:
       - name: Validate ZIP contents (extract + re-validate)
         run: |
           $zip = '${{ steps.zip.outputs.ZIP_PATH }}'
-          $extract = Join-Path $env:TEMP 'naruto-zip-check'
+          $extract = Join-Path $env:TEMP 'bunshin-zip-check'
           if (Test-Path $extract) { Remove-Item -Recurse -Force $extract }
           New-Item -ItemType Directory -Force -Path $extract | Out-Null
           Expand-Archive -Path $zip -DestinationPath $extract -Force
           $rootEntries = @(Get-ChildItem $extract)
           if ($rootEntries.Count -eq 1 -and $rootEntries[0].PSIsContainer) {
             $message = "ZIP has an unexpected wrapper directory '$($rootEntries[0].Name)'. " `
-              + 'NarutoAutoGUI.exe must sit at the ZIP root.'
+              + 'Bunshin.exe must sit at the ZIP root.'
             Write-Error $message
             exit 1
           }
-          ./src/NarutoAutoGUI/scripts/validate-package.ps1 -PackageDirectory $extract
+          ./src/Gui/scripts/validate-package.ps1 -PackageDirectory $extract
 
       - name: Upload Actions artifact
         uses: actions/upload-artifact@v4
@@ -159,7 +159,7 @@ jobs:
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
-          name: NarutoAutoGUI-win-x64-${{ env.RELEASE_TAG }}
+          name: Bunshin-win-x64-${{ env.RELEASE_TAG }}
           path: dist
           run-id: ${{ inputs.artifact_run_id || github.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -179,7 +179,7 @@ jobs:
           $notes | Set-Content -LiteralPath release-notes.md -Encoding utf8
           $releaseArgs = @(
             'release', 'create', $tag, $zip, '--verify-tag', '--repo', $env:GITHUB_REPOSITORY,
-            '--title', "NarutoAutoGUI $tag", '--notes-file', 'release-notes.md'
+            '--title', "Bunshin $tag", '--notes-file', 'release-notes.md'
           )
           if ($prerelease) { $releaseArgs += '--prerelease' }
           Write-Host "Creating release for tag $tag (prerelease=$prerelease)"

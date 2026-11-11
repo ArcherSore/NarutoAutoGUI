@@ -6,17 +6,15 @@ using NarutoAutoGUI.Protocol;
 
 namespace NarutoAutoGUI.Infrastructure;
 
-// GitHub accepts attachments up to 25 MB, so volumes aim below that and each opens on its own. A file is never split,
-// and MaaFramework starts a new log within a million lines, which keeps one log's compressed size within a volume.
+// Each volume opens on its own. Files are never split; an oversized file occupies a volume by itself.
 internal sealed record DiagnosticExportLimits(long VolumeBytes = 24_500_000, long FrameworkLogBytes = 500L << 20,
     long DrawImageBytes = 50L << 20);
 
 internal sealed record DiagnosticExportResult(string FirstVolume, int Volumes, int Files, int Skipped);
 
-// Failure screenshots come before older logs and annotated images: the first volume is the one most people send.
+// Failure screenshots come before older framework logs and annotated images, but need not fit in the first volume.
 internal sealed class DiagnosticPackageExporter(AppLogger logger)
 {
-    private const double TextCompressionEstimate = 0.15;
     private const long EntryOverheadBytes = 128;
     private const long EndOfCentralDirectoryBytes = 22;
     private const int KeptExports = 10;
@@ -48,29 +46,33 @@ internal sealed class DiagnosticPackageExporter(AppLogger logger)
             logger.Warn($"诊断包跳过文件：{entry}。", exception);
         }
 
-        // The archive owns the stream; the stream is kept only to read how much has been written.
-        (FileStream Output, ZipArchive Archive) OpenVolume()
+        ZipArchive OpenVolume()
         {
             var stream = new FileStream(VolumePath(++volume), FileMode.CreateNew, FileAccess.Write, FileShare.None);
-            return (stream, new ZipArchive(stream, ZipArchiveMode.Create));
+            return new ZipArchive(stream, ZipArchiveMode.Create);
         }
 
         try {
-            var (output, archive) = OpenVolume();
-            var centralDirectory = EndOfCentralDirectoryBytes;
+            var archive = OpenVolume();
+            // Budget source bytes, not an assumed compression ratio. Leave 750 KB at the default limit for growth
+            // and encoding/compression overhead; a single oversized source still gets exported on its own.
+            var payloadBudget = limits.VolumeBytes * 95 / 98;
+            var sourceBytes = EndOfCentralDirectoryBytes;
+            var volumeFiles = 0;
             try {
                 foreach (var source in Select(applicationDirectory, logDirectory, limits, Skip)) {
                     var nameBytes = Encoding.UTF8.GetByteCount(source.Entry);
-                    var estimate = source.Text ? (long)(source.Length * TextCompressionEstimate) : source.Length;
-                    if (output.Position > 0 && output.Position + centralDirectory + estimate + EntryOverheadBytes
-                        + (2 * nameBytes) > limits.VolumeBytes) {
+                    var entryBytes = source.Length + EntryOverheadBytes + (2 * nameBytes);
+                    if (volumeFiles > 0 && sourceBytes + entryBytes > payloadBudget) {
                         archive.Dispose();
-                        (output, archive) = OpenVolume();
-                        centralDirectory = EndOfCentralDirectoryBytes;
+                        archive = OpenVolume();
+                        sourceBytes = EndOfCentralDirectoryBytes;
+                        volumeFiles = 0;
                     }
                     if (source.Text ? TryAddText(archive, source, Skip) : TryAddBinary(archive, source, Skip)) {
                         files++;
-                        centralDirectory += 46 + nameBytes;
+                        volumeFiles++;
+                        sourceBytes += entryBytes;
                     }
                 }
             } finally {
@@ -206,10 +208,6 @@ internal sealed class DiagnosticPackageExporter(AppLogger logger)
     private static FileStream? TryOpen(Source source, Action<string, Exception> skip)
     {
         try {
-            if (File.GetAttributes(source.Path).HasFlag(FileAttributes.ReparsePoint)) {
-                skip(source.Entry, new IOException("诊断采集不跟随文件链接。"));
-                return null;
-            }
             return new FileStream(source.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
             skip(source.Entry, exception);

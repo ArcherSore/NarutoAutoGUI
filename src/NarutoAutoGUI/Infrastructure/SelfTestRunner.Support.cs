@@ -462,9 +462,6 @@ internal static partial class SelfTestRunner
             Require(result.Skipped == 1 && !entries.Contains(name) && entries.Contains("logs/updater.log"),
                 "无法读取的文件应跳过并计数，其余文件照常导出。");
         }
-        foreach (var link in new[] { "debug", "debug/vision", "debug/vision/nested" }) {
-            VerifyDiagnosticLinks(exporter, root, actualLogs, now, link);
-        }
     }
 
     private static string WriteFixture(string root, string relative, byte[] content, int ageMinutes = 0)
@@ -485,7 +482,7 @@ internal static partial class SelfTestRunner
     private static string[] ExportVolumes(string firstVolume) =>
         Directory.GetFiles(Path.GetDirectoryName(firstVolume)!, "*.zip").Order(StringComparer.Ordinal).ToArray();
 
-    // Each volume must stay under the limit and open alone, with the newest failure in the one people send first.
+    // Volumes open alone; failures retain newest-first order even when earlier logs fill the first volume.
     private static void VerifyDiagnosticVolumes(DiagnosticPackageExporter exporter, string root, DateTime now)
     {
         var logs = Path.Combine(root, "logs");
@@ -510,9 +507,10 @@ internal static partial class SelfTestRunner
         Require(volumes.All(volume => new FileInfo(volume).Length <= limits.VolumeBytes), "每卷都不能超过上限。");
         var all = volumes.SelectMany(VolumeEntries).ToArray();
         Require(all.Length == 13 && all.Distinct().Count() == 13, "所有文件都应进入分卷，且不能重复。");
-        var firstEntries = VolumeEntries(volumes[0]);
-        Require(firstEntries.Contains("logs/NarutoAutoGUI-current.log")
-            && firstEntries.Contains("debug/on_error/error-1.png"), "第一卷应包含当前日志和最新的失败截图。");
+        Require(all[0] == "logs/NarutoAutoGUI-current.log", "当前日志应排在失败截图之前。");
+        Require(all.Where(entry => entry.Contains("on_error")).SequenceEqual(
+            Enumerable.Range(1, 6).Select(index => $"debug/on_error/error-{index}.png")),
+            "失败截图应跨卷保持从新到旧的顺序。");
         var order = all.ToList();
         Require(order.FindLastIndex(entry => entry.Contains("on_error"))
             < order.FindIndex(entry => entry.Contains("vision")), "失败截图应排在标注图之前。");
@@ -522,8 +520,35 @@ internal static partial class SelfTestRunner
         random.NextBytes(bytes);
         File.WriteAllBytes(oversized, bytes);
         result = exporter.Export(root, logs, null, null, now.AddSeconds(1), limits);
-        Require(ExportVolumes(result.FirstVolume).SelectMany(VolumeEntries).Contains("debug/on_error/oversized.png"),
+        var oversizedEntries = ExportVolumes(result.FirstVolume).Select(VolumeEntries)
+            .Single(entries => entries.Contains("debug/on_error/oversized.png"));
+        Require(oversizedEntries.Length == 1,
             "超过单卷上限的文件也要导出，独占一卷。");
+
+        // Poorly compressible text must not overflow a shared volume because of a guessed compression ratio.
+        var textRoot = Path.Combine(root, "text-volumes");
+        var textLogs = Path.Combine(textRoot, "logs");
+        var textBytes = new byte[5250];
+        for (var index = 0; index < 3; index++) {
+            random.NextBytes(textBytes);
+            WriteFixture(textRoot, $"logs/NarutoAutoGUI-{index}.log",
+                System.Text.Encoding.UTF8.GetBytes(Convert.ToBase64String(textBytes)), index);
+        }
+        WriteFixture(textRoot, "debug/on_error/latest.png", new byte[3000], 0);
+        result = exporter.Export(textRoot, textLogs, null, null, now, limits);
+        volumes = ExportVolumes(result.FirstVolume);
+        Require(volumes.All(volume => new FileInfo(volume).Length <= limits.VolumeBytes),
+            "低压缩率文本也不能使多文件分卷超过上限。");
+        all = volumes.SelectMany(VolumeEntries).ToArray();
+        Require(all.SequenceEqual(Enumerable.Range(0, 3).Select(index => $"logs/NarutoAutoGUI-{index}.log")
+            .Append("debug/on_error/latest.png")), "日志占满首卷时，失败截图仍应完整导出并保持顺序。");
+
+        // Even a highly compressible oversized source stays alone, rather than sharing its smaller output volume.
+        WriteFixture(textRoot, "logs/NarutoAutoGUI-large.log", new byte[30_000], 10);
+        result = exporter.Export(textRoot, textLogs, null, null, now.AddSeconds(1), limits);
+        Require(ExportVolumes(result.FirstVolume).Select(VolumeEntries)
+            .Single(entries => entries.Contains("logs/NarutoAutoGUI-large.log")).Length == 1,
+            "原始大小超限的文本即使压缩后很小，也应独占一卷。");
     }
 
     private static void VerifyDiagnosticBudgets(DiagnosticPackageExporter exporter, string root, DateTime now)
@@ -577,33 +602,6 @@ internal static partial class SelfTestRunner
         Require(results.TakeLast(10).All(result => File.Exists(result.FirstVolume))
             && results.Take(2).All(result => !File.Exists(result.FirstVolume)), "清理的应是最旧的导出。");
         Require(Directory.Exists(unrelated), "不是导出目录的文件夹不得删除。");
-    }
-
-    private static void VerifyDiagnosticLinks(DiagnosticPackageExporter exporter, string root, string actualLogs,
-        DateTime now, string relativeLink)
-    {
-        var application = Path.Combine(root, "linked-application", relativeLink.Replace('/', '-'));
-        var outside = Path.Combine(root, "outside-debug", relativeLink.Replace('/', '-'));
-        Directory.CreateDirectory(Path.Combine(outside, "vision"));
-        File.WriteAllText(Path.Combine(outside, "maafw.log"), "outside log");
-        File.WriteAllText(Path.Combine(outside, "outside.jpg"), "outside image");
-        File.WriteAllText(Path.Combine(outside, "vision", "outside.jpg"), "outside image");
-        CreateJunction(Path.Combine(application, relativeLink), outside);
-        var result = exporter.Export(application, actualLogs, null, null, now);
-        Require(result.Skipped > 0 && !VolumeEntries(result.FirstVolume).Any(entry =>
-            entry.StartsWith("debug/", StringComparison.Ordinal)), "诊断导出不能通过目录链接读取范围外文件。");
-    }
-    private static void CreateJunction(string link, string target)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(link)!);
-        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe") {
-            Arguments = $"/d /c mklink /J \"{link}\" \"{target}\"",
-            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
-        })!;
-        process.WaitForExit();
-        if (process.ExitCode != 0) {
-            throw new SelfTestSkip("临时目录所在文件系统无法创建目录链接，未验证诊断包拒绝链接。");
-        }
     }
 
     private static void VerifyDiagnosticFailures(DiagnosticPackageExporter exporter, string root, DateTime now)

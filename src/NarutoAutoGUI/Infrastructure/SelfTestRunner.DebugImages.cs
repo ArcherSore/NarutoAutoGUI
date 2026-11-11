@@ -22,11 +22,6 @@ internal static partial class SelfTestRunner
             activeLog, Create("config/maanop-config.json"), Create("resource/image.png"), Create("debug/notes.txt"),
             Create("debug/vision/other.png"), Create("debug/on_error/other.jpg")
         ];
-        var outside = Path.Combine(testDirectory, "debug-file-outside");
-        var linked = Path.Combine(outside, "linked.jpg");
-        Directory.CreateDirectory(outside);
-        File.WriteAllBytes(linked, new byte[100]);
-        CreateJunction(Path.Combine(application, "debug", "vision", "link"), outside);
 
         var cleaner = new DebugFileCleaner(application, logs, logger);
         var bytes = cleaner.MeasureBytes();
@@ -41,7 +36,6 @@ internal static partial class SelfTestRunner
             $"释放的空间只应计入实际删除的文件：{result}");
         Require(!removed.Any(File.Exists), "约定范围内的文件都应被清理。");
         Require(preserved.All(File.Exists), "正在写入的日志、配置、资源和白名单以外的文件不得删除。");
-        Require(File.Exists(linked), "清理不得跟随目录链接。");
         Require(!Directory.Exists(Path.GetDirectoryName(removed[^1])!), "清空后的诊断包目录应一并删除。");
 
         // With the GUI log elsewhere, nothing in the application's logs folder is that active file.

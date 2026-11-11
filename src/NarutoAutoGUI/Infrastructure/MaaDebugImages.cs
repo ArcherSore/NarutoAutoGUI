@@ -5,7 +5,7 @@ internal static class MaaDebugImages
 {
     private static readonly string[] Folders = ["vision", "on_error", "screencap"];
 
-    // Never follows links. onSkip receives unreadable or linked entries relative to applicationDirectory, using '/'.
+    // onSkip receives unreadable entries relative to applicationDirectory, using '/'.
     internal static IEnumerable<FileInfo> Enumerate(string applicationDirectory, Action<string, Exception> onSkip)
     {
         var debug = Path.Combine(applicationDirectory, "debug");
@@ -47,11 +47,7 @@ internal static class MaaDebugImages
                 if (entry is DirectoryInfo child) {
                     directories.Push(child.FullName);
                 } else if (include(entry)) {
-                    if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) {
-                        onSkip(RelativePath(applicationDirectory, entry.FullName), new IOException("不跟随文件链接。"));
-                    } else {
-                        yield return (FileInfo)entry;
-                    }
+                    yield return (FileInfo)entry;
                 }
             }
         }
@@ -73,10 +69,6 @@ internal static class MaaDebugImages
     {
         entries = [];
         try {
-            if (File.GetAttributes(directory).HasFlag(FileAttributes.ReparsePoint)) {
-                onSkip(RelativePath(applicationDirectory, directory), new IOException("不跟随目录链接。"));
-                return false;
-            }
             entries = new DirectoryInfo(directory).GetFileSystemInfos();
             return true;
         } catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException) {

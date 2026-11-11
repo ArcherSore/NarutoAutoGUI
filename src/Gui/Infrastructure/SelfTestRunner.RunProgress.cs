@@ -1,0 +1,225 @@
+using System.Reflection;
+using System.Text.Json;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using Point = System.Windows.Point;
+using Gui.ChildSession;
+using Protocol;
+using Gui.Views;
+using Gui.Worker;
+
+namespace Gui.Infrastructure;
+
+internal static partial class SelfTestRunner
+{
+    // Each Run state maps to the item states, counts and caption the console shows; failures never count as success
+    // and stopped or skipped items never count as processed.
+    private static void VerifyRunProgressScenarios()
+    {
+        var empty = JsonDocument.Parse("{}").RootElement.Clone();
+        var start = new DateTime(2026, 10, 12, 1, 0, 0, DateTimeKind.Utc);
+        RunSnapshot Run(RunState state, params (PlanItemState State, bool Started)[] items)
+        {
+            var planItems = items.Select((_, index) => new RunPlanItem(
+                Guid.NewGuid(), $"Task{index}", $"任务 {index + 1}", "Entry", empty, empty)).ToArray();
+            var plan = new RunPlan(1, start, new ProjectProvenance("self-test", "1", 1, "self-test"), "self-test",
+                empty, planItems);
+            var snapshots = planItems.Select((item, index) => new PlanItemSnapshot(item.PlanItemId, item.TaskName,
+                item.TaskLabel, item.Entry, empty, empty, items[index].State,
+                items[index].Started ? start.AddMinutes(index) : null, null, null, null, null)).ToArray();
+            var current = Array.FindIndex(snapshots, item =>
+                item.State is PlanItemState.Starting or PlanItemState.Running);
+            return new RunSnapshot(Guid.NewGuid(), "digest", state, start, start, null, null,
+                current < 0 ? null : snapshots[current].PlanItemId, current < 0 ? null : current, plan,
+                snapshots, null, null);
+        }
+        var record = new WorkerAdmissionRecord(Guid.NewGuid(), "token", 1, Environment.ProcessId, "self-test",
+            DateTime.UtcNow);
+        var idle = WorkerCoordinatorSelfTest.CreateSnapshot(record, 0);
+        WorkerSnapshot Active(RunSnapshot run) => idle with { RunState = run.State, ActiveRun = run };
+        WorkerSnapshot Last(RunSnapshot run) => idle with { LastRun = run };
+        const PlanItemState pending = PlanItemState.Pending, running = PlanItemState.Running;
+        const PlanItemState succeeded = PlanItemState.Succeeded, failed = PlanItemState.Failed;
+        const PlanItemState cancelled = PlanItemState.Cancelled;
+        (PlanItemKind, string)[] MaaTasks(params string[] names) =>
+            names.Select(name => (PlanItemKind.MaaTask, name)).ToArray();
+        var plan = MaaTasks("Task0", "Task1", "Task2");
+
+        foreach (var (name, worker, tasks, states, current, caption) in new (string, WorkerSnapshot,
+            (PlanItemKind, string)[], string, int?, string)[] {
+            ("运行中首项", Active(Run(RunState.Running, (PlanItemState.Starting, true), (pending, false),
+                (pending, false))), plan, "Running,Pending,Pending", 0, "已处理 0 / 3 · 0 成功"),
+            ("运行中中间项", Active(Run(RunState.Running, (succeeded, true), (running, true), (pending, false))),
+                plan, "Succeeded,Running,Pending", 1, "已处理 1 / 3 · 1 成功"),
+            ("失败后", Active(Run(RunState.Running, (failed, true), (cancelled, false), (cancelled, false))),
+                plan, "Failed,NotRun,NotRun", null, "已处理 1 / 3 · 0 成功 · 1 失败"),
+            ("用户停止", Last(Run(RunState.Cancelled, (succeeded, true), (cancelled, true), (cancelled, false))),
+                plan, "Succeeded,Stopped,NotRun", null, "上次运行：1 成功 · 已停止 · 1 未执行"),
+            ("因失败中止", Last(Run(RunState.Failed, (succeeded, true), (failed, true), (cancelled, false))),
+                plan, "Succeeded,Failed,NotRun", null, "上次运行：1 成功 · 1 失败 · 1 未执行"),
+            ("全部成功", Last(Run(RunState.Succeeded, (succeeded, true), (succeeded, true), (succeeded, true))),
+                plan, "Succeeded,Succeeded,Succeeded", null, "上次运行：3 成功")
+        }) {
+            var progress = RunProgress.Derive(worker, tasks);
+            Require(progress is not null && string.Join(",", progress.Items.Select(item => item.State)) == states
+                && progress.CurrentIndex == current && RunProgress.Caption(progress) == caption
+                && progress.Processed == progress.Items.Count(item => item.State is PlanItemProgress.Succeeded
+                    or PlanItemProgress.Failed)
+                && progress.Succeeded == progress.Items.Count(item => item.State == PlanItemProgress.Succeeded),
+                $"Run 进度场景“{name}”不符：{(progress is null ? "无" : RunProgress.Caption(progress))}。");
+        }
+
+        var stopped = RunProgress.Derive(Last(Run(RunState.Cancelled, (succeeded, true), (cancelled, true),
+            (cancelled, false))), plan)!;
+        Require(stopped.Processed == 1 && stopped.Stopped == 1 && stopped.NotRun == 1
+            && RunProgress.AccessibleCaption(stopped) == "已处理 1 / 3，成功 1，失败 0",
+            "已停止和未执行不计入已处理。");
+        Require(RunProgress.Derive(Last(Run(RunState.Succeeded, (succeeded, true), (succeeded, true),
+                (succeeded, true))), MaaTasks("Task0", "Task2")) is null && RunProgress.Derive(idle, plan) is null,
+            "Last Run 计划与当前配置的任务序列不一致或没有 Run 时不显示进度。");
+        Require(RunProgress.FormatDuration(TimeSpan.FromSeconds(65.9)) == "01:05"
+            && RunProgress.FormatDuration(TimeSpan.FromMinutes(61)) == "1:01:00", "用时格式不符。");
+    }
+
+    // The console is one card with two sections; the activity log takes all height below the run control.
+    private static void VerifyRuntimeConsole(AppLogger logger, string testDirectory)
+    {
+        Require(MainWindow.SidebarWidth(600) == 340 && MainWindow.SidebarWidth(1200) == 420
+            && MainWindow.SidebarWidth(2000) == 540, "侧栏宽度应为主页内容的 35%，限制在 340–540。");
+        RunOnboardingScenario(logger, Path.Combine(testDirectory, "runtime-console"), (window, _) => {
+            EndTour(window);
+            var console = Named<FrameworkElement>(window, "RuntimeSidebar");
+            var home = Named<FrameworkElement>(window, "HomeView");
+            foreach (var width in new[] { 920, 1180, 1440 }) {
+                window.Width = width;
+                window.Height = width == 920 ? 640 : width == 1180 ? 760 : 900;
+                PumpOnboarding();
+                Require(Math.Abs(console.ActualWidth - MainWindow.SidebarWidth(home.ActualWidth)) < 1
+                    && console.ActualWidth is >= 340 and <= 540
+                    && Named<FrameworkElement>(window, "TasksView").ActualWidth > 0
+                    && console.TransformToAncestor(home).Transform(new Point(console.ActualWidth, 0)).X
+                        <= home.ActualWidth + PixelTolerance, $"{width} 宽度下侧栏宽度或主页布局不符。");
+            }
+            var screenshots = Environment.GetEnvironmentVariable("BUNSHIN_PANEL_SCREENSHOTS");
+            if (!string.IsNullOrEmpty(screenshots)) {
+                Directory.CreateDirectory(screenshots);
+                window.Width = 1180;
+                window.Height = 760;
+                PumpOnboarding();
+                SaveScreenshot(window, Path.Combine(screenshots, "panel-idle.png"));
+            }
+            var desktop = new DesktopToggle(DesktopAction.Show, true, DesktopStatus.Background);
+
+            foreach (var (state, endReason) in new (RuntimeControlState, string)[] {
+                (new(new RuntimeAction.Start(true), true, null, desktop, true), ""),
+                (new(new RuntimeAction.Stop(true), false, LockReason.RunActive, desktop, true), "请先停止任务"),
+                (new(new RuntimeAction.Prepare(true), true, null, desktop with { Enabled = false }, true),
+                    "未创建"),
+                (new(new RuntimeAction.InProgress(ProgressKind.PreparingEnvironment), false, LockReason.RuntimeBusy,
+                    desktop with { Enabled = false }, false), "处理中"),
+                (new(new RuntimeAction.Recover(true, RecoveryReason.WorkerLost), false, LockReason.RuntimeBusy,
+                    desktop, true), "")
+            }) {
+                window.ApplyRuntimeControls(state);
+                var end = Named<System.Windows.Controls.MenuItem>(window, "EndEnvironmentMenuItem");
+                Require(end.IsEnabled == (endReason.Length == 0)
+                    && string.IsNullOrEmpty(end.InputGestureText) == (endReason.Length == 0)
+                    && Named<System.Windows.Controls.MenuItem>(window, "OpenLogsMenuItem").IsEnabled,
+                    $"{state.Action} 时更多操作菜单的可用性或原因不符。");
+            }
+
+            SetOnboardingField(window, "_sessionSnapshot",
+                new ChildSessionSnapshot(ChildSessionState.ConnectedHidden, 7, 1, "fixture"));
+            foreach (var (observation, fresh, detail) in new[] {
+                (WorkerObservation.WorkerNotStarted, false, "桌面分身已连接，等待 Worker 启动…"),
+                (WorkerObservation.WorkerStarting, false, "正在启动 Worker…"),
+                (WorkerObservation.Connected, false, "正在同步 Worker 状态…"),
+                (WorkerObservation.Connected, true, "正在完成运行环境准备…")
+            }) {
+                SetOnboardingField(window, "_workerSnapshot",
+                    new WorkerCoordinatorSnapshot(observation, fresh, null, ""));
+                window.ApplyRuntimeControls(new(new RuntimeAction.InProgress(ProgressKind.PreparingEnvironment),
+                    false, LockReason.RuntimeBusy, desktop, false));
+                Require(Named<TextBlock>(window, "RuntimeStatusDetail").Text == detail,
+                    "准备阶段只能描述已观察到的 Session 和 Worker 状态。");
+            }
+        });
+    }
+
+    // Run information belongs to the control panel; task cards stay unchanged as snapshots and timers advance.
+    private static void VerifyRunProgressWiring(AppLogger logger, string testDirectory)
+    {
+        RunOnboardingScenario(logger, Path.Combine(testDirectory, "run-progress-wiring"), (window, _) => {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            EndTour(window);
+            var empty = JsonDocument.Parse("{}").RootElement.Clone();
+            var started = DateTime.UtcNow.AddSeconds(-65);
+            var item = new RunPlanItem(Guid.NewGuid(), "RealTask", "Real task", "Entry", empty, empty);
+            var plan = new RunPlan(1, started, new ProjectProvenance("self-test", "1", 1, "self-test"), "self-test",
+                empty, [item]);
+            PlanItemSnapshot Item(PlanItemState state, DateTime? ended) => new(item.PlanItemId, item.TaskName,
+                item.TaskLabel, item.Entry, empty, empty, state, started, ended, null, null, null);
+            var run = new RunSnapshot(Guid.NewGuid(), "digest", RunState.Running, started, started, null, null,
+                item.PlanItemId, 0, plan, [Item(PlanItemState.Running, null)], null, null);
+            var record = new WorkerAdmissionRecord(Guid.NewGuid(), "token", 1, Environment.ProcessId, "self-test",
+                DateTime.UtcNow);
+            var idle = WorkerCoordinatorSelfTest.CreateSnapshot(record, 0);
+            void Observe(WorkerSnapshot worker)
+            {
+                SetOnboardingField(window, "_workerSnapshot",
+                    new WorkerCoordinatorSnapshot(WorkerObservation.Connected, true, worker, ""));
+                InvokeOnboarding(window, "RefreshRuntimeControls");
+                PumpOnboarding();
+            }
+            var timer = (System.Windows.Threading.DispatcherTimer)typeof(MainWindow).GetField("_runTimer", flags)!
+                .GetValue(window)!;
+            var items = Named<System.Windows.Controls.Panel>(window, "PlanItemsPanel");
+            string CardText() => string.Join("\n", ConfigurationDescendants(items).OfType<TextBlock>()
+                .Select(text => text.Text));
+            var idleCardText = CardText();
+
+            Observe(idle with { RunState = RunState.Running, ActiveRun = run });
+            var card = items.Children.OfType<System.Windows.Controls.Border>().Single(border => border.Tag is not null);
+            Require(CardText() == idleCardText && timer.IsEnabled
+                && Named<TextBlock>(window, "RunProgressCaption").Text == "运行中 · 第 1 / 1 项"
+                && Named<TextBlock>(window, "RunProgressElapsed").Text.StartsWith("总用时 01:", StringComparison.Ordinal)
+                && Named<UIElement>(window, "RunProgressPanel").IsVisible,
+                "任务卡片不显示运行信息，控制台保留进度与总用时。");
+            Require(Named<TextBlock>(window, "RuntimeStatusTitle").Text == "Real task",
+                "运行状态应显示 Worker 当前项的序号与标签。");
+            var screenshots = Environment.GetEnvironmentVariable("BUNSHIN_PANEL_SCREENSHOTS");
+            if (!string.IsNullOrEmpty(screenshots)) {
+                Directory.CreateDirectory(screenshots);
+                window.Width = 1180;
+                window.Height = 760;
+                PumpOnboarding();
+                SaveScreenshot(window, Path.Combine(screenshots, "panel-running.png"));
+            }
+            InvokeOnboarding(window, "RefreshRunTiming");
+            Require(CardText() == idleCardText && ReferenceEquals(card,
+                items.Children.OfType<System.Windows.Controls.Border>().Single(border => border.Tag is not null)),
+                "计时刷新不得重建执行计划卡片或添加运行信息。");
+
+            Observe(idle with {
+                LastRun = run with { State = RunState.Succeeded, Items = [Item(PlanItemState.Succeeded, started)] }
+            });
+            Require(CardText() == idleCardText && !timer.IsEnabled, "Run 结束后卡片不展示结果，控制台计时停止。");
+            window.ApplyRuntimeControls(new(new RuntimeAction.Prepare(true), true, null,
+                new DesktopToggle(DesktopAction.Show, false, DesktopStatus.NotRunning), true));
+            Require(Named<UIElement>(window, "RunProgressPanel").IsVisible
+                && Named<TextBlock>(window, "RunProgressCaption").Text.EndsWith(" 完成", StringComparison.Ordinal),
+                "匹配当前配置的 Last Run 不能因运行环境需要重新准备而隐藏。");
+            foreach (var (runState, itemState, expected) in new[] {
+                (RunState.Cancelled, PlanItemState.Cancelled, "0 成功 · 已停止"),
+                (RunState.Failed, PlanItemState.Failed, "0 成功 · 1 失败")
+            }) {
+                Observe(idle with {
+                    LastRun = run with { State = runState, Items = [Item(itemState, started)] }
+                });
+                Require(Named<TextBlock>(window, "RunProgressCaption").Text == expected,
+                    "运行摘要不能在统计文案前重复添加停止或失败状态。");
+            }
+        });
+    }
+}

@@ -1,0 +1,154 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$PackageDirectory
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Assert-PackageFile {
+    param([string]$Name, [string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Package validation failed: $Name not found at '$Path'."
+    }
+    Write-Host "  [ok] $Name"
+}
+
+function Assert-PackageDirectory {
+    param([string]$Name, [string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        throw "Package validation failed: $Name directory not found at '$Path'."
+    }
+    $files = @(Get-ChildItem -LiteralPath $Path -Recurse -File -ErrorAction SilentlyContinue)
+    if ($files.Count -eq 0) {
+        throw "Package validation failed: $Name directory '$Path' is empty."
+    }
+    Write-Host "  [ok] $Name ($($files.Count) files)"
+}
+
+function Assert-NoRootPollution {
+    param([string]$Path)
+    $root = (Resolve-Path -LiteralPath $Path).Path
+    $rootFiles = @(Get-ChildItem -LiteralPath $root -File)
+    $pollutingPatterns = @(
+        '^System\..*\.dll$',
+        '^Microsoft\..*\.dll$',
+        '^PresentationFramework.*\.dll$',
+        '^PresentationCore\.dll$',
+        '^PresentationUI\.dll$',
+        '^ReachFramework\.dll$',
+        '^WindowsBase\.dll$',
+        '^UIAutomation.*\.dll$',
+        '^coreclr\.dll$',
+        '^clrjit\.dll$',
+        '^DirectWriteForwarder\.dll$',
+        '^wpfgfx_cor3\.dll$',
+        '^PenImc_cor3\.dll$',
+        '^PresentationNative_cor3\.dll$',
+        '^vcruntime140_cor3\.dll$',
+        '^D3DCompiler_47_cor3\.dll$'
+    )
+    $polluted = @($rootFiles | Where-Object {
+        $name = $_.Name
+        foreach ($pattern in $pollutingPatterns) {
+            if ($name -match $pattern) { return $true }
+        }
+        return $false
+    })
+    if ($polluted.Count -gt 0) {
+        $names = @($polluted | ForEach-Object { $_.Name }) -join ', '
+        throw "Package validation failed: root directory is polluted with runtime DLLs: $names"
+    }
+    Write-Host '  [ok] root directory is free of runtime DLL pollution'
+}
+
+function Assert-NoForbiddenPackageContent {
+    param([string]$Path)
+
+    $forbiddenDirectoryNames = @('obj', 'site-packages', '__pycache__')
+    $forbiddenExtensions = @(
+        '.pdb', '.bak', '.cs', '.csproj', '.py', '.pyc', '.pyd',
+        '.ps1', '.sln', '.xaml', '.yml', '.yaml', '.log'
+    )
+    $root = (Resolve-Path -LiteralPath $Path).Path.TrimEnd('\', '/')
+    $entries = @(Get-ChildItem -LiteralPath $root -Recurse -Force)
+    $forbidden = @($entries | Where-Object {
+        $name = $_.Name
+        $relativePath = $_.FullName.Substring($root.Length + 1)
+        $isForbiddenDirectory = $_.PSIsContainer -and $forbiddenDirectoryNames -contains $name.ToLowerInvariant()
+        $isForbiddenRootDirectory = $_.PSIsContainer -and
+            $relativePath -match '^(?i)(bin|logs?|src|source)$'
+        $isForbiddenExtension = -not $_.PSIsContainer -and
+            $forbiddenExtensions -contains $_.Extension.ToLowerInvariant()
+        $isPythonRuntime = $name -match '^python(?:w)?(?:\d+(?:\.\d+)*)?\.exe$' -or
+            $name -match '^python\d+\.dll$'
+        $isForbiddenDirectory -or $isForbiddenRootDirectory -or
+            $isForbiddenExtension -or $isPythonRuntime
+    })
+
+    if ($forbidden.Count -gt 0) {
+        $relativePaths = @($forbidden | ForEach-Object { $_.FullName.Substring($root.Length + 1) })
+        throw "Package validation failed: forbidden content found: $($relativePaths -join ', ')"
+    }
+
+    Write-Host '  [ok] no PDB/bak/Python/source/bin/obj/log content'
+}
+
+if (-not (Test-Path -LiteralPath $PackageDirectory -PathType Container)) {
+    throw "Package directory not found: $PackageDirectory"
+}
+
+Assert-PackageFile -Name 'Rust Engine' -Path (Join-Path $PackageDirectory 'update-engine.exe')
+Assert-PackageFile -Name 'Engine third-party notices' `
+    -Path (Join-Path $PackageDirectory 'update-engine-third-party-notices.txt')
+if (Get-ChildItem -LiteralPath $PackageDirectory -Filter 'NarutoAutoUpdater*') {
+    throw '旧 .NET Updater 不得进入 V2 包。'
+}
+
+Write-Host "Validating package layout: $PackageDirectory"
+
+# GUI host and bootstrap metadata at package root.
+Assert-PackageFile -Name 'Bunshin.exe' -Path (Join-Path $PackageDirectory 'Bunshin.exe')
+Assert-PackageFile -Name 'Bunshin.dll' -Path (Join-Path $PackageDirectory 'Bunshin.dll')
+Assert-PackageFile -Name 'Bunshin.deps.json' -Path (Join-Path $PackageDirectory 'Bunshin.deps.json')
+Assert-PackageFile `
+    -Name 'Bunshin.runtimeconfig.json' `
+    -Path (Join-Path $PackageDirectory 'Bunshin.runtimeconfig.json')
+if (-not (Get-ChildItem -LiteralPath $PackageDirectory -Filter 'DependencySetup_*.bat')) {
+    throw 'Package validation failed: dependency setup script not found at package root.'
+}
+
+# .NET comes from the machine; a bundled runtime or Android agents would quietly bring the size back.
+foreach ($bundled in @('hostfxr.dll', 'libs\coreclr.dll', 'worker\coreclr.dll', 'worker\MaaAgentBinary')) {
+    if (Test-Path -LiteralPath (Join-Path $PackageDirectory $bundled)) {
+        throw "Package validation failed: $bundled must not be bundled."
+    }
+}
+
+# GUI relocated dependencies under libs/.
+$libsDir = Join-Path $PackageDirectory 'libs'
+Assert-PackageDirectory -Name 'libs' -Path $libsDir
+Assert-PackageFile -Name 'libs/Wpf.Ui.dll' -Path (Join-Path $libsDir 'Wpf.Ui.dll')
+Assert-PackageFile -Name 'libs/Updates.dll' -Path (Join-Path $libsDir 'Updates.dll')
+# Worker under worker/.
+$workerDir = Join-Path $PackageDirectory 'worker'
+Assert-PackageFile -Name 'worker/Bunshin.Worker.exe' -Path (Join-Path $workerDir 'Bunshin.Worker.exe')
+Assert-PackageFile -Name 'worker/Bunshin.Worker.dll' -Path (Join-Path $workerDir 'Bunshin.Worker.dll')
+
+# Maa.Framework native runtime is copied by its buildTransitive targets into
+# worker/runtimes/win-x64/native/. MaaFramework.dll is the core runtime and
+# MaaWin32ControlUnit.dll is the Win32 controller the Worker relies on.
+$nativeDir = Join-Path $workerDir 'runtimes\win-x64\native'
+Assert-PackageDirectory -Name 'worker/runtimes/win-x64/native' -Path $nativeDir
+Assert-PackageFile `
+    -Name 'worker/runtimes/win-x64/native/MaaFramework.dll' `
+    -Path (Join-Path $nativeDir 'MaaFramework.dll')
+Assert-PackageFile `
+    -Name 'worker/runtimes/win-x64/native/MaaWin32ControlUnit.dll' `
+    -Path (Join-Path $nativeDir 'MaaWin32ControlUnit.dll')
+
+Assert-NoRootPollution -Path $PackageDirectory
+Assert-NoForbiddenPackageContent -Path $PackageDirectory
+& (Join-Path $PSScriptRoot 'test-independent-engine.ps1') -PackageDirectory $PackageDirectory
+
+Write-Host 'Package validation passed.'

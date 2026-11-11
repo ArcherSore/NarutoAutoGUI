@@ -1,10 +1,10 @@
 # GUI–Worker 协议
 
-这是 GUI 与 Child Session Worker 的稳定边界摘要。字段定义和数值常量以 src/NarutoAutoGUI.Protocol 中的 ProtocolModels、PipeProtocol 和 CanonicalDigest 为准；修改协议时两端应同版发布。
+这是 GUI 与 Child Session Worker 的稳定边界摘要。字段定义和数值常量以 src/Protocol 中的 ProtocolModels、PipeProtocol 和 CanonicalDigest 为准；修改协议时两端应同版发布。
 
 ## 控制通道
 
-协议版本为 5，Run Plan 与 Snapshot 版本均为 2；Worker Launch Context 保持版本 1。GUI 是本机 Named Pipe 服务端，Worker 是客户端。每条消息以 4 字节 little-endian 无符号长度开头，后接 UTF-8 JSON；payload 上限 4 MiB。Envelope 包含 protocolVersion、messageType、operation、data；请求与响应由 requestId 配对，响应包含 success 或结构化 error。版本或帧非法时拒绝连接，不做降级协商。
+协议版本为 8，Run Plan 版本为 2，Snapshot 版本为 3；Worker Launch Context 保持版本 1。GUI 是本机 Named Pipe 服务端，Worker 是客户端。每条消息以 4 字节 little-endian 无符号长度开头，后接 UTF-8 JSON；payload 上限 4 MiB。Envelope 包含 protocolVersion、messageType、operation、data；请求与响应由 requestId 配对，响应包含 success 或结构化 error。版本或帧非法时拒绝连接，不做降级协商。
 
 | 操作 | 用途 |
 | --- | --- |
@@ -12,6 +12,7 @@
 | worker.getSnapshot | 取得完整权威状态 |
 | run.start / run.stop | 提交不可变计划 / 请求停止当前 Run |
 | log.getSince | 按 sequence 补取有界日志 |
+| framework.setOptions | 更新运行中 Worker 的诊断开关与遥测开关 |
 
 Worker 的 worker.stateChanged、run.stateChanged 和 log.entry 是可丢失的实时事件。重连后必须重新获取 Snapshot；不能用事件重建权威状态。run.stop 的成功响应表示请求已接受，不表示 Run 已终结。GUI 需要观察后续 Snapshot 或事件所指向的终态。
 
@@ -26,9 +27,21 @@ Plan Item 通过 Kind 区分 MaaTask 与 Pretask；Pretask 的 Program 保存已
 pretask 是 Active Run 中的普通受控阶段，先于正式 Controller 创建。非零退出、启动失败或 180 秒超时终止后续项；停止或超时后最多等待 30 秒确认清理。若程序退出未确认，Worker 进入 Faulted 并保留 Active Run，GUI 通过结束桌面分身恢复。只有 pretask 的计划无需创建 Controller；成功退出不清理已经启动的游戏。
 
 Launch Manifest 的 frameworkOptions 保存 SaveOnError、SaveDraw 与 DebugMode，缺省值分别为 true、false、false。
-这些诊断偏好不参与项目 Runtime Profile Digest；更改后在新 Worker 实例中生效。
+这些诊断偏好不参与项目 Runtime Profile Digest。
 Worker 在进入 Ready 前设置全局选项与绝对 LogDir（项目根目录下的 debug），检查返回值并记录日志；
 设置失败保持 NotReady，不执行任务。
+
+GUI 在开关变化和每次 Worker 连接后发送 framework.setOptions，使运行中的 Worker 与当前选择一致，从下一次识别开始生效。
+请求包含这三个开关与 telemetryEnabled；只设置这三个开关，不重设 LogDir，因为后者会重新打开框架日志并触发其清理。
+
+## 遥测
+
+Launch Manifest 的可选 telemetry 段是已通过 GUI 发布闸门的 PI telemetry.sentry（dsn、release、environment、tracing、
+两个采样率）与启动时的用户选择；缺失表示禁用，不参与 Runtime Profile Digest。运行中的选择随 framework.setOptions 的
+telemetryEnabled 下发：关闭时放弃当前 Run，开启从下一个 Run 开始。
+
+run.start 请求层的 redactionValues 是本次 Run 用到的 PI password 输入值，供 Worker 在上报前脱敏。它不属于 Run Plan，
+不参与 Plan Digest，不进入 Snapshot、日志或任何响应，只在 Worker 内存中保留到该 Run 的遥测结束。
 
 ## 预算
 

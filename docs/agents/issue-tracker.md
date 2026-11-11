@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-本仓库使用 [GitHub Issues](https://github.com/ArcherSore/NarutoAutoGUI/issues) 作为唯一问题跟踪器。spec、tickets、当前状态、未完成验收与后续工作均在此记录；仓库内不维护第二套 docs/issues/。
+本仓库使用 [GitHub Issues](https://github.com/ArcherSore/Bunshin/issues) 作为唯一问题跟踪器。spec、tickets、当前状态、未完成验收与后续工作均在此记录；仓库内不维护第二套 docs/issues/。
 
 ## 操作
 
@@ -15,7 +15,7 @@
 
 ## 工程 skills
 
-- grill-with-docs 用于尚未决定的设计讨论；只把形成的领域术语写入 CONTEXT.md，符合标准的长期架构取舍写入 ADR。
+- grill-with-docs 用于尚未决定的设计讨论；只把形成的领域术语写入 GLOSSARY.md，符合标准的长期架构取舍写入 ADR。
 - to-spec 仅在工作需要跨多个会话时，将已决定的内容发布为单个 GitHub Issue；应用 ready-for-agent，不把 spec 存到 docs。
 - to-tickets 将跨会话工作拆成可独立演示的纵向切片，按依赖顺序发布 GitHub Issues。发布前按该 skill 的要求确认粒度与阻塞关系。完成的票据关闭。
 - 单个会话能完成的改动直接实施；tdd 依其测试边界和逐个 red→green 规则执行，不为每个改动生成 spec/tickets。

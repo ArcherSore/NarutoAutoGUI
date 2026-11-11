@@ -1,0 +1,334 @@
+use update_engine::install;
+use serde_json::json;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+#[cfg(windows)]
+#[path = "support/windows.rs"]
+mod windows;
+
+fn fixture(name: &str) -> PathBuf
+{
+    let root = std::env::temp_dir().join(format!("install-{name}-{}", std::process::id()));
+    if root.exists() { fs::remove_dir_all(&root).unwrap(); }
+    fs::create_dir_all(root.join("cache/updater/payload")).unwrap();
+    for directory in ["config", "logs", "debug", "cache/other"] {
+        fs::create_dir_all(root.join(directory)).unwrap();
+        fs::write(root.join(directory).join("keep"), "user").unwrap();
+    }
+    fs::write(root.join("cache/updater/prepared"), "opaque").unwrap();
+    fs::write(root.join("old-file"), "old").unwrap();
+    fs::create_dir(root.join("state")).unwrap();
+    fs::write(root.join("state/old"), "old").unwrap();
+    fs::write(root.join("cache/updater/payload/Bunshin.exe"), "new").unwrap();
+    fs::write(root.join("cache/updater/payload/update-engine.exe"), "new").unwrap();
+    root
+}
+
+fn request(root: &Path, pid: u32) -> String
+{
+    json!({"protocolVersion":1,"operation":"install","installation":root,"reference":"opaque",
+        "guiPid":pid}).to_string()
+}
+
+#[test]
+fn install_waits_then_replaces_all_managed_entries_and_cleans_before_relaunch()
+{
+    let root = fixture("success");
+    let result = install(&request(&root, 123), |message| {
+        assert_eq!(message["type"], "ready");
+        assert!(root.join("old-file").exists());
+        Ok(())
+    }, |_| {
+        assert!(!root.join("cache/updater/old").exists());
+        Ok(())
+    }, |exe| {
+        assert_eq!(exe, root.join("Bunshin.exe"));
+        assert!(!root.join("old-file").exists());
+        assert!(!root.join("state").exists());
+        assert!(!root.join("cache/updater/old").exists());
+        assert!(!root.join("cache/updater/payload").exists());
+        for directory in ["config", "logs", "debug", "cache/other"] {
+            assert_eq!(fs::read_to_string(root.join(directory).join("keep")).unwrap(), "user");
+        }
+        Ok(())
+    }, &mut |_| {});
+    assert_eq!(result["type"], "result", "{result}");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn preflight_and_wait_failures_leave_programs_untouched()
+{
+    for mode in ["reference", "disconnect", "timeout", "preserved-file"] {
+        let root = fixture(mode);
+        if mode == "reference" { fs::write(root.join("cache/updater/prepared"), "wrong").unwrap(); }
+        if mode == "preserved-file" {
+            fs::remove_dir_all(root.join("config")).unwrap();
+            fs::write(root.join("config"), "file").unwrap();
+        }
+        let result = install(&request(&root, 123), |_| {
+            if mode == "disconnect" { Err("disconnected".into()) } else { Ok(()) }
+        }, |_| Err("timeout".into()), |_| panic!("must not relaunch"), &mut |_| {});
+        assert_eq!(result["code"], "install_preflight", "{result}");
+        assert_eq!(fs::read_to_string(root.join("old-file")).unwrap(), "old");
+        assert!(!root.join("Bunshin.exe").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+fn relaunch_failure_does_not_undo_installed_files()
+{
+    let root = fixture("relaunch-failure");
+    let result = install(&request(&root, 123), |_| Ok(()), |_| Ok(()),
+        |_| Err("cannot create process".into()), &mut |_| {});
+    assert_eq!(result["code"], "relaunch_failed");
+    assert_eq!(fs::read_to_string(root.join("Bunshin.exe")).unwrap(), "new");
+    assert!(!root.join("old-file").exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+fn move_failure_stops_without_relaunch_or_rollback()
+{
+    use std::os::windows::fs::OpenOptionsExt;
+    let root = fixture("move-failure");
+    let held = fs::OpenOptions::new().read(true).share_mode(0).open(root.join("old-file")).unwrap();
+    let result = install(&request(&root, 123), |_| Ok(()), |_| Ok(()),
+        |_| panic!("failed install must not relaunch"), &mut |_| {});
+    assert_eq!(result["code"], "install_failed");
+    assert!(!root.join("Bunshin.exe").exists());
+    assert!(root.join("cache/updater/old").exists());
+    drop(held);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+fn actual_copy_handoff_waits_for_gui_pid_and_updates_itself()
+{
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+    let root = fixture("process");
+    let helper = root.join("cache/other/gui-fixture.exe");
+    assert!(Command::new("rustc").arg("--edition=2024").arg("--crate-name=process_fixture")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/process_fixture.rs"))
+        .arg("-o").arg(&helper).status().unwrap().success());
+    fs::copy(&helper, root.join("cache/updater/payload/Bunshin.exe")).unwrap();
+    fs::copy(env!("CARGO_BIN_EXE_update-engine"), root.join("update-engine.exe")).unwrap();
+    let mut gui = Command::new(&helper).arg("--wait").spawn().unwrap();
+    let mut engine = Command::new(root.join("update-engine.exe"))
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    writeln!(engine.stdin.take().unwrap(), "{}", request(&root, gui.id())).unwrap();
+    let mut output = BufReader::new(engine.stdout.take().unwrap());
+    let mut message = String::new();
+    output.read_line(&mut message).unwrap();
+    assert_eq!(serde_json::from_str::<serde_json::Value>(&message).unwrap()["type"], "ready", "{message}");
+    assert!(engine.wait().unwrap().success());
+    assert_eq!(fs::read_to_string(root.join("old-file")).unwrap(), "old");
+    assert!(!root.join("cache/updater/old").exists());
+    let copy = root.join("cache/updater/run/update-engine.exe");
+    for _ in 0..20 {
+        assert!(windows::windows(&copy).is_empty(), "normal handoff must not create any status UI");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    drop(output); // GUI stdout may disappear after ready; the copy must continue independently.
+    gui.kill().unwrap();
+    gui.wait().unwrap();
+    let clock = Instant::now();
+    while !root.join("relaunched").exists() && clock.elapsed() < Duration::from_secs(10) {
+        assert!(windows::windows(&copy).is_empty(), "normal installation must not create any status UI");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(root.join("relaunched").exists());
+    assert_eq!(fs::read_to_string(root.join("update-engine.exe")).unwrap(), "new");
+    assert!(!root.join("old-file").exists());
+    // The terminal result is logged once even when the GUI closes stdout after ready.
+    let clock = Instant::now();
+    let log = loop {
+        let log = fs::read_to_string(root.join("logs/updater.log")).unwrap_or_default();
+        if log.contains("type=\"result\"") { break log; }
+        assert!(clock.elapsed() < Duration::from_secs(10), "install result was not logged");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(log.lines().filter(|line| line.contains("install:")).count(), 1);
+    // The running copy is allowed to remain; wait for its image to be released before test cleanup.
+    for _ in 0..100 {
+        if fs::remove_dir_all(&root).is_ok() { return; }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("Engine did not exit after relaunch");
+}
+
+#[cfg(windows)]
+#[test]
+fn post_ready_failures_show_native_message_with_log_path()
+{
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+    for code in ["install_failed", "relaunch_failed", "install_preflight"] {
+        let root = fixture(code);
+        let helper = root.join("cache/other/gui-fixture.exe");
+        assert!(Command::new("rustc").arg("--edition=2024").arg("--crate-name=process_fixture")
+            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/process_fixture.rs"))
+            .arg("-o").arg(&helper).status().unwrap().success());
+        fs::copy(&helper, root.join("cache/updater/payload/Bunshin.exe")).unwrap();
+        let mut gui = Command::new(&helper).arg("--wait").spawn().unwrap();
+        let mut engine = Command::new(env!("CARGO_BIN_EXE_update-engine"))
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+        writeln!(engine.stdin.take().unwrap(), "{}", request(&root, gui.id())).unwrap();
+        let mut output = BufReader::new(engine.stdout.take().unwrap());
+        let mut message = String::new();
+        output.read_line(&mut message).unwrap();
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&message).unwrap()["type"], "ready");
+        assert!(engine.wait().unwrap().success());
+        let held = if code == "install_failed" {
+            Some(fs::OpenOptions::new().read(true).share_mode(0).open(root.join("old-file")).unwrap())
+        } else if code == "relaunch_failed" {
+            // Allow replacement by rename, but deny CreateProcess access to the valid new executable.
+            Some(fs::OpenOptions::new().read(true).share_mode(4 /* FILE_SHARE_DELETE */)
+                .open(root.join("cache/updater/payload/Bunshin.exe")).unwrap())
+        } else { None };
+        if code != "install_preflight" {
+            gui.kill().unwrap();
+        }
+        let copy = root.join("cache/updater/run/update-engine.exe");
+        let clock = Instant::now();
+        let text = loop {
+            let windows = windows::windows(&copy);
+            if let Some((hwnd, text)) = windows.iter().find(|(_, text)| text.starts_with("更新失败")) {
+                windows::dismiss(*hwnd);
+                break text.clone();
+            }
+            assert!(clock.elapsed() < Duration::from_secs(40), "missing failure MessageBox: {code}");
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        if code == "install_preflight" {
+            assert!(gui.try_wait().unwrap().is_none());
+            gui.kill().unwrap();
+        }
+        gui.wait().unwrap();
+        message.clear();
+        output.read_line(&mut message).unwrap();
+        let response: serde_json::Value = serde_json::from_str(&message).unwrap();
+        drop(held);
+        assert_eq!(response["type"], "error");
+        assert_eq!(response["code"], code);
+        assert!(text.contains(response["message"].as_str().unwrap()), "{text}");
+        assert!(text.contains(&root.join("logs").join("updater.log").display().to_string()), "{text}");
+        assert!(!root.join("relaunched").exists());
+        let log = fs::read_to_string(root.join("logs/updater.log")).unwrap();
+        assert!(log.contains(code));
+        if code == "relaunch_failed" {
+            assert!(text.contains("文件安装完成但启动失败"));
+            assert!(text.contains("请手动启动程序"));
+            assert_eq!(fs::read(root.join("Bunshin.exe")).unwrap(), fs::read(&helper).unwrap());
+            assert!(!root.join("cache/updater/old").exists());
+        } else if code == "install_preflight" {
+            assert!(text.contains("等待进程退出超时或失败"));
+            assert!(!root.join("cache/updater/old").exists());
+            assert!(root.join("old-file").exists());
+        } else {
+            assert!(text.contains("不要从 old 恢复"));
+            assert!(!root.join("Bunshin.exe").exists());
+        }
+        drop(output);
+        let clock = Instant::now();
+        while fs::remove_dir_all(&root).is_err() {
+            assert!(clock.elapsed() < Duration::from_secs(5), "Engine did not exit after failure");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn preflight_process_failure_logs_once_without_launching_copy()
+{
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let root = fixture("preflight-log");
+    fs::write(root.join("cache/updater/prepared"), "wrong").unwrap();
+    let mut engine = Command::new(env!("CARGO_BIN_EXE_update-engine"))
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    writeln!(engine.stdin.take().unwrap(), "{}", request(&root, std::process::id())).unwrap();
+    let output = engine.wait_with_output().unwrap();
+    assert!(!output.status.success());
+    let response: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["code"], "install_preflight");
+    let log = fs::read_to_string(root.join("logs/updater.log")).unwrap();
+    assert_eq!(log.lines().count(), 1);
+    assert!(log.contains("install_preflight"));
+    assert!(!root.join("cache/updater/run").exists());
+    assert_eq!(fs::read_to_string(root.join("old-file")).unwrap(), "old");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+fn payload_write_failure_keeps_old_isolated_and_does_not_launch()
+{
+    use std::os::windows::fs::OpenOptionsExt;
+    let root = fixture("write-failure");
+    let held = fs::OpenOptions::new().read(true).share_mode(0)
+        .open(root.join("cache/updater/payload/Bunshin.exe")).unwrap();
+    let result = install(&request(&root, 123), |_| Ok(()), |_| Ok(()),
+        |_| panic!("partial install cannot launch"), &mut |_| {});
+    assert_eq!(result["code"], "install_failed");
+    assert!(!root.join("old-file").exists());
+    assert!(root.join("cache/updater/old/old-file").exists());
+    drop(held);
+    fs::remove_dir_all(root).unwrap();
+}
+
+// PSModulePath inherited from PowerShell 7 stops Windows PowerShell from loading its own Get-Acl and Set-Acl.
+#[cfg(windows)]
+fn windows_powershell(script: &str) -> std::process::Command {
+    let mut command = std::process::Command::new("powershell");
+    command.env_remove("PSModulePath").args(["-NoProfile", "-Command", script]);
+    command
+}
+
+#[cfg(windows)]
+#[test]
+fn writable_cache_cannot_hide_root_permission_failure_before_ready()
+{
+    let root = fixture("root-acl");
+    let path = root.to_str().unwrap().replace('\'', "''");
+    let acl = format!(
+        "$p='{path}'; $a=Get-Acl -LiteralPath $p; \
+        $r=[System.Security.AccessControl.FileSystemAccessRule]::new(\
+        [System.Security.Principal.WindowsIdentity]::GetCurrent().User,\
+        [System.Security.AccessControl.FileSystemRights]::CreateFiles,\
+        [System.Security.AccessControl.AccessControlType]::Deny); ");
+    let apply = format!("{acl} $a.AddAccessRule($r); Set-Acl -LiteralPath $p -AclObject $a");
+    assert!(windows_powershell(&apply).status().unwrap().success());
+    let result = install(&request(&root, 123), |_| panic!("unwritable root cannot become ready"),
+        |_| Ok(()), |_| panic!("cannot launch"), &mut |_| {});
+    let restore = format!("{acl} $a.RemoveAccessRuleSpecific($r); Set-Acl -LiteralPath $p -AclObject $a");
+    assert!(windows_powershell(&restore).status().unwrap().success());
+    assert_eq!(result["code"], "install_preflight");
+    assert!(root.join("old-file").exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn install_relaunches_the_launcher_of_the_layout_from_before_the_rename()
+{
+    let root = fixture("layout");
+    fs::remove_file(root.join("cache/updater/payload/Bunshin.exe")).unwrap();
+    fs::remove_file(root.join("cache/updater/payload/update-engine.exe")).unwrap();
+    fs::write(root.join("cache/updater/payload/NarutoAutoGUI.exe"), "new").unwrap();
+    fs::write(root.join("cache/updater/payload/maanop-update-engine.exe"), "new").unwrap();
+    let result = install(&request(&root, 123), |_| Ok(()), |_| Ok(()), |exe| {
+        assert_eq!(exe, root.join("NarutoAutoGUI.exe"));
+        Ok(())
+    }, &mut |_| {});
+    assert_eq!(result["type"], "result", "{result}");
+    fs::remove_dir_all(root).unwrap();
+}

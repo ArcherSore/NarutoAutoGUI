@@ -2,7 +2,7 @@
 
 ## 开始任务
 
-先阅读 README.md 和 CONTEXT.md，再阅读与当前工作有关的 docs/ARCHITECTURE.md、docs/adr/ 中的决策、GitHub Issue / Spec 及源码。涉及 Child Session 时阅读 src/NarutoAutoGUI/ChildSession/ 的相关实现。不要把整套历史文档当成必读材料。
+先阅读 README.md 和 GLOSSARY.md，再阅读与当前工作有关的 docs/ARCHITECTURE.md、docs/adr/ 中的决策、GitHub Issue / Spec 及源码。涉及 Child Session 时阅读 src/Gui/ChildSession/ 的相关实现。不要把整套历史文档当成必读材料。
 
 ## 开发原则
 
@@ -16,7 +16,7 @@
 
 ## 文档边界
 
-- CONTEXT.md 只定义项目特有的重要术语；仅在领域语言实际变化时修改。用一两句话定义概念，不写实现、协议、流程或历史。
+- GLOSSARY.md 只定义项目特有的重要术语；仅在领域语言实际变化时修改。用一两句话定义概念，不写实现、协议、流程或历史。
 - ADR 仅记录同时难以逆转、脱离背景会显得意外、且存在真实取舍的决策。普通实现选择、局部协议、状态机和测试约束留在代码、测试或必要的 reference 中。
 - docs/ARCHITECTURE.md 只描述当前系统的组件、边界、主要流转和不变量。稳定协议才保留独立 reference。
 - 当前状态、后续工作、验收条件、跨会话 spec 和 tickets 放在 GitHub Issues；完成后关闭。只有跨多次会话的工作才需要 spec 或 tickets。
@@ -41,7 +41,7 @@
 
 ### 构建与测试入口
 
-在仓库根目录运行 `./src/NarutoAutoGUI/scripts/verify.ps1`：增量构建 GUI 并运行完整 GUI Self-Test。
+在仓库根目录运行 `./src/Gui/scripts/verify.ps1`：增量构建 GUI 并运行完整 GUI Self-Test。
 默认 Release；支持 Windows PowerShell 5.1 和 PowerShell 7，从其他工作目录调用绝对脚本路径也可运行。
 成功只显示 PASS/耗时；完整 stdout/stderr 在忽略的 `artifacts/validation/<本次运行>/` 中。
 失败先读摘要，必要时只读取失败阶段的日志；脚本保留原始进程退出码，构建失败后不会测试旧 DLL。
@@ -50,7 +50,7 @@
 | --- | --- | --- |
 | 一般 GUI、共享布局或不确定影响范围 | 默认（`-Suite Gui`） | GUI 构建 + 全 GUI 自检 |
 | 任务配置、标签条、参数编辑、TaskShelf、引导 | `-Suite Project` | 现有 `--project-only`，也包含 Support 自检 |
-| 通知、诊断 ZIP、Debug 图片清理、设置、导航 | `-Suite Support` | 现有 `--support-only` |
+| 通知、诊断 ZIP、调试文件清理、设置、导航 | `-Suite Support` | 现有 `--support-only` |
 | 运行控制栏、侧栏宽度、Run 进度、运行环境接线 | `-Suite RuntimeControls` | 现有 `--runtime-controls-only` |
 | Worker、GUI 与 Worker 的连接 | `-Suite Worker` | GUI/Worker 构建 + 全 Worker 自检 + 真实 Worker 连接 |
 | GUI 与 Engine 的更新适配器 | `-Suite Updater` | 现有 .NET Updater 测试（含构建） |
@@ -82,4 +82,4 @@ GitHub Issues 是唯一工作跟踪器，含 spec、tickets、状态与验收条
 
 ### Domain docs
 
-本仓库是单上下文布局：根目录 CONTEXT.md 与 docs/adr/。消费规则见 docs/agents/domain.md。
+本仓库是单上下文布局：根目录 GLOSSARY.md 与 docs/adr/。消费规则见 docs/agents/domain.md。

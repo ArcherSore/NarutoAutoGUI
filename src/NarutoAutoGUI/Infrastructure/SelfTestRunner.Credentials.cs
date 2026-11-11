@@ -198,8 +198,8 @@ internal static partial class SelfTestRunner
         Require(fallback.Read(target)?.Password == FakePassword && scopes == 1,
             "登录会话缺少凭据集时应使用交互身份读取保存的凭据。");
         fallback.Write(target, FakeAccount, FakePassword + "2");
-        Require(direct.Saved?.Password == FakePassword + "2" && scopes == 2,
-            "1312 后必须在交互身份下保存用户的新密码。");
+        Require(direct.Saved?.Password == FakePassword + "2" && scopes == 2 && !direct.InScope,
+            "1312 后必须在交互身份下保存用户的新密码，并退出该作用域。");
         var before = scopes;
         direct.DirectError = 5;
         Require(Throws<Win32Exception>(() => fallback.Read(target))
@@ -209,11 +209,11 @@ internal static partial class SelfTestRunner
         Require(Throws<Win32Exception>(() => fallback.Read(target + "/Other")) && scopes == before,
             "备用访问不能扩大到其他凭据目标。");
         direct.ScopedError = 1312;
-        Require(Throws<Win32Exception>(() => fallback.Read(target)) && scopes == before + 1,
+        Require(Throws<Win32Exception>(() => fallback.Read(target)) && scopes == before + 1 && !direct.InScope,
             "备用读取仍失败时应报告失败，不能无限重试或伪装为未保存。");
         Require(Throws<Win32Exception>(() => fallback.Write(target, FakeAccount, FakePassword))
-            && direct.Saved?.Password == FakePassword + "2",
-            "备用保存失败不能报告成功。");
+            && direct.Saved?.Password == FakePassword + "2" && !direct.InScope,
+            "备用保存失败不能报告成功或继续在模拟身份下操作。");
         var unavailable = new CredentialVaultFallback(direct,
             _ => throw new InvalidOperationException("shell unavailable"));
         Require(Throws<InvalidOperationException>(() => unavailable.Read(target))

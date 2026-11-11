@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using Microsoft.Win32.SafeHandles;
@@ -7,8 +8,6 @@ namespace NarutoAutoGUI.ChildSession;
 
 internal static class ShellCredentialAccess
 {
-    private const int TokenSessionId = 12, TokenElevation = 20; // TOKEN_INFORMATION_CLASS
-
     internal static void Run(Action action)
     {
         var window = GetShellWindow();
@@ -25,8 +24,9 @@ internal static class ShellCredentialAccess
         using (token) {
             using var current = WindowsIdentity.GetCurrent();
             using var shell = new WindowsIdentity(token.DangerousGetHandle());
-            if (!Matches(current.User, TokenNumber(current.AccessToken, TokenSessionId), shell.User,
-                    TokenNumber(token, TokenSessionId), TokenNumber(token, TokenElevation) != 0)) {
+            using var currentProcess = Process.GetCurrentProcess();
+            if (!Matches(current.User, currentProcess.SessionId, shell.User,
+                    TokenNumber(token, 12), TokenNumber(token, 20) != 0)) {
                 throw new InvalidOperationException("资源管理器的用户、会话或权限不匹配，无法访问 Windows 凭据。");
             }
             WindowsIdentity.RunImpersonated(token, action);

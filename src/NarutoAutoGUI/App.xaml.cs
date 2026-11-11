@@ -1,6 +1,5 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Security.Principal;
 using System.Windows;
 using System.Windows.Threading;
 using NarutoAutoGUI.ChildSession;
@@ -75,8 +74,8 @@ public partial class App : System.Windows.Application
             InstallUpdateAsync, telemetry: _telemetry, launchCommand: command);
         _mainWindow.HiddenToTray += MainWindow_HiddenToTray;
         _mainWindow.ProjectIdentityChanged += MainWindow_ProjectIdentityChanged;
-        _mainWindow.AutoRunStarted += (_, decision) =>
-            _quitAfterRun = decision.QuitAfterRun ? new QuitAfterRunTracker(DateTime.UtcNow) : null;
+        _mainWindow.AutoRunStarted += (_, _) =>
+            _quitAfterRun = command.QuitAfterRun ? new QuitAfterRunTracker(DateTime.UtcNow) : null;
         _mainWindow.AutoRunFailed += (_, message) => ShowBalloon("自动启动未能完成", message, failed: true);
         // The Run this launch meant to start never began, so --quit-after-run has nothing to wait for; a Run the
         // user starts later in this session must not end the program.
@@ -100,13 +99,11 @@ public partial class App : System.Windows.Application
     internal static void LogStartup(AppLogger logger)
     {
         using var process = System.Diagnostics.Process.GetCurrentProcess();
-        using var identity = WindowsIdentity.GetCurrent();
-        var elevated = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
         logger.Info($"NarutoAutoGUI 正式 GUI 启动 [version={ApplicationVersion}] [pid={process.Id}] "
-            + $"[session={process.SessionId}] [elevated={elevated}] [os={Environment.OSVersion}] "
+            + $"[session={process.SessionId}] [elevated={Elevation.IsElevated()}] [os={Environment.OSVersion}] "
             + $"[arch={RuntimeInformation.ProcessArchitecture}] [runtime={RuntimeInformation.FrameworkDescription}] "
             + $"[directory={AppContext.BaseDirectory}] [logDirectory={logger.LogDirectory}] "
-            + $"[args={LaunchCommand.JoinArguments(Environment.GetCommandLineArgs().Skip(1))}]");
+            + $"[args={string.Join(' ', Environment.GetCommandLineArgs().Skip(1))}]");
     }
 
     internal Task RequestExitAsync() => ExitAsync(confirm: true);
@@ -327,9 +324,6 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        // A window started in the tray was shown without activation or a taskbar button.
-        _mainWindow.ShowInTaskbar = true;
-        _mainWindow.ShowActivated = true;
         _mainWindow.Show();
         if (_mainWindow.WindowState == WindowState.Minimized) {
             _mainWindow.WindowState = WindowState.Normal;

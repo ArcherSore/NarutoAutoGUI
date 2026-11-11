@@ -10,10 +10,7 @@ internal sealed record AutoRunTarget(Guid Id, string Name)
 }
 
 // SkipReason is set when the launch asked for an auto-run that cannot happen; it is for the log.
-internal sealed record AutoRunDecision(Guid? ConfigurationId, bool QuitAfterRun, string? SkipReason = null)
-{
-    internal bool Run => ConfigurationId is not null;
-}
+internal sealed record AutoRunDecision(Guid? ConfigurationId, string? SkipReason = null);
 
 // Decides, for one launch, whether to start a Task Configuration by itself and which one.
 internal static class AutoRunPlanner
@@ -43,14 +40,14 @@ internal static class AutoRunPlanner
             ? Resolve(command.Instance!, configurations)
             : configurations.FirstOrDefault(item => item.Id == configured);
         if (target is not null) {
-            return new AutoRunDecision(target.Id, command.QuitAfterRun);
+            return new AutoRunDecision(target.Id);
         }
         return Skip(byInstance
             ? $"--instance \"{command.Instance}\" 没有匹配到唯一的配置"
             : "没有选择要自动执行的配置，或所选配置已不存在");
     }
 
-    private static AutoRunDecision Skip(string? reason) => new(null, false, reason);
+    private static AutoRunDecision Skip(string? reason) => new(null, reason);
 
     private static AutoRunTarget? Resolve(string selector, IReadOnlyList<AutoRunTarget> configurations)
     {

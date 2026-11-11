@@ -49,17 +49,16 @@ internal sealed record SettingsChoiceOption(string? Id, string Name);
 // Picks one of a list that changes while the application runs. The first option is always "none", which has no Id.
 internal sealed class SettingsChoice(string noneName, Action<string?> save) : SettingsObservable
 {
-    private readonly SettingsChoiceOption _none = new(null, noneName);
-    private IReadOnlyList<SettingsChoiceOption>? _options;
+    private IReadOnlyList<SettingsChoiceOption> _options = [new(null, noneName)];
     private SettingsChoiceOption? _selected;
     private string _status = "";
 
-    public IReadOnlyList<SettingsChoiceOption> Options => _options ??= [_none];
+    public IReadOnlyList<SettingsChoiceOption> Options => _options;
     public string Status { get => _status; set => Set(ref _status, value); }
 
     public SettingsChoiceOption Selected
     {
-        get => _selected ?? _none;
+        get => _selected ?? _options[0];
         set {
             // A ComboBox clears its selection while the options are swapped; that is not a choice.
             if (value is null || value == Selected) { return; }
@@ -77,10 +76,16 @@ internal sealed class SettingsChoice(string noneName, Action<string?> save) : Se
     }
 
     // Reading the list must never write the choice back; a choice that is no longer listed falls back to none.
+    // An unchanged list keeps the bound ComboBox as it is.
     internal void SetOptions(IEnumerable<SettingsChoiceOption> options, string? selectedId)
     {
-        _options = [_none, .. options];
-        _selected = _options.FirstOrDefault(option => option.Id is not null && option.Id == selectedId) ?? _none;
+        IReadOnlyList<SettingsChoiceOption> next = [_options[0], .. options];
+        var selected = next.FirstOrDefault(option => option.Id == selectedId) ?? next[0];
+        if (next.SequenceEqual(_options) && selected == Selected) {
+            return;
+        }
+        _options = next;
+        _selected = selected;
         Raise(nameof(Options));
         Raise(nameof(Selected));
     }

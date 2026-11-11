@@ -47,7 +47,6 @@ internal static partial class SelfTestRunner
         new(Group.Support, nameof(VerifyRunningCopies), _ => VerifyRunningCopies()),
         new(Group.Support, nameof(VerifyAutoRunPlanner), _ => VerifyAutoRunPlanner()),
         new(Group.Support, nameof(VerifyAutostartTask), _ => VerifyAutostartTask()),
-        new(Group.Support, nameof(VerifyForwardedArguments), _ => VerifyForwardedArguments()),
         new(Group.Support, nameof(VerifyLaunchHelp), _ => VerifyLaunchHelp()),
         new(Group.Support, nameof(VerifyHelpOutput), _ => VerifyHelpOutput()),
         new(Group.Support, nameof(VerifyQuitAfterRunTracker), _ => VerifyQuitAfterRunTracker()),

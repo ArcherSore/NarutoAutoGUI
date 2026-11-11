@@ -20,7 +20,7 @@ internal static class Elevation
     internal static bool TryRelaunch(IReadOnlyList<string> arguments)
     {
         var path = Environment.ProcessPath ?? throw new InvalidOperationException("无法取得程序路径。");
-        var start = new ProcessStartInfo(path, LaunchCommand.JoinArguments(arguments)) {
+        var start = new ProcessStartInfo(path, arguments) {
             UseShellExecute = true, Verb = "runas", WorkingDirectory = AppContext.BaseDirectory
         };
         try {

@@ -81,9 +81,8 @@ internal static partial class SelfTestRunner
     {
         var directory = Path.Combine(testDirectory, "startup-settings");
         var store = new FakeSchtasks();
-        ApplicationSettings Create() => new(directory, logger, () => Task.CompletedTask, () => Task.CompletedTask,
-            () => { }, () => Task.CompletedTask, () => Task.CompletedTask, () => Task.CompletedTask, () => { },
-            _ => { }, _ => { }, new AutostartTask(AutostartExecutable, AutostartUser, store.Run));
+        ApplicationSettings Create() =>
+            CreateIdleSettings(directory, logger, new AutostartTask(AutostartExecutable, AutostartUser, store.Run));
         var daily = new AutoRunTarget(Guid.NewGuid(), "日常");
         var weekly = new AutoRunTarget(Guid.NewGuid(), "周常");
 

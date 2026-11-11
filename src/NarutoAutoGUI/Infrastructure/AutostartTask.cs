@@ -44,28 +44,20 @@ internal sealed class AutostartTask(string executablePath, string userName, Func
 
     private string Definition()
     {
-        XElement Element(string name, object? content = null) => new(Ns + name, content);
+        XElement Element(string name, params object?[] content) => new(Ns + name, content);
         // The delay lets the desktop session finish starting before the Child Session is created.
-        var task = Element("Task", new object[] {
-            new XAttribute("version", "1.2"),
+        var task = Element("Task", new XAttribute("version", "1.2"),
             Element("Triggers", Element("LogonTrigger",
-                new[] { Element("Enabled", "true"), Element("UserId", userName), Element("Delay", "PT30S") })),
-            Element("Principals", Element("Principal", new object[] {
-                new XAttribute("id", "Author"), Element("UserId", userName),
-                Element("LogonType", "InteractiveToken"), Element("RunLevel", "HighestAvailable")
-            })),
-            Element("Settings", new[] {
+                Element("Enabled", "true"), Element("UserId", userName), Element("Delay", "PT30S"))),
+            Element("Principals", Element("Principal", new XAttribute("id", "Author"), Element("UserId", userName),
+                Element("LogonType", "InteractiveToken"), Element("RunLevel", "HighestAvailable"))),
+            Element("Settings",
                 Element("MultipleInstancesPolicy", "IgnoreNew"), Element("DisallowStartIfOnBatteries", "false"),
                 Element("StopIfGoingOnBatteries", "false"), Element("AllowStartOnDemand", "true"),
-                Element("Enabled", "true"), Element("ExecutionTimeLimit", "PT0S")
-            }),
-            Element("Actions", new object[] {
-                new XAttribute("Context", "Author"), Element("Exec", new[] {
-                    Element("Command", executablePath), Element("Arguments", "--autostart"),
-                    Element("WorkingDirectory", Path.GetDirectoryName(executablePath))
-                })
-            })
-        });
+                Element("Enabled", "true"), Element("ExecutionTimeLimit", "PT0S")),
+            Element("Actions", new XAttribute("Context", "Author"), Element("Exec",
+                Element("Command", executablePath), Element("Arguments", "--autostart"),
+                Element("WorkingDirectory", Path.GetDirectoryName(executablePath)))));
         var document = new XDocument(new XDeclaration("1.0", "UTF-16", null), task);
         return $"{document.Declaration}{Environment.NewLine}{document}";
     }

@@ -1,43 +1,10 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text;
 
 namespace NarutoAutoGUI.Infrastructure;
 
 internal static partial class SelfTestRunner
 {
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    private static extern IntPtr CommandLineToArgvW(string commandLine, out int count);
-
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr LocalFree(IntPtr memory);
-
-    // Windows' own parser is the independent source of truth for what the elevated process will receive.
-    private static string[] SplitLikeWindows(string arguments)
-    {
-        var argv = CommandLineToArgvW("program " + arguments, out var count);
-        try {
-            return Enumerable.Range(1, count - 1)
-                .Select(index => Marshal.PtrToStringUni(Marshal.ReadIntPtr(argv, index * IntPtr.Size))!)
-                .ToArray();
-        } finally {
-            LocalFree(argv);
-        }
-    }
-
-    private static void VerifyForwardedArguments()
-    {
-        string[][] cases = [
-            [], ["--autostart", "-i", "日常 任务", "-q"], ["-i", "say \"hi\""], ["-i", @"C:\Program Files\"],
-            ["-i", @"back\slash\"], ["-i", ""], ["--instance=a b", "tab\there"], ["-i", @"end\"" quote"]
-        ];
-        foreach (var arguments in cases) {
-            var joined = LaunchCommand.JoinArguments(arguments);
-            Require(SplitLikeWindows(joined).SequenceEqual(arguments),
-                $"提权重启必须把参数原样交给新进程：{joined}");
-        }
-    }
-
     private static void VerifyLaunchHelp()
     {
         Require(LaunchCommand.Parse(["--help"]).Help && LaunchCommand.Parse(["-H"]).Help

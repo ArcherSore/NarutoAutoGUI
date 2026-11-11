@@ -312,7 +312,7 @@ public partial class MainWindow
                 RestoreConfigurationSelection();
             }
             if (unattended) {
-                ReportUnattendedFailure("自动执行", new InvalidOperationException("无法切换到所选配置。"));
+                ReportAutoRunFailure("无法切换到所选配置。");
             }
             return false;
         }

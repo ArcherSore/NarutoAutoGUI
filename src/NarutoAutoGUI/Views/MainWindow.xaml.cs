@@ -133,7 +133,7 @@ public partial class MainWindow : FluentWindow
         AutostartTask? autostart = null, LaunchCommand? launchCommand = null,
         GuiTelemetry? telemetry = null)
     {
-        _launchCommand = launchCommand ?? new LaunchCommand(false, false, null);
+        _launchCommand = launchCommand ?? new LaunchCommand();
         InitializeComponent();
         _runLog = new RunLogFeed(LogLines, MaximumGuiLogEntries);
         DataContext = this;
@@ -654,7 +654,7 @@ public partial class MainWindow : FluentWindow
             $"run.start {response.Disposition}：runId={_pendingStartAttempt.RunId:D}；"
             + $"planDigest={_pendingStartAttempt.PlanDigest}。 ");
         _pendingStartAttempt = null;
-        _acceptedRuns++;
+        _runAccepted = true;
     }
 
     private async void StopRunButton_Click(object sender, RoutedEventArgs e)

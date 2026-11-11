@@ -14,10 +14,11 @@ namespace NarutoAutoGUI.Infrastructure;
 internal static partial class SelfTestRunner
 {
     // Settings whose actions do nothing, for tests that only check toggles and persisted values.
-    private static ApplicationSettings CreateIdleSettings(string directory, AppLogger logger) =>
+    private static ApplicationSettings CreateIdleSettings(
+        string directory, AppLogger logger, AutostartTask? autostart = null) =>
         new(directory, logger, () => Task.CompletedTask, () => Task.CompletedTask, () => { },
             () => Task.CompletedTask, () => Task.CompletedTask, () => Task.CompletedTask, () => { },
-            _ => { }, _ => { }, InertAutostart());
+            _ => { }, _ => { }, autostart ?? InertAutostart());
 
     private static void VerifyClosePreference(AppLogger logger, string testDirectory)
     {

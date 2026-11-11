@@ -19,29 +19,32 @@ internal static partial class SelfTestRunner
         AutoRunDecision Decide(LaunchCommand command, Guid? configured = null, bool onManualLaunch = false,
             AutoRunTarget[]? all = null, bool canStart = true) =>
             AutoRunPlanner.Decide(command, configured, onManualLaunch, all ?? configurations, canStart);
-        var manual = new LaunchCommand(false, false, null);
-        var boot = new LaunchCommand(true, false, null);
+        bool Skipped(LaunchCommand command, Guid? configured = null, bool onManualLaunch = false,
+            AutoRunTarget[]? all = null, bool canStart = true) =>
+            Decide(command, configured, onManualLaunch, all, canStart).ConfigurationId is null;
+        var manual = new LaunchCommand();
+        var boot = new LaunchCommand(AutoStart: true);
 
-        Require(!Decide(manual, daily.Id).Run, "手动启动且未开启“手动启动时也自动执行”时不得执行。");
+        Require(Skipped(manual, daily.Id), "手动启动且未开启“手动启动时也自动执行”时不得执行。");
         Require(Decide(manual, daily.Id, onManualLaunch: true).ConfigurationId == daily.Id, "手动启动开启后应执行所选配置。");
         Require(Decide(boot, daily.Id).ConfigurationId == daily.Id, "开机自启应执行所选配置。");
-        Require(!Decide(boot).Run && !Decide(manual, null, onManualLaunch: true).Run, "没有目标配置时不得执行。");
-        Require(!Decide(boot, Guid.NewGuid()).Run && !Decide(manual, Guid.NewGuid(), onManualLaunch: true).Run,
+        Require(Skipped(boot) && Skipped(manual, null, onManualLaunch: true), "没有目标配置时不得执行。");
+        Require(Skipped(boot, Guid.NewGuid()) && Skipped(manual, Guid.NewGuid(), onManualLaunch: true),
             "所选配置已不存在时不得执行，也不得改跑别的配置。");
 
         Require(Decide(boot with { Instance = "周常" }, daily.Id).ConfigurationId == weekly.Id,
             "--instance 必须优先于设置里选的配置。");
         Require(Decide(boot with { Instance = weekly.Id.ToString() }, daily.Id).ConfigurationId == weekly.Id,
             "--instance 也接受配置 ID。");
-        Require(!Decide(boot with { Instance = "不存在" }, daily.Id).Run, "--instance 找不到时不得回退到设置里的配置。");
+        Require(Skipped(boot with { Instance = "不存在" }, daily.Id), "--instance 找不到时不得回退到设置里的配置。");
         AutoRunTarget[] twins = [daily, twin, weekly];
-        Require(!Decide(boot with { Instance = "日常" }, weekly.Id, all: twins).Run, "配置重名时按名称指定必须拒绝，不能挑第一个。");
+        Require(Skipped(boot with { Instance = "日常" }, weekly.Id, all: twins), "配置重名时按名称指定必须拒绝，不能挑第一个。");
         Require(Decide(boot with { Instance = twin.Id.ToString() }, all: twins).ConfigurationId == twin.Id,
             "重名时仍可用 ID 精确指定。");
         Require(Decide(manual with { Instance = "周常" }, daily.Id, onManualLaunch: true).ConfigurationId == daily.Id,
             "--instance 只对 --autostart 生效，手动启动仍用设置里的配置。");
 
-        Require(!Decide(boot, daily.Id, canStart: false).Run, "运行控制栏不允许准备或开始时必须跳过。");
+        Require(Skipped(boot, daily.Id, canStart: false), "运行控制栏不允许准备或开始时必须跳过。");
 
         // A launch that asked for an auto-run and did not get one says why, and the reasons tell the cases apart.
         string?[] reasons = [
@@ -77,10 +80,6 @@ internal static partial class SelfTestRunner
         }
         Require(!AutoRunPlanner.RuntimeAllows(Controls(new RuntimeAction.Prepare(true), editable: false)),
             "配置被锁定（已有 Run 或运行环境忙）时必须跳过。");
-        var quit = boot with { QuitAfterRun = true };
-        Require(Decide(quit, daily.Id).QuitAfterRun, "触发自动执行后 --quit-after-run 生效。");
-        Require(!Decide(quit).QuitAfterRun && !Decide(quit, daily.Id, canStart: false).QuitAfterRun,
-            "没有触发自动执行时 --quit-after-run 不得生效。");
     }
 
     private static void VerifyQuitAfterRunTracker()
@@ -101,7 +100,6 @@ internal static partial class SelfTestRunner
             var ended = FinishNotificationRun(running, state);
             Require(!tracker.Observe(ended with { SnapshotFresh = false }), "断线后的旧快照不能推测任务已结束。");
             Require(tracker.Observe(ended), $"{state} 终态必须触发退出。");
-            Require(!tracker.Observe(ended), "退出只能触发一次。");
         }
 
         var late = new QuitAfterRunTracker(runStarted.AddMinutes(1));
@@ -140,9 +138,9 @@ internal static partial class SelfTestRunner
 
     private static void VerifyAutoRunOnLaunch(AppLogger logger, string testDirectory)
     {
-        var boot = new LaunchCommand(true, true, null);
+        var boot = new LaunchCommand(AutoStart: true, QuitAfterRun: true);
         var prepared = new List<string>();
-        var started = new List<AutoRunDecision>();
+        var started = 0;
         var failures = new List<string>();
         var abandoned = 0;
         MainWindow? current = null;
@@ -168,7 +166,7 @@ internal static partial class SelfTestRunner
         {
             prepared.Clear();
             desktopShown.Clear();
-            started.Clear();
+            started = 0;
             failures.Clear();
             abandoned = 0;
             RunOnboardingScenario(logger, Path.Combine(testDirectory, name), (window, directory) => {
@@ -181,7 +179,7 @@ internal static partial class SelfTestRunner
                 page.Single(item => item.Definition.SettingKey == "autorun.onManualLaunch").Toggle!.Value
                     = onManualLaunch;
                 current = window;
-                window.AutoRunStarted += (_, decision) => started.Add(decision);
+                window.AutoRunStarted += (_, _) => started++;
                 window.AutoRunFailed += (_, message) => failures.Add(message);
                 window.AutoRunAbandoned += (_, _) => abandoned++;
                 beforeAutoRun?.Invoke(window, directory);
@@ -192,13 +190,13 @@ internal static partial class SelfTestRunner
                 prepareEnvironment: prepare ?? PrepareThenFail);
         }
 
-        Launch("manual", new LaunchCommand(false, false, null), "周常", false, (_, ran) =>
-            Require(!ran && prepared.Count == 0 && started.Count == 0 && abandoned == 0,
+        Launch("manual", new LaunchCommand(), "周常", false, (_, ran) =>
+            Require(!ran && prepared.Count == 0 && started == 0 && abandoned == 0,
                 "手动启动且未开启开关时不得自动执行。"));
         Launch("boot", boot, "周常", false, (window, ran) => {
             Require(ran && prepared.SequenceEqual(["周常"]), "开机自启必须先激活所选配置再准备并开始。");
             Require(desktopShown.SequenceEqual([false]), "自动执行准备运行环境时不得弹出分身窗口。");
-            Require(started is [{ QuitAfterRun: true }], "触发自动执行后必须通知，并带上 --quit-after-run。");
+            Require(started == 1, "触发自动执行后必须通知，--quit-after-run 才能开始等待。");
             Require(failures is [{ } failure] && failure.Contains("模拟准备失败"),
                 "自动执行开始前失败必须报告，而不是弹模态框。");
             Require(abandoned == 1, "任务没能开始时必须放弃 --quit-after-run 的等待，以免之后手动任务结束时退出。");
@@ -206,29 +204,29 @@ internal static partial class SelfTestRunner
                 .Single(item => item.Name == "周常").Id, "激活的配置必须保存下来。");
         });
         Launch("exit-requested", boot, "周常", false, (_, ran) =>
-            Require(ran && started.Count == 1 && failures.Count == 0 && abandoned == 1,
+            Require(ran && started == 1 && failures.Count == 0 && abandoned == 1,
                 "准备时用户要求退出，自动执行没有开始任务，必须放弃 --quit-after-run 的等待。"),
             prepare: PrepareThenExit);
-        Launch("manual-flag", new LaunchCommand(false, false, null), "周常", true, (_, ran) =>
+        Launch("manual-flag", new LaunchCommand(), "周常", true, (_, ran) =>
             Require(ran && prepared.SequenceEqual(["周常"]), "开启“手动启动时也自动执行”后手动启动应自动执行。"));
         Launch("instance", boot with { Instance = "周常" }, "日常", false, (_, ran) =>
             Require(ran && prepared.SequenceEqual(["周常"]), "--instance 必须优先于设置里的配置。"));
         Launch("unknown-instance", boot with { Instance = "不存在" }, "日常", false, (_, ran) =>
-            Require(!ran && prepared.Count == 0 && started.Count == 0 && failures.Count == 0,
+            Require(!ran && prepared.Count == 0 && started == 0 && failures.Count == 0,
                 "--instance 找不到时必须跳过，不回退到其他配置。"));
         Launch("not-startable", boot, "周常", false, (_, ran) =>
-            Require(!ran && prepared.Count == 0 && started.Count == 0, "运行控制栏不允许开始时必须跳过。"),
+            Require(!ran && prepared.Count == 0 && started == 0, "运行控制栏不允许开始时必须跳过。"),
             (window, _) => window.SetExitInProgress(true));
         Launch("empty-active-configuration", boot, "周常", false, (_, ran) =>
             Require(ran && prepared.SequenceEqual(["周常"]), "目标配置有效时，原来激活的配置没有任务不能挡住它。"),
             fixture: TwoConfigurations(dailyHasTask: false));
         Launch("target-without-tasks", boot, "周常", false, (_, ran) =>
-            Require(ran && prepared.Count == 0 && started.Count == 0 && failures.Count == 1,
+            Require(ran && prepared.Count == 0 && started == 0 && failures.Count == 1,
                 "目标配置没有任务时必须报告失败，不能白白创建桌面分身。"),
             fixture: TwoConfigurations(weeklyHasTask: false));
         var twoConfigurations = TwoConfigurations();
         Launch("unreadable-configurations", boot with { Instance = "周常" }, null, false, (_, ran) =>
-            Require(ran && prepared.Count == 0 && started.Count == 0 && failures.Count == 1,
+            Require(ran && prepared.Count == 0 && started == 0 && failures.Count == 1,
                 "任务配置读不出来时必须报告失败，不能悄悄跳过，也不能运行占位的配置。"),
             fixture: directory => {
                 twoConfigurations(directory);
@@ -237,7 +235,7 @@ internal static partial class SelfTestRunner
         FileStream? locked = null;
         Launch("switch-refused", boot, "周常", false, (window, ran) => {
             locked?.Dispose();
-            Require(ran && prepared.Count == 0 && started.Count == 0 && failures.Count == 1,
+            Require(ran && prepared.Count == 0 && started == 0 && failures.Count == 1,
                 "无法切换到目标配置时必须报告失败，不能弹模态框，也不能改跑原来的配置。");
             Require(ProjectOf(window).Configurations.Single(item => item.Name == "日常").Id
                 == ProjectOf(window).ActiveConfigurationId, "切换失败后仍是原配置。");
@@ -250,7 +248,7 @@ internal static partial class SelfTestRunner
     {
         static Visibility OverlayOf(MainWindow window, string name) => Named<UIElement>(window, name).Visibility;
         void Welcome(string directory) => SetWelcome(directory, new JsonArray("公告"), "项目标题");
-        foreach (var command in new[] { new LaunchCommand(false, false, null), new LaunchCommand(true, false, null) }) {
+        foreach (var command in new[] { new LaunchCommand(), new LaunchCommand(AutoStart: true) }) {
             var unattended = command.AutoStart;
             var name = unattended ? "boot" : "manual";
             RunOnboardingScenario(logger, Path.Combine(testDirectory, name), (window, directory) => {

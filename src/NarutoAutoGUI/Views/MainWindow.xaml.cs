@@ -1966,21 +1966,32 @@ public partial class MainWindow : FluentWindow
     private void HandleOperationError(string operation, Exception exception)
     {
         _logger.Error($"{operation}。", exception);
+        var helloGuidance = GetWindowsHelloGuidance(
+            operation, exception, ChildSessionEnvironment.RequiresWindowsHelloSignIn());
+        if (helloGuidance is not null) {
+            WpfMessageBox.Show(this, helloGuidance, operation, MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
         ShowActionableError(operation, exception, GetRecoveryGuidance(operation), offerLogDirectory: true);
     }
 
-    private static string GetRecoveryGuidance(string operation) =>
-        GetRecoveryGuidance(operation, ChildSessionEnvironment.RequiresWindowsHelloSignIn());
+    internal static string? GetWindowsHelloGuidance(string operation, Exception exception, bool windowsHelloOnly)
+    {
+        if (!windowsHelloOnly || exception.GetBaseException() is not ChildSessionConnectionException
+            || !operation.Contains("运行环境", StringComparison.Ordinal)) {
+            return null;
+        }
+        return "桌面分身登录失败。检测到已开启「仅允许对此设备上的 Microsoft 帐户使用 Windows Hello 登录」。"
+            + "\n\n1. 打开 Windows「设置 → 帐户 → 登录选项」，关闭该开关。"
+            + "\n2. 用帐户密码登录一次 Windows，然后重试准备运行环境。"
+            + "\n\n详细错误已记录到日志。";
+    }
 
-    internal static string GetRecoveryGuidance(string operation, bool windowsHelloOnly)
+    private static string GetRecoveryGuidance(string operation)
     {
         if (operation.Contains("桌面分身", StringComparison.Ordinal)
             || operation.Contains("子桌面", StringComparison.Ordinal)) {
             return "请确认程序以管理员权限运行，并检查桌面分身状态后重试。";
-        }
-        if (windowsHelloOnly && operation.Contains("运行环境", StringComparison.Ordinal)) {
-            return "检测到已开启「仅允许对此设备上的 Microsoft 帐户使用 Windows Hello 登录」，桌面分身可能无法登录。"
-                + "请在 Windows「设置 → 账户 → 登录选项」中关闭它，用密码登录一次 Windows 后重试。";
         }
 
         return "请检查当前配置和系统状态后重试。";

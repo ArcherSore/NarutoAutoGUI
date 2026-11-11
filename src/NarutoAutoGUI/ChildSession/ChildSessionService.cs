@@ -89,7 +89,7 @@ internal sealed class ChildSessionService
 
             if (!ok) {
                 TryDisconnect();
-                throw new InvalidOperationException(_lastFailure?.Message ?? "RDP 连接失败。");
+                throw new ChildSessionConnectionException(_lastFailure?.Message ?? "RDP 连接失败。");
             }
 
             ChildSessionId = ChildSessionNativeMethods.TryGetChildSessionId();
@@ -126,3 +126,6 @@ internal sealed class ChildSessionService
         _connectionTcs?.TrySetResult(false);
     }
 }
+
+// Identifies an RDP-reported failure before login completes, without changing the connection or recovery flow.
+internal sealed class ChildSessionConnectionException(string message) : InvalidOperationException(message);

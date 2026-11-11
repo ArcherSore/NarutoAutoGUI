@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Security.Principal;
-using System.Text;
 using System.Xml.Linq;
 
 namespace NarutoAutoGUI.Infrastructure;
@@ -26,7 +25,7 @@ internal sealed class AutostartTask(string executablePath, string userName, Func
     {
         var path = Path.Combine(Path.GetTempPath(), $"NarutoAutoGUI-autostart-{Guid.NewGuid():N}.xml");
         try {
-            File.WriteAllText(path, Definition(), Encoding.Unicode);
+            Definition().Save(path);
             if (schtasks(["/create", "/tn", TaskName, "/xml", path, "/f"]) != 0) {
                 throw new InvalidOperationException("创建开机自启动计划任务失败。");
             }
@@ -42,7 +41,7 @@ internal sealed class AutostartTask(string executablePath, string userName, Func
         }
     }
 
-    private string Definition()
+    private XDocument Definition()
     {
         XElement Element(string name, params object?[] content) => new(Ns + name, content);
         // The delay lets the desktop session finish starting before the Child Session is created.
@@ -58,18 +57,14 @@ internal sealed class AutostartTask(string executablePath, string userName, Func
             Element("Actions", new XAttribute("Context", "Author"), Element("Exec",
                 Element("Command", executablePath), Element("Arguments", "--autostart"),
                 Element("WorkingDirectory", Path.GetDirectoryName(executablePath)))));
-        var document = new XDocument(new XDeclaration("1.0", "UTF-16", null), task);
-        return $"{document.Declaration}{Environment.NewLine}{document}";
+        return new XDocument(new XDeclaration("1.0", "UTF-16", null), task);
     }
 
     private static int Run(IReadOnlyList<string> arguments)
     {
-        var start = new ProcessStartInfo("schtasks.exe") {
+        var start = new ProcessStartInfo("schtasks.exe", arguments) {
             CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
         };
-        foreach (var argument in arguments) {
-            start.ArgumentList.Add(argument);
-        }
         using var process = Process.Start(start) ?? throw new InvalidOperationException("无法启动 schtasks.exe。");
         process.StandardOutput.ReadToEnd();
         process.StandardError.ReadToEnd();

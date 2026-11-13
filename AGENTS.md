@@ -2,7 +2,7 @@
 
 ## 开始任务
 
-先阅读 README.md 和 GLOSSARY.md，再阅读与当前工作有关的 docs/ARCHITECTURE.md、docs/adr/ 中的决策、GitHub Issue / Spec 及源码。涉及 Child Session 时阅读 src/NarutoAutoGUI/ChildSession/ 的相关实现。不要把整套历史文档当成必读材料。
+先阅读 README.md 和 GLOSSARY.md，再阅读与当前工作有关的 docs/ARCHITECTURE.md、docs/adr/ 中的决策、GitHub Issue / Spec 及源码。涉及 Child Session 时阅读 src/Gui/ChildSession/ 的相关实现。不要把整套历史文档当成必读材料。
 
 ## 开发原则
 
@@ -41,7 +41,7 @@
 
 ### 构建与测试入口
 
-在仓库根目录运行 `./src/NarutoAutoGUI/scripts/verify.ps1`：增量构建 GUI 并运行完整 GUI Self-Test。
+在仓库根目录运行 `./src/Gui/scripts/verify.ps1`：增量构建 GUI 并运行完整 GUI Self-Test。
 默认 Release；支持 Windows PowerShell 5.1 和 PowerShell 7，从其他工作目录调用绝对脚本路径也可运行。
 成功只显示 PASS/耗时；完整 stdout/stderr 在忽略的 `artifacts/validation/<本次运行>/` 中。
 失败先读摘要，必要时只读取失败阶段的日志；脚本保留原始进程退出码，构建失败后不会测试旧 DLL。

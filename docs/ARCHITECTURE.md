@@ -1,17 +1,17 @@
 # 当前架构
 
-NarutoAutoGUI 是面向 MaaNOP 的 Windows x64 前端。主桌面负责配置与观察；游戏、自动化框架和 Worker 在 Child Session 中运行。发布包包含 GUI、Worker、固定 MaaFramework runtime 和 Update Engine；MaaNOP 项目内容由完整包提供。
+Bunshin 是面向 MaaNOP 的 Windows x64 前端。主桌面负责配置与观察；游戏、自动化框架和 Worker 在 Child Session 中运行。发布包包含 GUI、Worker、固定 MaaFramework runtime、Update Engine 和依赖安装脚本；MaaNOP 项目内容由完整包提供。.NET 10 桌面运行库和 Visual C++ 运行库由系统提供。
 
 ## 组件与边界
 
 | 组件 | 职责 |
 | --- | --- |
-| NarutoAutoGUI（.NET 10 WPF） | 用户界面、托盘、设置、任务配置、Child Session 生命周期、Worker 接纳和运行观察 |
+| Bunshin（.NET 10 WPF） | 用户界面、托盘、设置、任务配置、Child Session 生命周期、Worker 接纳和运行观察 |
 | ChildSession 模块 | 通过 Windows WTS、RDP ActiveX 和 Task Scheduler 管理隔离会话与程序启动 |
 | ProjectModel | 读取 MaaNOP Project Interface，保存用户意图，解析本次 Run Plan |
 | Protocol | GUI 与 Worker 共享的消息与运行模型 |
-| NarutoAutoWorker | 在 Child Session 中持有 MaaFramework、MaaNOP Agent、运行状态和日志 |
-| MaaNOP.UpdateEngine（Rust） | 完整包更新的检查、准备、校验、安装和重启规则 |
+| Worker | 在 Child Session 中持有 MaaFramework、MaaNOP Agent、运行状态和日志 |
+| UpdateEngine（Rust） | 完整包更新的检查、准备、校验、安装和重启规则 |
 
 GUI 不加载 MaaFramework 执行任务。Worker 不读取或修改用户任务配置，也不重新解释 Project Interface 的选项。MFAAvalonia 仅用于人工对照，不参与正式运行链路。
 
@@ -44,7 +44,7 @@ GUI 以真实 Windows 进程和 Session 身份核验 Worker，再通过受限的
 
 ## 任务与状态流
 
-MaaNOP Config 保存多份独立任务配置及激活项；它是用户意图，不是执行结果。ProjectModel 按当前 Project Interface 校验激活配置，开始时生成不可变、有序的 Run Plan。Worker Launch Context 独立确定项目与框架环境；Run Plan 只描述本次任务与参数。
+Configuration Set 保存多份独立任务配置及激活项；它是用户意图，不是执行结果。ProjectModel 按当前 Project Interface 校验激活配置，开始时生成不可变、有序的 Run Plan。Worker Launch Context 独立确定项目与框架环境；Run Plan 只描述本次任务与参数。
 
 Project Interface preset 作为新建配置的模板：ProjectModel 将预设的任务选择和选项值转换为现有 Task Configuration，
 保存后不再关联预设。新配置只在项目默认值上应用预设声明的内容，不继承当前配置；执行顺序仍遵循项目声明。
@@ -64,11 +64,11 @@ Worker 同时只执行一个 Run，逐项处理 Plan Item。pretask 非零退出
 
 ## 更新
 
-GUI 负责更新界面、用户确认和运行环境关闭；Rust Update Engine 负责 Release 选择、完整包下载与验证、缓存和安装。GUI 将 Engine 给出的 descriptor/reference 原样交回，不解释更新包。安装前必须停止任务并确认运行环境退出；Engine 接管安装后等待 GUI 进程退出，再替换完整包内容。更新契约见 [Update Engine 文档](../src/MaaNOP.UpdateEngine/README.md)。
+GUI 负责更新界面、用户确认和运行环境关闭；Rust Update Engine 负责 Release 选择、完整包下载与验证、缓存和安装。GUI 将 Engine 给出的 descriptor/reference 原样交回，不解释更新包。安装前必须停止任务并确认运行环境退出；Engine 接管安装后等待 GUI 进程退出，再替换完整包内容。更新契约见 [Update Engine 文档](../src/UpdateEngine/README.md)。
 
 ## 遥测
 
-MaaNOP 在 Project Interface 声明 telemetry.sentry 时，NarutoAutoGUI 向该 Sentry 项目匿名上报，设计取舍见
+MaaNOP 在 Project Interface 声明 telemetry.sentry 时，Bunshin 向该 Sentry 项目匿名上报，设计取舍见
 [ADR 0009](adr/0009-worker-owns-run-telemetry.md)。GUI 持有"帮助改进软件"开关和发布闸门：只有发布版 GUI 与发布版项目、
 且不在自检中才启用遥测，再把配置和用户选择交给 Worker。Worker 观察自身的运行状态，上报 Run 与 Plan Item 的结果；
 Plan Item 失败时在后台取该项时间窗内的 maafw.log、Worker 日志和按采样的错误截图，Run 不等待。

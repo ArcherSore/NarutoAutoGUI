@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-本仓库使用 [GitHub Issues](https://github.com/ArcherSore/NarutoAutoGUI/issues) 作为唯一问题跟踪器。spec、tickets、当前状态、未完成验收与后续工作均在此记录；仓库内不维护第二套 docs/issues/。
+本仓库使用 [GitHub Issues](https://github.com/ArcherSore/Bunshin/issues) 作为唯一问题跟踪器。spec、tickets、当前状态、未完成验收与后续工作均在此记录；仓库内不维护第二套 docs/issues/。
 
 ## 操作
 

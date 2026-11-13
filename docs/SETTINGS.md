@@ -1,6 +1,6 @@
 # Application Settings Definition
 
-本协议只描述 NarutoAutoGUI 自身设置页面。定义源为 src/NarutoAutoGUI/Assets/settings.json，作为程序集内置资源发布；它不是用户配置，也不参与 MaaNOP Project Interface 解析。
+本协议只描述 Bunshin 自身设置页面。定义源为 src/Gui/Assets/settings.json，作为程序集内置资源发布；它不是用户配置，也不参与 MaaNOP Project Interface 解析。
 
 ## 格式
 
@@ -20,7 +20,7 @@
 
 ## 绑定边界
 
-SettingsDefinition 负责页面定义，SettingsRegistry 将 toggle、choice、action、value key 显式绑定到业务对象，SettingsView 按五种行类型展示，并用左侧目录在连续滚动的分类间跳转和跟随。ApplicationSettings 负责应用偏好及行为入口，不持有 MaaNOP Config 或 Run Plan。新增同类设置行只需修改定义；新增行为或动态值还需注册代码。
+SettingsDefinition 负责页面定义，SettingsRegistry 将 toggle、choice、action、value key 显式绑定到业务对象，SettingsView 按五种行类型展示，并用左侧目录在连续滚动的分类间跳转和跟随。ApplicationSettings 负责应用偏好及行为入口，不持有 Configuration Set 或 Run Plan。新增同类设置行只需修改定义；新增行为或动态值还需注册代码。
 
 | 类型 | 当前 key | 含义 |
 | --- | --- | --- |

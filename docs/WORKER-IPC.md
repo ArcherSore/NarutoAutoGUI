@@ -1,6 +1,6 @@
 # GUI–Worker 协议
 
-这是 GUI 与 Child Session Worker 的稳定边界摘要。字段定义和数值常量以 src/NarutoAutoGUI.Protocol 中的 ProtocolModels、PipeProtocol 和 CanonicalDigest 为准；修改协议时两端应同版发布。
+这是 GUI 与 Child Session Worker 的稳定边界摘要。字段定义和数值常量以 src/Protocol 中的 ProtocolModels、PipeProtocol 和 CanonicalDigest 为准；修改协议时两端应同版发布。
 
 ## 控制通道
 

@@ -1,0 +1,223 @@
+using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
+
+namespace Updates;
+
+public sealed record EngineUpdate(string Version, string Notes, string Descriptor, string? ReleaseUrl = null);
+public sealed record EngineCheckResult(string CurrentVersion, EngineUpdate? Update);
+public sealed record EngineProgress(string Phase, long Bytes, long Total, double BytesPerSecond);
+
+public sealed class UpdateEngineClient(ProcessStartInfo start, TimeSpan? timeout = null)
+{
+    // The Engine's file name in the package; UpdateEngine/Cargo.toml and the package scripts must agree.
+    public const string FileName = "update-engine.exe";
+    public const int MaxMessageBytes = 1024 * 1024;
+    public const string DiagnosticsKey = "UpdateEngineDiagnostics";
+    private const int MaxStderrChars = 4096;
+    private static readonly UTF8Encoding Utf8 = new(false, true);
+
+    // What the Engine left behind when an operation failed, for the log only: Message stays what the user is shown.
+    public static string? Diagnostics(Exception exception) => exception.Data[DiagnosticsKey] as string;
+
+    public async Task<EngineCheckResult> CheckAsync(string installation, CancellationToken cancellation)
+    {
+        var result = await RunAsync(new {
+            protocolVersion = 1, operation = "check", installation = Path.GetFullPath(installation)
+        }, "check", null, cancellation);
+        var update = result.GetProperty("update");
+        return new EngineCheckResult(RequiredString(result, "currentVersion"), update.ValueKind == JsonValueKind.Null
+            ? null : new EngineUpdate(RequiredString(update, "version"), RequiredString(update, "notes", true),
+                RequiredString(update, "descriptor"),
+                update.TryGetProperty("releaseUrl", out _) ? RequiredString(update, "releaseUrl") : null));
+    }
+
+    public async Task<string> PrepareAsync(string installation, string descriptor,
+        IProgress<EngineProgress> progress, CancellationToken cancellation)
+    {
+        var result = await RunAsync(new {
+            protocolVersion = 1, operation = "prepare", installation = Path.GetFullPath(installation), descriptor
+        }, "prepare", progress, cancellation);
+        return RequiredString(result, "reference");
+    }
+
+    public async Task InstallAsync(string installation, string reference, int guiPid, CancellationToken cancellation)
+    {
+        await RunAsync(new {
+            protocolVersion = 1, operation = "install", installation = Path.GetFullPath(installation), reference, guiPid
+        }, "install", null, cancellation);
+    }
+
+    private async Task<JsonElement> RunAsync(object request, string operation,
+        IProgress<EngineProgress>? progress, CancellationToken cancellation)
+    {
+        var trace = new EngineTrace();
+        try {
+            return await RunProcessAsync(request, operation, progress, trace, cancellation);
+        } catch (Exception exception) when (exception is not OperationCanceledException) {
+            exception.Data[DiagnosticsKey] = trace.Describe();
+            throw;
+        }
+    }
+
+    private async Task<JsonElement> RunProcessAsync(object request, string operation,
+        IProgress<EngineProgress>? progress, EngineTrace trace, CancellationToken cancellation)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        using var deadline = new CancellationTokenSource(timeout
+            ?? TimeSpan.FromSeconds(operation == "prepare" ? 3660 : 45));
+        using var combined = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token,
+            operation == "prepare" ? CancellationToken.None : cancellation);
+        var token = combined.Token;
+        start.UseShellExecute = false;
+        start.CreateNoWindow = true;
+        start.RedirectStandardInput = true;
+        start.RedirectStandardOutput = true;
+        start.RedirectStandardError = true;
+        start.StandardInputEncoding = Utf8;
+        start.StandardErrorEncoding = new UTF8Encoding(false);
+        using var process = Process.Start(start) ?? throw new IOException("无法启动 Update Engine。");
+        var stderr = DrainErrorsAsync(process.StandardError, trace, token);
+        Task? cancelWrite = null;
+        CancellationTokenRegistration registration = default;
+        var handedOff = false;
+        try {
+            var input = JsonSerializer.Serialize(request);
+            if (Utf8.GetByteCount(input) + 1 > MaxMessageBytes) {
+                throw new InvalidDataException("更新命令超出大小限制。");
+            }
+            await process.StandardInput.WriteLineAsync(input.AsMemory(), token);
+            await process.StandardInput.FlushAsync(token);
+            if (operation == "prepare") {
+                registration = cancellation.Register(() => {
+                    deadline.CancelAfter(TimeSpan.FromSeconds(20));
+                    cancelWrite = CancelPrepareAsync(process.StandardInput);
+                });
+            } else {
+                process.StandardInput.Close();
+            }
+            JsonElement? result = null;
+            using var stdout = new BufferedStream(process.StandardOutput.BaseStream);
+            while (await ReadMessageAsync(stdout, token) is string line) {
+                using var document = JsonDocument.Parse(line);
+                var message = document.RootElement;
+                if (message.GetProperty("protocolVersion").GetInt32() != 1 || result is not null) {
+                    throw new InvalidDataException("Update Engine 返回了无效消息序列。");
+                }
+                var type = RequiredString(message, "type");
+                if (type == "ready" && operation == "install" && RequiredString(message, "operation") == "install") {
+                    handedOff = true;
+                    return message.Clone();
+                }
+                if (type == "progress" && operation == "prepare") {
+                    var phase = RequiredString(message, "phase");
+                    progress?.Report(new EngineProgress(phase,
+                        phase == "download" ? message.GetProperty("bytes").GetInt64() : 0,
+                        phase == "download" ? message.GetProperty("total").GetInt64() : 0,
+                        phase == "download" ? message.GetProperty("bytesPerSecond").GetDouble() : 0));
+                } else if (type is "result" or "error" or "cancelled") {
+                    result = message.Clone();
+                } else {
+                    throw new InvalidDataException("Update Engine 返回了未知消息。");
+                }
+            }
+            await process.WaitForExitAsync(token);
+            trace.ExitCode = process.ExitCode;
+            await stderr;
+            cancellation.ThrowIfCancellationRequested();
+            if (result is not JsonElement terminal) {
+                throw new InvalidDataException("Update Engine 未返回结果。");
+            }
+            if (RequiredString(terminal, "type") == "error") {
+                trace.Code = terminal.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.String
+                    ? code.GetString() : null;
+                throw new IOException(RequiredString(terminal, "message"));
+            }
+            if (operation == "install" || process.ExitCode != 0 || RequiredString(terminal, "type") != "result"
+                || RequiredString(terminal, "operation") != operation) {
+                throw new InvalidDataException("Update Engine 未正常完成操作。");
+            }
+            return terminal;
+        } catch (OperationCanceledException) when (cancellation.IsCancellationRequested) {
+            throw new OperationCanceledException(cancellation);
+        } catch (OperationCanceledException) {
+            throw new IOException("Update Engine 操作超时，请重试。");
+        } catch (Exception exception) when (exception is JsonException or KeyNotFoundException
+            or InvalidOperationException or DecoderFallbackException or FormatException) {
+            throw new InvalidDataException("Update Engine 返回了无效消息。", exception);
+        } finally {
+            await registration.DisposeAsync();
+            try {
+                if (!handedOff && !process.HasExited) { process.Kill(entireProcessTree: true); }
+            } catch (Exception exception) when (exception is InvalidOperationException
+                or System.ComponentModel.Win32Exception) { }
+            deadline.Cancel();
+            if (cancelWrite is not null) { await cancelWrite; }
+            try { await stderr; } catch (Exception e) when (e is OperationCanceledException or IOException) { }
+        }
+    }
+
+    private static async Task CancelPrepareAsync(StreamWriter input)
+    {
+        try {
+            await input.WriteLineAsync("""{"protocolVersion":1,"operation":"cancel"}""");
+            await input.FlushAsync();
+        } catch (Exception e) when (e is IOException or ObjectDisposedException) { }
+    }
+
+    private static string RequiredString(JsonElement root, string name, bool allowEmpty = false)
+    {
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty(name, out var property)
+            || property.ValueKind != JsonValueKind.String) {
+            throw new InvalidDataException("Update Engine 返回了不完整的消息。");
+        }
+        var value = property.GetString()!;
+        return allowEmpty || value.Length > 0 ? value
+            : throw new InvalidDataException("Update Engine 返回了不完整的消息。");
+    }
+
+    private static async Task<string?> ReadMessageAsync(Stream stream, CancellationToken cancellation)
+    {
+        using var output = new MemoryStream();
+        var buffer = new byte[1];
+        while (await stream.ReadAsync(buffer, cancellation) > 0) {
+            output.WriteByte(buffer[0]);
+            if (output.Length > MaxMessageBytes) { throw new InvalidDataException("Update Engine 消息过大。"); }
+            if (buffer[0] == '\n') { return Utf8.GetString(output.GetBuffer(), 0, (int)output.Length); }
+        }
+        if (output.Length > 0) { throw new InvalidDataException("Update Engine 消息不完整。"); }
+        return null;
+    }
+
+    private static async Task DrainErrorsAsync(StreamReader reader, EngineTrace trace, CancellationToken cancellation)
+    {
+        var buffer = new char[4096];
+        int read;
+        while ((read = await reader.ReadAsync(buffer, cancellation)) > 0) {
+            trace.AddStderr(buffer, read);
+        }
+    }
+
+    private sealed class EngineTrace
+    {
+        private readonly StringBuilder _stderr = new();
+
+        internal int? ExitCode { get; set; }
+
+        internal string? Code { get; set; }
+
+        internal void AddStderr(char[] buffer, int count)
+        {
+            _stderr.Append(buffer, 0, count);
+            if (_stderr.Length > MaxStderrChars) {
+                _stderr.Remove(0, _stderr.Length - MaxStderrChars);
+            }
+        }
+
+        internal string Describe() => string.Join(" ", new[] {
+            ExitCode is int exit ? $"exit={exit}" : null,
+            Code is null ? null : $"code={Code}",
+            _stderr.Length == 0 ? null : $"stderr={_stderr.ToString().Trim().ReplaceLineEndings(" ")}"
+        }.Where(part => part is not null));
+    }
+}

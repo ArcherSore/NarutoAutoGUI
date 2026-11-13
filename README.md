@@ -1,55 +1,92 @@
-# NarutoAutoGUI
+<!-- markdownlint-disable MD033 MD041 -->
+<div align="center">
+  <img alt="Bunshin" src="./src/Gui/Assets/app.png" width="192" height="192" />
 
-面向 [MaaNOP](https://github.com/ArcherSore/MaaNOP) 的 Windows 图形界面。
+# Bunshin
 
-通过 Windows Child Session（桌面分身）在独立会话中运行火影忍者 Online 和自动化任务，在当前桌面完成任务配置、运行控制与状态查看。
+[MaaNOP](https://github.com/ArcherSore/MaaNOP) 的 Windows 桌面界面
 
-> 使用游戏自动化，请前往 [MaaNOP](https://github.com/ArcherSore/MaaNOP) 获取完整包和使用说明。本仓库发布前端及配套运行组件，不包含游戏任务资源。
+[![License](https://img.shields.io/github/license/ArcherSore/Bunshin?style=flat-square&color=4a90d9)](./LICENSE)
+[![.NET](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square&logo=dotnet)](https://dotnet.microsoft.com/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blueviolet?style=flat-square)](https://github.com/ArcherSore/Bunshin)
+[![Stars](https://img.shields.io/github/stars/ArcherSore/Bunshin?style=flat-square&color=ffca28)](https://github.com/ArcherSore/Bunshin/stargazers)
 
-首次使用请阅读[用户使用手册](docs/USER-GUIDE.md)，了解 Windows 密码填写、QQ 大厅自动登录与日常操作。
+</div>
+
+## 项目简介
+
+Bunshin 是 [MaaNOP](https://github.com/ArcherSore/MaaNOP) 的图形界面。它通过 Windows Child Session（桌面分身）
+在独立会话中运行火影忍者 Online 和自动化任务，不占用你正在使用的桌面。
+
+本仓库只发布前端及配套运行组件，不包含游戏任务资源。请前往 [MaaNOP](https://github.com/ArcherSore/MaaNOP) 获取完整包。
+
+## 主要功能
+
+- **桌面分身**：创建和管理独立运行环境，隐藏分身窗口后游戏和任务仍会继续。
+- **任务配置**：多份独立配置，标签页切换，可从项目预设新建；每份配置分别保存任务、启动阶段及参数。
+- **运行监控**：查看任务动态，通过小窗只读观看分身，大窗可手动解锁操作。
+- **自动运行**：开机自启动、启动后自动执行配置，也可通过命令行接入计划任务或外部脚本。
+- **提醒与诊断**：后台任务完成或失败时提醒，设置页可一键导出日志与版本信息。
+- **完整包更新**：更新检查、版本说明、下载与安装。
 
 ## 界面预览
 
-![NarutoAutoGUI 首页](docs/images/homePage.png)
+<p align="center">
+  <img alt="Bunshin 界面预览" src="./docs/images/homePage.png" width="100%" />
+</p>
 
-## 功能
+## 运行要求
 
-- **桌面分身**：创建和管理独立运行环境，隐藏分身后任务仍可继续。
-- **任务配置**：支持多份独立任务配置，通过 Tab 切换，可从项目 preset 预设新建；每份配置分别保存任务、前置任务及参数。前置任务按项目顺序在普通任务前执行，也可单独运行。
-- **新手指引**：首次使用提供四步界面介绍，随时跳过，也可从设置页重新查看。
-- **运行监控**：展示任务动态，通过独立桌面分身小窗只读观看；大窗可手动解锁操作。
-- **问题诊断与提醒**：后台任务完成/失败时提醒，设置页可一键导出日志、框架调试图片与版本信息。
-- **完整包更新**：提供更新检查、版本说明、下载与安装入口。
+| 项目 | 要求 |
+|:---|:---|
+| 系统 | Windows 10 / 11 x64 |
+| 运行库 | [.NET 10 桌面运行库](https://dotnet.microsoft.com/download/dotnet/10.0)和 Visual C++ 运行库，可用包内的 `DependencySetup_依赖库安装.bat` 一键安装 |
+| 资源 | 带游戏资源的 [MaaNOP](https://github.com/ArcherSore/MaaNOP) 完整包 |
 
-## 构建
+## 快速开始
 
-需要 Windows x64、.NET 10 SDK、Rust 1.98.1 MSVC 和 Visual Studio C++ Build Tools。
+1. 前往 [MaaNOP](https://github.com/ArcherSore/MaaNOP) 下载完整包并解压。
+2. 运行 `DependencySetup_依赖库安装.bat`，安装 .NET 10 桌面运行库和 Visual C++ 运行库（只需一次）。
+3. 运行 `Bunshin.exe`，按提示允许管理员权限。
+4. 阅读[用户使用手册](docs/USER-GUIDE.md)，完成 Windows 凭据和 QQ 大厅自动启动的一次性配置。
+
+## 启动参数
+
+| 参数 | 作用 |
+|:---|:---|
+| `-h`, `--help` | 显示命令行帮助并退出 |
+| `--autostart` | 按开机自启处理：窗口留在托盘，并自动执行配置 |
+| `-i <配置>`, `--instance <配置>` | 仅配合 `--autostart`：按名称或配置 ID 指定要执行的配置 |
+| `-q`, `--quit-after-run` | 自动执行结束后退出程序 |
 
 ```powershell
-.\src\NarutoAutoGUI\scripts\build.ps1
+.\Bunshin.exe --autostart -i "日常任务" -q
 ```
 
-产物位于 `artifacts\NarutoAutoGUI\win-x64`。
+推荐用法见[用户使用手册](docs/USER-GUIDE.md#三命令行启动)。
 
-日常开发验证（增量 GUI 构建 + GUI 自检，完整输出保存至 `artifacts/validation/`）：
+## 开发
+
+需要 .NET 10 SDK、Rust 1.98.1 MSVC 和 Visual Studio C++ Build Tools。
 
 ```powershell
-.\src\NarutoAutoGUI\scripts\verify.ps1
+# 构建发布包，产物位于 artifacts\Bunshin\win-x64
+.\src\Gui\scripts\build.ps1
+
+# 日常验证：增量 GUI 构建 + GUI 自检
+.\src\Gui\scripts\verify.ps1
 ```
 
-完整自动验证（增量 GUI/Worker 构建 + GUI、Worker、Updater、Rust tests/Clippy）：
-
-```powershell
-.\src\NarutoAutoGUI\scripts\verify.ps1 -Suite All
-```
-
-定向验证与发布验证要求见 [AGENTS.md](AGENTS.md)。原 `test-automated.ps1` 保留详细输出入口。
-
-开发入口：[领域术语](GLOSSARY.md)、[当前架构](docs/ARCHITECTURE.md)、[架构决策](docs/adr/)、
-[GUI 开发说明](src/NarutoAutoGUI/README.md)。当前工作与验收条件在 [GitHub Issues](https://github.com/ArcherSore/NarutoAutoGUI/issues)。
+验证要求见 [AGENTS.md](AGENTS.md)，开发入口见[领域术语](GLOSSARY.md)、[当前架构](docs/ARCHITECTURE.md)、
+[架构决策](docs/adr/)、[GUI 开发说明](src/Gui/README.md)。
+当前工作与验收条件在 [GitHub Issues](https://github.com/ArcherSore/Bunshin/issues)。
 
 ## 鸣谢
 
 - [MaaNOP](https://github.com/ArcherSore/MaaNOP)：游戏自动化任务与资源。
 - [MaaFramework](https://github.com/MaaXYZ/MaaFramework)：自动化执行框架。
 - [BetterGI](https://github.com/babalae/better-genshin-impact)：桌面分身方案参考了其 v0.63.0 引入的 Windows Child Session 实现。
+
+## 许可证
+
+[GPL-3.0](./LICENSE)。第三方组件见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
